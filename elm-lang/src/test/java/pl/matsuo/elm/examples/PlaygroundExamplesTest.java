@@ -23,11 +23,15 @@ class PlaygroundExamplesTest {
     }
   }
 
+  private String render(String slug) {
+    Project project =
+        Project.load(resource("/Playground.elm"), resource("/examples/" + slug + ".elm"));
+    return Tea.start(project.main()).html();
+  }
+
   @Test
   void picture() {
-    Project project = Project.load(resource("/Playground.elm"), resource("/examples/picture.elm"));
-    Tea app = Tea.start(project.main());
-    String html = app.html();
+    String html = render("picture");
     assertTrue(html.contains("<svg "), html);
     assertTrue(html.contains("<rect "), html);
     assertTrue(html.contains("<circle "), html);
@@ -35,5 +39,43 @@ class PlaygroundExamplesTest {
     // rectangle moved down 80 -> svg y is negated -> translate(0,80); circle moved up 100.
     assertTrue(html.contains("translate(0,80)"), html);
     assertTrue(html.contains("translate(0,-100)"), html);
+  }
+
+  @Test
+  void animation() {
+    String html = render("animation");
+    assertTrue(html.contains("<svg "), html);
+    assertTrue(html.contains("<polygon "), html); // the octagons
+    assertTrue(html.contains("<rect "), html);
+  }
+
+  @Test
+  void mouse() {
+    String html = render("mouse");
+    assertTrue(html.contains("<svg "), html);
+    assertTrue(html.contains("<circle "), html); // follows the (initially 0,0) mouse
+  }
+
+  @Test
+  void keyboard() {
+    String html = render("keyboard");
+    assertTrue(html.contains("<svg "), html);
+    assertTrue(html.contains("<rect "), html); // the square
+  }
+
+  @Test
+  void turtle() {
+    String html = render("turtle");
+    assertTrue(html.contains("<svg "), html);
+    assertTrue(html.contains("<image "), html);
+    assertTrue(html.contains("turtle.gif"), html);
+  }
+
+  @Test
+  void mario() {
+    String html = render("mario");
+    assertTrue(html.contains("<svg "), html);
+    assertTrue(html.contains("<image "), html);
+    assertTrue(html.contains("mario"), html);
   }
 }

@@ -53,7 +53,8 @@ public final class Prelude {
   };
 
   private static final String[] SVG_TAGS = {
-    "svg", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "path", "text_:text"
+    "svg", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "path", "image",
+    "text_:text"
   };
 
   private static final String[] SVG_ATTRS = {
@@ -578,6 +579,9 @@ public final class Prelude {
     CTOR_ARITY.put("LT", 0);
     CTOR_ARITY.put("EQ", 0);
     CTOR_ARITY.put("GT", 0);
+    // Browser.Events.Visibility, referenced as E.Visible / E.Hidden by elm-playground.
+    CTOR_ARITY.put("Visible", 0);
+    CTOR_ARITY.put("Hidden", 0);
   }
 
   // --- Basics ------------------------------------------------------------

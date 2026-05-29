@@ -30,11 +30,11 @@ Status: ✅ = working & tested headlessly (interpreter/bytecode), ⏳ = not yet.
 | 20 | WebGL | Thwomp | `thwomp` | webgl, mouse |
 | 21 | WebGL | First Person | `first-person` | webgl, keyboard |
 | 22 | Playground | Picture | `picture` | ✅ | real evancz/elm-playground loaded via module system, rendered to SVG |
-| 23 | Playground | Animation | `animation` | elm-playground, animate |
-| 24 | Playground | Mouse | `mouse` | elm-playground, mouse |
-| 25 | Playground | Keyboard | `keyboard` | elm-playground, keyboard |
-| 26 | Playground | Turtle | `turtle` | elm-playground |
-| 27 | Playground | Mario | `mario` | elm-playground, sprites |
+| 23 | Playground | Animation | `animation` | ✅ | elm-playground; renders initial frame (octagons + bar) |
+| 24 | Playground | Mouse | `mouse` | ✅ | elm-playground game; initial frame |
+| 25 | Playground | Keyboard | `keyboard` | ✅ | elm-playground game; initial frame |
+| 26 | Playground | Turtle | `turtle` | ✅ | elm-playground game + image |
+| 27 | Playground | Mario | `mario` | ✅ | elm-playground game + sprite image |
 
 ## Backends
 
