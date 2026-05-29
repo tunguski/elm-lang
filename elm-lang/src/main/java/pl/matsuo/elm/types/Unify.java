@@ -13,7 +13,23 @@ public final class Unify {
 
   private Unify() {}
 
+  private static int depth = 0;
+
+  /** Unifies two types, guarding against pathological deep recursion (reported as a type error
+   * rather than a {@link StackOverflowError}). */
   public static void unify(Ty a0, Ty b0) {
+    if (++depth > 400) {
+      depth--;
+      throw new ElmTypeError("Type is too complex to unify");
+    }
+    try {
+      unify0(a0, b0);
+    } finally {
+      depth--;
+    }
+  }
+
+  private static void unify0(Ty a0, Ty b0) {
     Ty a = prune(a0);
     Ty b = prune(b0);
     if (a == b) {
@@ -145,20 +161,41 @@ public final class Unify {
         onlyB.put(e.getKey(), e.getValue());
       }
     }
-    if (onlyA.isEmpty() && onlyB.isEmpty()) {
-      unifyTails(a.tail(), b.tail());
+    boolean aClosed = a.tail() == null;
+    boolean bClosed = b.tail() == null;
+
+    if (aClosed && bClosed) {
+      if (!onlyA.isEmpty() || !onlyB.isEmpty()) {
+        throw mismatch(a, b);
+      }
       return;
     }
-    Ty fresh = new Ty.Var(0, Constraint.NONE);
-    // A must be able to grow the fields B uniquely has, and vice versa.
-    unifyTails(a.tail(), onlyB.isEmpty() ? b.tail() : new Ty.Record(onlyB, fresh));
-    unifyTails(b.tail(), onlyA.isEmpty() ? a.tail() : new Ty.Record(onlyA, fresh));
-  }
-
-  private static void unifyTails(Ty a, Ty b) {
-    Ty ta = a == null ? new Ty.Record(Map.of(), null) : a;
-    Ty tb = b == null ? new Ty.Record(Map.of(), null) : b;
-    unify(ta, tb);
+    if (aClosed) {
+      // b is open; it cannot require fields a (closed) lacks, and its tail is exactly a's remainder.
+      if (!onlyB.isEmpty()) {
+        throw mismatch(a, b);
+      }
+      unify(b.tail(), new Ty.Record(onlyA, null));
+      return;
+    }
+    if (bClosed) {
+      if (!onlyA.isEmpty()) {
+        throw mismatch(a, b);
+      }
+      unify(a.tail(), new Ty.Record(onlyB, null));
+      return;
+    }
+    // Both open: if they share the same row variable, the surplus fields are irreconcilable.
+    if (prune(a.tail()) == prune(b.tail())) {
+      if (onlyA.isEmpty() && onlyB.isEmpty()) {
+        return;
+      }
+      throw mismatch(a, b);
+    }
+    // Route each record's surplus through a shared fresh row variable.
+    Ty rest = new Ty.Var(0, Constraint.NONE);
+    unify(a.tail(), new Ty.Record(onlyB, rest));
+    unify(b.tail(), new Ty.Record(onlyA, rest));
   }
 
   // --- helpers -----------------------------------------------------------

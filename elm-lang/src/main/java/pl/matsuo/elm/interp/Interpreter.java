@@ -65,8 +65,8 @@ public final class Interpreter {
       pl.matsuo.elm.types.Infer infer = new pl.matsuo.elm.types.Infer();
       infer.inferModule(module, pl.matsuo.elm.types.Signatures.globals());
       floatLiterals = infer.floatLiterals();
-    } catch (RuntimeException ignored) {
-      // keep untyped
+    } catch (Throwable ignored) {
+      // Any inference failure (unsigned builtin, type error, or pathological recursion): keep untyped.
     }
     this.compiler = new Compiler(env, floatLiterals);
     load(module);

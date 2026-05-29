@@ -22,6 +22,7 @@ public final class Infer {
 
   private int level = 1;
   private final Map<String, AliasDef> aliases = new HashMap<>();
+  private final Map<String, String> moduleAliases = new HashMap<>();
   private final Map<Expr, Ty> numericLiterals = new IdentityHashMap<>();
 
   private record AliasDef(List<String> params, Type body) {}
@@ -54,9 +55,29 @@ public final class Infer {
   public Map<String, Scheme> inferModule(Module module, Map<String, Scheme> base) {
     Map<String, Scheme> globals = new HashMap<>(base);
     aliases.clear();
+    moduleAliases.clear();
     for (Decl d : module.decls()) {
       if (d instanceof Decl.TypeAlias ta) {
         aliases.put(ta.name(), new AliasDef(ta.params(), ta.type()));
+      }
+    }
+    // Mirror the runtime's import resolution so exposed names resolve during inference.
+    for (Module.Import imp : module.imports()) {
+      imp.alias().ifPresent(a -> moduleAliases.put(a, imp.module()));
+      if (imp.exposing().open()) {
+        String prefix = imp.module() + ".";
+        for (String key : new java.util.ArrayList<>(globals.keySet())) {
+          if (key.startsWith(prefix)) {
+            globals.putIfAbsent(key.substring(prefix.length()), globals.get(key));
+          }
+        }
+      } else {
+        for (String name : imp.exposing().names()) {
+          Scheme s = globals.get(imp.module() + "." + name);
+          if (s != null) {
+            globals.put(name, s);
+          }
+        }
       }
     }
     for (Decl d : module.decls()) {
@@ -382,7 +403,8 @@ public final class Infer {
   private Scheme resolve(TypeEnv env, String module, String name) {
     Scheme s = env.lookup(name);
     if (s == null && module != null) {
-      s = env.globals().get(module + "." + name);
+      String real = moduleAliases.getOrDefault(module, module);
+      s = env.globals().get(real + "." + name);
     }
     if (s == null) {
       s = env.globals().get(name);

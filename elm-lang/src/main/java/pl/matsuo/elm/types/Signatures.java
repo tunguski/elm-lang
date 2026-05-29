@@ -11,6 +11,24 @@ public final class Signatures {
   private static final Map<String, Scheme> GLOBALS = new HashMap<>();
   private static final Map<String, Scheme> OPERATORS = new HashMap<>();
 
+  private static final String[] HTML_ELEMENTS = {
+    "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "a", "img", "button",
+    "input", "label", "form", "section", "header", "footer", "nav", "br", "hr", "table", "thead",
+    "tbody", "tr", "td", "th", "pre", "code", "strong", "em", "i", "b", "small", "select", "option",
+    "textarea", "canvas", "blockquote", "cite", "figure", "figcaption", "main_", "article", "audio",
+    "video", "u", "s", "sup", "sub", "kbd", "samp", "dl", "dt", "dd"
+  };
+
+  private static final String[] HTML_STRING_ATTRS = {
+    "class", "id", "href", "src", "alt", "title", "placeholder", "value", "name", "type_", "for_",
+    "rel", "target", "action", "method", "accept", "autocomplete", "min", "max", "step", "cols",
+    "rows", "tabindex"
+  };
+
+  private static final String[] HTML_BOOL_ATTRS = {
+    "disabled", "checked", "selected", "required", "autofocus", "hidden", "multiple"
+  };
+
   public static Map<String, Scheme> globals() {
     return GLOBALS;
   }
@@ -134,5 +152,192 @@ public final class Signatures {
     g("Tuple.pair", "a -> b -> ( a, b )");
     g("Tuple.first", "( a, b ) -> a");
     g("Tuple.second", "( a, b ) -> b");
+    g("Tuple.mapFirst", "(a -> x) -> ( a, b ) -> ( x, b )");
+    g("Tuple.mapSecond", "(b -> x) -> ( a, b ) -> ( a, x )");
+
+    // Char.
+    g("Char.toCode", "Char -> Int");
+    g("Char.fromCode", "Int -> Char");
+    g("Char.toUpper", "Char -> Char");
+    g("Char.toLower", "Char -> Char");
+    g("Char.isDigit", "Char -> Bool");
+    g("Char.isAlpha", "Char -> Bool");
+
+    // Debug.
+    g("Debug.toString", "a -> String");
+    g("Debug.log", "String -> a -> a");
+
+    registerHtml();
+    registerSvg();
+    registerBrowserAndEffects();
+    registerCollections();
+    registerMathWebGL();
+  }
+
+  private static void registerHtml() {
+    String elem = "List (Attribute msg) -> List (Html msg) -> Html msg";
+    for (String tag : HTML_ELEMENTS) {
+      g("Html." + tag, elem);
+    }
+    g("Html.text", "String -> Html msg");
+    g("Html.node", "String -> " + elem);
+    g("Html.map", "(a -> b) -> Html a -> Html b");
+    for (String attr : HTML_STRING_ATTRS) {
+      g("Html.Attributes." + attr, "String -> Attribute msg");
+    }
+    g("Html.Attributes.width", "Int -> Attribute msg");
+    g("Html.Attributes.height", "Int -> Attribute msg");
+    for (String attr : HTML_BOOL_ATTRS) {
+      g("Html.Attributes." + attr, "Bool -> Attribute msg");
+    }
+    g("Html.Attributes.style", "String -> String -> Attribute msg");
+    g("Html.Attributes.classList", "List ( String, Bool ) -> Attribute msg");
+    g("Html.Events.onClick", "msg -> Attribute msg");
+    g("Html.Events.onInput", "(String -> msg) -> Attribute msg");
+    g("Html.Events.onCheck", "(Bool -> msg) -> Attribute msg");
+    g("Html.Events.onSubmit", "msg -> Attribute msg");
+    g("Html.Events.onMouseDown", "msg -> Attribute msg");
+    g("Html.Events.onMouseUp", "msg -> Attribute msg");
+    g("Html.Events.on", "String -> Decoder msg -> Attribute msg");
+    g("Html.Events.preventDefaultOn", "String -> Decoder ( msg, Bool ) -> Attribute msg");
+    g("Html.Events.stopPropagationOn", "String -> Decoder ( msg, Bool ) -> Attribute msg");
+  }
+
+  private static void registerSvg() {
+    String elem = "List (Attribute msg) -> List (Svg msg) -> Svg msg";
+    for (String tag :
+        new String[] {
+          "svg", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "path", "image",
+          "text_"
+        }) {
+      g("Svg." + tag, elem);
+    }
+    g("Svg.text", "String -> Svg msg");
+    for (String attr :
+        new String[] {
+          "width", "height", "viewBox", "cx", "cy", "r", "x", "y", "x1", "y1", "x2", "y2", "rx",
+          "ry", "fill", "stroke", "strokeWidth", "points", "d", "transform", "opacity",
+          "fillOpacity", "strokeLinecap", "fontSize", "textAnchor", "fontFamily", "xlinkHref",
+          "dominantBaseline"
+        }) {
+      g("Svg.Attributes." + attr, "String -> Attribute msg");
+    }
+  }
+
+  private static void registerBrowserAndEffects() {
+    g("Browser.sandbox", "{ init : model, update : msg -> model -> model, view : model -> Html msg } -> Program () model msg");
+    g("Browser.element", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg, view : model -> Html msg } -> Program flags model msg");
+    g("Browser.document", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg, view : model -> { title : String, body : List (Html msg) } } -> Program flags model msg");
+    g("Cmd.none", "Cmd msg");
+    g("Cmd.batch", "List (Cmd msg) -> Cmd msg");
+    g("Cmd.map", "(a -> b) -> Cmd a -> Cmd b");
+    g("Sub.none", "Sub msg");
+    g("Sub.batch", "List (Sub msg) -> Sub msg");
+    g("Sub.map", "(a -> b) -> Sub a -> Sub b");
+
+    g("Random.generate", "(a -> msg) -> Generator a -> Cmd msg");
+    g("Random.int", "Int -> Int -> Generator Int");
+    g("Random.float", "Float -> Float -> Generator Float");
+    g("Random.uniform", "a -> List a -> Generator a");
+    g("Random.list", "Int -> Generator a -> Generator (List a)");
+    g("Random.pair", "Generator a -> Generator b -> Generator ( a, b )");
+    g("Random.map", "(a -> b) -> Generator a -> Generator b");
+    g("Random.map2", "(a -> b -> c) -> Generator a -> Generator b -> Generator c");
+    g("Random.constant", "a -> Generator a");
+    g("Random.andThen", "(a -> Generator b) -> Generator a -> Generator b");
+
+    g("Time.every", "Float -> (Posix -> msg) -> Sub msg");
+    g("Time.millisToPosix", "Int -> Posix");
+    g("Time.posixToMillis", "Posix -> Int");
+    g("Time.toHour", "Zone -> Posix -> Int");
+    g("Time.toMinute", "Zone -> Posix -> Int");
+    g("Time.toSecond", "Zone -> Posix -> Int");
+    g("Time.utc", "Zone");
+    g("Time.here", "Task x Zone");
+    g("Time.now", "Task x Posix");
+
+    g("Task.perform", "(a -> msg) -> Task x a -> Cmd msg");
+    g("Task.attempt", "(Result x a -> msg) -> Task x a -> Cmd msg");
+    g("Task.succeed", "a -> Task x a");
+    g("Task.sequence", "List (Task x a) -> Task x (List a)");
+
+    g("Http.get", "{ url : String, expect : Expect msg } -> Cmd msg");
+    g("Http.expectString", "(Result Error String -> msg) -> Expect msg");
+    g("Http.expectJson", "(Result Error a -> msg) -> Decoder a -> Expect msg");
+
+    g("Json.Decode.string", "Decoder String");
+    g("Json.Decode.int", "Decoder Int");
+    g("Json.Decode.float", "Decoder Float");
+    g("Json.Decode.bool", "Decoder Bool");
+    g("Json.Decode.field", "String -> Decoder a -> Decoder a");
+    g("Json.Decode.at", "List String -> Decoder a -> Decoder a");
+    g("Json.Decode.list", "Decoder a -> Decoder (List a)");
+    g("Json.Decode.map", "(a -> b) -> Decoder a -> Decoder b");
+    g("Json.Decode.map2", "(a -> b -> v) -> Decoder a -> Decoder b -> Decoder v");
+    g("Json.Decode.map3", "(a -> b -> c -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder v");
+    g("Json.Decode.map4", "(a -> b -> c -> d -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder v");
+    g("Json.Decode.succeed", "a -> Decoder a");
+    g("Json.Decode.andThen", "(a -> Decoder b) -> Decoder a -> Decoder b");
+    g("Json.Decode.oneOrMore", "(a -> List a -> v) -> Decoder a -> Decoder v");
+
+    g("File.decoder", "Decoder File");
+    g("File.toUrl", "File -> Task x String");
+    g("File.name", "File -> String");
+    g("File.mime", "File -> String");
+    g("File.Select.file", "List String -> (File -> msg) -> Cmd msg");
+    g("File.Select.files", "List String -> (File -> List File -> msg) -> Cmd msg");
+  }
+
+  private static void registerCollections() {
+    g("Dict.empty", "Dict k v");
+    g("Dict.singleton", "comparable -> v -> Dict comparable v");
+    g("Dict.insert", "comparable -> v -> Dict comparable v -> Dict comparable v");
+    g("Dict.remove", "comparable -> Dict comparable v -> Dict comparable v");
+    g("Dict.get", "comparable -> Dict comparable v -> Maybe v");
+    g("Dict.member", "comparable -> Dict comparable v -> Bool");
+    g("Dict.size", "Dict k v -> Int");
+    g("Dict.keys", "Dict k v -> List k");
+    g("Dict.values", "Dict k v -> List v");
+    g("Dict.toList", "Dict k v -> List ( k, v )");
+    g("Dict.fromList", "List ( comparable, v ) -> Dict comparable v");
+    g("Dict.map", "(k -> a -> b) -> Dict k a -> Dict k b");
+    g("Dict.foldl", "(k -> v -> b -> b) -> b -> Dict k v -> b");
+
+    g("Set.empty", "Set a");
+    g("Set.singleton", "comparable -> Set comparable");
+    g("Set.insert", "comparable -> Set comparable -> Set comparable");
+    g("Set.remove", "comparable -> Set comparable -> Set comparable");
+    g("Set.member", "comparable -> Set comparable -> Bool");
+    g("Set.size", "Set a -> Int");
+    g("Set.toList", "Set a -> List a");
+    g("Set.fromList", "List comparable -> Set comparable");
+
+    g("Array.empty", "Array a");
+    g("Array.fromList", "List a -> Array a");
+    g("Array.toList", "Array a -> List a");
+    g("Array.length", "Array a -> Int");
+    g("Array.get", "Int -> Array a -> Maybe a");
+    g("Array.set", "Int -> a -> Array a -> Array a");
+    g("Array.push", "a -> Array a -> Array a");
+    g("Array.map", "(a -> b) -> Array a -> Array b");
+  }
+
+  private static void registerMathWebGL() {
+    g("Math.Vector2.vec2", "Float -> Float -> Vec2");
+    g("Math.Vector3.vec3", "Float -> Float -> Float -> Vec3");
+    g("Math.Vector3.getX", "Vec3 -> Float");
+    g("Math.Vector3.getY", "Vec3 -> Float");
+    g("Math.Vector3.getZ", "Vec3 -> Float");
+    g("Math.Vector3.add", "Vec3 -> Vec3 -> Vec3");
+    g("Math.Vector3.scale", "Float -> Vec3 -> Vec3");
+    g("Math.Matrix4.identity", "Mat4");
+    g("Math.Matrix4.mul", "Mat4 -> Mat4 -> Mat4");
+    g("Math.Matrix4.makePerspective", "Float -> Float -> Float -> Float -> Mat4");
+    g("Math.Matrix4.makeLookAt", "Vec3 -> Vec3 -> Vec3 -> Mat4");
+    g("Math.Matrix4.makeRotate", "Float -> Vec3 -> Mat4");
+    g("Math.Matrix4.makeTranslate", "Vec3 -> Mat4");
+    g("WebGL.toHtml", "List (Attribute msg) -> List Entity -> Html msg");
+    g("WebGL.entity", "a -> b -> Mesh c -> d -> Entity");
+    g("WebGL.triangles", "List ( v, v, v ) -> Mesh v");
   }
 }

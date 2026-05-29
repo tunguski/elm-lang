@@ -2,12 +2,36 @@ package pl.matsuo.elm.types;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import pl.matsuo.elm.error.ElmTypeError;
 
 class ModuleCheckTest {
+
+  private static String example(String slug) throws Exception {
+    try (InputStream in = ModuleCheckTest.class.getResourceAsStream("/examples/" + slug + ".elm")) {
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    }
+  }
+
+  @Test
+  void buttonsExampleTypeChecks() throws Exception {
+    Map<String, String> types = TypeChecker.checkModule(example("buttons"));
+    assertTrue(types.get("main").startsWith("Program"), types.get("main"));
+    // String.fromInt forces the model to Int (not a polymorphic number).
+    assertEquals("Msg -> Int -> Int", types.get("update"));
+  }
+
+  @Test
+  void textFieldsExampleTypeChecks() throws Exception {
+    // Record alias, record update and Browser.sandbox must all unify.
+    Map<String, String> types = TypeChecker.checkModule(example("text-fields"));
+    assertTrue(types.get("main").startsWith("Program"), types.get("main"));
+  }
 
   @Test
   void infersTopLevelTypes() {
