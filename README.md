@@ -36,7 +36,18 @@ java -cp <classpath> pl.matsuo.elm.Main js path/to/Main.elm
 ```
 
 CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME]`, `js <file.elm>`,
-`eval "<expr>" [--backend ...]`.
+`eval "<expr>" [--backend ...]`, `check <file.elm>` (type-check and print inferred types).
+
+## Type inference
+
+A from-scratch **Hindley–Milner** type checker ([`pl.matsuo.elm.types`](elm-lang/src/main/java/pl/matsuo/elm/types/))
+infers types for expressions and whole modules, with Elm's constrained type variables
+(`number`/`comparable`/`appendable`), let-generalization, row-polymorphic records, custom types,
+record-alias constructors, type-alias expansion and annotation checking. So `1 + 1.5 : Float`,
+`List.map : (a -> b) -> List a -> List b`, and mistakes like `1 + "a"`, a non-`Bool` `if`
+condition, or `\f -> f f` are reported as type errors. It runs via `check` / `TypeChecker`; it is
+not yet wired as a mandatory pass before evaluation (the prelude signatures cover the core library,
+not yet every Html/WebGL builtin).
 
 ## Language coverage
 

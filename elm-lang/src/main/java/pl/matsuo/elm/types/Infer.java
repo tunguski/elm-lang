@@ -1,12 +1,15 @@
 package pl.matsuo.elm.types;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
+import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Pattern;
+import pl.matsuo.elm.ast.Type;
 import pl.matsuo.elm.error.ElmTypeError;
 
 /** Algorithm-W type inference over {@link Expr}, with let-generalization and Elm's constrained
@@ -15,9 +18,125 @@ import pl.matsuo.elm.error.ElmTypeError;
 public final class Infer {
 
   private int level = 1;
+  private final Map<String, AliasDef> aliases = new HashMap<>();
+
+  private record AliasDef(List<String> params, Type body) {}
 
   private Ty fresh() {
     return new Ty.Var(level, Ty.Constraint.NONE);
+  }
+
+  // --- whole-module inference --------------------------------------------
+
+  /** Infers the types of all top-level definitions, registering the module's custom types, record
+   * aliases and constructors; throws {@link ElmTypeError} on a type error. */
+  public Map<String, Scheme> inferModule(Module module, Map<String, Scheme> base) {
+    Map<String, Scheme> globals = new HashMap<>(base);
+    aliases.clear();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.TypeAlias ta) {
+        aliases.put(ta.name(), new AliasDef(ta.params(), ta.type()));
+      }
+    }
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Union u) {
+        registerUnion(u, globals);
+      } else if (d instanceof Decl.TypeAlias ta && ta.type() instanceof Type.Record) {
+        registerRecordAliasConstructor(ta, globals);
+      }
+    }
+
+    TypeEnv env = TypeEnv.root(globals);
+    int outer = level;
+    level++;
+    Map<String, Ty> placeholders = new LinkedHashMap<>();
+    TypeEnv rec = env;
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v) {
+        Ty ph = fresh();
+        placeholders.put(v.name(), ph);
+        rec = rec.extend(v.name(), Scheme.mono(ph));
+      }
+    }
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v) {
+        Ty ph = placeholders.get(v.name());
+        v.annotation().ifPresent(ann -> Unify.unify(ph, astToTy(ann, new HashMap<>())));
+        Ty rhs = v.params().isEmpty() ? infer(rec, v.body()) : inferLambda(rec, v.params(), v.body());
+        Unify.unify(ph, rhs);
+      }
+    }
+    level = outer;
+
+    Map<String, Scheme> result = new LinkedHashMap<>();
+    placeholders.forEach((name, ph) -> result.put(name, Types.generalize(Types.prune(ph), outer)));
+    return result;
+  }
+
+  private void registerUnion(Decl.Union u, Map<String, Scheme> globals) {
+    Map<String, Ty> params = new LinkedHashMap<>();
+    for (String p : u.params()) {
+      params.put(p, fresh());
+    }
+    Ty result = new Ty.Con(u.name(), new ArrayList<>(params.values()));
+    List<Ty.Var> vars = params.values().stream().map(t -> (Ty.Var) t).toList();
+    for (Decl.Union.Variant variant : u.variants()) {
+      Ty ctor = result;
+      List<Type> args = variant.args();
+      for (int i = args.size() - 1; i >= 0; i--) {
+        ctor = new Ty.Arrow(astToTy(args.get(i), reuse(params)), ctor);
+      }
+      globals.put(variant.name(), new Scheme(vars, ctor));
+    }
+  }
+
+  private void registerRecordAliasConstructor(Decl.TypeAlias ta, Map<String, Scheme> globals) {
+    Map<String, Ty> params = new LinkedHashMap<>();
+    for (String p : ta.params()) {
+      params.put(p, fresh());
+    }
+    Type.Record rec = (Type.Record) ta.type();
+    Ty recordTy = astToTy(ta.type(), reuse(params));
+    Ty ctor = recordTy;
+    List<Type.Record.Field> fields = rec.fields();
+    for (int i = fields.size() - 1; i >= 0; i--) {
+      ctor = new Ty.Arrow(astToTy(fields.get(i).type(), reuse(params)), ctor);
+    }
+    globals.put(ta.name(), new Scheme(params.values().stream().map(t -> (Ty.Var) t).toList(), ctor));
+  }
+
+  /** A param map that reuses the same variable objects (so a scheme's vars stay shared). */
+  private Map<String, Ty> reuse(Map<String, Ty> params) {
+    return new HashMap<>(params);
+  }
+
+  /** Converts a surface {@link Type} to an inference {@link Ty}, expanding type aliases. */
+  private Ty astToTy(Type type, Map<String, Ty> vars) {
+    return switch (type) {
+      case Type.Var v -> vars.computeIfAbsent(v.name(), n -> fresh());
+      case Type.Unit ignored -> new Ty.Unit();
+      case Type.Arrow a -> new Ty.Arrow(astToTy(a.from(), vars), astToTy(a.to(), vars));
+      case Type.Tuple t -> new Ty.Tuple(t.items().stream().map(x -> astToTy(x, vars)).toList());
+      case Type.Record r -> {
+        Map<String, Ty> fields = new LinkedHashMap<>();
+        for (Type.Record.Field f : r.fields()) {
+          fields.put(f.name(), astToTy(f.type(), vars));
+        }
+        Ty tail = r.base().map(b -> vars.computeIfAbsent(b, n -> fresh())).orElse(null);
+        yield new Ty.Record(fields, tail);
+      }
+      case Type.Con c -> {
+        AliasDef alias = aliases.get(c.name());
+        if (alias != null) {
+          Map<String, Ty> sub = new HashMap<>();
+          for (int i = 0; i < alias.params().size() && i < c.args().size(); i++) {
+            sub.put(alias.params().get(i), astToTy(c.args().get(i), vars));
+          }
+          yield astToTy(alias.body(), sub);
+        }
+        yield new Ty.Con(c.name(), c.args().stream().map(x -> astToTy(x, vars)).toList());
+      }
+    };
   }
 
   private Ty fresh(Ty.Constraint c) {

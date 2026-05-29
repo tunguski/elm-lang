@@ -79,6 +79,12 @@ public final class Signatures {
     g("sqrt", "Float -> Float");
     g("modBy", "Int -> Int -> Int");
     g("remainderBy", "Int -> Int -> Int");
+    g("pi", "Float");
+    g("e", "Float");
+    g("sin", "Float -> Float");
+    g("cos", "Float -> Float");
+    g("tan", "Float -> Float");
+    g("logBase", "Float -> Float -> Float");
 
     // List.
     g("List.map", "(a -> b) -> List a -> List b");

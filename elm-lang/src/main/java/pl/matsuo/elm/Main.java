@@ -50,6 +50,15 @@ public final class Main {
                 : Interpreter.eval(args[1]);
         System.out.println(Show.plain(value));
       }
+      case "check" -> {
+        String source = Files.readString(Path.of(args[1]));
+        try {
+          pl.matsuo.elm.types.TypeChecker.checkModule(source)
+              .forEach((name, type) -> System.out.println(name + " : " + type));
+        } catch (pl.matsuo.elm.error.ElmTypeError e) {
+          System.out.println("Type error: " + e.getMessage());
+        }
+      }
       default -> usage();
     }
   }
@@ -88,6 +97,7 @@ public final class Main {
           run   <file.elm> [--backend interp|bytecode] [--value NAME]
           js    <file.elm>
           eval  "<expression>" [--backend interp|bytecode]
+          check <file.elm>
         """);
   }
 }
