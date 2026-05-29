@@ -176,6 +176,23 @@ class InterpreterTest {
   }
 
   @Test
+  void specializedOperators() {
+    // Exercises the Truffle DSL arithmetic/comparison nodes incl. derived >, <=, >=, /=.
+    assertEquals(7L, eval("3 + 4"));
+    assertEquals(2.5, eval("5.0 / 2.0"));
+    assertEquals(6.0, eval("2.0 * 3.0"));
+    assertEquals(true, eval("5 >= 5"));
+    assertEquals(true, eval("4 <= 5"));
+    assertEquals(false, eval("5 <= 4"));
+    assertEquals(true, eval("5 > 4"));
+    assertEquals(true, eval("3 /= 4"));
+    assertEquals(false, eval("3 /= 3"));
+    assertEquals(true, eval("1.5 < 2.5"));
+    assertEquals(true, eval("\"a\" <= \"b\"")); // structural fallback + derived negate/swap
+    assertEquals(true, eval("[1,2] < [1,3]"));
+  }
+
+  @Test
   void tailCallOptimizationIf() {
     // Without TCO this 1,000,000-deep self-recursion would overflow the JVM stack.
     String src =

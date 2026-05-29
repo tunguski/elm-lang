@@ -211,27 +211,54 @@ public final class Nodes {
     }
   }
 
+  /**
+   * Binary operator node. {@code &&}/{@code ||} short-circuit; {@code + - * < ==} (and the derived
+   * {@code > <= >= /=}) dispatch through self-specializing Truffle DSL nodes; the rest use
+   * {@link Operators}.
+   */
   public static final class BinOp extends ElmNode {
     private final String op;
     @Child private ElmNode left;
     @Child private ElmNode right;
+    @Child private pl.matsuo.elm.interp.num.BinaryOp opNode;
+    private final boolean swap;
+    private final boolean negate;
 
     public BinOp(String op, ElmNode left, ElmNode right) {
       this.op = op;
       this.left = left;
       this.right = right;
+      this.opNode = makeOpNode(op);
+      this.swap = op.equals(">") || op.equals("<=");
+      this.negate = op.equals("<=") || op.equals(">=") || op.equals("/=");
+    }
+
+    private static pl.matsuo.elm.interp.num.BinaryOp makeOpNode(String op) {
+      return switch (op) {
+        case "+" -> pl.matsuo.elm.interp.num.AddNodeGen.create();
+        case "-" -> pl.matsuo.elm.interp.num.SubNodeGen.create();
+        case "*" -> pl.matsuo.elm.interp.num.MulNodeGen.create();
+        case "<", ">", "<=", ">=" -> pl.matsuo.elm.interp.num.LessNodeGen.create();
+        case "==", "/=" -> pl.matsuo.elm.interp.num.EqualsNodeGen.create();
+        default -> null;
+      };
     }
 
     @Override
     public Object execute(Scope scope) {
-      // Short-circuit boolean operators.
       if (op.equals("&&")) {
         return (Boolean) left.execute(scope) ? right.execute(scope) : Boolean.FALSE;
       }
       if (op.equals("||")) {
         return (Boolean) left.execute(scope) ? Boolean.TRUE : right.execute(scope);
       }
-      return Operators.binary(op, left.execute(scope), right.execute(scope));
+      Object l = left.execute(scope);
+      Object r = right.execute(scope);
+      if (opNode == null) {
+        return Operators.binary(op, l, r);
+      }
+      Object result = swap ? opNode.execute(r, l) : opNode.execute(l, r);
+      return negate ? !(Boolean) result : result;
     }
   }
 
