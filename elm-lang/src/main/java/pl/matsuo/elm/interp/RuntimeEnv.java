@@ -56,12 +56,12 @@ public final class RuntimeEnv {
     if (canonical != null) {
       Object v = builtins.get(canonical);
       if (v != null) {
-        return v;
+        return Thunk.resolve(v);
       }
     }
     Object direct = builtins.get(name);
     if (direct != null) {
-      return direct;
+      return Thunk.resolve(direct);
     }
     throw new ElmRuntimeError("Unbound variable: " + name);
   }
@@ -70,7 +70,7 @@ public final class RuntimeEnv {
     String realModule = aliases.getOrDefault(module, module);
     Object v = builtins.get(realModule + "." + name);
     if (v != null) {
-      return v;
+      return Thunk.resolve(v);
     }
     if (realModule.equals(currentModule)) {
       Object top = topLevel.get(name);
