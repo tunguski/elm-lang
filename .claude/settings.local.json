@@ -20,7 +20,12 @@
       "Read(//c/Users/marek/.m2/wrapper/dists/**)",
       "Bash(javac --release 25 --enable-preview -d /tmp/vcout /tmp/VC.java)",
       "Bash(command -v mvn)",
-      "PowerShell(Set-Location c:\\\\Users\\\\marek\\\\w\\\\elm-lang\\\\elm-lang; & .\\\\mvnw.cmd -B test 1>build.log; \"EXIT=$LASTEXITCODE\"; Select-String -Path build.log -Pattern \"Tests run|BUILD SUCCESS|BUILD FAILURE|ERROR\" | Select-Object -Last 15 | ForEach-Object { $_.Line })"
+      "PowerShell(Set-Location c:\\\\Users\\\\marek\\\\w\\\\elm-lang\\\\elm-lang; & .\\\\mvnw.cmd -B test 1>build.log; \"EXIT=$LASTEXITCODE\"; Select-String -Path build.log -Pattern \"Tests run|BUILD SUCCESS|BUILD FAILURE|ERROR\" | Select-Object -Last 15 | ForEach-Object { $_.Line })",
+      "Bash(curl -sL -m 30 https://elm-lang.org/examples -o /tmp/examples.html)",
+      "Read(//tmp/**)",
+      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/truffle/truffle-api/maven-metadata.xml)",
+      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/truffle/truffle-dsl-processor/maven-metadata.xml)",
+      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/polyglot/polyglot/maven-metadata.xml)"
     ]
   }
 }
