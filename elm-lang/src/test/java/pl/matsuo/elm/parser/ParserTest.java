@@ -48,7 +48,9 @@ class ParserTest {
   void unaryNegation() {
     assertEquals("(neg x)", expr("-x"));
     assertEquals("(- a (neg b))", expr("a - -b"));
-    assertEquals("(- f 1)", expr("f - 1"));
+    assertEquals("(- f 1)", expr("f - 1")); // spaces both sides: subtraction
+    assertEquals("(f (neg y))", expr("f -y")); // space before, none after: negated argument
+    assertEquals("((String.fromFloat (neg y)) x)", expr("String.fromFloat -y x"));
   }
 
   // --- atoms -------------------------------------------------------------

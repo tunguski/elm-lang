@@ -397,9 +397,19 @@ public final class Parser {
 
   private Expr parseApplication() {
     Expr fn = parseAtom();
-    while (continues() && startsAtomArg()) {
-      Expr arg = parseAtom();
-      fn = new Expr.App(fn, arg, fn.pos());
+    while (continues()) {
+      // Elm negation as an argument: `f -x` (space before `-`, none after) means `f (-x)`.
+      if (checkOp("-") && peek().spaceBefore() && !peek(1).spaceBefore() && startsAtom(peek(1))) {
+        Position pos = peek().start();
+        advance();
+        fn = new Expr.App(fn, new Expr.Negate(parseAtom(), pos), fn.pos());
+        continue;
+      }
+      if (startsAtomArg()) {
+        fn = new Expr.App(fn, parseAtom(), fn.pos());
+        continue;
+      }
+      break;
     }
     return fn;
   }
@@ -408,6 +418,13 @@ public final class Parser {
     return switch (peek().type()) {
       case INT, FLOAT, STRING, CHAR, LOWER, UPPER, LPAREN, LBRACKET, LBRACE -> true;
       case DOT -> peek(1).type() == TokenType.LOWER && !peek(1).spaceBefore();
+      default -> false;
+    };
+  }
+
+  private static boolean startsAtom(Token t) {
+    return switch (t.type()) {
+      case INT, FLOAT, STRING, CHAR, LOWER, UPPER, LPAREN, LBRACKET, LBRACE -> true;
       default -> false;
     };
   }
