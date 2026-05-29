@@ -152,7 +152,9 @@ public final class Lexer {
     Position start = here();
     char c = cur();
 
-    if (Character.isDigit(c)) {
+    if (c == '[' && src.startsWith("[glsl|", pos)) {
+      lexShader(start);
+    } else if (Character.isDigit(c)) {
       lexNumber(start);
     } else if (c == '"') {
       lexString(start);
@@ -277,6 +279,24 @@ public final class Lexer {
       }
     }
     emit(TokenType.STRING, sb.toString(), sb.toString(), start);
+  }
+
+  /** Lexes a GLSL shader literal {@code [glsl| ... |]}, capturing the source between the bars. */
+  private void lexShader(Position start) {
+    for (int i = 0; i < "[glsl|".length(); i++) {
+      advance();
+    }
+    int begin = pos;
+    while (!(cur() == '|' && peek(1) == ']')) {
+      if (atEnd()) {
+        throw new ElmSyntaxError("Unterminated GLSL shader literal", start);
+      }
+      advance();
+    }
+    String source = src.substring(begin, pos);
+    advance(); // |
+    advance(); // ]
+    emit(TokenType.GLSL, source, source, start);
   }
 
   private void lexMultilineString(Position start) {

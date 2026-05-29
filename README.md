@@ -53,29 +53,30 @@ Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`,
 
 ## elm-lang.org examples
 
-See [docs/examples.md](docs/examples.md). **19 of 27** pass headlessly with tests:
+See [docs/examples.md](docs/examples.md). **All 27** run headlessly with tests:
 
 - **HTML**: Hello, Groceries, Shapes
 - **User Input**: Buttons, Text Fields, Forms
 - **Random**: Numbers, Cards, Positions
 - **Time**: Time, Clock
 - **HTTP**: Book, Quotes (against stubbed responses)
+- **Files**: Upload, Drag-and-Drop, Image Previews (with stub files / `File.toUrl`)
 - **Playground**: Picture, Animation, Mouse, Keyboard, Turtle, Mario — these load the **real
   unmodified [evancz/elm-playground](https://github.com/evancz/elm-playground) source** (1700+
   lines) via the module system and render to SVG.
+- **WebGL**: Triangle, Cube, Crate, Thwomp, First Person — the programs run (building meshes,
+  computing `Math.Matrix4`/`Math.Vector3` transforms, assembling entities, loading stub textures)
+  and emit a `<canvas>` describing the scene.
 
 Interactive examples are driven by a headless `Tea` runtime that dispatches messages through
-`update` and re-renders the virtual DOM to HTML/SVG; commands (`Random`, `Task`, `Http`) and
-`Time` subscriptions are interpreted deterministically.
+`update` and re-renders the virtual DOM to HTML/SVG; effects (`Random`, `Task`, `Http`, `File`,
+`Time`) are interpreted deterministically with stubs.
 
-### Not yet working
+### Caveat on WebGL
 
-- **Files** (Upload, Drag-and-Drop, Image Previews): need real browser file selection / async
-  `File.toUrl` tasks.
-- **WebGL** (Triangle, Cube, Crate, Thwomp, First Person): need a GPU/WebGL context.
-
-These require executing in a **real browser** via the JS backend extended with the full Elm
-effect-manager kernel — a planned next phase, not achievable in a headless JVM.
+The WebGL examples execute correctly and produce the scene structure + a `<canvas>`, but **actual
+rasterized pixels need a real GPU/WebGL context**, which a headless JVM cannot provide. Verifying
+pixels would require running the JS backend in a real browser.
 
 ## Known limitations
 

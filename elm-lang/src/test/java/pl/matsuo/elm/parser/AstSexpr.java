@@ -18,6 +18,7 @@ final class AstSexpr {
       case Expr.FloatLit f -> Double.toString(f.value());
       case Expr.StrLit s -> '"' + s.value() + '"';
       case Expr.CharLit c -> "'" + new String(Character.toChars(c.codePoint())) + "'";
+      case Expr.Shader ignored -> "[glsl]";
       case Expr.Var v -> v.module() == null ? v.name() : v.module() + "." + v.name();
       case Expr.Ctor c -> c.module() == null ? c.name() : c.module() + "." + c.name();
       case Expr.OpFunc o -> "(" + o.op() + ")";

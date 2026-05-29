@@ -26,6 +26,8 @@ public final class BytecodeCompiler {
       case Expr.FloatLit f -> c.add(Instr.of(Op.PUSH_CONST, f.value()));
       case Expr.StrLit s -> c.add(Instr.of(Op.PUSH_CONST, s.value()));
       case Expr.CharLit ch -> c.add(Instr.of(Op.PUSH_CONST, new ElmChar(ch.codePoint())));
+      case Expr.Shader s ->
+          c.add(Instr.of(Op.PUSH_CONST, new pl.matsuo.elm.runtime.ElmData("$Shader", new Object[] {s.source()})));
       case Expr.Unit ignored -> c.add(Instr.of(Op.PUSH_CONST, ElmUnit.INSTANCE));
       case Expr.Var v -> {
         if (v.module() == null) {

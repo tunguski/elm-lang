@@ -25,6 +25,8 @@ public final class Compiler {
       case Expr.FloatLit f -> new Nodes.Const(f.value());
       case Expr.StrLit s -> new Nodes.Const(s.value());
       case Expr.CharLit c -> new Nodes.Const(new ElmChar(c.codePoint()));
+      case Expr.Shader s ->
+          new Nodes.Const(new pl.matsuo.elm.runtime.ElmData("$Shader", new Object[] {s.source()}));
       case Expr.Unit ignored -> new Nodes.Const(ElmUnit.INSTANCE);
       case Expr.Var v -> new Nodes.Var(v.module(), v.name(), env);
       case Expr.Ctor c -> new Nodes.Ctor(c.name(), env);

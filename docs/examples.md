@@ -21,14 +21,18 @@ Status: ✅ = working & tested headlessly (interpreter/bytecode), ⏳ = not yet.
 | 11 | HTTP | Quotes | `quotes` | ✅ | Http, Json.Decode (map4/field/int/string) |
 | 12 | Time | Time | `time` | ✅ | Browser.element, Time, subscriptions, Task |
 | 13 | Time | Clock | `clock` | ✅ | Time, Svg, subscriptions |
-| 14 | Files | Upload | `upload` | File, File.Select, Http |
-| 15 | Files | Drag-and-Drop | `drag-and-drop` | File, custom events, Json.Decode |
-| 16 | Files | Image Previews | `image-previews` | File, File.toUrl, tasks |
-| 17 | WebGL | Triangle | `triangle` | elm-explorations/webgl |
-| 18 | WebGL | Cube | `cube` | webgl, matrices |
-| 19 | WebGL | Crate | `crate` | webgl, textures |
-| 20 | WebGL | Thwomp | `thwomp` | webgl, mouse |
-| 21 | WebGL | First Person | `first-person` | webgl, keyboard |
+| 14 | Files | Upload | `upload` | ✅ | File input + decoder; driven with stub files |
+| 15 | Files | Drag-and-Drop | `drag-and-drop` | ✅ | File.Select + hover state; stub files |
+| 16 | Files | Image Previews | `image-previews` | ✅ | File.toUrl + Task.sequence → data URLs |
+| 17 | WebGL | Triangle | `triangle` | ✅* | runs; builds mesh/matrices, emits `<canvas>` |
+| 18 | WebGL | Cube | `cube` | ✅* | webgl, Mat4 transforms |
+| 19 | WebGL | Crate | `crate` | ✅* | webgl + stub texture (Task.attempt) |
+| 20 | WebGL | Thwomp | `thwomp` | ✅* | webgl, two textures, viewport |
+| 21 | WebGL | First Person | `first-person` | ✅* | webgl, keyboard, toHtmlWith |
+
+`✅*` = the program runs and produces the scene (meshes, matrices, entities) and a `<canvas>`
+element, verified headlessly. Actual rasterized pixels require a real GPU/WebGL context, which a
+headless JVM cannot provide.
 | 22 | Playground | Picture | `picture` | ✅ | real evancz/elm-playground loaded via module system, rendered to SVG |
 | 23 | Playground | Animation | `animation` | ✅ | elm-playground; renders initial frame (octagons + bar) |
 | 24 | Playground | Mouse | `mouse` | ✅ | elm-playground game; initial frame |

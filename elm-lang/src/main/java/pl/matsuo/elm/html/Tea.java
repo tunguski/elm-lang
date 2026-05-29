@@ -135,6 +135,10 @@ public final class Tea {
         Object value = runTask(d.arg(0));
         send(Apply.apply(d.arg(1), value));
       }
+      case "$Cmd_TaskAttempt" -> {
+        Object value = runTask(d.arg(0));
+        send(Apply.apply(d.arg(1), ok(value)));
+      }
       case "$Cmd_Http" -> runHttp((String) d.arg(0), (ElmData) d.arg(1));
       case "$Cmd_SelectFile" -> {
         if (!selectableFiles.isEmpty()) {

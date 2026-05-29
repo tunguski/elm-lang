@@ -115,6 +115,7 @@ public final class JsCompiler {
       case Expr.FloatLit f -> Double.toString(f.value());
       case Expr.StrLit s -> jsString(s.value());
       case Expr.CharLit c -> "$char(" + c.codePoint() + ")";
+      case Expr.Shader s -> "$data(\"$Shader\",[" + jsString(s.source()) + "])";
       case Expr.Unit ignored -> "$unit";
       case Expr.Var v -> compileVar(v);
       case Expr.Ctor c -> compileCtor(c.name());

@@ -16,6 +16,7 @@ import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmRecord;
 import pl.matsuo.elm.runtime.ElmSet;
 import pl.matsuo.elm.runtime.ElmTuple;
+import pl.matsuo.elm.webgl.GL;
 
 /**
  * The Elm standard-library prelude implemented as Java builtins, keyed by canonical
@@ -45,7 +46,7 @@ public final class Prelude {
   private static final String[] HTML_STRING_ATTRS = {
     "class", "id", "href", "src", "alt", "title", "placeholder", "value", "name", "type_:type",
     "for_:for", "rel", "target", "action", "method", "accept", "autocomplete", "min", "max", "step",
-    "cols", "rows", "colspan:colspan", "tabindex"
+    "cols", "rows", "colspan:colspan", "tabindex", "width", "height"
   };
 
   private static final String[] HTML_BOOL_ATTRS = {
@@ -416,7 +417,7 @@ public final class Prelude {
     fn("Time.toMillis", 2, a -> timePart(a[0], a[1], 1L, 1000));
 
     fn("Task.perform", 2, a -> d("$Cmd_Task", a[1], a[0])); // (toMsg, task) -> [task, toMsg]
-    fn("Task.attempt", 2, a -> d("$Cmd_Task", a[1], a[0]));
+    fn("Task.attempt", 2, a -> d("$Cmd_TaskAttempt", a[1], a[0])); // delivers Ok value / Err
     fn("Task.succeed", 1, a -> d("$Task_Const", a[0]));
 
     // Browser.Events: subscriptions to input/animation. Headlessly, the Tea driver fires
@@ -437,6 +438,126 @@ public final class Prelude {
     registerHttp();
     registerJson();
     registerFile();
+    registerMath();
+    registerWebGL();
+  }
+
+  // --- Math.Vector3 / Math.Matrix4 (elm-explorations/linear-algebra) -----
+
+  private static ElmData vec3(double x, double y, double z) {
+    return new ElmData("$Vec3", new Object[] {x, y, z});
+  }
+
+  private static double v3(Object v, int i) {
+    return Operators.toDouble(((ElmData) v).arg(i));
+  }
+
+  private static ElmData mat4(double[] m) {
+    return new ElmData("$Mat4", new Object[] {m});
+  }
+
+  private static double[] m4(Object o) {
+    return (double[]) ((ElmData) o).arg(0);
+  }
+
+  private static void registerMath() {
+    fn("Math.Vector3.vec3", 3,
+        a -> vec3(Operators.toDouble(a[0]), Operators.toDouble(a[1]), Operators.toDouble(a[2])));
+    BUILTINS.put("Math.Vector3.i", vec3(1, 0, 0));
+    BUILTINS.put("Math.Vector3.j", vec3(0, 1, 0));
+    BUILTINS.put("Math.Vector3.k", vec3(0, 0, 1));
+    fn("Math.Vector3.getX", 1, a -> v3(a[0], 0));
+    fn("Math.Vector3.getY", 1, a -> v3(a[0], 1));
+    fn("Math.Vector3.getZ", 1, a -> v3(a[0], 2));
+    fn("Math.Vector3.add", 2, a -> vec3(v3(a[0], 0) + v3(a[1], 0), v3(a[0], 1) + v3(a[1], 1), v3(a[0], 2) + v3(a[1], 2)));
+    fn("Math.Vector3.sub", 2, a -> vec3(v3(a[0], 0) - v3(a[1], 0), v3(a[0], 1) - v3(a[1], 1), v3(a[0], 2) - v3(a[1], 2)));
+    fn("Math.Vector3.scale", 2, a -> {
+      double k = Operators.toDouble(a[0]);
+      return vec3(k * v3(a[1], 0), k * v3(a[1], 1), k * v3(a[1], 2));
+    });
+    fn("Math.Vector3.negate", 1, a -> vec3(-v3(a[0], 0), -v3(a[0], 1), -v3(a[0], 2)));
+    fn("Math.Vector3.dot", 2, a -> v3(a[0], 0) * v3(a[1], 0) + v3(a[0], 1) * v3(a[1], 1) + v3(a[0], 2) * v3(a[1], 2));
+    fn("Math.Vector3.cross", 2, a -> vec3(
+        v3(a[0], 1) * v3(a[1], 2) - v3(a[0], 2) * v3(a[1], 1),
+        v3(a[0], 2) * v3(a[1], 0) - v3(a[0], 0) * v3(a[1], 2),
+        v3(a[0], 0) * v3(a[1], 1) - v3(a[0], 1) * v3(a[1], 0)));
+    fn("Math.Vector3.length", 1, a -> Math.sqrt(v3(a[0], 0) * v3(a[0], 0) + v3(a[0], 1) * v3(a[0], 1) + v3(a[0], 2) * v3(a[0], 2)));
+    fn("Math.Vector2.vec2", 2, a -> new ElmData("$Vec2", new Object[] {Operators.toDouble(a[0]), Operators.toDouble(a[1])}));
+    fn("Math.Vector2.getX", 1, a -> Operators.toDouble(((ElmData) a[0]).arg(0)));
+    fn("Math.Vector2.getY", 1, a -> Operators.toDouble(((ElmData) a[0]).arg(1)));
+    fn("Math.Vector3.normalize", 1, a -> {
+      double len = Math.sqrt(v3(a[0], 0) * v3(a[0], 0) + v3(a[0], 1) * v3(a[0], 1) + v3(a[0], 2) * v3(a[0], 2));
+      return len == 0 ? a[0] : vec3(v3(a[0], 0) / len, v3(a[0], 1) / len, v3(a[0], 2) / len);
+    });
+
+    BUILTINS.put("Math.Matrix4.identity", mat4(GL.identity()));
+    fn("Math.Matrix4.mul", 2, a -> mat4(GL.mul(m4(a[0]), m4(a[1]))));
+    fn("Math.Matrix4.makePerspective", 4,
+        a -> mat4(GL.perspective(Operators.toDouble(a[0]), Operators.toDouble(a[1]), Operators.toDouble(a[2]), Operators.toDouble(a[3]))));
+    fn("Math.Matrix4.makeLookAt", 3, a -> mat4(GL.lookAt(
+        v3(a[0], 0), v3(a[0], 1), v3(a[0], 2),
+        v3(a[1], 0), v3(a[1], 1), v3(a[1], 2),
+        v3(a[2], 0), v3(a[2], 1), v3(a[2], 2))));
+    fn("Math.Matrix4.makeRotate", 2,
+        a -> mat4(GL.makeRotate(Operators.toDouble(a[0]), v3(a[1], 0), v3(a[1], 1), v3(a[1], 2))));
+    fn("Math.Matrix4.makeTranslate", 1, a -> mat4(GL.makeTranslate(v3(a[0], 0), v3(a[0], 1), v3(a[0], 2))));
+    fn("Math.Matrix4.makeTranslate3", 3,
+        a -> mat4(GL.makeTranslate(Operators.toDouble(a[0]), Operators.toDouble(a[1]), Operators.toDouble(a[2]))));
+    fn("Math.Matrix4.makeScale3", 3,
+        a -> mat4(GL.makeScale(Operators.toDouble(a[0]), Operators.toDouble(a[1]), Operators.toDouble(a[2]))));
+    fn("Math.Matrix4.transform", 2, a -> {
+      double[] r = GL.transform(m4(a[0]), v3(a[1], 0), v3(a[1], 1), v3(a[1], 2));
+      return vec3(r[0], r[1], r[2]);
+    });
+    fn("Math.Matrix4.rotate", 4, a -> mat4(GL.mul(m4(a[3]),
+        GL.makeRotate(Operators.toDouble(a[0]), v3(a[1], 0), v3(a[1], 1), v3(a[1], 2)))));
+  }
+
+  // --- WebGL (elm-explorations/webgl) ------------------------------------
+
+  private static Object webglCanvas(Object attrsList, Object entities) {
+    long count = ((ElmList) entities).toJava().size();
+    ElmList attrs =
+        ElmList.cons(
+            new ElmData("$Att", new Object[] {"data-entities", Long.toString(count)}),
+            (ElmList) attrsList);
+    return node("canvas", attrs, ElmList.NIL);
+  }
+
+  private static void registerWebGL() {
+    fn("WebGL.toHtml", 2, a -> webglCanvas(a[0], a[1]));
+    fn("WebGL.toHtmlWith", 3, a -> webglCanvas(a[1], a[2])); // drop the options argument
+    // Render options for toHtmlWith (opaque headlessly).
+    fn("WebGL.clearColor", 4, a -> d("$Option"));
+    fn("WebGL.alpha", 1, a -> d("$Option"));
+    fn("WebGL.depth", 1, a -> d("$Option"));
+    fn("WebGL.stencil", 1, a -> d("$Option"));
+    BUILTINS.put("WebGL.antialias", d("$Option"));
+    fn("WebGL.entity", 4, a -> d("$Entity", a[0], a[1], a[2], a[3]));
+    fn("WebGL.entityWith", 5, a -> d("$Entity", a[1], a[2], a[3], a[4]));
+    fn("WebGL.triangles", 1, a -> d("$Mesh", "triangles", a[0]));
+    fn("WebGL.indexedTriangles", 2, a -> d("$Mesh", "indexed", a[0], a[1]));
+    fn("WebGL.lines", 1, a -> d("$Mesh", "lines", a[0]));
+    fn("WebGL.lineStrip", 1, a -> d("$Mesh", "lineStrip", a[0]));
+    fn("WebGL.lineLoop", 1, a -> d("$Mesh", "lineLoop", a[0]));
+    fn("WebGL.points", 1, a -> d("$Mesh", "points", a[0]));
+    fn("WebGL.triangleStrip", 1, a -> d("$Mesh", "triangleStrip", a[0]));
+    fn("WebGL.triangleFan", 1, a -> d("$Mesh", "triangleFan", a[0]));
+    // Textures (Crate/Thwomp/First-Person): load is a Task yielding a stub texture keyed by URL.
+    fn("WebGL.Texture.load", 1, a -> d("$Task_Const", d("$Texture", a[0])));
+    fn("WebGL.Texture.loadWith", 2, a -> d("$Task_Const", d("$Texture", a[1])));
+    fn("WebGL.Texture.size", 1, a -> new ElmTuple(new Object[] {0L, 0L}));
+    // Texture option enums (opaque values).
+    for (String opt :
+        new String[] {
+          "nearest", "linear", "nearestMipmapNearest", "linearMipmapNearest",
+          "nearestMipmapLinear", "linearMipmapLinear", "repeat", "clampToEdge", "mirroredRepeat"
+        }) {
+      BUILTINS.put("WebGL.Texture." + opt, d("$TexOpt", opt));
+    }
+    BUILTINS.put("WebGL.Texture.nonPowerOfTwoOptions", d("$TexOptions"));
+    // WebGL.Settings enums/values used by some examples (opaque; ignored headlessly).
+    BUILTINS.put("WebGL.Settings.DepthTest.default", d("$Setting"));
   }
 
   private static void registerFile() {

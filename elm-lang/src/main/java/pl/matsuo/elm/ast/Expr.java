@@ -16,6 +16,9 @@ public sealed interface Expr {
 
   record CharLit(int codePoint, Position pos) implements Expr {}
 
+  /** A GLSL shader literal {@code [glsl| ... |]}; the source is kept opaque. */
+  record Shader(String source, Position pos) implements Expr {}
+
   /** A (possibly qualified) lowercase reference, e.g. {@code model} or {@code List.map}. */
   record Var(String module, String name, Position pos) implements Expr {}
 

@@ -450,6 +450,10 @@ public final class Parser {
             advance();
             yield new Expr.CharLit((Integer) t.value(), pos);
           }
+          case GLSL -> {
+            advance();
+            yield new Expr.Shader((String) t.value(), pos);
+          }
           case LOWER -> {
             advance();
             yield new Expr.Var(null, t.text(), pos);

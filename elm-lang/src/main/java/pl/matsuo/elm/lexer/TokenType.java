@@ -7,6 +7,7 @@ public enum TokenType {
   FLOAT, // floating literal; value is a Double
   STRING, // string literal; value is the decoded String
   CHAR, // character literal; value is an Integer code point
+  GLSL, // GLSL shader literal [glsl| ... |]; value is the source String
 
   // Names
   LOWER, // identifier beginning with a lowercase letter (variables, fields)
