@@ -17,8 +17,8 @@ Status: ✅ = working & tested headlessly (interpreter/bytecode), ⏳ = not yet.
 | 7 | Random | Numbers | `numbers` | ✅ | Browser.element, Cmd, Random |
 | 8 | Random | Cards | `cards` | ✅ | Random, custom types |
 | 9 | Random | Positions | `positions` | ✅ | Random.map2, Svg |
-| 10 | HTTP | Book | `book` | ⏳ | Browser.element, Http.get, text |
-| 11 | HTTP | Quotes | `quotes` | ⏳ | Http, Json.Decode |
+| 10 | HTTP | Book | `book` | ✅ | Browser.element, Http.get, text (stubbed response) |
+| 11 | HTTP | Quotes | `quotes` | ✅ | Http, Json.Decode (map4/field/int/string) |
 | 12 | Time | Time | `time` | ✅ | Browser.element, Time, subscriptions, Task |
 | 13 | Time | Clock | `clock` | ✅ | Time, Svg, subscriptions |
 | 14 | Files | Upload | `upload` | File, File.Select, Http |

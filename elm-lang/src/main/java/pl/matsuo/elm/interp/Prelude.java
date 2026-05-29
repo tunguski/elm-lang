@@ -10,6 +10,7 @@ import pl.matsuo.elm.runtime.Builtin;
 import pl.matsuo.elm.runtime.ElmChar;
 import pl.matsuo.elm.runtime.ElmData;
 import pl.matsuo.elm.runtime.ElmList;
+import pl.matsuo.elm.runtime.ElmRecord;
 import pl.matsuo.elm.runtime.ElmTuple;
 
 /**
@@ -30,7 +31,10 @@ public final class Prelude {
     "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "a", "img", "button",
     "input", "label", "form", "section", "header", "footer", "nav", "main_:main", "br", "hr",
     "table", "thead", "tbody", "tr", "td", "th", "pre", "code", "strong", "em", "i", "b", "small",
-    "select", "option", "textarea", "canvas", "audio", "video", "fieldset", "legend", "figure"
+    "select", "option", "textarea", "canvas", "audio", "video", "fieldset", "legend", "figure",
+    "blockquote", "cite", "figcaption", "caption", "abbr", "address", "article", "aside", "details",
+    "summary", "mark", "time", "u", "s", "sub", "sup", "kbd", "samp", "var_:var", "dl", "dt", "dd",
+    "ol", "menu", "progress", "meter", "output", "datalist", "iframe", "embed", "object_:object"
   };
 
   // elmName:htmlName pairs; when no colon, the names are identical.
@@ -149,6 +153,50 @@ public final class Prelude {
     fn("Task.perform", 2, a -> d("$Cmd_Task", a[1], a[0])); // (toMsg, task) -> [task, toMsg]
     fn("Task.attempt", 2, a -> d("$Cmd_Task", a[1], a[0]));
     fn("Task.succeed", 1, a -> d("$Task_Const", a[0]));
+
+    registerHttp();
+    registerJson();
+  }
+
+  private static void registerHttp() {
+    fn("Http.get", 1, a -> {
+      ElmRecord r = (ElmRecord) a[0];
+      return d("$Cmd_Http", r.get("url"), r.get("expect"));
+    });
+    fn("Http.post", 1, a -> {
+      ElmRecord r = (ElmRecord) a[0];
+      return d("$Cmd_Http", r.get("url"), r.get("expect"));
+    });
+    fn("Http.expectString", 1, a -> d("$Expect_String", a[0]));
+    fn("Http.expectJson", 2, a -> d("$Expect_Json", a[0], a[1]));
+  }
+
+  private static void registerJson() {
+    BUILTINS.put("Json.Decode.string", d("$Dec_String"));
+    BUILTINS.put("Json.Decode.int", d("$Dec_Int"));
+    BUILTINS.put("Json.Decode.float", d("$Dec_Float"));
+    BUILTINS.put("Json.Decode.bool", d("$Dec_Bool"));
+    fn("Json.Decode.field", 2, a -> d("$Dec_Field", a[0], a[1]));
+    fn("Json.Decode.list", 1, a -> d("$Dec_List", a[0]));
+    fn("Json.Decode.map", 2, a -> d("$Dec_MapN", a[0], a[1]));
+    fn("Json.Decode.map2", 3, a -> d("$Dec_MapN", a[0], a[1], a[2]));
+    fn("Json.Decode.map3", 4, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3]));
+    fn("Json.Decode.map4", 5, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4]));
+    fn("Json.Decode.map5", 6, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4], a[5]));
+    fn("Json.Decode.map6", 7, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4], a[5], a[6]));
+    fn("Json.Decode.succeed", 1, a -> d("$Dec_Succeed", a[0]));
+    fn("Json.Decode.andThen", 2, a -> d("$Dec_AndThen", a[0], a[1]));
+    fn("Json.Decode.maybe", 1, a -> d("$Dec_Maybe", a[0]));
+    fn("Json.Decode.nullable", 1, a -> d("$Dec_Nullable", a[0]));
+    fn("Json.Decode.decodeString", 2, a -> {
+      Object json;
+      try {
+        json = pl.matsuo.elm.json.JsonParse.parse((String) a[1]);
+      } catch (RuntimeException ex) {
+        return new ElmData("Err", new Object[] {ex.getMessage()});
+      }
+      return pl.matsuo.elm.json.DecoderRunner.run(a[0], json);
+    });
   }
 
   private static long timePart(Object zone, Object posix, long unit, int mod) {

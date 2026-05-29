@@ -170,4 +170,33 @@ class ExamplesTest {
     app.tick(3723000L);
     assertTrue(app.html().contains("<line "), html);
   }
+
+  // --- HTTP group (Http.get with stubbed responses + Json.Decode) -------
+
+  @Test
+  void book() {
+    Interpreter interp = Interpreter.load(source("book"));
+    String text = "It was a dark and stormy night.";
+    Tea app =
+        Tea.start(
+            interp.value("main"),
+            java.util.Map.of("https://elm-lang.org/assets/public-opinion.txt", text));
+    assertEquals("<pre>" + text + "</pre>", app.html());
+  }
+
+  @Test
+  void quotes() {
+    Interpreter interp = Interpreter.load(source("quotes"));
+    String json =
+        "{\"quote\":\"Elm is great\",\"source\":\"The Guide\",\"author\":\"Evan\",\"year\":2012}";
+    Tea app =
+        Tea.start(
+            interp.value("main"),
+            java.util.Map.of("https://elm-lang.org/api/random-quotes", json));
+    String html = app.html();
+    assertTrue(html.contains("Elm is great"), html);
+    assertTrue(html.contains("The Guide"), html);
+    assertTrue(html.contains("by Evan"), html);
+    assertTrue(html.contains("(2012)"), html);
+  }
 }

@@ -2,8 +2,11 @@ package pl.matsuo.elm.html;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import pl.matsuo.elm.error.ElmRuntimeError;
 import pl.matsuo.elm.interp.Apply;
+import pl.matsuo.elm.json.DecoderRunner;
+import pl.matsuo.elm.json.JsonParse;
 import pl.matsuo.elm.runtime.ElmData;
 import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmRecord;
@@ -22,6 +25,7 @@ public final class Tea {
   private final ElmRecord def;
   private Object model;
   private long seed = 0x2545F4914F6CDD1DL; // deterministic random state
+  private Map<String, String> httpResponses = Map.of();
 
   private Tea(String kind, ElmRecord def, Object model) {
     this.kind = kind;
@@ -30,20 +34,25 @@ public final class Tea {
   }
 
   public static Tea start(Object program) {
+    return start(program, Map.of());
+  }
+
+  /** Starts a program, supplying canned HTTP responses keyed by URL (consulted by Http.get). */
+  public static Tea start(Object program, Map<String, String> httpResponses) {
     if (!(program instanceof ElmData d) || !(d.arg(0) instanceof ElmRecord def)) {
       throw new ElmRuntimeError("Not a Browser program: " + program);
     }
-    return switch (d.ctor()) {
-      case "$Sandbox" -> new Tea("sandbox", def, def.get("init"));
-      case "$Element", "$Document" -> {
-        Object pair = Apply.apply(def.get("init"), ElmUnit.INSTANCE);
-        ElmTuple t = (ElmTuple) pair;
-        Tea tea = new Tea(d.ctor().equals("$Document") ? "document" : "element", def, t.get(0));
-        tea.runCmd(t.get(1));
-        yield tea;
-      }
-      default -> throw new ElmRuntimeError("Unsupported program: " + d.ctor());
-    };
+    if (d.ctor().equals("$Sandbox")) {
+      Tea tea = new Tea("sandbox", def, def.get("init"));
+      tea.httpResponses = httpResponses;
+      return tea;
+    }
+    Object pair = Apply.apply(def.get("init"), ElmUnit.INSTANCE);
+    ElmTuple t = (ElmTuple) pair;
+    Tea tea = new Tea(d.ctor().equals("$Document") ? "document" : "element", def, t.get(0));
+    tea.httpResponses = httpResponses;
+    tea.runCmd(t.get(1));
+    return tea;
   }
 
   public void setSeed(long seed) {
@@ -120,8 +129,45 @@ public final class Tea {
         Object value = runTask(d.arg(0));
         send(Apply.apply(d.arg(1), value));
       }
+      case "$Cmd_Http" -> runHttp((String) d.arg(0), (ElmData) d.arg(1));
       default -> {}
     }
+  }
+
+  private void runHttp(String url, ElmData expect) {
+    Object toMsg = expect.arg(0);
+    String body = httpResponses.get(url);
+    if (body == null) {
+      // No canned response: deliver a network error (matched by `Err _`).
+      send(Apply.apply(toMsg, err(new ElmData("NetworkError", new Object[0]))));
+      return;
+    }
+    switch (expect.ctor()) {
+      case "$Expect_String" -> send(Apply.apply(toMsg, ok(body)));
+      case "$Expect_Json" -> {
+        ElmData decoded;
+        try {
+          decoded = DecoderRunner.run(expect.arg(1), JsonParse.parse(body));
+        } catch (RuntimeException ex) {
+          send(Apply.apply(toMsg, err(new ElmData("BadBody", new Object[] {ex.getMessage()}))));
+          return;
+        }
+        if (decoded.ctor().equals("Ok")) {
+          send(Apply.apply(toMsg, ok(decoded.arg(0))));
+        } else {
+          send(Apply.apply(toMsg, err(new ElmData("BadBody", new Object[] {decoded.arg(0)}))));
+        }
+      }
+      default -> {}
+    }
+  }
+
+  private static ElmData ok(Object v) {
+    return new ElmData("Ok", new Object[] {v});
+  }
+
+  private static ElmData err(Object e) {
+    return new ElmData("Err", new Object[] {e});
   }
 
   private Object runTask(Object task) {
