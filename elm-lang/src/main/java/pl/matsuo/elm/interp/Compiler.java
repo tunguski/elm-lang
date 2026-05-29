@@ -3,6 +3,7 @@ package pl.matsuo.elm.interp;
 import com.oracle.truffle.api.RootCallTarget;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Pattern;
@@ -14,14 +15,23 @@ import pl.matsuo.elm.runtime.ElmUnit;
 public final class Compiler {
 
   private final RuntimeEnv env;
+  private final Set<Expr> floatLiterals;
 
   public Compiler(RuntimeEnv env) {
+    this(env, Set.of());
+  }
+
+  /** {@code floatLiterals} are Int-literal expressions that the type checker resolved to Float;
+   * they are compiled as floating-point constants. */
+  public Compiler(RuntimeEnv env, Set<Expr> floatLiterals) {
     this.env = env;
+    this.floatLiterals = floatLiterals;
   }
 
   public ElmNode compile(Expr e) {
     return switch (e) {
-      case Expr.IntLit i -> new Nodes.Const(i.value());
+      case Expr.IntLit i ->
+          new Nodes.Const(floatLiterals.contains(i) ? (Object) (double) i.value() : (Object) i.value());
       case Expr.FloatLit f -> new Nodes.Const(f.value());
       case Expr.StrLit s -> new Nodes.Const(s.value());
       case Expr.CharLit c -> new Nodes.Const(new ElmChar(c.codePoint()));

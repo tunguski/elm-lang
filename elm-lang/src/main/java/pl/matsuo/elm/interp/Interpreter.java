@@ -56,7 +56,19 @@ public final class Interpreter {
     this.env =
         new RuntimeEnv(
             Prelude.builtins(), unqualified, aliases, ctorArity, recordCtors, module.name());
-    this.compiler = new Compiler(env);
+
+    // Best-effort type inference: when the module type-checks, use the inferred types to coerce
+    // Int literals that occur in Float contexts. If inference fails (an unsigned builtin, or a real
+    // type error), fall back to untyped evaluation so every program still runs.
+    java.util.Set<Expr> floatLiterals = java.util.Set.of();
+    try {
+      pl.matsuo.elm.types.Infer infer = new pl.matsuo.elm.types.Infer();
+      infer.inferModule(module, pl.matsuo.elm.types.Signatures.globals());
+      floatLiterals = infer.floatLiterals();
+    } catch (RuntimeException ignored) {
+      // keep untyped
+    }
+    this.compiler = new Compiler(env, floatLiterals);
     load(module);
   }
 

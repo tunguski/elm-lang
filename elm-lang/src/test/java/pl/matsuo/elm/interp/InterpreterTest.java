@@ -170,8 +170,9 @@ class InterpreterTest {
                 Rect w h ->
                     w * h
 
-        main = area (Rect 3.0 4.0)
+        main = area (Rect 3 4)
         """;
+    // Int literals 3 and 4 are inferred as Float (Rect's fields) and coerced -> 12.0, not 12.
     assertEquals(12.0, Interpreter.load(src).value("main"));
   }
 
@@ -215,6 +216,19 @@ class InterpreterTest {
         main = sumTo 100000 0
         """;
     assertEquals(5000050000L, Interpreter.load(src).value("main"));
+  }
+
+  @Test
+  void numericLiteralCoercedToFloatByInference() {
+    // Without type-directed coercion, `5` would stay an Int (Long) and the result would be 5, not
+    // 5.0. The Box field is Float, so inference resolves the literal to Float.
+    String src =
+        """
+        type alias Box = { w : Float }
+        box = Box 5
+        main = box.w
+        """;
+    assertEquals(5.0, Interpreter.load(src).value("main"));
   }
 
   @Test

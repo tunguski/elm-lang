@@ -1,10 +1,13 @@
 package pl.matsuo.elm.types;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
@@ -19,8 +22,26 @@ public final class Infer {
 
   private int level = 1;
   private final Map<String, AliasDef> aliases = new HashMap<>();
+  private final Map<Expr, Ty> numericLiterals = new IdentityHashMap<>();
 
   private record AliasDef(List<String> params, Type body) {}
+
+  /**
+   * The {@code Int} literal expressions that inference resolved to {@code Float}. The compiler uses
+   * this to coerce them to floating-point at runtime, so untyped numeric literals get the right
+   * representation in a {@code Float} context (e.g. {@code Rect 3 4} with {@code Float} fields).
+   */
+  public Set<Expr> floatLiterals() {
+    Set<Expr> out = Collections.newSetFromMap(new IdentityHashMap<>());
+    numericLiterals.forEach(
+        (e, t) -> {
+          Ty p = Types.prune(t);
+          if (p instanceof Ty.Con c && c.name().equals("Float")) {
+            out.add(e);
+          }
+        });
+    return out;
+  }
 
   private Ty fresh() {
     return new Ty.Var(level, Ty.Constraint.NONE);
@@ -145,7 +166,11 @@ public final class Infer {
 
   public Ty infer(TypeEnv env, Expr expr) {
     return switch (expr) {
-      case Expr.IntLit ignored -> fresh(Ty.Constraint.NUMBER);
+      case Expr.IntLit lit -> {
+        Ty t = fresh(Ty.Constraint.NUMBER);
+        numericLiterals.put(lit, t);
+        yield t;
+      }
       case Expr.FloatLit ignored -> Ty.FLOAT;
       case Expr.StrLit ignored -> Ty.STRING;
       case Expr.CharLit ignored -> Ty.CHAR;
