@@ -309,6 +309,56 @@ public final class Nodes {
     }
   }
 
+  /**
+   * Wraps a function body that contains self-tail-calls. Runs the body; if it yields a {@link
+   * TailSignal}, rebinds the parameters in a fresh scope and loops instead of growing the stack.
+   */
+  public static final class TailLoop extends ElmNode {
+    @Child private ElmNode body;
+    private final Pattern[] params;
+
+    public TailLoop(ElmNode body, Pattern[] params) {
+      this.body = body;
+      this.params = params;
+    }
+
+    @Override
+    public Object execute(Scope scope) {
+      Scope base = scope.parent(); // the captured scope the parameters were bound under
+      Scope current = scope;
+      while (true) {
+        Object result = body.execute(current);
+        if (result instanceof TailSignal signal) {
+          Scope next = base.child();
+          for (int i = 0; i < params.length; i++) {
+            PatternMatcher.match(params[i], signal.args()[i], next);
+          }
+          current = next;
+        } else {
+          return result;
+        }
+      }
+    }
+  }
+
+  /** A saturated tail call to the enclosing function; evaluates args and yields a {@link TailSignal}. */
+  public static final class SelfTailCall extends ElmNode {
+    @Children private final ElmNode[] args;
+
+    public SelfTailCall(ElmNode[] args) {
+      this.args = args;
+    }
+
+    @Override
+    public Object execute(Scope scope) {
+      Object[] values = new Object[args.length];
+      for (int i = 0; i < args.length; i++) {
+        values[i] = args[i].execute(scope);
+      }
+      return new TailSignal(values);
+    }
+  }
+
   public static final class Case extends ElmNode {
     @Child private ElmNode scrutinee;
     private final Pattern[] patterns;

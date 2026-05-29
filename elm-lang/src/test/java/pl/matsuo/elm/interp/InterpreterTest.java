@@ -176,6 +176,31 @@ class InterpreterTest {
   }
 
   @Test
+  void tailCallOptimizationIf() {
+    // Without TCO this 1,000,000-deep self-recursion would overflow the JVM stack.
+    String src =
+        """
+        count n acc =
+            if n == 0 then acc else count (n - 1) (acc + 1)
+        main = count 1000000 0
+        """;
+    assertEquals(1000000L, Interpreter.load(src).value("main"));
+  }
+
+  @Test
+  void tailCallOptimizationCase() {
+    String src =
+        """
+        sumTo n acc =
+            case n of
+                0 -> acc
+                _ -> sumTo (n - 1) (acc + n)
+        main = sumTo 100000 0
+        """;
+    assertEquals(5000050000L, Interpreter.load(src).value("main"));
+  }
+
+  @Test
   void unboundVariableThrows() {
     assertThrows(ElmRuntimeError.class, () -> eval("nonexistentThing"));
   }

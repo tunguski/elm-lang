@@ -26,6 +26,10 @@ public final class Scope {
     return new Scope(this);
   }
 
+  public Scope parent() {
+    return parent;
+  }
+
   public void bind(String name, Object value) {
     vars.put(name, value);
   }

@@ -40,7 +40,7 @@ public final class Compiler {
       case Expr.Negate n -> new Nodes.Negate(compile(n.operand()));
       case Expr.If iff ->
           new Nodes.If(compile(iff.cond()), compile(iff.thenBranch()), compile(iff.elseBranch()));
-      case Expr.Lambda l -> compileLambda(l.params(), l.body(), "lambda");
+      case Expr.Lambda l -> compileAnonymous(l.params(), l.body());
       case Expr.Let let -> compileLet(let);
       case Expr.Case c -> compileCase(c);
     };
@@ -74,13 +74,86 @@ public final class Compiler {
     return new Nodes.RecordUpdate(new Nodes.Var(null, u.base(), env), names, values);
   }
 
-  /** Compiles a function/lambda body into its own Truffle {@link RootCallTarget}. */
+  /** Compiles a named function body, applying self-tail-call optimization. */
   public Nodes.Lambda compileLambda(List<Pattern> params, Expr body, String name) {
-    RootCallTarget target = new ElmRootNode(compile(body)).getCallTarget();
-    return new Nodes.Lambda(name, target, params);
+    return compileFunction(params, body, name, name);
+  }
+
+  /** Compiles an anonymous lambda (no self-name, so no tail-call optimization). */
+  public Nodes.Lambda compileAnonymous(List<Pattern> params, Expr body) {
+    return compileFunction(params, body, "lambda", null);
+  }
+
+  private Nodes.Lambda compileFunction(
+      List<Pattern> params, Expr body, String debugName, String selfName) {
+    ElmNode bodyNode;
+    if (selfName != null) {
+      bodyNode = new Nodes.TailLoop(compileTail(body, selfName, params.size()), params.toArray(new Pattern[0]));
+    } else {
+      bodyNode = compile(body);
+    }
+    RootCallTarget target = new ElmRootNode(bodyNode).getCallTarget();
+    return new Nodes.Lambda(debugName, target, params);
+  }
+
+  /**
+   * Compiles {@code e} in tail position: a saturated call to {@code self} becomes a {@link
+   * Nodes.SelfTailCall}; if/case/let recurse into their tail sub-expressions; anything else is a
+   * normal (non-tail) expression.
+   */
+  private ElmNode compileTail(Expr e, String self, int arity) {
+    Expr[] selfArgs = saturatedSelfCall(e, self, arity);
+    if (selfArgs != null) {
+      return new Nodes.SelfTailCall(compileAll(java.util.Arrays.asList(selfArgs)));
+    }
+    return switch (e) {
+      case Expr.If iff ->
+          new Nodes.If(
+              compile(iff.cond()),
+              compileTail(iff.thenBranch(), self, arity),
+              compileTail(iff.elseBranch(), self, arity));
+      case Expr.Let let -> compileLetTail(let, self, arity);
+      case Expr.Case c -> compileCaseTail(c, self, arity);
+      default -> compile(e);
+    };
+  }
+
+  /** Returns the argument expressions if {@code e} is exactly {@code self a1 .. aArity}, else null. */
+  private Expr[] saturatedSelfCall(Expr e, String self, int arity) {
+    java.util.Deque<Expr> args = new java.util.ArrayDeque<>();
+    Expr cur = e;
+    while (cur instanceof Expr.App app) {
+      args.push(app.arg());
+      cur = app.fn();
+    }
+    if (args.size() == arity
+        && cur instanceof Expr.Var v
+        && v.module() == null
+        && self.equals(v.name())) {
+      return args.toArray(new Expr[0]);
+    }
+    return null;
+  }
+
+  private ElmNode compileLetTail(Expr.Let let, String self, int arity) {
+    return buildLet(let, compileTail(let.body(), self, arity));
+  }
+
+  private ElmNode compileCaseTail(Expr.Case c, String self, int arity) {
+    Pattern[] patterns = new Pattern[c.branches().size()];
+    ElmNode[] bodies = new ElmNode[c.branches().size()];
+    for (int i = 0; i < patterns.length; i++) {
+      patterns[i] = c.branches().get(i).pattern();
+      bodies[i] = compileTail(c.branches().get(i).body(), self, arity);
+    }
+    return new Nodes.Case(compile(c.scrutinee()), patterns, bodies);
   }
 
   private ElmNode compileLet(Expr.Let let) {
+    return buildLet(let, compile(let.body()));
+  }
+
+  private ElmNode buildLet(Expr.Let let, ElmNode bodyNode) {
     List<Pattern> targets = new ArrayList<>();
     List<ElmNode> rhs = new ArrayList<>();
     for (Decl d : let.defs()) {
@@ -99,8 +172,7 @@ public final class Compiler {
         default -> throw new ElmRuntimeError("Unsupported declaration in let: " + d);
       }
     }
-    return new Nodes.Let(
-        targets.toArray(new Pattern[0]), rhs.toArray(new ElmNode[0]), compile(let.body()));
+    return new Nodes.Let(targets.toArray(new Pattern[0]), rhs.toArray(new ElmNode[0]), bodyNode);
   }
 
   private ElmNode compileCase(Expr.Case c) {
