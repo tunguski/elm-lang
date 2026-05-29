@@ -106,7 +106,55 @@ public final class Prelude {
     registerHtml();
     registerSvg();
     registerBrowser();
+    registerEffects();
     registerConstructors();
+  }
+
+  // --- Cmd / Sub / Random / Time / Task ----------------------------------
+
+  private static ElmData d(String ctor, Object... args) {
+    return new ElmData(ctor, args);
+  }
+
+  private static void registerEffects() {
+    BUILTINS.put("Cmd.none", d("$CmdNone"));
+    fn("Cmd.batch", 1, a -> d("$CmdBatch", a[0]));
+    fn("Cmd.map", 2, a -> a[1]); // tagging is not tracked headlessly
+    BUILTINS.put("Sub.none", d("$SubNone"));
+    fn("Sub.batch", 1, a -> d("$SubBatch", a[0]));
+    fn("Sub.map", 2, a -> a[1]);
+
+    fn("Random.generate", 2, a -> d("$Cmd_Random", a[1], a[0])); // (toMsg, gen) -> [gen, toMsg]
+    fn("Random.int", 2, a -> d("$Gen_Int", a[0], a[1]));
+    fn("Random.float", 2, a -> d("$Gen_Float", a[0], a[1]));
+    fn("Random.uniform", 2, a -> d("$Gen_Uniform", a[0], a[1]));
+    fn("Random.list", 2, a -> d("$Gen_List", a[0], a[1]));
+    fn("Random.pair", 2, a -> d("$Gen_Pair", a[0], a[1]));
+    fn("Random.constant", 1, a -> d("$Gen_Const", a[0]));
+    fn("Random.map", 2, a -> d("$Gen_Map", a[0], a[1]));
+    fn("Random.map2", 3, a -> d("$Gen_Map2", a[0], a[1], a[2]));
+    fn("Random.andThen", 2, a -> d("$Gen_AndThen", a[0], a[1]));
+
+    BUILTINS.put("Time.utc", d("$Zone", 0L));
+    BUILTINS.put("Time.here", d("$Task_Const", d("$Zone", 0L)));
+    BUILTINS.put("Time.now", d("$Task_Const", d("$Posix", 0L)));
+    fn("Time.millisToPosix", 1, a -> d("$Posix", Operators.asLong(a[0])));
+    fn("Time.posixToMillis", 1, a -> ((ElmData) a[0]).arg(0));
+    fn("Time.every", 2, a -> d("$Sub_Every", a[0], a[1]));
+    fn("Time.toHour", 2, a -> timePart(a[0], a[1], 3600000L, 24));
+    fn("Time.toMinute", 2, a -> timePart(a[0], a[1], 60000L, 60));
+    fn("Time.toSecond", 2, a -> timePart(a[0], a[1], 1000L, 60));
+    fn("Time.toMillis", 2, a -> timePart(a[0], a[1], 1L, 1000));
+
+    fn("Task.perform", 2, a -> d("$Cmd_Task", a[1], a[0])); // (toMsg, task) -> [task, toMsg]
+    fn("Task.attempt", 2, a -> d("$Cmd_Task", a[1], a[0]));
+    fn("Task.succeed", 1, a -> d("$Task_Const", a[0]));
+  }
+
+  private static long timePart(Object zone, Object posix, long unit, int mod) {
+    long offsetMinutes = Operators.asLong(((ElmData) zone).arg(0));
+    long millis = Operators.asLong(((ElmData) posix).arg(0)) + offsetMinutes * 60000L;
+    return Math.floorMod(millis / unit, (long) mod);
   }
 
   // --- Html / Svg / Browser ----------------------------------------------

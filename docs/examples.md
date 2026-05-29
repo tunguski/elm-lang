@@ -14,13 +14,13 @@ Status: ✅ = working & tested headlessly (interpreter/bytecode), ⏳ = not yet.
 | 4 | User Input | Buttons | `buttons` | ✅ | Browser.sandbox, onClick, update |
 | 5 | User Input | Text Fields | `text-fields` | ✅ | Browser.sandbox, onInput, String fns |
 | 6 | User Input | Forms | `forms` | ✅ | Browser.sandbox, multiple fields, styles |
-| 7 | Random | Numbers | `numbers` | Browser.element, Cmd, Random |
-| 8 | Random | Cards | `cards` | Random, custom types |
-| 9 | Random | Positions | `positions` | Random, Svg |
-| 10 | HTTP | Book | `book` | Browser.element, Http.get, text |
-| 11 | HTTP | Quotes | `quotes` | Http, Json.Decode |
-| 12 | Time | Time | `time` | Browser.element, Time, subscriptions |
-| 13 | Time | Clock | `clock` | Time, Svg, subscriptions |
+| 7 | Random | Numbers | `numbers` | ✅ | Browser.element, Cmd, Random |
+| 8 | Random | Cards | `cards` | ✅ | Random, custom types |
+| 9 | Random | Positions | `positions` | ✅ | Random.map2, Svg |
+| 10 | HTTP | Book | `book` | ⏳ | Browser.element, Http.get, text |
+| 11 | HTTP | Quotes | `quotes` | ⏳ | Http, Json.Decode |
+| 12 | Time | Time | `time` | ✅ | Browser.element, Time, subscriptions, Task |
+| 13 | Time | Clock | `clock` | ✅ | Time, Svg, subscriptions |
 | 14 | Files | Upload | `upload` | File, File.Select, Http |
 | 15 | Files | Drag-and-Drop | `drag-and-drop` | File, custom events, Json.Decode |
 | 16 | Files | Image Previews | `image-previews` | File, File.toUrl, tasks |
