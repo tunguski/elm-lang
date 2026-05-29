@@ -22,6 +22,15 @@ import pl.matsuo.elm.runtime.ElmData;
 public final class Main {
 
   public static void main(String[] args) throws Exception {
+    if (args.length == 0) {
+      usage();
+      return;
+    }
+    if (args[0].equals("bench")) {
+      long n = args.length > 1 ? Long.parseLong(args[1]) : 30;
+      System.out.print(pl.matsuo.elm.bench.Benchmark.run(n, 50, 50));
+      return;
+    }
     if (args.length < 2) {
       usage();
       return;
@@ -98,6 +107,7 @@ public final class Main {
           js    <file.elm>
           eval  "<expression>" [--backend interp|bytecode]
           check <file.elm>
+          bench [fibN]
         """);
   }
 }
