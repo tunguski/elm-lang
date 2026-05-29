@@ -82,6 +82,14 @@ public final class Parser {
     return e;
   }
 
+  /** Parses a type signature string (used by the type checker's prelude signatures). */
+  public static Type parseTypeSignature(String source) {
+    Parser parser = new Parser(Lexer.tokenize(source));
+    Type t = parser.parseType();
+    parser.expect(TokenType.EOF, "end of input");
+    return t;
+  }
+
   // --- token helpers -----------------------------------------------------
 
   private Token peek() {
