@@ -49,7 +49,8 @@ public final class Prelude {
   };
 
   private static final String[] HTML_BOOL_ATTRS = {
-    "disabled", "checked", "selected", "readonly:readonly", "required", "autofocus", "hidden"
+    "disabled", "checked", "selected", "readonly:readonly", "required", "autofocus", "hidden",
+    "multiple"
   };
 
   private static final String[] SVG_TAGS = {
@@ -435,6 +436,21 @@ public final class Prelude {
 
     registerHttp();
     registerJson();
+    registerFile();
+  }
+
+  private static void registerFile() {
+    // A File is represented as $File[name, mime, url]; toUrl yields the (stub) data URL.
+    BUILTINS.put("File.decoder", d("$Dec_File"));
+    fn("File.name", 1, a -> ((ElmData) a[0]).arg(0));
+    fn("File.mime", 1, a -> ((ElmData) a[0]).arg(1));
+    fn("File.size", 1, a -> 0L);
+    fn("File.toUrl", 1, a -> d("$Task_Const", ((ElmData) a[0]).arg(2)));
+    fn("File.toString", 1, a -> d("$Task_Const", ((ElmData) a[0]).arg(2)));
+    // File.Select (often imported `as Select`): commands the Tea driver fulfils with stub files.
+    fn("File.Select.file", 2, a -> d("$Cmd_SelectFile", a[1]));
+    fn("File.Select.files", 2, a -> d("$Cmd_SelectFiles", a[1]));
+    fn("Task.sequence", 1, a -> d("$Task_Seq", a[0]));
   }
 
   private static void registerHttp() {
@@ -456,6 +472,11 @@ public final class Prelude {
     BUILTINS.put("Json.Decode.float", d("$Dec_Float"));
     BUILTINS.put("Json.Decode.bool", d("$Dec_Bool"));
     fn("Json.Decode.field", 2, a -> d("$Dec_Field", a[0], a[1]));
+    fn("Json.Decode.at", 2, a -> d("$Dec_At", a[0], a[1]));
+    fn("Json.Decode.index", 2, a -> d("$Dec_Index", a[0], a[1]));
+    fn("Json.Decode.oneOf", 1, a -> d("$Dec_OneOf", a[0]));
+    fn("Json.Decode.oneOrMore", 2, a -> d("$Dec_OneOrMore", a[0], a[1]));
+    BUILTINS.put("Json.Decode.value", d("$Dec_Value"));
     fn("Json.Decode.list", 1, a -> d("$Dec_List", a[0]));
     fn("Json.Decode.map", 2, a -> d("$Dec_MapN", a[0], a[1]));
     fn("Json.Decode.map2", 3, a -> d("$Dec_MapN", a[0], a[1], a[2]));
@@ -549,6 +570,12 @@ public final class Prelude {
     fn("Html.Events.onSubmit", 1, a -> new ElmData("$On", new Object[] {"submit", a[0]}));
     fn("Html.Events.onMouseDown", 1, a -> new ElmData("$On", new Object[] {"mousedown", a[0]}));
     fn("Html.Events.onMouseUp", 1, a -> new ElmData("$On", new Object[] {"mouseup", a[0]}));
+    // Custom event handlers with decoders (inert in static/headless rendering).
+    fn("Html.Events.on", 2, a -> new ElmData("$On", new Object[] {a[0], a[1]}));
+    fn("Html.Events.preventDefaultOn", 2, a -> new ElmData("$On", new Object[] {a[0], a[1]}));
+    fn("Html.Events.stopPropagationOn", 2, a -> new ElmData("$On", new Object[] {a[0], a[1]}));
+    fn("Html.Events.onFocus", 1, a -> new ElmData("$On", new Object[] {"focus", a[0]}));
+    fn("Html.Events.onBlur", 1, a -> new ElmData("$On", new Object[] {"blur", a[0]}));
   }
 
   private static void registerSvg() {

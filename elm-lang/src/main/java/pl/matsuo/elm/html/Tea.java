@@ -26,6 +26,7 @@ public final class Tea {
   private Object model;
   private long seed = 0x2545F4914F6CDD1DL; // deterministic random state
   private Map<String, String> httpResponses = Map.of();
+  private List<Object> selectableFiles = new ArrayList<>();
 
   private Tea(String kind, ElmRecord def, Object model) {
     this.kind = kind;
@@ -57,6 +58,11 @@ public final class Tea {
 
   public void setSeed(long seed) {
     this.seed = seed;
+  }
+
+  /** Supplies the files that a subsequent {@code File.Select} command will "select" (headless). */
+  public void provideFiles(List<Object> files) {
+    this.selectableFiles = files;
   }
 
   public Object model() {
@@ -130,6 +136,17 @@ public final class Tea {
         send(Apply.apply(d.arg(1), value));
       }
       case "$Cmd_Http" -> runHttp((String) d.arg(0), (ElmData) d.arg(1));
+      case "$Cmd_SelectFile" -> {
+        if (!selectableFiles.isEmpty()) {
+          send(Apply.apply(d.arg(0), selectableFiles.get(0)));
+        }
+      }
+      case "$Cmd_SelectFiles" -> {
+        if (!selectableFiles.isEmpty()) {
+          ElmList rest = ElmList.fromJava(selectableFiles.subList(1, selectableFiles.size()));
+          send(Apply.applyAll(d.arg(0), selectableFiles.get(0), rest));
+        }
+      }
       default -> {}
     }
   }
@@ -171,8 +188,20 @@ public final class Tea {
   }
 
   private Object runTask(Object task) {
-    if (task instanceof ElmData d && d.ctor().equals("$Task_Const")) {
-      return d.arg(0);
+    if (task instanceof ElmData d) {
+      switch (d.ctor()) {
+        case "$Task_Const" -> {
+          return d.arg(0);
+        }
+        case "$Task_Seq" -> {
+          List<Object> out = new ArrayList<>();
+          for (Object t : ((ElmList) d.arg(0)).toJava()) {
+            out.add(runTask(t));
+          }
+          return ElmList.fromJava(out);
+        }
+        default -> {}
+      }
     }
     throw new ElmRuntimeError("Unsupported task: " + task);
   }
