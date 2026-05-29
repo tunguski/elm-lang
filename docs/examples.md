@@ -29,7 +29,7 @@ Status: ✅ = working & tested headlessly (interpreter/bytecode), ⏳ = not yet.
 | 19 | WebGL | Crate | `crate` | webgl, textures |
 | 20 | WebGL | Thwomp | `thwomp` | webgl, mouse |
 | 21 | WebGL | First Person | `first-person` | webgl, keyboard |
-| 22 | Playground | Picture | `picture` | evancz/elm-playground |
+| 22 | Playground | Picture | `picture` | ✅ | real evancz/elm-playground loaded via module system, rendered to SVG |
 | 23 | Playground | Animation | `animation` | elm-playground, animate |
 | 24 | Playground | Mouse | `mouse` | elm-playground, mouse |
 | 25 | Playground | Keyboard | `keyboard` | elm-playground, keyboard |

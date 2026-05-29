@@ -60,7 +60,8 @@ public final class Prelude {
     "width", "height", "viewBox", "cx", "cy", "r", "x", "y", "x1", "y1", "x2", "y2", "rx", "ry",
     "fill", "stroke", "strokeWidth:stroke-width", "points", "d", "transform", "opacity",
     "fillOpacity:fill-opacity", "strokeLinecap:stroke-linecap", "fontSize:font-size",
-    "textAnchor:text-anchor", "fontFamily:font-family"
+    "textAnchor:text-anchor", "fontFamily:font-family", "xlinkHref:xlink:href",
+    "dominantBaseline:dominant-baseline"
   };
 
   public static Map<String, Object> builtins() {
@@ -416,6 +417,21 @@ public final class Prelude {
     fn("Task.attempt", 2, a -> d("$Cmd_Task", a[1], a[0]));
     fn("Task.succeed", 1, a -> d("$Task_Const", a[0]));
 
+    // Browser.Events: subscriptions to input/animation. Headlessly, the Tea driver fires
+    // animation-frame and keyboard/mouse subs on demand; onResize/onVisibilityChange are inert.
+    fn("Browser.Events.onResize", 1, a -> d("$Sub_Resize", a[0]));
+    fn("Browser.Events.onVisibilityChange", 1, a -> d("$Sub_Visibility", a[0]));
+    fn("Browser.Events.onAnimationFrameDelta", 1, a -> d("$Sub_FrameDelta", a[0]));
+    fn("Browser.Events.onAnimationFrame", 1, a -> d("$Sub_Frame", a[0]));
+    fn("Browser.Events.onKeyDown", 1, a -> d("$Sub_KeyDown", a[0]));
+    fn("Browser.Events.onKeyUp", 1, a -> d("$Sub_KeyUp", a[0]));
+    fn("Browser.Events.onClick", 1, a -> d("$Sub_Click", a[0]));
+    fn("Browser.Events.onMouseDown", 1, a -> d("$Sub_MouseDown", a[0]));
+    fn("Browser.Events.onMouseUp", 1, a -> d("$Sub_MouseUp", a[0]));
+    fn("Browser.Events.onMouseMove", 1, a -> d("$Sub_MouseMove", a[0]));
+    // Browser.Dom.getViewport: a Task yielding a fixed 600x600 viewport (headless stub).
+    BUILTINS.put("Browser.Dom.getViewport", d("$Task_Const", viewport()));
+
     registerHttp();
     registerJson();
   }
@@ -459,6 +475,22 @@ public final class Prelude {
       }
       return pl.matsuo.elm.json.DecoderRunner.run(a[0], json);
     });
+  }
+
+  /** A fixed Browser.Dom Viewport record (600x600) for headless runs. */
+  private static ElmRecord viewport() {
+    Map<String, Object> size = new java.util.LinkedHashMap<>();
+    size.put("width", 600.0);
+    size.put("height", 600.0);
+    Map<String, Object> vp = new java.util.LinkedHashMap<>();
+    vp.put("x", 0.0);
+    vp.put("y", 0.0);
+    vp.put("width", 600.0);
+    vp.put("height", 600.0);
+    Map<String, Object> root = new java.util.LinkedHashMap<>();
+    root.put("scene", new ElmRecord(size));
+    root.put("viewport", new ElmRecord(vp));
+    return new ElmRecord(root);
   }
 
   private static long timePart(Object zone, Object posix, long unit, int mod) {
