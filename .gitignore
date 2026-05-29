@@ -22,3 +22,7 @@ Thumbs.db
 # native-image build log
 native.log
 **/native.log
+
+# maven-shade leftover
+dependency-reduced-pom.xml
+**/dependency-reduced-pom.xml
