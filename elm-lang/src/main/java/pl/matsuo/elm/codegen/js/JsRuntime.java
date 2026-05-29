@@ -184,4 +184,99 @@ public final class JsRuntime {
       };
       function $g(name){ var v=$rt[name]; if (v===undefined) throw new Error('Unbound: '+name); return v; }
       """;
+
+  /**
+   * The browser DOM + The-Elm-Architecture runtime, appended after {@link #SOURCE} for app bundles.
+   * Provides the Html/Svg/Browser/Events builtins (same canonical keys as the Java prelude) plus
+   * {@code $mount}, which renders the virtual DOM to the real DOM, wires events and runs the
+   * update loop. Exposes {@code window.$app.dispatch} so tests can drive messages.
+   */
+  public static final String DOM =
+      """
+      (function(){
+        var SVG = 'http://www.w3.org/2000/svg';
+        var SVG_TAGS = {svg:1,circle:1,rect:1,line:1,polygon:1,polyline:1,ellipse:1,g:1,path:1,image:1};
+        function node(tag){ return function(attrs){ return function(kids){ return $data('$Node',[tag,attrs,kids]); }; }; }
+        var elements = ['div','span','p','h1','h2','h3','h4','h5','h6','ul','ol','li','a','img',
+          'button','input','label','form','section','header','footer','nav','br','hr','table','tr',
+          'td','th','thead','tbody','pre','code','strong','em','small','select','option','textarea',
+          'blockquote','cite','figure','figcaption','b','i'];
+        elements.forEach(function(t){ $rt['Html.'+t]=node(t); });
+        $rt['Html.text']=function(s){ return $data('$Text',[s]); };
+        $rt['Html.node']=function(t){ return node(t); };
+        var strAttrs=['class','id','href','src','alt','title','placeholder','value','name',
+          'type_:type','for_:for','rel','target','min','max','step','cols','rows'];
+        strAttrs.forEach(function(spec){ var p=spec.split(':'); var nm=p[1]||p[0];
+          $rt['Html.Attributes.'+p[0]]=function(v){ return $data('$Att',[nm,v]); }; });
+        $rt['Html.Attributes.width']=function(v){ return $data('$Att',['width',v]); };
+        $rt['Html.Attributes.height']=function(v){ return $data('$Att',['height',v]); };
+        ['disabled','checked','selected','required','autofocus','hidden','multiple'].forEach(function(nm){
+          $rt['Html.Attributes.'+nm]=function(v){ return $data('$Prop',[nm,v]); }; });
+        $rt['Html.Attributes.style']=function(k){ return function(v){ return $data('$Style',[k,v]); }; };
+        $rt['Html.Events.onClick']=function(m){ return $data('$On',['click',m]); };
+        $rt['Html.Events.onInput']=function(f){ return $data('$On',['input',f]); };
+        $rt['Html.Events.onCheck']=function(f){ return $data('$On',['check',f]); };
+        $rt['Html.Events.onSubmit']=function(m){ return $data('$On',['submit',m]); };
+        $rt['Html.Events.on']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
+        $rt['Html.Events.preventDefaultOn']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
+        Object.keys(SVG_TAGS).forEach(function(t){ $rt['Svg.'+t]=node(t); });
+        $rt['Svg.text']=function(s){ return $data('$Text',[s]); };
+        var svgAttrs=['width','height','viewBox','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
+          'fill','stroke','strokeWidth:stroke-width','points','d','transform','opacity',
+          'textAnchor:text-anchor','fontSize:font-size','xlinkHref:xlink:href'];
+        svgAttrs.forEach(function(spec){ var p=spec.split(':'); var nm=spec.indexOf(':')<0?p[0]:spec.substring(spec.indexOf(':')+1);
+          $rt['Svg.Attributes.'+p[0]]=function(v){ return $data('$Att',[nm,v]); }; });
+        $rt['Browser.sandbox']=function(r){ return $data('$Sandbox',[r]); };
+        $rt['Browser.element']=function(r){ return $data('$Element',[r]); };
+        $rt['Browser.document']=function(r){ return $data('$Document',[r]); };
+        $rt['Cmd.none']=$data('$CmdNone',[]); $rt['Cmd.batch']=function(l){ return $data('$CmdBatch',[l]); };
+        $rt['Sub.none']=$data('$SubNone',[]); $rt['Sub.batch']=function(l){ return $data('$SubBatch',[l]); };
+
+        function setAttr(el, a){
+          var t=a.$, nm=a._[0], val=a._[1];
+          if (t==='$Att'){ el.setAttribute(nm, String(val)); }
+          else if (t==='$Prop'){ if (typeof val==='boolean'){ if(val) el.setAttribute(nm,''); el[nm]=val; } else el.setAttribute(nm,String(val)); }
+          else if (t==='$Style'){ el.style.setProperty(nm, val); }
+          else if (t==='$On'){
+            var ev=nm, h=a._[1];
+            var domEvent = ev==='check'?'change':ev;
+            el.addEventListener(domEvent, function(e){
+              var msg = (ev==='input') ? h(e.target.value) : (ev==='check') ? h(e.target.checked) : h;
+              window.$dispatch(msg); e.stopPropagation();
+            });
+          }
+        }
+        window.$toDom = function(v){
+          if (v.$==='$Text') return document.createTextNode(String(v._[0]));
+          var tag=v._[0];
+          var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
+          $listToArray(v._[1]).forEach(function(a){ setAttr(el,a); });
+          $listToArray(v._[2]).forEach(function(k){ el.appendChild(window.$toDom(k)); });
+          return el;
+        };
+        window.$mount = function(program, root){
+          var def = program._[0], kind = program.$, model;
+          if (kind==='$Sandbox') model = def.init;
+          else { var pair = def.init($unit); model = pair.vs[0]; }
+          function viewDom(){
+            var v = def.view(model);
+            if (kind==='$Document'){ v = $data('$Node',['div', $nil, v.body]); }
+            return window.$toDom(v);
+          }
+          function render(){ while(root.firstChild) root.removeChild(root.firstChild); root.appendChild(viewDom()); }
+          window.$dispatch = function(msg){
+            if (kind==='$Sandbox') model = def.update(msg)(model);
+            else { var pair = def.update(msg)(model); model = pair.vs[0]; }
+            render();
+          };
+          window.$app = { dispatch: function(m){ window.$dispatch(m); }, model: function(){ return model; } };
+          render();
+        };
+        // Entry point: a static Html value is rendered directly; a Browser program is mounted.
+        window.$start = function(main, root){
+          if (main.$==='$Node' || main.$==='$Text') { root.appendChild(window.$toDom(main)); }
+          else { window.$mount(main, root); }
+        };
+      })();
+      """;
 }

@@ -75,6 +75,27 @@ public final class JsCompiler {
     return JsRuntime.SOURCE + "\n" + c.declarations() + "\nprocess.stdout.write($show(_$main));\n";
   }
 
+  /** A browser app bundle: kernel + DOM/TEA runtime + module + a mount call. */
+  public static String appBundle(String source) {
+    JsCompiler c = new JsCompiler(Parser.parseModule(source));
+    return JsRuntime.SOURCE
+        + "\n"
+        + JsRuntime.DOM
+        + "\n"
+        + c.declarations()
+        + "\nwindow.$start(_$main, document.getElementById('app'));\n";
+  }
+
+  /** A full HTML page hosting {@link #appBundle}; {@code driver} (may be null) runs after mount. */
+  public static String htmlPage(String source, String driver) {
+    return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
+        + "<script>\n"
+        + appBundle(source)
+        + "\n"
+        + (driver == null ? "" : driver)
+        + "\n</script></body></html>\n";
+  }
+
   /** Full program that prints the value of a single expression. */
   public static String expressionProgram(String expression) {
     Module empty =
@@ -89,22 +110,100 @@ public final class JsCompiler {
     return JsRuntime.SOURCE + "\nprocess.stdout.write($show((" + e + ")));\n";
   }
 
-  /** Just the compiled top-level declarations (functions first, then values). */
+  /**
+   * Compiled top-level declarations: functions first (their bodies run lazily when called), then
+   * parameterless values in dependency order, so a value that references another is emitted after
+   * it (JS {@code var} initialisers run eagerly, unlike the interpreter's lazy thunks).
+   */
   public String declarations() {
     StringBuilder sb = new StringBuilder();
+    java.util.Map<String, Decl.Value> values = new java.util.LinkedHashMap<>();
     for (Decl d : module.decls()) {
-      if (d instanceof Decl.Value v && !v.params().isEmpty()) {
-        sb.append("var ").append(jsVar(v.name())).append(" = ")
-            .append(compileLambda(v.params(), v.body())).append(";\n");
+      if (d instanceof Decl.Value v) {
+        if (v.params().isEmpty()) {
+          values.put(v.name(), v);
+        } else {
+          sb.append("var ").append(jsVar(v.name())).append(" = ")
+              .append(compileLambda(v.params(), v.body())).append(";\n");
+        }
       }
     }
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Value v && v.params().isEmpty()) {
-        sb.append("var ").append(jsVar(v.name())).append(" = ")
-            .append(compile(v.body())).append(";\n");
-      }
+    java.util.Set<String> emitted = new java.util.HashSet<>();
+    for (String name : values.keySet()) {
+      emitValue(name, values, emitted, new java.util.HashSet<>(), sb);
     }
     return sb.toString();
+  }
+
+  private void emitValue(
+      String name,
+      java.util.Map<String, Decl.Value> values,
+      java.util.Set<String> emitted,
+      java.util.Set<String> visiting,
+      StringBuilder sb) {
+    if (emitted.contains(name) || !values.containsKey(name) || !visiting.add(name)) {
+      return; // already emitted, not a value, or a cycle — emit in whatever order we reach it
+    }
+    Decl.Value v = values.get(name);
+    java.util.Set<String> refs = new java.util.HashSet<>();
+    collectRefs(v.body(), values.keySet(), refs);
+    for (String dep : refs) {
+      emitValue(dep, values, emitted, visiting, sb);
+    }
+    if (emitted.add(name)) {
+      sb.append("var ").append(jsVar(name)).append(" = ").append(compile(v.body())).append(";\n");
+    }
+  }
+
+  /** Collects the names of top-level values referenced (unqualified) within {@code e}. */
+  private void collectRefs(Expr e, java.util.Set<String> names, java.util.Set<String> out) {
+    switch (e) {
+      case Expr.Var v -> {
+        if (v.module() == null && names.contains(v.name())) {
+          out.add(v.name());
+        }
+      }
+      case Expr.App a -> {
+        collectRefs(a.fn(), names, out);
+        collectRefs(a.arg(), names, out);
+      }
+      case Expr.BinOp b -> {
+        collectRefs(b.left(), names, out);
+        collectRefs(b.right(), names, out);
+      }
+      case Expr.Negate n -> collectRefs(n.operand(), names, out);
+      case Expr.If i -> {
+        collectRefs(i.cond(), names, out);
+        collectRefs(i.thenBranch(), names, out);
+        collectRefs(i.elseBranch(), names, out);
+      }
+      case Expr.Lambda l -> collectRefs(l.body(), names, out);
+      case Expr.Let let -> {
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value dv) {
+            collectRefs(dv.body(), names, out);
+          } else if (d instanceof Decl.Destructure dd) {
+            collectRefs(dd.body(), names, out);
+          }
+        }
+        collectRefs(let.body(), names, out);
+      }
+      case Expr.Case c -> {
+        collectRefs(c.scrutinee(), names, out);
+        c.branches().forEach(br -> collectRefs(br.body(), names, out));
+      }
+      case Expr.ListLit l -> l.items().forEach(i -> collectRefs(i, names, out));
+      case Expr.Tuple t -> t.items().forEach(i -> collectRefs(i, names, out));
+      case Expr.Record r -> r.fields().forEach(f -> collectRefs(f.value(), names, out));
+      case Expr.RecordUpdate u -> {
+        if (names.contains(u.base())) {
+          out.add(u.base());
+        }
+        u.fields().forEach(f -> collectRefs(f.value(), names, out));
+      }
+      case Expr.RecordAccess a -> collectRefs(a.target(), names, out);
+      default -> {}
+    }
   }
 
   // --- expression compilation -------------------------------------------
