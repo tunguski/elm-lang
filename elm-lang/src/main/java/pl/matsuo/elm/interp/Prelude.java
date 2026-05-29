@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.function.Function;
 import pl.matsuo.elm.error.ElmRuntimeError;
 import pl.matsuo.elm.runtime.Builtin;
+import pl.matsuo.elm.runtime.ElmArray;
 import pl.matsuo.elm.runtime.ElmChar;
 import pl.matsuo.elm.runtime.ElmData;
 import pl.matsuo.elm.runtime.ElmDict;
@@ -116,7 +117,94 @@ public final class Prelude {
     registerEffects();
     registerDict();
     registerSet();
+    registerArray();
     registerConstructors();
+  }
+
+  // --- Array -------------------------------------------------------------
+
+  private static Object[] arr(Object o) {
+    return ((ElmArray) o).items();
+  }
+
+  private static int clampIndex(long i, int len) {
+    long v = i < 0 ? len + i : i;
+    return (int) Math.max(0, Math.min(v, len));
+  }
+
+  private static void registerArray() {
+    BUILTINS.put("Array.empty", ElmArray.EMPTY);
+    fn("Array.isEmpty", 1, a -> arr(a[0]).length == 0);
+    fn("Array.length", 1, a -> (long) arr(a[0]).length);
+    fn("Array.repeat", 2, a -> {
+      int n = (int) Math.max(0, Operators.asLong(a[0]));
+      Object[] out = new Object[n];
+      java.util.Arrays.fill(out, a[1]);
+      return new ElmArray(out);
+    });
+    fn("Array.initialize", 2, a -> {
+      int n = (int) Math.max(0, Operators.asLong(a[0]));
+      Object[] out = new Object[n];
+      for (int i = 0; i < n; i++) {
+        out[i] = Apply.apply(a[1], (long) i);
+      }
+      return new ElmArray(out);
+    });
+    fn("Array.fromList", 1, a -> new ElmArray(((ElmList) a[0]).toJava().toArray()));
+    fn("Array.toList", 1, a -> ElmList.fromJava(java.util.Arrays.asList(arr(a[0]))));
+    fn("Array.get", 2, a -> {
+      int i = (int) Operators.asLong(a[0]);
+      Object[] items = arr(a[1]);
+      return (i >= 0 && i < items.length) ? just(items[i]) : NOTHING;
+    });
+    fn("Array.set", 3, a -> ((ElmArray) a[2]).set((int) Operators.asLong(a[0]), a[1]));
+    fn("Array.push", 2, a -> ((ElmArray) a[1]).push(a[0]));
+    fn("Array.append", 2, a -> {
+      Object[] x = arr(a[0]);
+      Object[] y = arr(a[1]);
+      Object[] out = java.util.Arrays.copyOf(x, x.length + y.length);
+      System.arraycopy(y, 0, out, x.length, y.length);
+      return new ElmArray(out);
+    });
+    fn("Array.slice", 3, a -> {
+      Object[] items = arr(a[2]);
+      int from = clampIndex(Operators.asLong(a[0]), items.length);
+      int to = clampIndex(Operators.asLong(a[1]), items.length);
+      return from < to
+          ? new ElmArray(java.util.Arrays.copyOfRange(items, from, to))
+          : ElmArray.EMPTY;
+    });
+    fn("Array.map", 2, a -> {
+      Object[] items = arr(a[1]);
+      Object[] out = new Object[items.length];
+      for (int i = 0; i < items.length; i++) {
+        out[i] = Apply.apply(a[0], items[i]);
+      }
+      return new ElmArray(out);
+    });
+    fn("Array.indexedMap", 2, a -> {
+      Object[] items = arr(a[1]);
+      Object[] out = new Object[items.length];
+      for (int i = 0; i < items.length; i++) {
+        out[i] = Apply.applyAll(a[0], (long) i, items[i]);
+      }
+      return new ElmArray(out);
+    });
+    fn("Array.foldl", 3, a -> {
+      Object acc = a[1];
+      for (Object x : arr(a[2])) {
+        acc = Apply.applyAll(a[0], x, acc);
+      }
+      return acc;
+    });
+    fn("Array.foldr", 3, a -> {
+      Object[] items = arr(a[2]);
+      Object acc = a[1];
+      for (int i = items.length - 1; i >= 0; i--) {
+        acc = Apply.applyAll(a[0], items[i], acc);
+      }
+      return acc;
+    });
   }
 
   // --- Dict / Set --------------------------------------------------------

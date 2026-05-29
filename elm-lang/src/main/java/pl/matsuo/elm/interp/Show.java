@@ -1,6 +1,7 @@
 package pl.matsuo.elm.interp;
 
 import java.util.stream.Collectors;
+import pl.matsuo.elm.runtime.ElmArray;
 import pl.matsuo.elm.runtime.ElmChar;
 import pl.matsuo.elm.runtime.ElmData;
 import pl.matsuo.elm.runtime.ElmDict;
@@ -66,6 +67,10 @@ public final class Show {
           set.elements().stream()
               .map(x -> render(x, true))
               .collect(Collectors.joining(",", "Set.fromList [", "]"));
+      case ElmArray array ->
+          java.util.Arrays.stream(array.items())
+              .map(x -> render(x, true))
+              .collect(Collectors.joining(",", "Array.fromList [", "]"));
       case ElmData d -> {
         if (d.args().length == 0) {
           yield d.ctor();

@@ -46,6 +46,18 @@ class DictSetTest {
   }
 
   @Test
+  void arrayBasics() {
+    assertEquals("3", show("Array.length (Array.fromList [1,2,3])"));
+    assertEquals("Just 20", show("Array.get 1 (Array.fromList [10,20,30])"));
+    assertEquals("Nothing", show("Array.get 9 (Array.fromList [1])"));
+    assertEquals("Array.fromList [1,2,99]", show("Array.set 2 99 (Array.fromList [1,2,3])"));
+    assertEquals("Array.fromList [1,2,3]", show("Array.push 3 (Array.fromList [1,2])"));
+    assertEquals("[1,4,9]", show("Array.toList (Array.map (\\x -> x * x) (Array.fromList [1,2,3]))"));
+    assertEquals("6", show("Array.foldl (+) 0 (Array.fromList [1,2,3])"));
+    assertEquals("Array.fromList [0,1,2,3]", show("Array.initialize 4 (\\i -> i)"));
+  }
+
+  @Test
   void crossBackendDict() {
     String src = "Set.toList (Set.fromList [5,3,5,1])";
     assertEquals(

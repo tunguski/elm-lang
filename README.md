@@ -46,7 +46,8 @@ accessor), `if`, `case` (full patterns: ctor/tuple/list/cons/record/alias/litera
 lambdas, curried application, operators with the elm/core fixity table, qualified names. Layout
 is handled by the offside rule.
 
-Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Debug`, plus
+Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`, `Set`,
+`Array`, `Debug`, plus
 `Html`/`Html.Attributes`/`Html.Events`, `Svg`/`Svg.Attributes`, `Browser`
 (`sandbox`/`element`/`document`), `Cmd`/`Sub`, `Random`, `Time`, `Task`, `Http`, `Json.Decode`.
 
