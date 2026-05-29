@@ -18,3 +18,7 @@ Thumbs.db
 
 # Maven wrapper distribution download marker (keep wrapper scripts + properties)
 !**/.mvn/wrapper/maven-wrapper.properties
+
+# native-image build log
+native.log
+**/native.log

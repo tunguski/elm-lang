@@ -22,6 +22,26 @@ cd elm-lang
 ./mvnw.cmd test        # Windows (PowerShell);  ./mvnw test on Unix
 ```
 
+## Standalone executable
+
+```sh
+cd elm-lang
+./mvnw.cmd -DskipTests package          # builds target/elm.jar (runnable fat JAR)
+java -jar target/elm.jar eval "List.foldl (+) 0 (List.range 1 100)"   # -> 5050
+java -jar target/elm.jar run Main.elm   # loads the optimizing Truffle (Graal JIT) runtime
+```
+
+A true native binary (instant startup, no JVM) is available via GraalVM `native-image`:
+
+```sh
+./mvnw.cmd -Pnative package             # -> target/elm(.exe)
+```
+
+This needs a platform C toolchain on `PATH`: on **Windows**, MSVC (run from the
+"x64 Native Tools Command Prompt for VS", or with Visual Studio Build Tools installed);
+on Linux/macOS, `gcc`/`clang`. The `native` Maven profile is configured (`--no-fallback`,
+`-O2`); it was not built in this environment because MSVC is not installed here.
+
 ## Run
 
 ```sh
