@@ -53,16 +53,19 @@ Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`,
 
 ## elm-lang.org examples
 
-See [docs/examples.md](docs/examples.md). **13 of 27** pass headlessly with tests:
+See [docs/examples.md](docs/examples.md). **19 of 27** pass headlessly with tests:
 
 - **HTML**: Hello, Groceries, Shapes
 - **User Input**: Buttons, Text Fields, Forms
 - **Random**: Numbers, Cards, Positions
 - **Time**: Time, Clock
 - **HTTP**: Book, Quotes (against stubbed responses)
+- **Playground**: Picture, Animation, Mouse, Keyboard, Turtle, Mario — these load the **real
+  unmodified [evancz/elm-playground](https://github.com/evancz/elm-playground) source** (1700+
+  lines) via the module system and render to SVG.
 
 Interactive examples are driven by a headless `Tea` runtime that dispatches messages through
-`update` and re-renders the virtual DOM to HTML; commands (`Random`, `Task`, `Http`) and
+`update` and re-renders the virtual DOM to HTML/SVG; commands (`Random`, `Task`, `Http`) and
 `Time` subscriptions are interpreted deterministically.
 
 ### Not yet working
@@ -70,8 +73,6 @@ Interactive examples are driven by a headless `Tea` runtime that dispatches mess
 - **Files** (Upload, Drag-and-Drop, Image Previews): need real browser file selection / async
   `File.toUrl` tasks.
 - **WebGL** (Triangle, Cube, Crate, Thwomp, First Person): need a GPU/WebGL context.
-- **Playground** (Picture, Animation, Mouse, Keyboard, Turtle, Mario): need the
-  `evancz/elm-playground` package and a canvas.
 
 These require executing in a **real browser** via the JS backend extended with the full Elm
 effect-manager kernel — a planned next phase, not achievable in a headless JVM.
