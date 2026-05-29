@@ -3,8 +3,10 @@ package pl.matsuo.elm.interp;
 import java.util.stream.Collectors;
 import pl.matsuo.elm.runtime.ElmChar;
 import pl.matsuo.elm.runtime.ElmData;
+import pl.matsuo.elm.runtime.ElmDict;
 import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmRecord;
+import pl.matsuo.elm.runtime.ElmSet;
 import pl.matsuo.elm.runtime.ElmTuple;
 import pl.matsuo.elm.runtime.ElmUnit;
 
@@ -56,6 +58,14 @@ public final class Show {
           r.fields().entrySet().stream()
               .map(e -> e.getKey() + " = " + render(e.getValue(), true))
               .collect(Collectors.joining(", ", "{ ", " }"));
+      case ElmDict dict ->
+          dict.entries().entrySet().stream()
+              .map(e -> "(" + render(e.getKey(), true) + "," + render(e.getValue(), true) + ")")
+              .collect(Collectors.joining(",", "Dict.fromList [", "]"));
+      case ElmSet set ->
+          set.elements().stream()
+              .map(x -> render(x, true))
+              .collect(Collectors.joining(",", "Set.fromList [", "]"));
       case ElmData d -> {
         if (d.args().length == 0) {
           yield d.ctor();

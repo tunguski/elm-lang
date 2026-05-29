@@ -1,6 +1,7 @@
 package pl.matsuo.elm.interp;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,8 +10,10 @@ import pl.matsuo.elm.error.ElmRuntimeError;
 import pl.matsuo.elm.runtime.Builtin;
 import pl.matsuo.elm.runtime.ElmChar;
 import pl.matsuo.elm.runtime.ElmData;
+import pl.matsuo.elm.runtime.ElmDict;
 import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmRecord;
+import pl.matsuo.elm.runtime.ElmSet;
 import pl.matsuo.elm.runtime.ElmTuple;
 
 /**
@@ -111,7 +114,178 @@ public final class Prelude {
     registerSvg();
     registerBrowser();
     registerEffects();
+    registerDict();
+    registerSet();
     registerConstructors();
+  }
+
+  // --- Dict / Set --------------------------------------------------------
+
+  private static final Comparator<Object> CMP = Operators::compareValues;
+
+  private static ElmDict asDict(Object o) {
+    return (ElmDict) o;
+  }
+
+  private static void registerDict() {
+    BUILTINS.put("Dict.empty", ElmDict.empty(CMP));
+    fn("Dict.singleton", 2, a -> ElmDict.empty(CMP).insert(a[0], a[1]));
+    fn("Dict.insert", 3, a -> asDict(a[2]).insert(a[0], a[1]));
+    fn("Dict.remove", 2, a -> asDict(a[1]).remove(a[0]));
+    fn("Dict.member", 2, a -> asDict(a[1]).member(a[0]));
+    fn("Dict.size", 1, a -> (long) asDict(a[0]).size());
+    fn("Dict.isEmpty", 1, a -> asDict(a[0]).size() == 0);
+    fn("Dict.get", 2, a -> {
+      Object v = asDict(a[1]).getOrNull(a[0]);
+      return v == null ? NOTHING : just(v);
+    });
+    fn("Dict.update", 3, a -> {
+      ElmDict dict = asDict(a[2]);
+      Object current = dict.getOrNull(a[0]);
+      Object maybe = current == null ? NOTHING : just(current);
+      Object result = Apply.apply(a[1], maybe);
+      if (isJust(result)) {
+        return dict.insert(a[0], justValue(result));
+      }
+      return dict.remove(a[0]);
+    });
+    fn("Dict.keys", 1, a -> ElmList.fromJava(new ArrayList<>(asDict(a[0]).entries().keySet())));
+    fn("Dict.values", 1, a -> ElmList.fromJava(new ArrayList<>(asDict(a[0]).entries().values())));
+    fn("Dict.toList", 1, a -> {
+      List<Object> out = new ArrayList<>();
+      asDict(a[0]).entries().forEach((k, v) -> out.add(new ElmTuple(new Object[] {k, v})));
+      return ElmList.fromJava(out);
+    });
+    fn("Dict.fromList", 1, a -> {
+      ElmDict dict = ElmDict.empty(CMP);
+      for (Object pair : ((ElmList) a[0]).toJava()) {
+        ElmTuple t = (ElmTuple) pair;
+        dict = dict.insert(t.get(0), t.get(1));
+      }
+      return dict;
+    });
+    fn("Dict.map", 2, a -> {
+      ElmDict out = ElmDict.empty(CMP);
+      for (Map.Entry<Object, Object> e : asDict(a[1]).entries().entrySet()) {
+        out = out.insert(e.getKey(), Apply.applyAll(a[0], e.getKey(), e.getValue()));
+      }
+      return out;
+    });
+    fn("Dict.filter", 2, a -> {
+      ElmDict out = ElmDict.empty(CMP);
+      for (Map.Entry<Object, Object> e : asDict(a[1]).entries().entrySet()) {
+        if ((Boolean) Apply.applyAll(a[0], e.getKey(), e.getValue())) {
+          out = out.insert(e.getKey(), e.getValue());
+        }
+      }
+      return out;
+    });
+    fn("Dict.foldl", 3, a -> {
+      Object acc = a[1];
+      for (Map.Entry<Object, Object> e : asDict(a[2]).entries().entrySet()) {
+        acc = Apply.applyAll(a[0], e.getKey(), e.getValue(), acc);
+      }
+      return acc;
+    });
+    fn("Dict.union", 2, a -> {
+      ElmDict out = asDict(a[1]);
+      for (Map.Entry<Object, Object> e : asDict(a[0]).entries().entrySet()) {
+        out = out.insert(e.getKey(), e.getValue());
+      }
+      return out;
+    });
+    fn("Dict.intersect", 2, a -> {
+      ElmDict out = ElmDict.empty(CMP);
+      ElmDict other = asDict(a[1]);
+      for (Map.Entry<Object, Object> e : asDict(a[0]).entries().entrySet()) {
+        if (other.member(e.getKey())) {
+          out = out.insert(e.getKey(), e.getValue());
+        }
+      }
+      return out;
+    });
+    fn("Dict.diff", 2, a -> {
+      ElmDict out = ElmDict.empty(CMP);
+      ElmDict other = asDict(a[1]);
+      for (Map.Entry<Object, Object> e : asDict(a[0]).entries().entrySet()) {
+        if (!other.member(e.getKey())) {
+          out = out.insert(e.getKey(), e.getValue());
+        }
+      }
+      return out;
+    });
+  }
+
+  private static ElmSet asSet(Object o) {
+    return (ElmSet) o;
+  }
+
+  private static void registerSet() {
+    BUILTINS.put("Set.empty", ElmSet.empty(CMP));
+    fn("Set.singleton", 1, a -> ElmSet.empty(CMP).insert(a[0]));
+    fn("Set.insert", 2, a -> asSet(a[1]).insert(a[0]));
+    fn("Set.remove", 2, a -> asSet(a[1]).remove(a[0]));
+    fn("Set.member", 2, a -> asSet(a[1]).member(a[0]));
+    fn("Set.size", 1, a -> (long) asSet(a[0]).size());
+    fn("Set.isEmpty", 1, a -> asSet(a[0]).size() == 0);
+    fn("Set.toList", 1, a -> ElmList.fromJava(new ArrayList<>(asSet(a[0]).elements())));
+    fn("Set.fromList", 1, a -> {
+      ElmSet set = ElmSet.empty(CMP);
+      for (Object x : ((ElmList) a[0]).toJava()) {
+        set = set.insert(x);
+      }
+      return set;
+    });
+    fn("Set.union", 2, a -> {
+      ElmSet out = asSet(a[1]);
+      for (Object x : asSet(a[0]).elements()) {
+        out = out.insert(x);
+      }
+      return out;
+    });
+    fn("Set.intersect", 2, a -> {
+      ElmSet out = ElmSet.empty(CMP);
+      ElmSet other = asSet(a[1]);
+      for (Object x : asSet(a[0]).elements()) {
+        if (other.member(x)) {
+          out = out.insert(x);
+        }
+      }
+      return out;
+    });
+    fn("Set.diff", 2, a -> {
+      ElmSet out = ElmSet.empty(CMP);
+      ElmSet other = asSet(a[1]);
+      for (Object x : asSet(a[0]).elements()) {
+        if (!other.member(x)) {
+          out = out.insert(x);
+        }
+      }
+      return out;
+    });
+    fn("Set.map", 2, a -> {
+      ElmSet out = ElmSet.empty(CMP);
+      for (Object x : asSet(a[1]).elements()) {
+        out = out.insert(Apply.apply(a[0], x));
+      }
+      return out;
+    });
+    fn("Set.filter", 2, a -> {
+      ElmSet out = ElmSet.empty(CMP);
+      for (Object x : asSet(a[1]).elements()) {
+        if ((Boolean) Apply.apply(a[0], x)) {
+          out = out.insert(x);
+        }
+      }
+      return out;
+    });
+    fn("Set.foldl", 3, a -> {
+      Object acc = a[1];
+      for (Object x : asSet(a[2]).elements()) {
+        acc = Apply.applyAll(a[0], x, acc);
+      }
+      return acc;
+    });
   }
 
   // --- Cmd / Sub / Random / Time / Task ----------------------------------
