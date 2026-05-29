@@ -10,6 +10,7 @@ import pl.matsuo.elm.error.Position;
 import pl.matsuo.elm.interp.Prelude;
 import pl.matsuo.elm.interp.RuntimeEnv;
 import pl.matsuo.elm.interp.Scope;
+import pl.matsuo.elm.interp.Thunk;
 import pl.matsuo.elm.parser.Parser;
 
 /**
@@ -24,11 +25,17 @@ public final class BytecodeInterpreter {
 
   private BytecodeInterpreter(Module module) {
     Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
+    Map<String, List<String>> recordCtors = new HashMap<>();
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Union union) {
         for (Decl.Union.Variant v : union.variants()) {
           ctorArity.put(v.name(), v.args().size());
         }
+      }
+      if (d instanceof Decl.TypeAlias ta
+          && ta.type() instanceof pl.matsuo.elm.ast.Type.Record rec
+          && rec.base().isEmpty()) {
+        recordCtors.put(ta.name(), rec.fields().stream().map(f -> f.name()).toList());
       }
     }
     Map<String, String> unqualified = Prelude.defaultUnqualified();
@@ -48,7 +55,9 @@ public final class BytecodeInterpreter {
         }
       }
     }
-    this.env = new RuntimeEnv(Prelude.builtins(), unqualified, aliases, ctorArity, module.name());
+    this.env =
+        new RuntimeEnv(
+            Prelude.builtins(), unqualified, aliases, ctorArity, recordCtors, module.name());
     load(module);
   }
 
@@ -75,7 +84,7 @@ public final class BytecodeInterpreter {
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && v.params().isEmpty()) {
         Chunk chunk = compiler.compileChunk(List.of(), v.body(), v.name());
-        env.defineTopLevel(v.name(), VM.run(chunk, rootScope.child(), env));
+        env.defineTopLevel(v.name(), new Thunk(() -> VM.run(chunk, rootScope.child(), env)));
       }
     }
   }
@@ -85,7 +94,7 @@ public final class BytecodeInterpreter {
     if (v == null) {
       throw new ElmRuntimeError("No top-level definition named '" + name + "'");
     }
-    return v;
+    return Thunk.resolve(v);
   }
 
   public Object evalExpr(String expression) {

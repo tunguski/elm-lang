@@ -25,6 +25,36 @@ public final class Prelude {
   private static final Map<String, String> UNQUALIFIED = new HashMap<>();
   private static final Map<String, Integer> CTOR_ARITY = new HashMap<>();
 
+  // Html/Svg name tables (declared before the static initializer that reads them).
+  private static final String[] HTML_TAGS = {
+    "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "a", "img", "button",
+    "input", "label", "form", "section", "header", "footer", "nav", "main_:main", "br", "hr",
+    "table", "thead", "tbody", "tr", "td", "th", "pre", "code", "strong", "em", "i", "b", "small",
+    "select", "option", "textarea", "canvas", "audio", "video", "fieldset", "legend", "figure"
+  };
+
+  // elmName:htmlName pairs; when no colon, the names are identical.
+  private static final String[] HTML_STRING_ATTRS = {
+    "class", "id", "href", "src", "alt", "title", "placeholder", "value", "name", "type_:type",
+    "for_:for", "rel", "target", "action", "method", "accept", "autocomplete", "min", "max", "step",
+    "cols", "rows", "colspan:colspan", "tabindex"
+  };
+
+  private static final String[] HTML_BOOL_ATTRS = {
+    "disabled", "checked", "selected", "readonly:readonly", "required", "autofocus", "hidden"
+  };
+
+  private static final String[] SVG_TAGS = {
+    "svg", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "path", "text_:text"
+  };
+
+  private static final String[] SVG_ATTRS = {
+    "width", "height", "viewBox", "cx", "cy", "r", "x", "y", "x1", "y1", "x2", "y2", "rx", "ry",
+    "fill", "stroke", "strokeWidth:stroke-width", "points", "d", "transform", "opacity",
+    "fillOpacity:fill-opacity", "strokeLinecap:stroke-linecap", "fontSize:font-size",
+    "textAnchor:text-anchor", "fontFamily:font-family"
+  };
+
   public static Map<String, Object> builtins() {
     return BUILTINS;
   }
@@ -73,7 +103,81 @@ public final class Prelude {
     registerResult();
     registerTuple();
     registerDebug();
+    registerHtml();
+    registerSvg();
+    registerBrowser();
     registerConstructors();
+  }
+
+  // --- Html / Svg / Browser ----------------------------------------------
+
+  private static Object node(String tag, Object attrs, Object children) {
+    return new ElmData("$Node", new Object[] {tag, attrs, children});
+  }
+
+  private static String[] split(String pair) {
+    int i = pair.indexOf(':');
+    return i < 0 ? new String[] {pair, pair} : new String[] {pair.substring(0, i), pair.substring(i + 1)};
+  }
+
+  private static void registerHtml() {
+    fn("Html.text", 1, a -> new ElmData("$Text", new Object[] {a[0]}));
+    fn("Html.node", 3, a -> node((String) a[0], a[1], a[2]));
+    for (String spec : HTML_TAGS) {
+      String[] nt = split(spec);
+      String tag = nt[1];
+      fn("Html." + nt[0], 2, a -> node(tag, a[0], a[1]));
+    }
+    for (String spec : HTML_STRING_ATTRS) {
+      String[] nt = split(spec);
+      String htmlName = nt[1];
+      fn("Html.Attributes." + nt[0], 1, a -> new ElmData("$Att", new Object[] {htmlName, a[0]}));
+    }
+    for (String spec : HTML_BOOL_ATTRS) {
+      String[] nt = split(spec);
+      String htmlName = nt[1];
+      fn("Html.Attributes." + nt[0], 1, a -> new ElmData("$Prop", new Object[] {htmlName, a[0]}));
+    }
+    fn("Html.Attributes.style", 2, a -> new ElmData("$Style", new Object[] {a[0], a[1]}));
+    fn("Html.Attributes.classList", 1, a -> {
+      StringBuilder sb = new StringBuilder();
+      for (Object pair : ((ElmList) a[0]).toJava()) {
+        ElmTuple t = (ElmTuple) pair;
+        if (Boolean.TRUE.equals(t.get(1))) {
+          if (sb.length() > 0) {
+            sb.append(' ');
+          }
+          sb.append((String) t.get(0));
+        }
+      }
+      return new ElmData("$Att", new Object[] {"class", sb.toString()});
+    });
+    fn("Html.Events.onClick", 1, a -> new ElmData("$On", new Object[] {"click", a[0]}));
+    fn("Html.Events.onInput", 1, a -> new ElmData("$On", new Object[] {"input", a[0]}));
+    fn("Html.Events.onCheck", 1, a -> new ElmData("$On", new Object[] {"check", a[0]}));
+    fn("Html.Events.onSubmit", 1, a -> new ElmData("$On", new Object[] {"submit", a[0]}));
+    fn("Html.Events.onMouseDown", 1, a -> new ElmData("$On", new Object[] {"mousedown", a[0]}));
+    fn("Html.Events.onMouseUp", 1, a -> new ElmData("$On", new Object[] {"mouseup", a[0]}));
+  }
+
+  private static void registerSvg() {
+    for (String spec : SVG_TAGS) {
+      String[] nt = split(spec);
+      String tag = nt[1];
+      fn("Svg." + nt[0], 2, a -> node(tag, a[0], a[1]));
+    }
+    fn("Svg.text", 1, a -> new ElmData("$Text", new Object[] {a[0]}));
+    for (String spec : SVG_ATTRS) {
+      String[] nt = split(spec);
+      String svgName = nt[1];
+      fn("Svg.Attributes." + nt[0], 1, a -> new ElmData("$Att", new Object[] {svgName, a[0]}));
+    }
+  }
+
+  private static void registerBrowser() {
+    fn("Browser.sandbox", 1, a -> new ElmData("$Sandbox", new Object[] {a[0]}));
+    fn("Browser.element", 1, a -> new ElmData("$Element", new Object[] {a[0]}));
+    fn("Browser.document", 1, a -> new ElmData("$Document", new Object[] {a[0]}));
   }
 
   private static void registerConstructors() {

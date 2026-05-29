@@ -21,11 +21,17 @@ public final class Interpreter {
 
   private Interpreter(Module module) {
     Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
+    Map<String, java.util.List<String>> recordCtors = new HashMap<>();
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Union union) {
         for (Decl.Union.Variant v : union.variants()) {
           ctorArity.put(v.name(), v.args().size());
         }
+      }
+      if (d instanceof Decl.TypeAlias ta
+          && ta.type() instanceof pl.matsuo.elm.ast.Type.Record rec
+          && rec.base().isEmpty()) {
+        recordCtors.put(ta.name(), rec.fields().stream().map(f -> f.name()).toList());
       }
     }
 
@@ -48,7 +54,8 @@ public final class Interpreter {
     }
 
     this.env =
-        new RuntimeEnv(Prelude.builtins(), unqualified, aliases, ctorArity, module.name());
+        new RuntimeEnv(
+            Prelude.builtins(), unqualified, aliases, ctorArity, recordCtors, module.name());
     this.compiler = new Compiler(env);
     load(module);
   }
@@ -76,10 +83,12 @@ public final class Interpreter {
         env.defineTopLevel(v.name(), closure);
       }
     }
-    // Pass 2: evaluate values (definitions without parameters) in source order.
+    // Pass 2: bind values (definitions without parameters) as lazy thunks, so they may
+    // reference one another regardless of source order.
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && v.params().isEmpty()) {
-        env.defineTopLevel(v.name(), compiler.compile(v.body()).execute(rootScope));
+        ElmNode node = compiler.compile(v.body());
+        env.defineTopLevel(v.name(), new Thunk(() -> node.execute(rootScope)));
       }
     }
   }
@@ -94,7 +103,7 @@ public final class Interpreter {
     if (v == null) {
       throw new ElmRuntimeError("No top-level definition named '" + name + "'");
     }
-    return v;
+    return Thunk.resolve(v);
   }
 
   /** Compiles and evaluates an expression against this module's environment. */

@@ -4,14 +4,16 @@ The goal: every example on <https://elm-lang.org/examples> works across the appl
 backends. Slugs are the path under `/examples/<slug>`. The "Needs" column tracks the
 runtime capability each example requires, which drives implementation order.
 
-| # | Category | Title | Slug | Needs |
-|---|----------|-------|------|-------|
-| 1 | HTML | Hello | `hello` | Html.text only (static) |
-| 2 | HTML | Groceries | `groceries` | Html elements (static) |
-| 3 | HTML | Shapes | `shapes` | Svg (static) |
-| 4 | User Input | Buttons | `buttons` | Browser.sandbox, onClick, update |
-| 5 | User Input | Text Fields | `text-fields` | Browser.sandbox, onInput, String fns |
-| 6 | User Input | Forms | `forms` | Browser.sandbox, multiple fields, styles |
+Status: ✅ = working & tested headlessly (interpreter/bytecode), ⏳ = not yet.
+
+| # | Category | Title | Slug | Status | Needs |
+|---|----------|-------|------|--------|-------|
+| 1 | HTML | Hello | `hello` | ✅ | Html.text only (static) |
+| 2 | HTML | Groceries | `groceries` | ✅ | Html elements (static) |
+| 3 | HTML | Shapes | `shapes` | ✅ | Svg (static) |
+| 4 | User Input | Buttons | `buttons` | ✅ | Browser.sandbox, onClick, update |
+| 5 | User Input | Text Fields | `text-fields` | ✅ | Browser.sandbox, onInput, String fns |
+| 6 | User Input | Forms | `forms` | ✅ | Browser.sandbox, multiple fields, styles |
 | 7 | Random | Numbers | `numbers` | Browser.element, Cmd, Random |
 | 8 | Random | Cards | `cards` | Random, custom types |
 | 9 | Random | Positions | `positions` | Random, Svg |
