@@ -63,9 +63,17 @@ java -cp <classpath> pl.matsuo.elm.Main js path/to/Main.elm
 ```
 
 CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]`,
-`js <file.elm> [--min]`, `eval "<expr>" [--backend ...]`,
-`check <file.elm> [more.elm …]` (type-check a module or project), `bench [fibN]`,
+`js <file.elm> [--min] [--map]`, `eval "<expr>" [--backend ...]`,
+`check <file.elm> [more.elm …]` (type-check a module or project), `repl`, `lsp`
+(language server over stdio), `project <elm.json|dir> [check|run]`, `bench [fibN]`,
 `site <examplesDir> <Playground.elm> <outDir>`.
+
+It also ships a **REPL** (`elm repl`), a **language server** (`elm lsp` — diagnostics
++ hover types, reusing the parser and HM checker), `elm.json` **project mode**, and JS
+**source maps** (`js --map`). The gallery includes a [JS-vs-WASM
+page](https://tunguski.github.io/elm-lang/backends.html) and an interactive
+[playground](https://tunguski.github.io/elm-lang/playground.html) running both compiled
+backends in the browser.
 
 ## Type inference
 
