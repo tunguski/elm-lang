@@ -193,6 +193,13 @@ class MainCliTest {
   }
 
   @Test
+  void testCommandRunsTheBundledSuite() {
+    Result r = invoke("test", "example-test"); // resolves the bundled demo by name
+    assertTrue(r.code() == 0, r.out());
+    assertTrue(r.out().contains("7 passed"), r.out());
+  }
+
+  @Test
   void missingFileProducesCleanErrorNotStackTrace() {
     Result r = invoke("run", "does-not-exist.elm");
     assertTrue(r.code() == 1, "exit code");

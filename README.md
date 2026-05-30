@@ -74,6 +74,7 @@ CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--stri
 (type-check a module or project), `format <file.elm> [--write|--check|--project]`, `repl`,
 `lsp` (language server over stdio), `script <file.elm> [args…]` (run an Elm file as a
 command-line script), `server <file.elm> [--port N]` (serve HTTP from an Elm handler),
+`test <file.elm…>` (run `Test` suites with the bundled Test/Expect modules),
 `project <elm.json|dir> [check|run]`, `init` (scaffold `elm.json` + `src/`), `bench [fibN]`,
 `site <examplesDir> <Playground.elm> <outDir>`.
 

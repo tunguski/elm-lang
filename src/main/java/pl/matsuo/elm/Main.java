@@ -23,8 +23,8 @@ import pl.matsuo.elm.runtime.ElmData;
 
 /**
  * Command-line entry point, built on <a href="https://picocli.info">picocli</a>: {@code elm} with
- * subcommands {@code run/js/make/eval/script/server/check/repl/lsp/format/project/bench/site/init}.
- * Use {@code --help} on any command for usage.
+ * subcommands {@code run/js/make/eval/script/server/test/check/repl/lsp/format/project/bench/site/
+ * init}. Use {@code --help} on any command for usage.
  */
 @Command(
     name = "elm",
@@ -56,6 +56,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Eval.class,
       Main.Script.class,
       Main.Serve.class,
+      Main.TestCmd.class,
       Main.Check.class,
       Main.Repl.class,
       Main.Lsp.class,
@@ -353,6 +354,32 @@ public final class Main implements Runnable {
       Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));
       Thread.currentThread().join(); // block until the process is interrupted
       return 0;
+    }
+  }
+
+  @Command(
+      name = "test",
+      description = "Run Elm tests: every top-level Test value (see the bundled Test/Expect modules).",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm test tests/MathTests.elm",
+        "",
+        "Expose `suite : Test` built with `test`/`describe` and `Expect.*` (e.g.",
+        "  suite = describe \"math\" [ test \"adds\" (\\_ -> Expect.equal 4 (2 + 2)) ]).",
+      })
+  static final class TestCmd implements Callable<Integer> {
+    @Parameters(arity = "1..*", description = "Test .elm files.")
+    List<Path> files;
+
+    @Override
+    public Integer call() throws IOException {
+      List<String> sources = new ArrayList<>();
+      for (Path p : files) {
+        sources.add(readElmSource(p));
+      }
+      var result = pl.matsuo.elm.test.TestRunner.run(sources);
+      System.out.print(result.report());
+      return result.exitCode();
     }
   }
 
