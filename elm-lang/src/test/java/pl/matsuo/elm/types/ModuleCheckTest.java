@@ -103,4 +103,68 @@ class ModuleCheckTest {
         ElmTypeError.class,
         () -> TypeChecker.checkModule("main = String.length 5\n"));
   }
+
+  @Test
+  void multipleRecordUpdatesTerminate() {
+    // Regression: unifying several open records that update distinct fields of the same value used
+    // to route empty rows through fresh `{ | r }` records and loop forever. It must now converge.
+    Map<String, String> types =
+        TypeChecker.checkModule(
+            """
+            update msg model =
+                case msg of
+                    1 -> { model | name = "a" }
+                    2 -> { model | password = "b" }
+                    _ -> { model | passwordAgain = "c" }
+            """);
+    assertTrue(types.containsKey("update"), types.toString());
+  }
+
+  @Test
+  void qualifiedNameWinsOverOpenImport() {
+    // Regression: `D.map` must resolve to Json.Decode.map, not the `map` that `Html exposing (..)`
+    // brings into scope (which would make the decoder unify with Html and fail).
+    Map<String, String> types =
+        TypeChecker.checkModule(
+            """
+            import Html exposing (..)
+            import Json.Decode as D
+            decode = D.map (\\n -> n + 1) (D.succeed 1)
+            """);
+    assertEquals("Decoder number", types.get("decode"));
+  }
+
+  @Test
+  void svgViewUnifiesWithHtml() {
+    // `Svg msg` is `Html msg`; an svg-returning helper annotated `Svg msg` must satisfy a
+    // `view : model -> Html msg` Browser program.
+    Map<String, String> types = checkExample("clock");
+    assertTrue(types.get("main").startsWith("Program"), types.get("main"));
+  }
+
+  /** Every single-module elm-lang.org example must type-check end to end. */
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "hello", "groceries", "shapes", "buttons", "text-fields", "forms", "numbers", "cards",
+        "positions", "book", "quotes", "time", "clock", "upload", "drag-and-drop", "image-previews",
+        "triangle", "cube", "crate", "thwomp", "first-person"
+      })
+  void exampleTypeChecks(String slug) throws Exception {
+    // No ElmTypeError is thrown, and `main` gets a type (a static `Html msg` for the HTML examples,
+    // a `Program ...` for the Browser programs).
+    Map<String, String> types = TypeChecker.checkModule(example(slug));
+    String main = types.get("main");
+    assertTrue(
+        main != null && (main.startsWith("Program") || main.startsWith("Html")),
+        slug + ": main = " + main);
+  }
+
+  private static Map<String, String> checkExample(String slug) {
+    try {
+      return TypeChecker.checkModule(example(slug));
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
 }

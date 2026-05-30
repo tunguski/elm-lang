@@ -69,8 +69,11 @@ infers types for expressions and whole modules, with Elm's constrained type vari
 record-alias constructors, type-alias expansion and annotation checking. So `1 + 1.5 : Float`,
 `List.map : (a -> b) -> List a -> List b`, and mistakes like `1 + "a"`, a non-`Bool` `if`
 condition, or `\f -> f f` are reported as type errors. It runs via `check` / `TypeChecker`; it is
-not yet wired as a mandatory pass before evaluation (the prelude signatures cover the core library,
-not yet every Html/WebGL builtin).
+not wired as a mandatory pass before evaluation. The prelude signatures cover elm/core plus the
+`Html`/`Svg`/`Browser`/`Events`/`Dom`, effect (`Cmd`/`Sub`/`Random`/`Time`/`Task`/`Http`/`Json`/
+`File`), collection and `Math.*`/`WebGL`/`WebGL.Texture` builtins the examples use, so **all 21
+single-module elm-lang.org examples type-check end to end** (`ModuleCheckTest`). The Playground
+games need cross-module checking (`check` is single-file), which isn't implemented yet.
 
 ## Language coverage
 
@@ -147,8 +150,12 @@ GraalVM for JDK 25 (via the Maven wrapper) for every push and pull request.
 
 ## Known limitations
 
-- Type inference exists (Hindley–Milner, see above) but is **not a mandatory pass** before
-  evaluation: the prelude signatures cover elm/core, not yet every `Html`/`WebGL` builtin, so
-  `check` cannot type the most effect-heavy programs end to end. Evaluation runs the inferencer
-  best-effort to decide `Int` vs `Float` for numeric literals and otherwise proceeds untyped.
-- Operator characters exclude `.`, so dot-operators (e.g. elm/parser's `|.`) aren't lexed.
+- Type inference (Hindley–Milner, see above) is **not a mandatory pass** before evaluation:
+  evaluation runs the inferencer best-effort to decide `Int` vs `Float` for numeric literals and
+  otherwise proceeds untyped. `check` itself is **single-module**, so the multi-module Playground
+  games can't yet be type-checked (cross-module resolution from source isn't implemented); every
+  single-module example does type-check.
+- Custom infix operators from packages (e.g. elm/parser's `|.`/`|=`, elm/url's `</>`/`<?>`) lex and
+  parse — the standard ones have their declared fixities and any other lexable operator falls back
+  to a default (left-associative, lowest precedence) — but using them at runtime still requires the
+  defining package, which isn't bundled.

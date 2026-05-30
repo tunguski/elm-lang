@@ -102,7 +102,18 @@ public final class Signatures {
     g("sin", "Float -> Float");
     g("cos", "Float -> Float");
     g("tan", "Float -> Float");
+    g("asin", "Float -> Float");
+    g("acos", "Float -> Float");
+    g("atan", "Float -> Float");
+    g("atan2", "Float -> Float -> Float");
     g("logBase", "Float -> Float -> Float");
+    g("degrees", "Float -> Float");
+    g("radians", "Float -> Float");
+    g("turns", "Float -> Float");
+    g("toPolar", "( Float, Float ) -> ( Float, Float )");
+    g("fromPolar", "( Float, Float ) -> ( Float, Float )");
+    g("isNaN", "Float -> Bool");
+    g("isInfinite", "Float -> Bool");
 
     // List.
     g("List.map", "(a -> b) -> List a -> List b");
@@ -116,6 +127,19 @@ public final class Signatures {
     g("List.member", "a -> List a -> Bool");
     g("List.append", "List a -> List a -> List a");
     g("List.concat", "List (List a) -> List a");
+    g("List.concatMap", "(a -> List b) -> List a -> List b");
+    g("List.filterMap", "(a -> Maybe b) -> List a -> List b");
+    g("List.map3", "(a -> b -> c -> d) -> List a -> List b -> List c -> List d");
+    g("List.repeat", "Int -> a -> List a");
+    g("List.sort", "List comparable -> List comparable");
+    g("List.sortBy", "(a -> comparable) -> List a -> List a");
+    g("List.sortWith", "(a -> a -> Order) -> List a -> List a");
+    g("List.take", "Int -> List a -> List a");
+    g("List.drop", "Int -> List a -> List a");
+    g("List.all", "(a -> Bool) -> List a -> Bool");
+    g("List.any", "(a -> Bool) -> List a -> Bool");
+    g("List.maximum", "List comparable -> Maybe comparable");
+    g("List.minimum", "List comparable -> Maybe comparable");
     g("List.sum", "List number -> number");
     g("List.product", "List number -> number");
     g("List.head", "List a -> Maybe a");
@@ -143,10 +167,16 @@ public final class Signatures {
     // Maybe / Result.
     g("Maybe.withDefault", "a -> Maybe a -> a");
     g("Maybe.map", "(a -> b) -> Maybe a -> Maybe b");
+    g("Maybe.map2", "(a -> b -> v) -> Maybe a -> Maybe b -> Maybe v");
+    g("Maybe.map3", "(a -> b -> c -> v) -> Maybe a -> Maybe b -> Maybe c -> Maybe v");
     g("Maybe.andThen", "(a -> Maybe b) -> Maybe a -> Maybe b");
     g("Result.withDefault", "a -> Result e a -> a");
     g("Result.map", "(a -> b) -> Result e a -> Result e b");
+    g("Result.map2", "(a -> b -> v) -> Result e a -> Result e b -> Result e v");
+    g("Result.andThen", "(a -> Result e b) -> Result e a -> Result e b");
+    g("Result.mapError", "(e -> f) -> Result e a -> Result f a");
     g("Result.toMaybe", "Result e a -> Maybe a");
+    g("Result.fromMaybe", "e -> Maybe a -> Result e a");
 
     // Tuple.
     g("Tuple.pair", "a -> b -> ( a, b )");
@@ -204,7 +234,9 @@ public final class Signatures {
   }
 
   private static void registerSvg() {
-    String elem = "List (Attribute msg) -> List (Svg msg) -> Svg msg";
+    // In Elm `type alias Svg msg = Html msg`, so Svg nodes are Html nodes; emitting Html lets the
+    // two mix freely (e.g. a Browser.element `view : model -> Html msg` returning an `svg [] [...]`).
+    String elem = "List (Attribute msg) -> List (Html msg) -> Html msg";
     for (String tag :
         new String[] {
           "svg", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "path", "image",
@@ -212,7 +244,7 @@ public final class Signatures {
         }) {
       g("Svg." + tag, elem);
     }
-    g("Svg.text", "String -> Svg msg");
+    g("Svg.text", "String -> Html msg");
     for (String attr :
         new String[] {
           "width", "height", "viewBox", "cx", "cy", "r", "x", "y", "x1", "y1", "x2", "y2", "rx",
@@ -255,6 +287,28 @@ public final class Signatures {
     g("Time.utc", "Zone");
     g("Time.here", "Task x Zone");
     g("Time.now", "Task x Posix");
+
+    g("Browser.Events.onAnimationFrame", "(Posix -> msg) -> Sub msg");
+    g("Browser.Events.onAnimationFrameDelta", "(Float -> msg) -> Sub msg");
+    g("Browser.Events.onResize", "(Int -> Int -> msg) -> Sub msg");
+    g("Browser.Events.onKeyDown", "Decoder msg -> Sub msg");
+    g("Browser.Events.onKeyUp", "Decoder msg -> Sub msg");
+    g("Browser.Events.onKeyPress", "Decoder msg -> Sub msg");
+    g("Browser.Events.onClick", "Decoder msg -> Sub msg");
+    g("Browser.Events.onMouseMove", "Decoder msg -> Sub msg");
+    g("Browser.Events.onMouseDown", "Decoder msg -> Sub msg");
+    g("Browser.Events.onMouseUp", "Decoder msg -> Sub msg");
+    g("Browser.Events.onVisibilityChange", "(Visibility -> msg) -> Sub msg");
+
+    // Browser.Dom.Viewport is a record alias (see Infer's builtin aliases); the inline record keeps
+    // the SchemeParser-built type identical to the alias-expanded annotation.
+    String viewport =
+        "{ scene : { width : Float, height : Float },"
+            + " viewport : { x : Float, y : Float, width : Float, height : Float } }";
+    g("Browser.Dom.getViewport", "Task x " + viewport);
+    g("Browser.Dom.setViewport", "Float -> Float -> Task x ()");
+    g("Browser.Dom.focus", "String -> Task Error ()");
+    g("Browser.Dom.blur", "String -> Task Error ()");
 
     g("Task.perform", "(a -> msg) -> Task x a -> Cmd msg");
     g("Task.attempt", "(Result x a -> msg) -> Task x a -> Cmd msg");
@@ -336,8 +390,43 @@ public final class Signatures {
     g("Math.Matrix4.makeLookAt", "Vec3 -> Vec3 -> Vec3 -> Mat4");
     g("Math.Matrix4.makeRotate", "Float -> Vec3 -> Mat4");
     g("Math.Matrix4.makeTranslate", "Vec3 -> Mat4");
+    g("Math.Vector3.normalize", "Vec3 -> Vec3");
+    g("Math.Vector3.sub", "Vec3 -> Vec3 -> Vec3");
+    g("Math.Vector3.cross", "Vec3 -> Vec3 -> Vec3");
+    g("Math.Vector3.dot", "Vec3 -> Vec3 -> Float");
+    g("Math.Vector3.setX", "Float -> Vec3 -> Vec3");
+    g("Math.Vector3.setY", "Float -> Vec3 -> Vec3");
+    g("Math.Vector3.setZ", "Float -> Vec3 -> Vec3");
+    g("Math.Vector3.length", "Vec3 -> Float");
+    g("Math.Vector3.i", "Vec3");
+    g("Math.Vector3.j", "Vec3");
+    g("Math.Vector3.k", "Vec3");
+    g("Math.Vector3.toRecord", "Vec3 -> { x : Float, y : Float, z : Float }");
+    g("Math.Vector3.fromRecord", "{ x : Float, y : Float, z : Float } -> Vec3");
+    g("Math.Vector2.getX", "Vec2 -> Float");
+    g("Math.Vector2.getY", "Vec2 -> Float");
+    g("Math.Matrix4.makeOrtho", "Float -> Float -> Float -> Float -> Float -> Float -> Mat4");
+    g("Math.Matrix4.transform", "Mat4 -> Vec3 -> Vec3");
     g("WebGL.toHtml", "List (Attribute msg) -> List Entity -> Html msg");
+    g("WebGL.toHtmlWith", "List Option -> List (Attribute msg) -> List Entity -> Html msg");
     g("WebGL.entity", "a -> b -> Mesh c -> d -> Entity");
     g("WebGL.triangles", "List ( v, v, v ) -> Mesh v");
+    g("WebGL.indexedTriangles", "List v -> List ( Int, Int, Int ) -> Mesh v");
+    g("WebGL.depth", "Float -> Option");
+    g("WebGL.clearColor", "Float -> Float -> Float -> Float -> Option");
+
+    // elm-explorations/webgl WebGL.Texture. `Options` is a record alias (see Infer's builtin
+    // aliases), so the inline record here unifies with an `options : Texture.Options` annotation.
+    String texOptions =
+        "{ magnify : Resize, minify : Resize, horizontalWrap : Wrap, verticalWrap : Wrap,"
+            + " flipY : Bool }";
+    g("WebGL.Texture.load", "String -> Task Error Texture");
+    g("WebGL.Texture.loadWith", texOptions + " -> String -> Task Error Texture");
+    g("WebGL.Texture.size", "Texture -> ( Int, Int )");
+    g("WebGL.Texture.nearest", "Resize");
+    g("WebGL.Texture.linear", "Resize");
+    g("WebGL.Texture.repeat", "Wrap");
+    g("WebGL.Texture.clampToEdge", "Wrap");
+    g("WebGL.Texture.mirroredRepeat", "Wrap");
   }
 }

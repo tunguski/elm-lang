@@ -56,6 +56,52 @@ public final class Infer {
     Map<String, Scheme> globals = new HashMap<>(base);
     aliases.clear();
     moduleAliases.clear();
+    // Builtin type aliases. `type alias Svg msg = Html msg`, so an annotation mentioning `Svg msg`
+    // must expand to `Html msg` and unify with Html nodes. (A module-defined alias of the same
+    // name, added below, takes precedence.)
+    aliases.put(
+        "Svg",
+        new AliasDef(
+            List.of("msg"), new Type.Con(null, "Html", List.of(new Type.Var("msg")))));
+    // elm-explorations/webgl WebGL.Texture.Options is a record alias; model it so a record literal
+    // type-checks against an `: Texture.Options` annotation (mirrors loadWith's parameter type).
+    aliases.put(
+        "Options",
+        new AliasDef(
+            List.of(),
+            new Type.Record(
+                java.util.Optional.empty(),
+                List.of(
+                    new Type.Record.Field("magnify", con("Resize")),
+                    new Type.Record.Field("minify", con("Resize")),
+                    new Type.Record.Field("horizontalWrap", con("Wrap")),
+                    new Type.Record.Field("verticalWrap", con("Wrap")),
+                    new Type.Record.Field("flipY", con("Bool"))))));
+    // Browser.Dom.Viewport record alias (matches Browser.Dom.getViewport's result type).
+    Type floatT = con("Float");
+    Type scene =
+        new Type.Record(
+            java.util.Optional.empty(),
+            List.of(
+                new Type.Record.Field("width", floatT),
+                new Type.Record.Field("height", floatT)));
+    Type vp =
+        new Type.Record(
+            java.util.Optional.empty(),
+            List.of(
+                new Type.Record.Field("x", floatT),
+                new Type.Record.Field("y", floatT),
+                new Type.Record.Field("width", floatT),
+                new Type.Record.Field("height", floatT)));
+    aliases.put(
+        "Viewport",
+        new AliasDef(
+            List.of(),
+            new Type.Record(
+                java.util.Optional.empty(),
+                List.of(
+                    new Type.Record.Field("scene", scene),
+                    new Type.Record.Field("viewport", vp)))));
     for (Decl d : module.decls()) {
       if (d instanceof Decl.TypeAlias ta) {
         aliases.put(ta.name(), new AliasDef(ta.params(), ta.type()));
@@ -150,6 +196,11 @@ public final class Infer {
   /** A param map that reuses the same variable objects (so a scheme's vars stay shared). */
   private Map<String, Ty> reuse(Map<String, Ty> params) {
     return new HashMap<>(params);
+  }
+
+  /** A nullary surface type constructor, e.g. {@code con("Bool")} = the {@code Bool} type. */
+  private static Type con(String name) {
+    return new Type.Con(null, name, List.of());
   }
 
   /** Converts a surface {@link Type} to an inference {@link Ty}, expanding type aliases. */
@@ -401,16 +452,30 @@ public final class Infer {
   }
 
   private Scheme resolve(TypeEnv env, String module, String name) {
-    Scheme s = env.lookup(name);
-    if (s == null && module != null) {
+    // A qualified reference (e.g. `D.map`) must resolve through its module first: otherwise an
+    // unqualified name brought in by `import X exposing (..)` (say `map` from Html) would shadow
+    // the qualified `Json.Decode.map`. Only when the module-qualified form is unknown do we fall
+    // back to the local/global unqualified binding.
+    if (module != null) {
       String real = moduleAliases.getOrDefault(module, module);
-      s = env.globals().get(real + "." + name);
+      Scheme s = env.globals().get(real + "." + name);
+      if (s == null) {
+        s = env.lookup(name);
+      }
+      if (s == null) {
+        s = env.globals().get(name);
+      }
+      if (s == null) {
+        throw new ElmTypeError("Unknown name: " + module + "." + name);
+      }
+      return s;
     }
+    Scheme s = env.lookup(name);
     if (s == null) {
       s = env.globals().get(name);
     }
     if (s == null) {
-      throw new ElmTypeError("Unknown name: " + (module == null ? name : module + "." + name));
+      throw new ElmTypeError("Unknown name: " + name);
     }
     return s;
   }

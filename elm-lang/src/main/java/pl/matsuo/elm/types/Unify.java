@@ -192,10 +192,13 @@ public final class Unify {
       }
       throw mismatch(a, b);
     }
-    // Route each record's surplus through a shared fresh row variable.
+    // Route each record's surplus through a shared fresh row variable. When a side has no surplus,
+    // bind its row variable straight to the shared one rather than to an empty record `{ | rest }`:
+    // wrapping a bare row variable in an empty open record produces records that re-unify and
+    // re-route without end (an infinite loop), since `{ | r }` is a record, not a plain variable.
     Ty rest = new Ty.Var(0, Constraint.NONE);
-    unify(a.tail(), new Ty.Record(onlyB, rest));
-    unify(b.tail(), new Ty.Record(onlyA, rest));
+    unify(a.tail(), onlyB.isEmpty() ? rest : new Ty.Record(onlyB, rest));
+    unify(b.tail(), onlyA.isEmpty() ? rest : new Ty.Record(onlyA, rest));
   }
 
   // --- helpers -----------------------------------------------------------
