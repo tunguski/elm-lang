@@ -237,6 +237,16 @@ public final class Infer {
   }
 
   public Ty infer(TypeEnv env, Expr expr) {
+    try {
+      return infer0(env, expr);
+    } catch (ElmTypeError e) {
+      // Attach the innermost expression's location (and a hint) the first time an error bubbles
+      // through an expression that has one, so the report points at the actual offending code.
+      throw e.at(expr.pos(), hintFor(e));
+    }
+  }
+
+  private Ty infer0(TypeEnv env, Expr expr) {
     return switch (expr) {
       case Expr.IntLit lit -> {
         Ty t = fresh(Ty.Constraint.NUMBER);
@@ -435,6 +445,39 @@ public final class Infer {
         yield cur;
       }
     };
+  }
+
+  /** A one-line hint for common mistakes, derived from the bare error message, or {@code null}. */
+  private static String hintFor(ElmTypeError e) {
+    String m = e.rawMessage();
+    if (m == null) {
+      return null;
+    }
+    boolean hasInt = m.contains("Int"), hasFloat = m.contains("Float"), hasStr = m.contains("String");
+    if (hasStr && (m.contains("number") || hasInt || hasFloat)) {
+      return "Elm does not coerce numbers and strings. Convert with String.fromInt / String.fromFloat"
+          + " (or String.toInt / String.toFloat).";
+    }
+    if (hasInt && hasFloat) {
+      return "Int and Float are distinct in Elm. Use toFloat to widen an Int, or round/floor/truncate"
+          + " to narrow a Float.";
+    }
+    if (m.contains("'number'")) {
+      return "A 'number' must be an Int or a Float (the operator + - * works on both, but / needs Float"
+          + " and // needs Int).";
+    }
+    if (m.contains("'appendable'")) {
+      return "++ joins appendables: two Strings or two Lists of the same element type.";
+    }
+    if (m.contains("'comparable'")) {
+      return "Comparison and ordering need a comparable: Int, Float, Char, String, or a List/tuple of"
+          + " those.";
+    }
+    if (m.startsWith("Infinite type")) {
+      return "A value cannot contain itself. This often means a function is applied to one too few or"
+          + " too many arguments.";
+    }
+    return null;
   }
 
   // --- helpers -----------------------------------------------------------

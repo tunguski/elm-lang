@@ -105,6 +105,19 @@ class ModuleCheckTest {
   }
 
   @Test
+  void typeErrorReportsLocationAndHint() {
+    ElmTypeError e =
+        assertThrows(
+            ElmTypeError.class,
+            () -> TypeChecker.checkModule("foo = 1\nmain = \"x\" + 1\n"));
+    assertEquals(2, e.position.line(), e.getMessage());
+    String msg = e.getMessage();
+    assertTrue(msg.contains("2 | main = \"x\" + 1"), msg); // source excerpt
+    assertTrue(msg.contains("^"), msg); // caret under the offending expression
+    assertTrue(msg.contains("Hint:"), msg); // a helpful hint
+  }
+
+  @Test
   void multipleRecordUpdatesTerminate() {
     // Regression: unifying several open records that update distinct fields of the same value used
     // to route empty rows through fresh `{ | r }` records and loop forever. It must now converge.
