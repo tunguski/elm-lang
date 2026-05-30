@@ -20,8 +20,14 @@ import pl.matsuo.elm.parser.Parser;
  * {@code + - * //}, {@code negate}, {@code modBy}/{@code abs}, {@code let}, an inlined lambda
  * application {@code (\x -> body) arg}, {@code if}, comparisons ({@code < > <= >= == /=}) and the
  * boolean operators ({@code && || not}, {@code True}/{@code False}). Integers are 64-bit ({@code
- * i64}), matching the interpreter, so a host reads results as {@code BigInt}. Lists, strings,
- * records and effects are out of scope (they need a heap and are left to the JS backend).
+ * i64}), matching the interpreter, so a host reads results as {@code BigInt}.
+ *
+ * <p>It also has a small <b>heap</b>: a linear-memory bump allocator backs cons-lists (built with
+ * list literals and {@code ::}, consumed by a {@code case} over {@code []} / {@code head :: tail})
+ * and tuples. A list value is an {@code i64} — {@code 0} for {@code []}, otherwise the address of a
+ * two-word {@code {head, tail}} cell — so values stay uniformly {@code i64} on the stack. This lets
+ * a recursive list function (e.g. summing {@code [1,2,3,4,5]}) compile and run in wasm. Strings and
+ * general (tagged) custom types still need a richer representation and remain on the JS backend.
  */
 public final class WasmCompiler {
 
@@ -168,11 +174,144 @@ public final class WasmCompiler {
           }
         }
         case Expr.App app -> intApp(app);
+        case Expr.ListLit l -> emitList(l.items(), 0);
+        case Expr.Tuple t -> emitTuple(t.items());
+        case Expr.Case c -> intCase(c);
         default -> throw unsupported(e.getClass().getSimpleName());
       }
     }
 
+    // --- heap: cons-lists and tuples live in linear memory via a bump allocator -------------
+    // A list value is an i64: 0 means [], a non-zero value is the address of a 2-word cons cell
+    // {head, tail}. A tuple of arity n is the address of n contiguous i64 words. The pointer is
+    // carried as an i64 (zero-extended address) so every value stays a uniform i64 on the stack.
+
+    /** Builds the cons chain for {@code items[i..]}, leaving its i64 pointer (0 for the empty tail). */
+    private void emitList(List<Expr> items, int i) {
+      if (i >= items.size()) {
+        code.write(0x42); // i64.const 0  -> Nil
+        sleb(code, 0);
+        return;
+      }
+      emitCons(() -> intExpr(items.get(i)), () -> emitList(items, i + 1));
+    }
+
+    /** Allocates a 2-word cons cell {head, tail}, leaving its address (as i64) on the stack. */
+    private void emitCons(Runnable head, Runnable tail) {
+      int addr = freshLocal(); // i64 local holding the zero-extended cell address
+      code.write(0x23);
+      leb(code, 0); // global.get $hp (i32)
+      code.write(0xAD); // i64.extend_i32_u
+      code.write(0x21);
+      leb(code, addr); // local.set addr
+      bumpHeap(16);
+      store(addr, 0, head);
+      store(addr, 8, tail);
+      code.write(0x20);
+      leb(code, addr); // local.get addr -> the i64 pointer
+    }
+
+    /** Allocates {@code items.size()} contiguous words, leaving the tuple's address (as i64). */
+    private void emitTuple(List<Expr> items) {
+      int addr = freshLocal();
+      code.write(0x23);
+      leb(code, 0);
+      code.write(0xAD);
+      code.write(0x21);
+      leb(code, addr);
+      bumpHeap(items.size() * 8);
+      for (int j = 0; j < items.size(); j++) {
+        int item = j;
+        store(addr, j * 8, () -> intExpr(items.get(item)));
+      }
+      code.write(0x20);
+      leb(code, addr);
+    }
+
+    /** Emits {@code $hp += n} (the global heap pointer, an i32). */
+    private void bumpHeap(int n) {
+      code.write(0x23);
+      leb(code, 0); // global.get $hp
+      code.write(0x41);
+      sleb(code, n); // i32.const n
+      code.write(0x6A); // i32.add
+      code.write(0x24);
+      leb(code, 0); // global.set $hp
+    }
+
+    /** Stores the i64 produced by {@code value} at word offset {@code off} of cell {@code addrLocal}. */
+    private void store(int addrLocal, int off, Runnable value) {
+      code.write(0x20);
+      leb(code, addrLocal); // local.get addr (i64)
+      code.write(0xA7); // i32.wrap_i64 -> address
+      value.run(); // i64 value
+      code.write(0x37); // i64.store
+      leb(code, 3); // align = 2^3 = 8
+      leb(code, off);
+    }
+
+    /** Loads the i64 word at offset {@code off} of the cell whose i64 address is in {@code addrLocal}. */
+    private void load(int addrLocal, int off) {
+      code.write(0x20);
+      leb(code, addrLocal);
+      code.write(0xA7); // i32.wrap_i64
+      code.write(0x29); // i64.load
+      leb(code, 3);
+      leb(code, off);
+    }
+
+    /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
+    private void intCase(Expr.Case c) {
+      Expr nilBody = null;
+      Pattern consHead = null, consTail = null;
+      Expr consBody = null;
+      for (Expr.Case.Branch br : c.branches()) {
+        switch (br.pattern()) {
+          case Pattern.ListPat lp when lp.items().isEmpty() -> nilBody = br.body();
+          case Pattern.Cons cons -> {
+            consHead = cons.head();
+            consTail = cons.tail();
+            consBody = br.body();
+          }
+          case Pattern.Wildcard ignored -> nilBody = nilBody == null ? br.body() : nilBody;
+          default -> throw unsupported("case pattern in WASM (only list [] / :: supported)");
+        }
+      }
+      if (nilBody == null || consBody == null) {
+        throw unsupported("case without both [] and :: branches");
+      }
+      int s = freshLocal();
+      intExpr(c.scrutinee());
+      code.write(0x21);
+      leb(code, s); // local.set scrutinee
+      code.write(0x20);
+      leb(code, s);
+      code.write(0x50); // i64.eqz  (1 if Nil)
+      code.write(0x04);
+      code.write(I64); // if -> i64
+      intExpr(nilBody);
+      code.write(0x05); // else
+      if (consHead instanceof Pattern.Var hv) {
+        int h = local(hv.name());
+        load(s, 0);
+        code.write(0x21);
+        leb(code, h); // local.set head
+      }
+      if (consTail instanceof Pattern.Var tv) {
+        int t = local(tv.name());
+        load(s, 8);
+        code.write(0x21);
+        leb(code, t); // local.set tail
+      }
+      intExpr(consBody);
+      code.write(0x0B); // end
+    }
+
     private void intBinOp(Expr.BinOp b) {
+      if (b.op().equals("::")) {
+        emitCons(() -> intExpr(b.left()), () -> intExpr(b.right()));
+        return;
+      }
       int op =
           switch (b.op()) {
             case "+" -> 0x7C; // i64.add
@@ -350,6 +489,23 @@ public final class WasmCompiler {
     }
     section(out, 3, funcs);
 
+    // Memory section (id 5): one memory, min 1 page (64 KiB) — the heap for cons-cells and tuples.
+    ByteArrayOutputStream memory = new ByteArrayOutputStream();
+    leb(memory, 1); // one memory
+    memory.write(0x00); // limits: min only
+    leb(memory, 1); // min 1 page
+    section(out, 5, memory);
+
+    // Global section (id 6): a mutable i32 bump pointer $hp, initialised past the Nil sentinel (0).
+    ByteArrayOutputStream globals = new ByteArrayOutputStream();
+    leb(globals, 1); // one global
+    globals.write(I32);
+    globals.write(0x01); // mutable
+    globals.write(0x41); // i32.const
+    sleb(globals, 16); // start the heap at 16 (addresses are never 0, which means Nil)
+    globals.write(0x0B); // end
+    section(out, 6, globals);
+
     // Export section: each function by its name, plus f0..fN by position and "main".
     ByteArrayOutputStream exports = new ByteArrayOutputStream();
     java.util.LinkedHashMap<String, Integer> exportNames = new java.util.LinkedHashMap<>();
@@ -358,13 +514,16 @@ public final class WasmCompiler {
       exportNames.putIfAbsent("f" + i, i);
     }
     exportNames.putIfAbsent("main", table.containsKey("main") ? table.get("main")[0] : 0);
-    leb(exports, exportNames.size());
+    leb(exports, exportNames.size() + 1); // + the memory export
     exportNames.forEach(
         (name, idx) -> {
           name(exports, name);
           exports.write(0x00); // func export
           leb(exports, idx);
         });
+    name(exports, "memory");
+    exports.write(0x02); // memory export
+    leb(exports, 0); // memory index 0
     section(out, 7, exports);
 
     // Code section.

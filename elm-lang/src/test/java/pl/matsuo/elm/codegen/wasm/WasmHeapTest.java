@@ -1,0 +1,118 @@
+package pl.matsuo.elm.codegen.wasm;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import pl.matsuo.elm.interp.Interpreter;
+import pl.matsuo.elm.interp.Show;
+
+/**
+ * Exercises the WASM backend's linear-memory heap: cons-lists and tuples built and consumed inside
+ * wasm, with the result compared against the Truffle interpreter. Skipped if Node is unavailable.
+ */
+class WasmHeapTest {
+
+  private static final boolean NODE = nodeAvailable();
+
+  /** Compiles a module to wasm, runs its exported `main`, and returns the i64 result as a string. */
+  private String runMain(String source) throws Exception {
+    Path wasm = Files.createTempFile("elm-heap-", ".wasm");
+    Files.write(wasm, WasmCompiler.moduleFromSource(source));
+    Path js = Files.createTempFile("elm-runmain-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs');"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "process.stdout.write(r.instance.exports.main().toString());"
+            + "}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p = new ProcessBuilder("node", js.toString(), wasm.toString()).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    if (!p.waitFor(30, TimeUnit.SECONDS)) {
+      p.destroyForcibly();
+      throw new IllegalStateException("node timed out");
+    }
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    return out;
+  }
+
+  private void agrees(String source) throws Exception {
+    assumeTrue(NODE, "node not available");
+    String expected = Show.plain(Interpreter.load(source).value("main"));
+    assertEquals(expected, runMain(source), source);
+  }
+
+  @Test
+  void sumsAListLiteralRecursively() throws Exception {
+    agrees(
+        """
+        sum xs =
+            case xs of
+                [] -> 0
+                h :: t -> h + sum t
+        main = sum [ 1, 2, 3, 4, 5 ]
+        """);
+  }
+
+  @Test
+  void computesListLengthRecursively() throws Exception {
+    agrees(
+        """
+        len xs =
+            case xs of
+                [] -> 0
+                h :: t -> 1 + len t
+        main = len [ 10, 20, 30 ]
+        """);
+  }
+
+  @Test
+  void consPrependsThenFolds() throws Exception {
+    agrees(
+        """
+        sum xs =
+            case xs of
+                [] -> 0
+                h :: t -> h + sum t
+        build n = n :: (n + 1) :: (n + 2) :: []
+        main = sum (build 10)
+        """);
+  }
+
+  @Test
+  void buildsAndSumsViaHelperThatReturnsAList() throws Exception {
+    // The allocator must survive nested allocation: range builds cells while sum walks them.
+    agrees(
+        """
+        range lo hi =
+            if lo > hi then
+                []
+            else
+                lo :: range (lo + 1) hi
+        sum xs =
+            case xs of
+                [] -> 0
+                h :: t -> h + sum t
+        main = sum (range 1 10)
+        """);
+  }
+
+  private static boolean nodeAvailable() {
+    try {
+      Process p = new ProcessBuilder("node", "--version").start();
+      return p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+}
