@@ -753,7 +753,8 @@ public final class Infer {
         s = env.globals().get(name);
       }
       if (s == null) {
-        throw new ElmTypeError("Unknown name: " + module + "." + name);
+        throw new ElmTypeError(
+            "Unknown name: " + module + "." + name + suggest(name, env));
       }
       return s;
     }
@@ -762,7 +763,7 @@ public final class Infer {
       s = env.globals().get(name);
     }
     if (s == null) {
-      throw new ElmTypeError("Unknown name: " + name);
+      throw new ElmTypeError("Unknown name: " + name + suggest(name, env));
     }
     return s;
   }
@@ -773,5 +774,10 @@ public final class Infer {
       throw new ElmTypeError("Unknown operator: " + op);
     }
     return s;
+  }
+
+  /** A "Did you mean …?" hint for an unknown {@code name}, drawn from the names in scope. */
+  private static String suggest(String name, TypeEnv env) {
+    return pl.matsuo.elm.util.Suggest.hint(name, env.candidateNames());
   }
 }

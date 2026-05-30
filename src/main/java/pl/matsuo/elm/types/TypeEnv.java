@@ -38,4 +38,15 @@ public final class TypeEnv {
   public Map<String, Scheme> globals() {
     return globals;
   }
+
+  /** All names in scope (local bindings up the chain plus globals) — for "did you mean?" hints. */
+  public java.util.Set<String> candidateNames() {
+    java.util.Set<String> names = new java.util.HashSet<>(globals.keySet());
+    for (TypeEnv e = this; e != null; e = e.parent) {
+      if (e.name != null) {
+        names.add(e.name);
+      }
+    }
+    return names;
+  }
 }

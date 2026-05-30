@@ -156,6 +156,25 @@ class ModuleCheckTest {
     assertTrue(types.get("main").startsWith("Program"), types.get("main"));
   }
 
+  @Test
+  void unknownNameSuggestsAClosePrelude() {
+    // A misspelled stdlib function gets a "Did you mean …?" suggestion.
+    ElmTypeError e =
+        assertThrows(
+            ElmTypeError.class, () -> TypeChecker.checkModule("main = List.lenght [ 1, 2 ]\n"));
+    assertTrue(e.getMessage().contains("Unknown name"), e.getMessage());
+    assertTrue(e.getMessage().contains("Did you mean") && e.getMessage().contains("length"), e.getMessage());
+  }
+
+  @Test
+  void unknownLocalNameSuggestsACloseDefinition() {
+    ElmTypeError e =
+        assertThrows(
+            ElmTypeError.class,
+            () -> TypeChecker.checkModule("greeting = \"hi\"\nmain = greting\n"));
+    assertTrue(e.getMessage().contains("greeting"), e.getMessage());
+  }
+
   /** Every single-module elm-lang.org example must type-check end to end. */
   @org.junit.jupiter.params.ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(
