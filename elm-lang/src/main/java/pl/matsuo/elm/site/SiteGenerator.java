@@ -111,6 +111,7 @@ public final class SiteGenerator {
     }
     writeBackendsPage();
     writePlaygroundPage();
+    writeEditorPage();
     writeIndex(built);
     System.out.println("Site written to " + outDir.toAbsolutePath());
     for (Built b : built) {
@@ -407,6 +408,15 @@ public final class SiteGenerator {
     Files.writeString(outDir.resolve("backends.html"), page, StandardCharsets.UTF_8);
   }
 
+  /**
+   * The Ellie-style editor page: an interpreter written in Elm (editor.elm), compiled by the JS
+   * backend and running live in the browser — edit an expression, see it evaluated.
+   */
+  private void writeEditorPage() throws IOException {
+    String src = pl.matsuo.elm.util.Resources.read("/elm/demos/editor.elm");
+    Files.writeString(outDir.resolve("editor.html"), JsCompiler.htmlPage(src, null), StandardCharsets.UTF_8);
+  }
+
   /** Numeric functions for the interactive playground (single Int argument each). */
   private static final String PLAYGROUND_SRC =
       """
@@ -573,6 +583,7 @@ public final class SiteGenerator {
           <p class="stats">%LIVE% of %TOTAL% examples run as live compiled JavaScript ·
           <a href="backends.html">JS vs WASM &#8594;</a> ·
           <a href="playground.html">Playground &#8594;</a> ·
+          <a href="editor.html">Elm-in-Elm editor &#8594;</a> ·
           <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></p>
         </header>
         <main>
