@@ -5,13 +5,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.codegen.js.JsCompiler;
+import pl.matsuo.elm.codegen.wasm.WasmCompiler;
 import pl.matsuo.elm.html.HtmlRender;
 import pl.matsuo.elm.html.Tea;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Project;
 import pl.matsuo.elm.interp.Show;
+import pl.matsuo.elm.parser.Parser;
 import pl.matsuo.elm.runtime.ElmData;
 
 /**
@@ -105,6 +109,7 @@ public final class SiteGenerator {
     for (Example ex : EXAMPLES) {
       built.add(buildExample(ex));
     }
+    writeBackendsPage();
     writeIndex(built);
     System.out.println("Site written to " + outDir.toAbsolutePath());
     for (Built b : built) {
@@ -247,6 +252,125 @@ public final class SiteGenerator {
         .replace("%SOURCE%", escape(source));
   }
 
+  /** Numeric snippets the WASM backend supports, evaluated live by both JS and WASM in the page. */
+  private static final List<String> BACKEND_SNIPPETS =
+      List.of(
+          "1 + 2 * 3",
+          "(100 - 7) * 3",
+          "7 // 2",
+          "modBy 7 1000",
+          "abs (10 - 37)",
+          "let x = 6 in x * x",
+          "(\\n -> n * n - 1) 9",
+          "if 3 < 5 && 10 > 2 then 100 else 0",
+          "1000000 * 1000000");
+
+  /**
+   * A page that runs each numeric snippet through BOTH the JavaScript backend and the WebAssembly
+   * backend live in the browser, showing the two results side by side (with the interpreter's value
+   * as the expected baseline). Demonstrates the two compiled backends agreeing in-browser.
+   */
+  private void writeBackendsPage() throws IOException {
+    List<Expr> parsed = new ArrayList<>();
+    StringBuilder rows = new StringBuilder();
+    for (int i = 0; i < BACKEND_SNIPPETS.size(); i++) {
+      String snip = BACKEND_SNIPPETS.get(i);
+      parsed.add(Parser.parseExpression(snip));
+      String expected = Show.plain(Interpreter.eval(snip));
+      rows.append("<tr data-expected=\"")
+          .append(escape(expected))
+          .append("\"><td><code>")
+          .append(escape(snip))
+          .append("</code></td><td class=\"exp\">")
+          .append(escape(expected))
+          .append("</td><td class=\"js\" id=\"js")
+          .append(i)
+          .append("\">…</td><td class=\"wasm\" id=\"wasm")
+          .append(i)
+          .append("\">…</td><td class=\"ok\" id=\"ok")
+          .append(i)
+          .append("\"></td></tr>\n");
+    }
+    String wasmB64 = Base64.getEncoder().encodeToString(WasmCompiler.module(parsed));
+    String jsEval = JsCompiler.expressionsEvalScript(BACKEND_SNIPPETS);
+
+    String page =
+        """
+        <!doctype html>
+        <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>JS vs WASM — elm-lang</title>
+        %STYLE%
+        </head>
+        <body>
+        <header class="bar">
+          <a class="home" href="index.html">&larr; All examples</a>
+          <span class="badge live">live in your browser</span>
+        </header>
+        <main>
+          <h1>JavaScript vs WebAssembly</h1>
+          <p>Each numeric Elm expression below is compiled by two backends and run right here in your
+          browser: the <strong>JavaScript</strong> backend and the from-scratch <strong>WebAssembly</strong>
+          backend (a wasm binary instantiated via <code>WebAssembly.instantiate</code>). The
+          interpreter's value is the expected baseline; ✓ means all three agree.</p>
+          <table>
+            <thead><tr><th>Expression</th><th>Interpreter</th><th>JS</th><th>WASM</th><th></th></tr></thead>
+            <tbody>
+        %ROWS%
+            </tbody>
+          </table>
+        </main>
+        <script>%JSEVAL%</script>
+        <script>
+        (function(){
+          var js = $evalAll();
+          for (var i=0;i<js.length;i++){ var el=document.getElementById('js'+i); if(el) el.textContent=js[i]; }
+          var bin = Uint8Array.from(atob("%WASM%"), function(c){ return c.charCodeAt(0); });
+          WebAssembly.instantiate(bin).then(function(r){
+            var ex=r.instance.exports, i=0;
+            while(('f'+i) in ex){ document.getElementById('wasm'+i).textContent = ex['f'+i]().toString(); i++; }
+            document.querySelectorAll('tbody tr').forEach(function(tr,n){
+              var want=tr.getAttribute('data-expected');
+              var a=tr.querySelector('.js').textContent, b=tr.querySelector('.wasm').textContent;
+              tr.querySelector('.ok').textContent = (a===want && b===want) ? '✓' : '✗';
+              tr.querySelector('.ok').className = 'ok ' + ((a===want && b===want)?'good':'bad');
+            });
+          });
+        })();
+        </script>
+        </body>
+        </html>
+        """
+            .replace("%STYLE%", BACKENDS_STYLE)
+            .replace("%ROWS%", rows.toString())
+            .replace("%JSEVAL%", jsEval)
+            .replace("%WASM%", wasmB64);
+    Files.writeString(outDir.resolve("backends.html"), page, StandardCharsets.UTF_8);
+  }
+
+  private static final String BACKENDS_STYLE =
+      """
+      <style>
+      :root{--accent:#5fabdc;--ink:#293c4b}
+      *{box-sizing:border-box}
+      body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
+      .bar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid #eee}
+      .home{color:var(--accent);text-decoration:none;font-weight:600}
+      .badge{font-size:.72rem;padding:3px 10px;border-radius:999px;background:#e3f4e1;color:#246b1e}
+      main{max-width:820px;margin:0 auto;padding:24px}
+      p{max-width:65ch;line-height:1.5}
+      table{width:100%;border-collapse:collapse;margin-top:16px}
+      th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #eee;font-variant-numeric:tabular-nums}
+      th{font-size:.8rem;color:#667;text-transform:uppercase;letter-spacing:.04em}
+      code{background:#f3f5f7;padding:2px 6px;border-radius:5px}
+      .exp{color:#667}
+      .ok.good{color:#246b1e;font-weight:700}
+      .ok.bad{color:#9a1e1e;font-weight:700}
+      </style>
+      """;
+
   private void writeIndex(List<Built> built) throws IOException {
     StringBuilder cards = new StringBuilder();
     String currentCategory = null;
@@ -296,6 +420,7 @@ public final class SiteGenerator {
           output running live in your browser; the multi-module Playground games and a couple of
           GPU-bound programs fall back to a server-side-rendered initial frame.</p>
           <p class="stats">%LIVE% of %TOTAL% examples run as live compiled JavaScript ·
+          <a href="backends.html">JS vs WASM &#8594;</a> ·
           <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></p>
         </header>
         <main>

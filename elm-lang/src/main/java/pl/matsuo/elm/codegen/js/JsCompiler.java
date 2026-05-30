@@ -270,6 +270,29 @@ public final class JsCompiler {
   }
 
   /**
+   * Browser-ready script: the kernel plus a global {@code $evalAll()} returning the {@code $show}
+   * form of each expression. Used by the gallery's JS-vs-WASM page to evaluate snippets client-side.
+   */
+  public static String expressionsEvalScript(List<String> expressions) {
+    Module empty =
+        new Module(
+            "Main",
+            Module.Exposing.ALL,
+            List.of(),
+            List.of(),
+            new pl.matsuo.elm.error.Position(1, 1, 0));
+    JsCompiler c = new JsCompiler(empty);
+    StringBuilder sb = new StringBuilder(JsRuntime.SOURCE).append("\nfunction $evalAll(){return [");
+    for (int i = 0; i < expressions.size(); i++) {
+      if (i > 0) {
+        sb.append(",");
+      }
+      sb.append("$show((").append(c.compile(Parser.parseExpression(expressions.get(i)))).append("))");
+    }
+    return sb.append("];}\n").toString();
+  }
+
+  /**
    * One program that evaluates several expressions and prints their {@code $show} forms, one per
    * line. Used by differential testing to compare many results against the other backends in a
    * single Node invocation.

@@ -68,6 +68,17 @@ class SiteGeneratorTest {
   }
 
   @Test
+  void backendsPageRunsJsAndWasm() throws IOException {
+    Path out = generate();
+    String page = Files.readString(out.resolve("backends.html"), StandardCharsets.UTF_8);
+    assertTrue(page.contains("$evalAll"), "embeds the JS evaluator");
+    assertTrue(page.contains("WebAssembly.instantiate"), "instantiates the wasm module");
+    assertTrue(page.contains("class=\"js\"") && page.contains("class=\"wasm\""), "has both columns");
+    String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
+    assertTrue(index.contains("backends.html"), "index links the JS-vs-WASM page");
+  }
+
+  @Test
   void everyExampleIsLiveCompiledJs() throws IOException {
     Path out = generate();
     // After multi-module bundling + the WebGL/effect kernels, all examples run as live JS.
