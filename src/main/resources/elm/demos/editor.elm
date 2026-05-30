@@ -1,28 +1,31 @@
-module Main exposing (main, eval)
+module Main exposing (main, eval, evalProject, debugSteps)
 
-{-| An Elm-in-Elm interpreter (tokenizer + recursive-descent parser with precedence climbing +
-an evaluator over a `Value` ADT with closures) wrapped in an Ellie-style live editor. The
-interpreter is itself written in Elm and runs — compiled by this project's JS backend — in the
-browser.
+{-| An Ellie-style multi-file editor for a small Elm-like language, with a built-in interpreter
+(written in Elm) and a time-travel debugger — all running in the browser via this project's JS
+backend.
 
-Supported language: integers and floats, string literals, booleans, lists; the operators
-`+ - * / //`, comparison (`== /= < <= > >=`), logic (`&& ||`) and append (`++`); `if/then/else`,
-`let NAME = E in BODY`, multi-argument lambdas (`\x y -> …`) with closures, application, and
-variables. Numbers are evaluated as `Float`. Custom-type constructors (any Capitalised name,
-applied to arguments) and pattern matching are supported via
-`case E of P1 -> E1 ; P2 -> E2 ; …` — branches are `;`-separated (a simplification of Elm's
-indentation-based layout); patterns cover constructors (nested), lists (`[]`, `h :: t`), literals,
-variables and `_`.
+Features:
+
+  - **multiple files** you can add, remove and switch between (a file-structure sidebar);
+  - a **shared interpreter** that gathers the top-level definitions of *all* files into one mutually
+    recursive scope and evaluates an entry expression (default `main`);
+  - a **time-travel debugger**: if the project defines `init`/`update`/`view`, you give a list of
+    messages (one per line) and step through every intermediate model and its rendered view.
+
+The interpreted language: integers/floats, strings, booleans, lists; `+ - * / //`, comparison,
+logic (`&& ||`), append (`++`); `if`, `let … in`, multi-argument lambdas with closures; custom-type
+constructors (any Capitalised name) and `case … of P -> E ; …` (`;`-separated branches); and
+top-level definitions `name args = body` shared across files.
 -}
 
 import Browser
-import Html exposing (Html, div, h1, h2, p, pre, text, textarea)
-import Html.Attributes exposing (style, value)
-import Html.Events exposing (onInput)
+import Html exposing (Html, button, div, h1, h2, h3, input, li, p, pre, span, text, textarea, ul)
+import Html.Attributes exposing (disabled, placeholder, style, value)
+import Html.Events exposing (onClick, onInput)
 
 
 
--- VALUES & EXPRESSIONS
+-- VALUES, EXPRESSIONS, DECLARATIONS
 
 
 type Value
@@ -33,6 +36,7 @@ type Value
     | VCtor String (List Value)
     | VClosure (List String) Expr (List ( String, Value ))
     | VRec String (List String) Expr (List ( String, Value ))
+    | VBuiltin String
 
 
 type Expr
@@ -60,6 +64,18 @@ type Pattern
     | PCtor String (List Pattern)
     | PNil
     | PCons Pattern Pattern
+
+
+{-| A top-level definition `name args = body`. -}
+type alias Decl =
+    { name : String
+    , params : List String
+    , body : Expr
+    }
+
+
+type alias Globals =
+    List ( String, Decl )
 
 
 
@@ -95,7 +111,7 @@ tokenizeHelp chars acc =
             Ok (List.reverse acc)
 
         c :: rest ->
-            if c == ' ' || c == '\n' || c == '\t' then
+            if c == ' ' || c == '\n' || c == '\t' || c == '\u{000D}' then
                 tokenizeHelp rest acc
 
             else if c == '(' then
@@ -229,7 +245,7 @@ classifyOp s =
 
 
 
--- PARSER (precedence climbing)
+-- EXPRESSION PARSER (precedence climbing)
 
 
 parse : List Token -> Result String Expr
@@ -261,7 +277,7 @@ opPrec op =
     else if List.member op [ "==", "/=", "<", "<=", ">", ">=" ] then
         4
 
-    else if op == "++" then
+    else if op == "++" || op == "::" then
         5
 
     else if op == "+" || op == "-" then
@@ -483,10 +499,6 @@ parseListItems tokens acc =
                     )
 
 
-
--- CASE / PATTERNS (branches are ';'-separated: case E of P -> E ; P -> E ; …)
-
-
 parseCase : List Token -> Result String ( Expr, List Token )
 parseCase tokens =
     parseExpr tokens
@@ -634,11 +646,122 @@ parsePatternAtom tokens =
 
 
 
--- EVALUATOR
+-- MODULE PARSER: top-level definitions, split by column-0 lines (layout-lite)
 
 
-evalExpr : List ( String, Value ) -> Expr -> Result String Value
-evalExpr env expr =
+parseProject : List ( String, String ) -> Result String Globals
+parseProject files =
+    List.foldl
+        (\file acc ->
+            acc |> Result.andThen (\defs -> parseModule (Tuple.second file) |> Result.map (\d -> defs ++ d))
+        )
+        (Ok [])
+        files
+
+
+parseModule : String -> Result String Globals
+parseModule source =
+    chunk (String.lines source) [] []
+        |> List.filter (\c -> c /= "")
+        |> List.foldl
+            (\c acc -> acc |> Result.andThen (\defs -> parseDecl c |> Result.map (\md -> defs ++ md)))
+            (Ok [])
+
+
+{-| Groups source lines into top-level chunks: a new chunk starts at a non-blank line whose first
+character is not whitespace; indented/blank lines continue the current chunk. -}
+chunk : List String -> List String -> List String -> List String
+chunk lines current done =
+    case lines of
+        [] ->
+            List.reverse (flush current done)
+
+        line :: rest ->
+            if startsTopLevel line then
+                chunk rest [ line ] (flush current done)
+
+            else
+                chunk rest (current ++ [ line ]) done
+
+
+flush : List String -> List String -> List String
+flush current done =
+    if List.isEmpty current then
+        done
+
+    else
+        String.join "\n" current :: done
+
+
+startsTopLevel : String -> Bool
+startsTopLevel line =
+    case String.toList line of
+        [] ->
+            False
+
+        c :: _ ->
+            not (c == ' ' || c == '\t')
+
+
+{-| Parses one top-level chunk into a (possibly empty) list of declarations. Module/import/type
+headers and bare type annotations are ignored; a `name params = body` becomes a Decl. -}
+parseDecl : String -> Result String Globals
+parseDecl source =
+    let
+        trimmed =
+            String.trimLeft source
+
+        firstWord =
+            trimmed |> String.split " " |> List.head |> Maybe.withDefault ""
+    in
+    if List.member firstWord [ "module", "import", "type", "port", "" ] || String.startsWith "--" trimmed then
+        Ok []
+
+    else
+        case tokenize source of
+            Err _ ->
+                Ok []
+
+            Ok tokens ->
+                case tokens of
+                    (TId name) :: rest ->
+                        parseDeclParams name rest []
+
+                    _ ->
+                        Ok []
+
+
+parseDeclParams : String -> List Token -> List String -> Result String Globals
+parseDeclParams name tokens params =
+    case tokens of
+        (TId p) :: rest ->
+            parseDeclParams name rest (params ++ [ p ])
+
+        TEquals :: rest ->
+            parse rest |> Result.map (\body -> [ ( name, { name = name, params = params, body = body } ) ])
+
+        _ ->
+            -- not a value/function definition (e.g. an annotation `name : Type`): ignore
+            Ok []
+
+
+
+-- EVALUATOR (globals are threaded so all top-level definitions are mutually recursive)
+
+
+type alias Env =
+    List ( String, Value )
+
+
+{-| Native one-argument builtins available to interpreted programs (resolved when a name is in
+neither the local scope nor the project's top-level definitions). -}
+builtins : List String
+builtins =
+    [ "toString", "negate", "not" ]
+
+
+evalExpr : Globals -> Env -> Expr -> Result String Value
+evalExpr globals env expr =
     case expr of
         Num n ->
             Ok (VNum n)
@@ -655,20 +778,33 @@ evalExpr env expr =
                     Ok v
 
                 Nothing ->
-                    Err ("undefined variable: " ++ name)
+                    case lookup name globals of
+                        Just decl ->
+                            if List.isEmpty decl.params then
+                                evalExpr globals [] decl.body
+
+                            else
+                                Ok (VClosure decl.params decl.body [])
+
+                        Nothing ->
+                            if List.member name builtins then
+                                Ok (VBuiltin name)
+
+                            else
+                                Err ("undefined variable: " ++ name)
 
         Ctor name ->
             Ok (VCtor name [])
 
         Case subject branches ->
-            evalExpr env subject
-                |> Result.andThen (\v -> evalCase env v branches)
+            evalExpr globals env subject
+                |> Result.andThen (\v -> evalCase globals env v branches)
 
         ListE items ->
-            evalList env items []
+            evalList globals env items []
 
         Neg inner ->
-            evalExpr env inner
+            evalExpr globals env inner
                 |> Result.andThen
                     (\v ->
                         case v of
@@ -680,15 +816,15 @@ evalExpr env expr =
                     )
 
         If cond then_ else_ ->
-            evalExpr env cond
+            evalExpr globals env cond
                 |> Result.andThen
                     (\v ->
                         case v of
                             VBool True ->
-                                evalExpr env then_
+                                evalExpr globals env then_
 
                             VBool False ->
-                                evalExpr env else_
+                                evalExpr globals env else_
 
                             _ ->
                                 Err "if condition must be a Bool"
@@ -697,83 +833,107 @@ evalExpr env expr =
         Let name boundExpr body ->
             case boundExpr of
                 Lam params lamBody ->
-                    -- A let-bound function is recursive: bind the name to a self-referential closure.
-                    evalExpr (( name, VRec name params lamBody env ) :: env) body
+                    evalExpr globals (( name, VRec name params lamBody env ) :: env) body
 
                 _ ->
-                    evalExpr env boundExpr
-                        |> Result.andThen (\v -> evalExpr (( name, v ) :: env) body)
+                    evalExpr globals env boundExpr
+                        |> Result.andThen (\v -> evalExpr globals (( name, v ) :: env) body)
 
         Lam params body ->
             Ok (VClosure params body env)
 
         App fn arg ->
-            evalExpr env fn
+            evalExpr globals env fn
                 |> Result.andThen
                     (\fv ->
-                        evalExpr env arg
-                            |> Result.andThen (\av -> applyValue fv av)
+                        evalExpr globals env arg
+                            |> Result.andThen (\av -> applyValue globals fv av)
                     )
 
         BinOp op l r ->
-            evalExpr env l
+            evalExpr globals env l
                 |> Result.andThen
                     (\lv ->
-                        evalExpr env r
+                        evalExpr globals env r
                             |> Result.andThen (\rv -> applyOp op lv rv)
                     )
 
 
-evalList : List ( String, Value ) -> List Expr -> List Value -> Result String Value
-evalList env items acc =
+evalList : Globals -> Env -> List Expr -> List Value -> Result String Value
+evalList globals env items acc =
     case items of
         [] ->
             Ok (VList (List.reverse acc))
 
         x :: rest ->
-            evalExpr env x |> Result.andThen (\v -> evalList env rest (v :: acc))
+            evalExpr globals env x |> Result.andThen (\v -> evalList globals env rest (v :: acc))
 
 
-applyValue : Value -> Value -> Result String Value
-applyValue fn arg =
+applyValue : Globals -> Value -> Value -> Result String Value
+applyValue globals fn arg =
     case fn of
         VClosure params body closedEnv ->
-            case params of
-                [] ->
-                    Err "cannot apply a non-function"
-
-                p :: [] ->
-                    evalExpr (( p, arg ) :: closedEnv) body
-
-                p :: more ->
-                    Ok (VClosure more body (( p, arg ) :: closedEnv))
-
-        VCtor name args ->
-            -- A constructor accumulates its arguments as it is applied.
-            Ok (VCtor name (args ++ [ arg ]))
+            applyClosure globals params body closedEnv arg
 
         VRec name params body closedEnv ->
-            -- Tie the recursive knot: the body sees the function bound to itself.
-            let
-                selfEnv =
-                    ( name, fn ) :: closedEnv
-            in
-            case params of
-                [] ->
-                    Err "cannot apply a non-function"
+            applyClosure globals params body (( name, fn ) :: closedEnv) arg
 
-                p :: [] ->
-                    evalExpr (( p, arg ) :: selfEnv) body
+        VCtor name args ->
+            Ok (VCtor name (args ++ [ arg ]))
 
-                p :: more ->
-                    Ok (VClosure more body (( p, arg ) :: selfEnv))
+        VBuiltin name ->
+            applyBuiltin name arg
 
         _ ->
             Err "cannot apply a non-function value"
 
 
-evalCase : List ( String, Value ) -> Value -> List ( Pattern, Expr ) -> Result String Value
-evalCase env subject branches =
+applyBuiltin : String -> Value -> Result String Value
+applyBuiltin name arg =
+    case name of
+        "toString" ->
+            case arg of
+                VStr s ->
+                    Ok (VStr s)
+
+                _ ->
+                    Ok (VStr (renderValue arg))
+
+        "negate" ->
+            case arg of
+                VNum n ->
+                    Ok (VNum (negate n))
+
+                _ ->
+                    Err "negate needs a number"
+
+        "not" ->
+            case arg of
+                VBool b ->
+                    Ok (VBool (not b))
+
+                _ ->
+                    Err "not needs a Bool"
+
+        _ ->
+            Err ("unknown builtin: " ++ name)
+
+
+applyClosure : Globals -> List String -> Expr -> Env -> Value -> Result String Value
+applyClosure globals params body closedEnv arg =
+    case params of
+        [] ->
+            Err "cannot apply a non-function"
+
+        p :: [] ->
+            evalExpr globals (( p, arg ) :: closedEnv) body
+
+        p :: more ->
+            Ok (VClosure more body (( p, arg ) :: closedEnv))
+
+
+evalCase : Globals -> Env -> Value -> List ( Pattern, Expr ) -> Result String Value
+evalCase globals env subject branches =
     case branches of
         [] ->
             Err "no matching case branch"
@@ -781,13 +941,12 @@ evalCase env subject branches =
         ( pat, body ) :: rest ->
             case matchPattern pat subject of
                 Just bindings ->
-                    evalExpr (bindings ++ env) body
+                    evalExpr globals (bindings ++ env) body
 
                 Nothing ->
-                    evalCase env subject rest
+                    evalCase globals env subject rest
 
 
-{-| Tries to match a pattern against a value, returning the variable bindings on success. -}
 matchPattern : Pattern -> Value -> Maybe (List ( String, Value ))
 matchPattern pat value =
     case ( pat, value ) of
@@ -852,7 +1011,15 @@ matchAll pats values =
 
 applyOp : String -> Value -> Value -> Result String Value
 applyOp op a b =
-    if op == "++" then
+    if op == "::" then
+        case b of
+            VList xs ->
+                Ok (VList (a :: xs))
+
+            _ ->
+                Err ":: needs a list on the right"
+
+    else if op == "++" then
         case ( a, b ) of
             ( VStr x, VStr y ) ->
                 Ok (VStr (x ++ y))
@@ -939,6 +1106,9 @@ valueEq a b =
         ( VList x, VList y ) ->
             listEq x y
 
+        ( VCtor n1 a1, VCtor n2 a2 ) ->
+            n1 == n2 && listEq a1 a2
+
         _ ->
             False
 
@@ -956,9 +1126,9 @@ listEq xs ys =
             False
 
 
-lookup : String -> List ( String, Value ) -> Maybe Value
-lookup name env =
-    case env of
+lookup : String -> List ( String, a ) -> Maybe a
+lookup name pairs =
+    case pairs of
         [] ->
             Nothing
 
@@ -971,17 +1141,7 @@ lookup name env =
 
 
 
--- PUBLIC: parse + evaluate + render
-
-
-eval : String -> String
-eval src =
-    case tokenize src |> Result.andThen parse |> Result.andThen (evalExpr []) of
-        Ok v ->
-            renderValue v
-
-        Err e ->
-            "Error: " ++ e
+-- RENDERING
 
 
 renderValue : Value -> String
@@ -1016,14 +1176,16 @@ renderValue v =
         VRec _ _ _ _ ->
             "<function>"
 
+        VBuiltin name ->
+            "<" ++ name ++ ">"
 
-{-| Renders a value, parenthesising a constructor application when it is a sub-term. -}
+
 renderValueAtom : Value -> String
 renderValueAtom v =
     case v of
-        VCtor name args ->
+        VCtor _ args ->
             if List.isEmpty args then
-                name
+                renderValue v
 
             else
                 "(" ++ renderValue v ++ ")"
@@ -1033,56 +1195,372 @@ renderValueAtom v =
 
 
 
+-- PUBLIC ENTRY POINTS
+
+
+{-| Evaluates a single expression in an empty scope (used for messages and the simple REPL). -}
+eval : String -> String
+eval src =
+    case tokenize src |> Result.andThen parse |> Result.andThen (evalExpr [] []) of
+        Ok v ->
+            renderValue v
+
+        Err e ->
+            "Error: " ++ e
+
+
+{-| Evaluates the entry expression against the top-level definitions of all files. -}
+evalProject : List ( String, String ) -> String -> String
+evalProject files entry =
+    case parseProject files of
+        Err e ->
+            "Parse error: " ++ e
+
+        Ok globals ->
+            case tokenize entry |> Result.andThen parse of
+                Err e ->
+                    "Error: " ++ e
+
+                Ok expr ->
+                    case evalExpr globals [] expr of
+                        Ok v ->
+                            renderValue v
+
+                        Err e ->
+                            "Error: " ++ e
+
+
+{-| Folds the message expressions through `update`, returning, per step, the message text and the
+rendered model and view — the data behind the time-travel debugger. Step 0 is the initial model. -}
+debugSteps : List ( String, String ) -> List String -> List String
+debugSteps files messageLines =
+    case parseProject files of
+        Err e ->
+            [ "Parse error: " ++ e ]
+
+        Ok globals ->
+            case ( evalGlobal globals "init", findDecl globals "update" ) of
+                ( Ok initModel, True ) ->
+                    let
+                        msgs =
+                            List.filter (\s -> String.trim s /= "") messageLines
+                    in
+                    stepFold globals initModel msgs [ formatStep globals "(init)" initModel ]
+
+                _ ->
+                    [ "Define top-level `init`, `update` and `view` to use the debugger." ]
+
+
+stepFold : Globals -> Value -> List String -> List String -> List String
+stepFold globals model msgs acc =
+    case msgs of
+        [] ->
+            List.reverse acc
+
+        line :: rest ->
+            case tokenize line |> Result.andThen parse |> Result.andThen (evalExpr globals []) of
+                Err e ->
+                    List.reverse (("✗ " ++ line ++ " -> " ++ e) :: acc)
+
+                Ok msg ->
+                    case applyUpdate globals msg model of
+                        Err e ->
+                            List.reverse (("✗ " ++ line ++ " -> " ++ e) :: acc)
+
+                        Ok next ->
+                            stepFold globals next rest (formatStep globals line next :: acc)
+
+
+applyUpdate : Globals -> Value -> Value -> Result String Value
+applyUpdate globals msg model =
+    evalExpr globals [] (Var "update")
+        |> Result.andThen (\u -> applyValue globals u msg)
+        |> Result.andThen (\u1 -> applyValue globals u1 model)
+
+
+formatStep : Globals -> String -> Value -> String
+formatStep globals label model =
+    let
+        viewText =
+            case evalGlobal globals "view" of
+                Ok _ ->
+                    case evalExpr globals [] (Var "view") |> Result.andThen (\f -> applyValue globals f model) of
+                        Ok v ->
+                            "  view: " ++ renderValue v
+
+                        Err _ ->
+                            ""
+
+                Err _ ->
+                    ""
+    in
+    label ++ "  =>  model: " ++ renderValue model ++ viewText
+
+
+evalGlobal : Globals -> String -> Result String Value
+evalGlobal globals name =
+    if findDecl globals name then
+        evalExpr globals [] (Var name)
+
+    else
+        Err ("missing " ++ name)
+
+
+findDecl : Globals -> String -> Bool
+findDecl globals name =
+    case lookup name globals of
+        Just _ ->
+            True
+
+        Nothing ->
+            False
+
+
+
 -- EDITOR (The Elm Architecture)
 
 
 type alias Model =
-    { source : String }
+    { files : List ( String, String )
+    , active : String
+    , entry : String
+    , messages : String
+    , step : Int
+    , newName : String
+    }
 
 
 init : Model
 init =
-    { source = "case Just (3 + 4) of Just n -> n * 2 ; Nothing -> 0" }
+    { files =
+        [ ( "Counter.elm", "init = 0\n\nupdate msg model =\n    case msg of\n        Inc -> model + 1 ;\n        Dec -> model - 1 ;\n        _ -> model\n\nview model = \"count = \" ++ toString model" )
+        , ( "Main.elm", "main = greet \"world\"\n\ngreet name = \"Hello, \" ++ name ++ \"!\"" )
+        ]
+    , active = "Main.elm"
+    , entry = "main"
+    , messages = "Inc\nInc\nDec\nInc"
+    , step = 0
+    , newName = ""
+    }
 
 
 type Msg
-    = Change String
+    = Select String
+    | Edit String
+    | SetEntry String
+    | SetMessages String
+    | SetStep String
+    | SetNewName String
+    | AddFile
+    | RemoveFile String
 
 
 update : Msg -> Model -> Model
 update msg model =
     case msg of
-        Change s ->
-            { model | source = s }
+        Select name ->
+            { model | active = name }
+
+        Edit content ->
+            { model | files = setFile model.active content model.files }
+
+        SetEntry e ->
+            { model | entry = e }
+
+        SetMessages m ->
+            { model | messages = m, step = 0 }
+
+        SetStep s ->
+            { model | step = Maybe.withDefault 0 (String.toInt s) }
+
+        SetNewName n ->
+            { model | newName = n }
+
+        AddFile ->
+            let
+                name =
+                    if String.endsWith ".elm" model.newName then
+                        model.newName
+
+                    else
+                        model.newName ++ ".elm"
+            in
+            if model.newName == "" || hasFile name model.files then
+                model
+
+            else
+                { model | files = model.files ++ [ ( name, "" ) ], active = name, newName = "" }
+
+        RemoveFile name ->
+            let
+                remaining =
+                    List.filter (\f -> Tuple.first f /= name) model.files
+            in
+            { model
+                | files = remaining
+                , active =
+                    if model.active == name then
+                        List.head remaining |> Maybe.map Tuple.first |> Maybe.withDefault ""
+
+                    else
+                        model.active
+            }
+
+
+setFile : String -> String -> List ( String, String ) -> List ( String, String )
+setFile name content files =
+    List.map
+        (\f ->
+            if Tuple.first f == name then
+                ( name, content )
+
+            else
+                f
+        )
+        files
+
+
+hasFile : String -> List ( String, String ) -> Bool
+hasFile name files =
+    List.any (\f -> Tuple.first f == name) files
+
+
+activeContent : Model -> String
+activeContent model =
+    lookup model.active model.files |> Maybe.withDefault ""
+
+
+
+-- VIEW
 
 
 view : Model -> Html Msg
 view model =
-    div [ style "font-family" "system-ui, sans-serif", style "max-width" "820px", style "margin" "24px auto" ]
-        [ h1 [] [ text "Elm-in-Elm — interpreter editor" ]
-        , p [] [ text "An interpreter written in Elm, evaluating your input live (numbers, strings, bools, lists, if/let/lambdas, constructors + case)." ]
-        , div [ style "display" "flex", style "gap" "16px" ]
-            [ textarea
-                [ onInput Change
-                , value model.source
-                , style "flex" "1"
-                , style "height" "140px"
-                , style "font-family" "monospace"
-                , style "font-size" "14px"
-                , style "padding" "10px"
-                ]
-                []
-            , div [ style "flex" "1" ]
-                [ h2 [] [ text "Result" ]
-                , pre
-                    [ style "background" "#0f1720"
-                    , style "color" "#e6edf3"
-                    , style "padding" "12px"
-                    , style "border-radius" "8px"
+    let
+        steps =
+            debugSteps model.files (String.lines model.messages)
+
+        clampedStep =
+            Basics.max 0 (Basics.min model.step (List.length steps - 1))
+
+        currentStep =
+            steps |> List.drop clampedStep |> List.head |> Maybe.withDefault ""
+    in
+    div [ style "font-family" "system-ui, sans-serif", style "max-width" "1000px", style "margin" "20px auto", style "color" "#0f1720" ]
+        [ h1 [] [ text "Elm-in-Elm — multi-file editor" ]
+        , p [] [ text "A tiny Elm-like language interpreted in the browser. Edit files on the left; results and the time-travel debugger update live." ]
+        , div [ style "display" "flex", style "gap" "16px", style "align-items" "flex-start" ]
+            [ fileSidebar model
+            , div [ style "flex" "2" ]
+                [ h3 [] [ text model.active ]
+                , textarea
+                    [ onInput Edit
+                    , value (activeContent model)
+                    , style "width" "100%"
+                    , style "height" "260px"
+                    , style "font-family" "monospace"
+                    , style "font-size" "13px"
+                    , style "padding" "10px"
+                    , style "box-sizing" "border-box"
                     ]
-                    [ text (eval model.source) ]
+                    []
+                , resultPane model
                 ]
             ]
+        , debuggerPane steps clampedStep currentStep
+        ]
+
+
+fileSidebar : Model -> Html Msg
+fileSidebar model =
+    div [ style "flex" "1", style "min-width" "180px" ]
+        [ h3 [] [ text "Files" ]
+        , ul [ style "list-style" "none", style "padding" "0", style "margin" "0" ]
+            (List.map (fileRow model.active) model.files)
+        , div [ style "display" "flex", style "gap" "4px", style "margin-top" "8px" ]
+            [ input [ placeholder "New.elm", value model.newName, onInput SetNewName, style "flex" "1", style "min-width" "0" ] []
+            , button [ onClick AddFile ] [ text "+" ]
+            ]
+        ]
+
+
+fileRow : String -> ( String, String ) -> Html Msg
+fileRow active file =
+    let
+        name =
+            Tuple.first file
+
+        selected =
+            name == active
+    in
+    li [ style "display" "flex", style "align-items" "center", style "gap" "4px", style "margin" "2px 0" ]
+        [ button
+            [ onClick (Select name)
+            , style "flex" "1"
+            , style "text-align" "left"
+            , style "font-weight"
+                (if selected then
+                    "bold"
+
+                 else
+                    "normal"
+                )
+            , style "background"
+                (if selected then
+                    "#dbeeff"
+
+                 else
+                    "#f4f4f4"
+                )
+            ]
+            [ text name ]
+        , button [ onClick (RemoveFile name), style "color" "#a00" ] [ text "×" ]
+        ]
+
+
+resultPane : Model -> Html Msg
+resultPane model =
+    div [ style "margin-top" "12px" ]
+        [ div [ style "display" "flex", style "gap" "8px", style "align-items" "center" ]
+            [ h3 [ style "margin" "0" ] [ text "Result of " ]
+            , input [ value model.entry, onInput SetEntry, style "font-family" "monospace" ] []
+            ]
+        , pre [ style "background" "#0f1720", style "color" "#e6edf3", style "padding" "12px", style "border-radius" "8px", style "white-space" "pre-wrap" ]
+            [ text (evalProject model.files model.entry) ]
+        ]
+
+
+debuggerPane : List String -> Int -> String -> Html Msg
+debuggerPane steps clampedStep currentStep =
+    div [ style "margin-top" "16px", style "border-top" "1px solid #ccc", style "padding-top" "12px" ]
+        [ h2 [] [ text "Time-travel debugger" ]
+        , p [] [ text "Define top-level init / update / view, then list messages (one per line) to step through:" ]
+        , textarea
+            [ onInput SetMessages
+            , placeholder "Inc\nInc\nDec"
+            , style "width" "100%"
+            , style "height" "70px"
+            , style "font-family" "monospace"
+            , style "box-sizing" "border-box"
+            ]
+            []
+        , div [ style "margin" "8px 0" ]
+            [ text ("step " ++ String.fromInt clampedStep ++ " / " ++ String.fromInt (List.length steps - 1) ++ "   ")
+            , input
+                [ Html.Attributes.type_ "range"
+                , Html.Attributes.min "0"
+                , Html.Attributes.max (String.fromInt (Basics.max 0 (List.length steps - 1)))
+                , value (String.fromInt clampedStep)
+                , onInput SetStep
+                , style "width" "300px"
+                ]
+                []
+            ]
+        , pre [ style "background" "#0f1720", style "color" "#e6edf3", style "padding" "12px", style "border-radius" "8px", style "white-space" "pre-wrap" ]
+            [ text currentStep ]
+        , h3 [] [ text "All steps" ]
+        , ul [ style "font-family" "monospace", style "font-size" "12px" ]
+            (List.indexedMap (\i s -> li [ style "color" (if i == clampedStep then "#0a7" else "#555") ] [ text s ]) steps)
         ]
 
 

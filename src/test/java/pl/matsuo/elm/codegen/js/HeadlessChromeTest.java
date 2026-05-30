@@ -154,6 +154,21 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void multiFileEditorRendersResultsAndDebugger() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    String editor =
+        new String(
+            HeadlessChromeTest.class.getResourceAsStream("/elm/demos/editor.elm").readAllBytes(),
+            StandardCharsets.UTF_8);
+    String dom = renderPage(JsCompiler.htmlPage(editor, null));
+    // Assert on rendered-only text (these strings are produced at runtime, not present in the
+    // inlined bundle source): the result of evaluating `main` across files, and stepped views.
+    assertTrue(dom.contains("Hello, world!"), "Result pane evaluated `main` across files");
+    assertTrue(dom.contains("count = 0"), "debugger rendered the initial view from init/view");
+    assertTrue(dom.contains("count = 2"), "debugger rendered a stepped view via update");
+  }
+
+  @Test
   void timeTravelShowsHistoricalModelThenResumesLive() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Three increments produce snapshots [0,1,2,3]. goto(1) re-renders the model after the first

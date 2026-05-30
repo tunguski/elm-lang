@@ -152,6 +152,8 @@ var $rt = {
   'String.toUpper': function(s){ return s.toUpperCase(); },
   'String.toLower': function(s){ return s.toLowerCase(); },
   'String.trim': function(s){ return s.trim(); },
+  'String.trimLeft': function(s){ return s.replace(/^\s+/, ''); },
+  'String.trimRight': function(s){ return s.replace(/\s+$/, ''); },
   'String.fromInt': function(n){ return String(n); },
   'String.fromFloat': function(n){ return String(n); },
   'String.fromChar': function(c){ return String.fromCodePoint(c.c); },
