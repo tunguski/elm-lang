@@ -82,26 +82,43 @@ public final class SiteGenerator {
   private final Path examplesDir;
   private final String playgroundSource;
   private final Path outDir;
+  private final Path docsDir; // Markdown docs rendered to HTML; null to skip.
 
-  private SiteGenerator(Path examplesDir, Path playgroundFile, Path outDir) throws IOException {
+  private SiteGenerator(Path examplesDir, Path playgroundFile, Path outDir, Path docsDir)
+      throws IOException {
     this.examplesDir = examplesDir;
     this.playgroundSource = Files.readString(playgroundFile, StandardCharsets.UTF_8);
     this.outDir = outDir;
+    this.docsDir = docsDir;
   }
 
-  /** Builds the whole site into {@code outDir}. */
+  /** Builds the whole site into {@code outDir} (no docs pages). */
   public static void generate(Path examplesDir, Path playgroundFile, Path outDir)
       throws IOException {
-    new SiteGenerator(examplesDir, playgroundFile, outDir).run();
+    generate(examplesDir, playgroundFile, outDir, null);
+  }
+
+  /** Builds the whole site into {@code outDir}, also rendering {@code docsDir}'s Markdown to HTML. */
+  public static void generate(Path examplesDir, Path playgroundFile, Path outDir, Path docsDir)
+      throws IOException {
+    new SiteGenerator(examplesDir, playgroundFile, outDir, docsDir).run();
   }
 
   public static void main(String[] args) throws IOException {
     if (args.length < 3) {
-      System.err.println("usage: SiteGenerator <examplesDir> <Playground.elm> <outDir>");
+      System.err.println(
+          "usage: SiteGenerator <examplesDir> <Playground.elm> <outDir> [docsDir]");
       System.exit(2);
     }
-    generate(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]));
+    generate(
+        Path.of(args[0]),
+        Path.of(args[1]),
+        Path.of(args[2]),
+        args.length > 3 ? Path.of(args[3]) : null);
   }
+
+  /** A documentation page rendered from a Markdown file: HTML filename and display title. */
+  private record DocPage(String slug, String title) {}
 
   private void run() throws IOException {
     Files.createDirectories(outDir.resolve("demos"));
@@ -112,11 +129,122 @@ public final class SiteGenerator {
     writeBackendsPage();
     writePlaygroundPage();
     writeEditorPage();
-    writeIndex(built);
+    List<DocPage> docs = writeDocPages();
+    writeIndex(built, docs);
     System.out.println("Site written to " + outDir.toAbsolutePath());
     for (Built b : built) {
       System.out.printf("  %-16s %-22s %s%n", b.example.slug(), b.method.label, b.note);
     }
+    for (DocPage d : docs) {
+      System.out.printf("  %-16s %s%n", d.slug() + ".html", d.title());
+    }
+  }
+
+  /**
+   * Renders every {@code *.md} in {@code docsDir} to a styled HTML page (same base name), linking
+   * back to the gallery. Returns the pages in a stable, doc-friendly order for the index nav.
+   */
+  private List<DocPage> writeDocPages() throws IOException {
+    List<DocPage> pages = new ArrayList<>();
+    if (docsDir == null || !Files.isDirectory(docsDir)) {
+      return pages;
+    }
+    // A readable order: the examples overview first, then the how-to guides, then anything else.
+    List<String> preferred = List.of("examples", "scripting", "server");
+    List<Path> files;
+    try (var s = Files.list(docsDir)) {
+      files =
+          new ArrayList<>(
+              s.filter(p -> p.getFileName().toString().endsWith(".md")).sorted().toList());
+    }
+    files.sort(
+        (a, b) -> {
+          int ia = preferred.indexOf(slugOf(a));
+          int ib = preferred.indexOf(slugOf(b));
+          if (ia < 0) ia = Integer.MAX_VALUE;
+          if (ib < 0) ib = Integer.MAX_VALUE;
+          return ia != ib ? Integer.compare(ia, ib) : slugOf(a).compareTo(slugOf(b));
+        });
+    for (Path md : files) {
+      String slug = slugOf(md);
+      String source = Files.readString(md, StandardCharsets.UTF_8);
+      String title = docTitle(source, slug);
+      String body = Markdown.toHtml(rewriteDocLinks(source));
+      String page =
+          """
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>%TITLE% — elm-lang</title>
+          %STYLE%
+          </head>
+          <body>
+          <header class="bar">
+            <a href="index.html">&larr; Gallery</a>
+            %NAV%
+          </header>
+          <main>
+          %BODY%
+          </main>
+          <footer>Documentation for the from-scratch Elm implementation ·
+          <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></footer>
+          </body>
+          </html>
+          """
+              .replace("%STYLE%", DOCS_STYLE)
+              .replace("%NAV%", docNav(slug, preferred))
+              .replace("%TITLE%", escape(title))
+              .replace("%BODY%", body);
+      Files.writeString(outDir.resolve(slug + ".html"), page, StandardCharsets.UTF_8);
+      pages.add(new DocPage(slug, title));
+    }
+    return pages;
+  }
+
+  private static String slugOf(Path md) {
+    String name = md.getFileName().toString();
+    return name.substring(0, name.length() - ".md".length());
+  }
+
+  /** The page title: the first {@code # heading}, else the slug. */
+  private static String docTitle(String source, String slug) {
+    for (String line : source.split("\n", -1)) {
+      String t = line.strip();
+      if (t.startsWith("# ")) {
+        return t.substring(2).strip();
+      }
+    }
+    return slug;
+  }
+
+  /** A nav line linking to the sibling guide pages (the current one shown inert). */
+  private String docNav(String current, List<String> preferred) {
+    StringBuilder b = new StringBuilder();
+    for (String slug : preferred) {
+      if (b.length() > 0) {
+        b.append(" · ");
+      }
+      String label = slug.substring(0, 1).toUpperCase() + slug.substring(1);
+      if (slug.equals(current)) {
+        b.append("<strong>").append(label).append("</strong>");
+      } else {
+        b.append("<a href=\"").append(slug).append(".html\">").append(label).append("</a>");
+      }
+    }
+    return b.toString();
+  }
+
+  /**
+   * Rewrites relative Markdown links so they work in the flat gallery: a link to a sibling guide
+   * ({@code foo.md}) becomes {@code foo.html}; links into the repo ({@code ../src/...}) become
+   * absolute GitHub URLs so they resolve from the published site.
+   */
+  private static String rewriteDocLinks(String md) {
+    String repo = "https://github.com/tunguski/elm-lang/blob/main/";
+    return md.replaceAll("\\]\\((?!https?://)([^)]+?)\\.md\\)", "]($1.html)")
+        .replaceAll("\\]\\(\\.\\./([^)]+)\\)", "](" + repo + "$1)");
   }
 
   private Built buildExample(Example ex) throws IOException {
@@ -548,7 +676,7 @@ public final class SiteGenerator {
 
   private static final String BACKENDS_STYLE = style("/elm/css/backends.css");
 
-  private void writeIndex(List<Built> built) throws IOException {
+  private void writeIndex(List<Built> built, List<DocPage> docs) throws IOException {
     StringBuilder cards = new StringBuilder();
     String currentCategory = null;
     for (Built b : built) {
@@ -578,6 +706,16 @@ public final class SiteGenerator {
       cards.append("</div>\n");
     }
 
+    StringBuilder docLinks = new StringBuilder();
+    for (DocPage d : docs) {
+      docLinks
+          .append("\n          <a href=\"")
+          .append(d.slug())
+          .append(".html\">")
+          .append(escape(d.title()))
+          .append(" &#8594;</a> ·");
+    }
+
     long live = built.stream().filter(b -> b.method == Method.LIVE).count();
     String index =
         """
@@ -599,7 +737,7 @@ public final class SiteGenerator {
           <p class="stats">%LIVE% of %TOTAL% examples run as live compiled JavaScript ·
           <a href="backends.html">JS vs WASM &#8594;</a> ·
           <a href="playground.html">Playground &#8594;</a> ·
-          <a href="editor.html">Elm-in-Elm editor &#8594;</a> ·
+          <a href="editor.html">Elm-in-Elm editor &#8594;</a> ·%DOCS%
           <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></p>
         </header>
         <main>
@@ -611,6 +749,7 @@ public final class SiteGenerator {
         """
             .replace("%STYLE%", INDEX_STYLE)
             .replace("%CARDS%", cards.toString())
+            .replace("%DOCS%", docLinks.toString())
             .replace("%LIVE%", Long.toString(live))
             .replace("%TOTAL%", Integer.toString(built.size()));
     Files.writeString(outDir.resolve("index.html"), index, StandardCharsets.UTF_8);
@@ -623,6 +762,8 @@ public final class SiteGenerator {
   private static final String INDEX_STYLE = style("/elm/css/index.css");
 
   private static final String PAGE_STYLE = style("/elm/css/page.css");
+
+  private static final String DOCS_STYLE = style("/elm/css/docs.css");
 
   /** Loads a bundled CSS resource and wraps it in a {@code <style>} block for inlining. */
   private static String style(String resource) {

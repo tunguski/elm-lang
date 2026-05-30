@@ -98,4 +98,27 @@ class SiteGeneratorTest {
     assertFalse(index.contains("badge snapshot"), "no example should fall back to a snapshot");
     assertFalse(index.contains("badge failed"), "no example should be source-only");
   }
+
+  @Test
+  void rendersRepoDocsToHtmlAndLinksThemFromTheIndex() throws IOException {
+    Path out = Files.createTempDirectory("elm-site-");
+    SiteGenerator.generate(EXAMPLES, PLAYGROUND, out, Path.of("docs"));
+
+    // Each guide becomes a styled HTML page derived from its Markdown.
+    for (String slug : new String[] {"examples", "scripting", "server"}) {
+      Path page = out.resolve(slug + ".html");
+      assertTrue(Files.exists(page), "doc page for " + slug);
+      String html = Files.readString(page, StandardCharsets.UTF_8);
+      assertTrue(html.contains("<h1>"), slug + " should render a heading");
+      assertTrue(html.contains("<table>"), slug + " should render its table");
+    }
+    // Relative Markdown links are rewritten for the flat gallery and out to GitHub.
+    String server = Files.readString(out.resolve("server.html"), StandardCharsets.UTF_8);
+    assertTrue(server.contains("github.com/tunguski/elm-lang/blob/main/"), "repo links absolute-ised");
+
+    // The landing page links to the rendered docs.
+    String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
+    assertTrue(index.contains("scripting.html"), "index should link the scripting guide");
+    assertTrue(index.contains("server.html"), "index should link the server guide");
+  }
 }

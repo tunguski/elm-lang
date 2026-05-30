@@ -600,9 +600,15 @@ public final class Main implements Runnable {
     @Parameters(index = "2", description = "Output directory.")
     Path outDir;
 
+    @Parameters(
+        index = "3",
+        arity = "0..1",
+        description = "Optional Markdown docs directory; each .md is rendered to an HTML page.")
+    Path docsDir;
+
     @Override
     public Integer call() throws IOException {
-      pl.matsuo.elm.site.SiteGenerator.generate(examplesDir, playground, outDir);
+      pl.matsuo.elm.site.SiteGenerator.generate(examplesDir, playground, outDir, docsDir);
       return 0;
     }
   }

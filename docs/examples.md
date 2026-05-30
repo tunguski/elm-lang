@@ -64,3 +64,19 @@ keyboard-driven First Person (21) currently fall back to an interpreter-rendered
 - Examples 17–21 (WebGL) and 22–27 (Playground) depend on external Elm packages
   (`elm-explorations/webgl`, `evancz/elm-playground`) and a real rendering surface; these are
   tackled last and primarily via the JS backend.
+
+## Beyond elm-lang.org
+
+The browser examples above are the compatibility target, but this implementation also runs Elm
+*outside* the browser. These bundled demos exercise the non-browser backends and have their own
+guides:
+
+| Demo | Run with | Demonstrates | Guide |
+|------|----------|--------------|-------|
+| `wordcount` | `elm script wordcount <files…>` | A `wc`-style CLI script (stdin/files/args/exit code). | [scripting.md](scripting.md) |
+| `simple-server-showcase` | `elm server simple-server-showcase` | A stateless HTTP app: routing on path/query, `text`/`html`/`json`. | [server.md](server.md) |
+| `live-dashboard` | `elm server live-dashboard` | A stateful server: in-memory time series, a timer-driven random walk, and a self-updating SVG chart polled by the client. | [server.md](server.md) |
+| editor | open `editor.html` in the gallery | An in-browser, multi-file Elm playground with a from-scratch Elm interpreter and a time-travel debugger. | — |
+
+A bundled demo name (e.g. `wordcount`, `live-dashboard`) resolves to the shipped resource; you can
+also pass a path to your own `.elm` file.
