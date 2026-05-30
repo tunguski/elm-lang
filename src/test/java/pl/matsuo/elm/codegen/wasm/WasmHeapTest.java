@@ -52,6 +52,60 @@ class WasmHeapTest {
     assertEquals(expected, runMain(source), source);
   }
 
+  @Test
+  void standardLibraryListFunctions() throws Exception {
+    // The WASM prelude (List.map/filter/foldl/range/sum/...) compiles and runs, agreeing with the
+    // interpreter — higher-order, recursive, and over cons-lists built on the heap.
+    agrees("main = List.sum (List.map (\\x -> x * x) (List.range 1 5))\n"); // 1+4+9+16+25 = 55
+    agrees("main = List.length (List.filter (\\n -> n > 2) (List.range 1 6))\n"); // 4
+    agrees("main = List.foldl (\\x acc -> x + acc) 0 (List.range 1 10)\n"); // 55
+    agrees("main = List.sum (List.reverse (List.range 1 4))\n"); // 10
+  }
+
+  @Test
+  void standardLibraryMaybe() throws Exception {
+    agrees("main = Maybe.withDefault 0 (Maybe.map (\\x -> x + 1) (Just 41))\n"); // 42
+    agrees("main = Maybe.withDefault 7 Nothing\n"); // 7
+  }
+
+  @Test
+  void marshalsAListResultBackToTheHost() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // Host marshalling: decode a wasm cons-list result (0 = [], else a {head, tail} cell) into a
+    // JS array. Proves results beyond plain numbers can cross the boundary.
+    assertEquals("[1,4,9]", decodeList("main = List.map (\\x -> x * x) (List.range 1 3)\n"));
+  }
+
+  /** Runs `main` (a cons-list), walking the heap from the host to recover the elements as JSON. */
+  private String decodeList(String source) throws Exception {
+    Path wasm = Files.createTempFile("elm-list-", ".wasm");
+    Files.write(wasm, WasmCompiler.moduleFromSource(source));
+    Path js = Files.createTempFile("elm-runlist-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs');"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "const ex=r.instance.exports; const dv=new DataView(ex.memory.buffer);"
+            + "let p=Number(ex.main()); const out=[];"
+            + "while(p!==0){ out.push(Number(dv.getBigInt64(p,true))); p=Number(dv.getBigInt64(p+8,true)); }"
+            + "process.stdout.write(JSON.stringify(out));"
+            + "}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p = new ProcessBuilder("node", js.toString(), wasm.toString()).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    if (!p.waitFor(30, TimeUnit.SECONDS)) {
+      p.destroyForcibly();
+      throw new IllegalStateException("node timed out");
+    }
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    return out;
+  }
+
   /** Runs `main`, treating its i64 result as a pointer to a heap string, and decodes the bytes. */
   private String runMainString(String source) throws Exception {
     Path wasm = Files.createTempFile("elm-str-", ".wasm");

@@ -61,7 +61,13 @@ import pl.matsuo.elm.parser.Parser;
  * comparisons, {@code negate} and the {@code toFloat}/{@code round}/{@code floor}/{@code
  * ceiling}/{@code truncate} conversions reinterpret to {@code f64} as needed.
  *
- * <p>The main remaining gap is most of the larger standard library.
+ * <p>A small <b>standard library</b> ({@link #WASM_PRELUDE}) — {@code List.map}/{@code foldl}/{@code
+ * foldr}/{@code filter}/{@code length}/{@code sum}/{@code range}/{@code reverse}, {@code
+ * Maybe}/{@code Result} helpers — is written in this same subset and prepended when a module uses it
+ * ({@code Maybe}/{@code Result} constructors are built in). Booleans are first-class {@code i64}
+ * values (0/1), so they can be stored in lists, returned and compared like any other value. The
+ * remaining gap is the rest of the larger standard library (most {@code String}/{@code Dict}/{@code
+ * Array} operations).
  */
 public final class WasmCompiler {
 
@@ -72,6 +78,84 @@ public final class WasmCompiler {
 
   /** A compiled function: its name, parameter names (all i64) and body. */
   private record Func(String name, List<String> params, Expr body) {}
+
+  /**
+   * A small standard library, written in the WASM-supported subset and prepended (when used) so that
+   * {@code List}/{@code Maybe}/{@code Result} functions compile like any other. Each maps from its
+   * qualified Elm name via {@link #PRELUDE_NAMES}.
+   */
+  static final String WASM_PRELUDE =
+      """
+      listMap f xs = case xs of
+          [] -> []
+          h :: t -> f h :: listMap f t
+      listFoldl f acc xs = case xs of
+          [] -> acc
+          h :: t -> listFoldl f (f h acc) t
+      listFoldr f acc xs = case xs of
+          [] -> acc
+          h :: t -> f h (listFoldr f acc t)
+      listFilter pred xs = case xs of
+          [] -> []
+          h :: t -> if pred h then h :: listFilter pred t else listFilter pred t
+      listLength xs = case xs of
+          [] -> 0
+          h :: t -> 1 + listLength t
+      listSum xs = case xs of
+          [] -> 0
+          h :: t -> h + listSum t
+      listRange lo hi = if lo > hi then [] else lo :: listRange (lo + 1) hi
+      listAppend a b = case a of
+          [] -> b
+          h :: t -> h :: listAppend t b
+      listReverse xs = listFoldl (\\h acc -> h :: acc) [] xs
+      maybeWithDefault d m = case m of
+          Just x -> x
+          Nothing -> d
+      maybeMap f m = case m of
+          Just x -> Just (f x)
+          Nothing -> Nothing
+      resultWithDefault d r = case r of
+          Ok x -> x
+          Err e -> d
+      identity x = x
+      always a b = a
+      """;
+
+  /** Maps qualified standard-library names to the prelude function that implements them. */
+  static final Map<String, String> PRELUDE_NAMES =
+      Map.ofEntries(
+          Map.entry("List.map", "listMap"),
+          Map.entry("List.foldl", "listFoldl"),
+          Map.entry("List.foldr", "listFoldr"),
+          Map.entry("List.filter", "listFilter"),
+          Map.entry("List.length", "listLength"),
+          Map.entry("List.sum", "listSum"),
+          Map.entry("List.range", "listRange"),
+          Map.entry("List.append", "listAppend"),
+          Map.entry("List.reverse", "listReverse"),
+          Map.entry("Maybe.withDefault", "maybeWithDefault"),
+          Map.entry("Maybe.map", "maybeMap"),
+          Map.entry("Result.withDefault", "resultWithDefault"),
+          Map.entry("Basics.identity", "identity"),
+          Map.entry("Basics.always", "always"));
+
+  /** Operators whose result is a {@code Bool}; in value position they widen the i32 0/1 to i64. */
+  private static final Set<String> BOOL_OPS =
+      Set.of("==", "/=", "<", ">", "<=", ">=", "&&", "||");
+
+  /** Builtin constructor tags so {@code Maybe}/{@code Result} values work without a user
+   *  declaration: each union's variants are tagged by position. */
+  private static void registerBuiltinCtors(Map<String, Integer> ctorTag, Map<String, Integer> ctorArity) {
+    ctorTag.put("Just", 0);
+    ctorArity.put("Just", 1);
+    ctorTag.put("Nothing", 1);
+    ctorArity.put("Nothing", 0);
+    ctorTag.put("Ok", 0);
+    ctorArity.put("Ok", 1);
+    ctorTag.put("Err", 1);
+    ctorArity.put("Err", 1);
+  }
 
   /** Compiles one expression into a module exporting {@code main : () -> i64}. */
   public static byte[] module(String expression) {
@@ -99,6 +183,7 @@ public final class WasmCompiler {
     // value `Ctor a b` is a heap cell {tag, a, b} and a `case` dispatches on the loaded tag word.
     Map<String, Integer> ctorTag = new HashMap<>();
     Map<String, Integer> ctorArity = new HashMap<>();
+    registerBuiltinCtors(ctorTag, ctorArity); // Maybe/Result work without a user declaration
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Union u) {
         for (int i = 0; i < u.variants().size(); i++) {
@@ -133,6 +218,29 @@ public final class WasmCompiler {
     } catch (RuntimeException e) {
       nodeTypes = Map.of();
     }
+    // Prepend the standard-library prelude (List/Maybe/Result helpers) when the module refers to it,
+    // so those qualified names resolve to compiled functions. Gated by a cheap textual check to keep
+    // unrelated modules (e.g. the numeric benchmark) lean.
+    if (source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
+        || source.contains("Basics.")) {
+      for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(WASM_PRELUDE).decls()) {
+        if (d instanceof Decl.Value v && !names(funcs).contains(v.name())) {
+          List<String> params = new ArrayList<>();
+          boolean ok = true;
+          for (Pattern p : v.params()) {
+            if (p instanceof Pattern.Var pv) {
+              params.add(pv.name());
+            } else {
+              ok = false;
+            }
+          }
+          if (ok) {
+            funcs.add(new Func(v.name(), params, v.body()));
+          }
+        }
+      }
+    }
+
     // Lambda-lift: every lambda becomes a top-level function (its captured locals lead its
     // parameters), and the lambda expression a closure that captures those locals. This, together
     // with the closure/$apply runtime, is what gives WASM closures and currying.
@@ -143,6 +251,14 @@ public final class WasmCompiler {
     Map<Expr.Lambda, Lifted> lifted = new java.util.IdentityHashMap<>();
     funcs = liftLambdas(funcs, globalNames, lifted);
     return assemble(funcs, ctorTag, ctorArity, nodeTypes, lifted);
+  }
+
+  private static Set<String> names(List<Func> funcs) {
+    Set<String> out = new HashSet<>();
+    for (Func f : funcs) {
+      out.add(f.name());
+    }
+    return out;
   }
 
   /** A lambda lifted to a top-level function: the function's name, its total arity (captures + own
@@ -437,23 +553,27 @@ public final class WasmCompiler {
           intExpr(let.body());
         }
         case Expr.Var v -> {
-          Integer idx = locals.get(v.name());
+          String name = resolvedName(v); // maps qualified stdlib names (List.map) to prelude funcs
+          Integer idx = locals.get(name);
           if (idx != null) {
             code.write(0x20); // local.get
             leb(code, idx);
-          } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 0) {
+          } else if (funcs.containsKey(name) && funcs.get(name)[1] == 0) {
             code.write(0x10); // call (a zero-arg top-level value)
-            leb(code, funcs.get(v.name())[0]);
-          } else if (funcs.containsKey(v.name())) {
+            leb(code, funcs.get(name)[0]);
+          } else if (funcs.containsKey(name)) {
             // A top-level function used as a first-class value: an un-applied closure over it.
-            makeClosure(funcs.get(v.name())[0], funcs.get(v.name())[1], List.of());
+            makeClosure(funcs.get(name)[0], funcs.get(name)[1], List.of());
           } else {
-            throw unsupported("variable " + v.name());
+            throw unsupported("variable " + (v.module() == null ? "" : v.module() + ".") + v.name());
           }
         }
         case Expr.App app -> intApp(app);
         case Expr.ListLit l -> emitList(l.items(), 0);
         case Expr.Tuple t -> emitTuple(t.items());
+        // Booleans are first-class i64 values (0/1), so they can be stored, returned and compared.
+        case Expr.Ctor c when c.name().equals("True") -> { code.write(0x42); sleb(code, 1); }
+        case Expr.Ctor c when c.name().equals("False") -> { code.write(0x42); sleb(code, 0); }
         case Expr.Ctor c when ctorTag.containsKey(c.name()) -> emitCtor(c.name(), List.of());
         case Expr.Case c -> intCase(c);
         case Expr.Record r -> emitRecord(r);
@@ -852,6 +972,13 @@ public final class WasmCompiler {
         emitCons(() -> intExpr(b.left()), () -> intExpr(b.right()));
         return;
       }
+      // A comparison or boolean operator used as a value: compute the i32 0/1 and widen to i64, so
+      // booleans are first-class (stored in lists, returned from functions, etc.).
+      if (BOOL_OPS.contains(b.op())) {
+        boolBinOp(b);
+        code.write(0xAD); // i64.extend_i32_u
+        return;
+      }
       if (b.op().equals("++")) {
         if (!isString(b.left()) && !isString(b.right())) {
           throw unsupported("++ on non-strings");
@@ -994,20 +1121,24 @@ public final class WasmCompiler {
         emitCtor(ctor.name(), args);
         return;
       }
-      // A call to a known top-level function that is NOT shadowed by a local.
-      if (head instanceof Expr.Var v && funcs.containsKey(v.name()) && !locals.containsKey(v.name())) {
-        int arity = funcs.get(v.name())[1];
+      // A call to a known top-level function (or a qualified stdlib name mapped to a prelude
+      // function) that is NOT shadowed by a local.
+      if (head instanceof Expr.Var v
+          && funcs.containsKey(resolvedName(v))
+          && !locals.containsKey(resolvedName(v))) {
+        String fn = resolvedName(v);
+        int arity = funcs.get(fn)[1];
         if (args.size() == arity) {
           for (Expr arg : args) {
             intExpr(arg);
           }
           code.write(0x10); // call (fast path: exact arity)
-          leb(code, funcs.get(v.name())[0]);
+          leb(code, funcs.get(fn)[0]);
           return;
         }
         if (args.size() < arity) {
           // Partial application: a closure capturing the supplied args.
-          makeClosure(funcs.get(v.name())[0], arity, args);
+          makeClosure(funcs.get(fn)[0], arity, args);
           return;
         }
         // Over-application: call the function, then apply the surplus args to its result.
@@ -1015,7 +1146,7 @@ public final class WasmCompiler {
           intExpr(args.get(i));
         }
         code.write(0x10);
-        leb(code, funcs.get(v.name())[0]);
+        leb(code, funcs.get(fn)[0]);
         for (int i = arity; i < args.size(); i++) {
           intExpr(args.get(i));
           code.write(0x10); // call $apply
@@ -1031,6 +1162,18 @@ public final class WasmCompiler {
         code.write(0x10); // call $apply
         leb(code, funcs.get("$apply")[0]);
       }
+    }
+
+    /** A variable's effective top-level name: a qualified stdlib name ({@code List.map}) maps to its
+     *  prelude function ({@code listMap}); everything else keeps its own name. */
+    private String resolvedName(Expr.Var v) {
+      if (v.module() != null) {
+        String qualified = v.module() + "." + v.name();
+        if (PRELUDE_NAMES.containsKey(qualified)) {
+          return PRELUDE_NAMES.get(qualified);
+        }
+      }
+      return v.name();
     }
 
     /**
@@ -1091,7 +1234,12 @@ public final class WasmCompiler {
           boolExpr(app.arg());
           code.write(0x45); // i32.eqz
         }
-        default -> throw unsupported("boolean expression " + e.getClass().getSimpleName());
+        default -> {
+          // Any other Bool-valued expression (a variable, a function call like `pred h`, an `if`):
+          // evaluate it as the uniform i64 (0/1) and narrow to the i32 a condition needs.
+          intExpr(e);
+          code.write(0xA7); // i32.wrap_i64
+        }
       }
     }
 

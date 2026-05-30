@@ -310,9 +310,11 @@ publishes it as an artifact.
   arithmetic, comparison and `toFloat`/`round`/`floor`/`ceiling`/`truncate`), a growable
   linear-memory heap for cons-lists, tuples, tagged custom types, **strings** (type-directed; `++`/`==`
   need operands statically typed `String`) and **records** (self-describing and fully
-  **row-polymorphic** — fields are looked up by name at runtime), and first-class functions,
-  **closures and currying** (a uniform closure value + a generic `$apply` runtime, with lambdas
-  lambda-lifted). The main remaining gap is most of the larger standard library.
+  **row-polymorphic** — fields are looked up by name at runtime), first-class functions, **closures
+  and currying** (a uniform closure value + a generic `$apply` runtime, with lambdas lambda-lifted),
+  and a small **standard library** (`List.map`/`foldl`/`foldr`/`filter`/`range`/`reverse`/…,
+  `Maybe`/`Result` helpers) written in the same subset and prepended when used. The main remaining
+  gap is the rest of the larger standard library (most `String`/`Dict`/`Array` operations).
 - **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
   the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,
   keyboard, turtle, mario) type-checks end to end — exercising module-level let-generalization (SCC
