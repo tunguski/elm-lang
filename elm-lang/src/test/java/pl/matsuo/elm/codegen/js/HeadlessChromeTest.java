@@ -113,4 +113,22 @@ class HeadlessChromeTest {
     String dom = renderInBrowser(example("text-fields"), driver);
     assertTrue(dom.contains("olleh"), dom); // String.reverse "hello"
   }
+
+  @Test
+  void textFieldKeepsFocusAcrossKeystroke() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: re-rendering used to rebuild the whole subtree, replacing the <input> on every
+    // keystroke and dropping focus (so only one character could be typed). Drive a real 'input'
+    // event through the live listener and assert the SAME element survives and stays focused.
+    String driver =
+        "var inp=document.querySelector('input'); inp.$marker='KEEP'; inp.focus();"
+            + "inp.value='h'; inp.dispatchEvent(new Event('input',{bubbles:true}));"
+            + "var after=document.querySelector('input');"
+            + "document.body.setAttribute('data-same', String(after.$marker==='KEEP'));"
+            + "document.body.setAttribute('data-focused', String(document.activeElement===after));";
+    String dom = renderInBrowser(example("text-fields"), driver);
+    assertTrue(dom.contains("data-same=\"true\""), dom); // input element reused, not replaced
+    assertTrue(dom.contains("data-focused=\"true\""), dom); // focus preserved
+    assertTrue(dom.contains("<div>h</div>"), dom); // model updated and re-rendered (reverse "h")
+  }
 }

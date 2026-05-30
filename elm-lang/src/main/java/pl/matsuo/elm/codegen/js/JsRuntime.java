@@ -234,17 +234,41 @@ public final class JsRuntime {
 
         function setAttr(el, a){
           var t=a.$, nm=a._[0], val=a._[1];
-          if (t==='$Att'){ el.setAttribute(nm, String(val)); }
-          else if (t==='$Prop'){ if (typeof val==='boolean'){ if(val) el.setAttribute(nm,''); el[nm]=val; } else el.setAttribute(nm,String(val)); }
+          if (t==='$Att'){
+            // `value`/`checked` are controlled by the model; set the live property (and only when it
+            // changed) so we don't fight the cursor, rather than the inert default-value attribute.
+            if (nm==='value'){ var s=String(val); if(el.value!==s) el.value=s; }
+            else el.setAttribute(nm, String(val));
+          }
+          else if (t==='$Prop'){ if (typeof val==='boolean'){ el[nm]=val; if(val) el.setAttribute(nm,''); else el.removeAttribute(nm); } else { el[nm]=val; el.setAttribute(nm,String(val)); } }
           else if (t==='$Style'){ el.style.setProperty(nm, val); }
           else if (t==='$On'){
             var ev=nm, h=a._[1];
             var domEvent = ev==='check'?'change':ev;
-            el.addEventListener(domEvent, function(e){
+            var fn = function(e){
               var msg = (ev==='input') ? h(e.target.value) : (ev==='check') ? h(e.target.checked) : h;
               window.$dispatch(msg); e.stopPropagation();
-            });
+            };
+            el.addEventListener(domEvent, fn);
+            (el.$ls=el.$ls||[]).push([domEvent, fn]);
           }
+        }
+        // (Re)apply a node's attribute list, clearing the previous render's listeners, styles and
+        // any attributes no longer present, so an element can be reused across renders.
+        function applyProps(el, attrs){
+          (el.$ls||[]).forEach(function(l){ el.removeEventListener(l[0], l[1]); });
+          el.$ls=[];
+          var seen={}, styled={};
+          attrs.forEach(function(a){
+            if (a.$==='$Att'||a.$==='$Prop') seen[a._[0]]=1;
+            else if (a.$==='$Style') styled[a._[0]]=1;
+            setAttr(el,a);
+          });
+          // Drop attributes/styles set last render but absent now (don't touch cssText: assigning it
+          // even an empty string leaves a stray `style=""` attribute on every element).
+          (el.$at||[]).forEach(function(nm){ if(!seen[nm] && nm!=='value') el.removeAttribute(nm); });
+          (el.$st||[]).forEach(function(nm){ if(!styled[nm]) el.style.removeProperty(nm); });
+          el.$at=Object.keys(seen); el.$st=Object.keys(styled);
         }
         window.$toDom = function(v){
           if (v.$==='$Text') return document.createTextNode(String(v._[0]));
@@ -254,16 +278,37 @@ public final class JsRuntime {
           $listToArray(v._[2]).forEach(function(k){ el.appendChild(window.$toDom(k)); });
           return el;
         };
+        // Same virtual node kind? Text vs element, and matching element tag.
+        function $sameType(a,b){ return a.$===b.$ && (a.$!=='$Node' || a._[0]===b._[0]); }
+        // Diff old/new virtual nodes and patch the real DOM in place, preserving element identity
+        // (and thus focus/selection on inputs) instead of rebuilding the subtree every render.
+        function $patch(parent, dom, oldV, newV){
+          if (oldV==null){ var n=window.$toDom(newV); parent.appendChild(n); return n; }
+          if (newV==null){ if(dom) parent.removeChild(dom); return null; }
+          if (!$sameType(oldV,newV)){ var n=window.$toDom(newV); parent.replaceChild(n,dom); return n; }
+          if (newV.$==='$Text'){ var s=String(newV._[0]); if(dom.nodeValue!==s) dom.nodeValue=s; return dom; }
+          applyProps(dom, $listToArray(newV._[1]));
+          var oldKids=$listToArray(oldV._[2]), newKids=$listToArray(newV._[2]);
+          for (var i=0;i<newKids.length;i++){ $patch(dom, dom.childNodes[i]||null, oldKids[i]||null, newKids[i]); }
+          for (var j=oldKids.length-1;j>=newKids.length;j--){ if(dom.childNodes[j]) dom.removeChild(dom.childNodes[j]); }
+          return dom;
+        }
         window.$mount = function(program, root){
           var def = program._[0], kind = program.$, model;
           if (kind==='$Sandbox') model = def.init;
           else { var pair = def.init($unit); model = pair.vs[0]; }
-          function viewDom(){
+          var current=null, dom=null;
+          function viewVNode(){
             var v = def.view(model);
             if (kind==='$Document'){ v = $data('$Node',['div', $nil, v.body]); }
-            return window.$toDom(v);
+            return v;
           }
-          function render(){ while(root.firstChild) root.removeChild(root.firstChild); root.appendChild(viewDom()); }
+          function render(){
+            var v = viewVNode();
+            if (dom==null){ dom = window.$toDom(v); root.appendChild(dom); }
+            else { dom = $patch(root, dom, current, v); }
+            current = v;
+          }
           window.$dispatch = function(msg){
             if (kind==='$Sandbox') model = def.update(msg)(model);
             else { var pair = def.update(msg)(model); model = pair.vs[0]; }
