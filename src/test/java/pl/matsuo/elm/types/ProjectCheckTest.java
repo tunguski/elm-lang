@@ -49,14 +49,18 @@ class ProjectCheckTest {
   }
 
   @Test
-  void elmPlaygroundGameTypeChecks() throws Exception {
-    // The full ~1700-line evancz/elm-playground plus a game type-check end to end — this needs
+  void everyElmPlaygroundGameTypeChecks() throws Exception {
+    // The full ~1700-line evancz/elm-playground plus each game type-checks end to end — this needs
     // module-level let-generalization (SCC ordering) so shared helpers like `render` stay
-    // polymorphic across picture/animation/game.
+    // polymorphic across picture/animation/game, and row-polymorphic records for the games whose
+    // memory is a record (turtle's { x : Float }, mario's { y : Float }).
     String playground = resource("/Playground.elm");
-    String mario = resource("/examples/mario.elm");
-    Map<String, String> types = TypeChecker.checkProject(playground, mario);
-    assertTrue(types.get("main").startsWith("Program"), types.get("main"));
+    for (String game : new String[] {"picture", "animation", "mouse", "keyboard", "turtle", "mario"}) {
+      Map<String, String> types = TypeChecker.checkProject(playground, resource("/examples/" + game + ".elm"));
+      assertTrue(
+          types.get("main") != null && types.get("main").startsWith("Program"),
+          game + " main: " + types.get("main"));
+    }
   }
 
   private static String resource(String path) {

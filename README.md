@@ -308,9 +308,11 @@ publishes it as an artifact.
   **row-polymorphic** — fields are looked up by name at runtime), and first-class functions,
   **closures and currying** (a uniform closure value + a generic `$apply` runtime, with lambdas
   lambda-lifted). The main remaining gap is most of the larger standard library.
-- The full **1700-line elm-playground** still hits a few type-inference edge cases (every
-  single-module elm-lang.org example type-checks); `run`/`make` fall through to evaluation when the
-  checker can't fully analyze a program.
+- **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
+  the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,
+  keyboard, turtle, mario) type-checks end to end — exercising module-level let-generalization (SCC
+  ordering) and row-polymorphic records. (`run`/`make` still fall through to evaluation if a
+  program the checker can't analyze ever arises.)
 - The textured **WebGL** examples need a real GPU and same-origin images (cross-origin textures are
   vendored into the gallery); verifying rasterized pixels requires a real browser.
 - **Type inference** is HM without records-as-extensible-everywhere subtleties of real Elm and
