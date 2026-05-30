@@ -22,6 +22,40 @@ public final class Types {
     return t;
   }
 
+  /** Prunes recursively, resolving variables inside arrows, constructors, tuples and records, so the
+   *  returned type is fully substituted (used by consumers that inspect a type's structure). */
+  public static Ty deepPrune(Ty t) {
+    Ty p = prune(t);
+    return switch (p) {
+      case Ty.Arrow a -> new Ty.Arrow(deepPrune(a.from()), deepPrune(a.to()));
+      case Ty.Con c -> new Ty.Con(c.name(), c.args().stream().map(Types::deepPrune).toList());
+      case Ty.Tuple tu -> new Ty.Tuple(tu.items().stream().map(Types::deepPrune).toList());
+      case Ty.Record r -> {
+        // Flatten the row: a record closed by unification carries a tail Var linked to an empty
+        // row rather than a literal null, so follow the chain, gathering every field, and report
+        // the record as closed (tail == null) unless the chain ends in an unbound (open) Var.
+        Map<String, Ty> fields = new LinkedHashMap<>();
+        Ty tail = collectRow(r, fields);
+        yield new Ty.Record(fields, tail);
+      }
+      default -> p;
+    };
+  }
+
+  /** Accumulates a record's fields (deep-pruned), following its tail; returns the open tail Var, or
+   *  null if the row is closed. */
+  private static Ty collectRow(Ty.Record r, Map<String, Ty> out) {
+    r.fields().forEach((k, v) -> out.putIfAbsent(k, deepPrune(v)));
+    if (r.tail() == null) {
+      return null;
+    }
+    Ty t = prune(r.tail());
+    if (t instanceof Ty.Record rec) {
+      return collectRow(rec, out);
+    }
+    return t instanceof Ty.Var ? t : null; // an unbound tail is open; anything else closes the row
+  }
+
   // --- generalization / instantiation -----------------------------------
 
   /** Quantifies every unbound variable whose level is deeper than {@code level}. */

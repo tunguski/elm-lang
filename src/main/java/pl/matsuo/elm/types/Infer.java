@@ -24,6 +24,7 @@ public final class Infer {
   private final Map<String, AliasDef> aliases = new HashMap<>();
   private final Map<String, String> moduleAliases = new HashMap<>();
   private final Map<Expr, Ty> numericLiterals = new IdentityHashMap<>();
+  private final Map<Expr, Ty> nodeTypes = new IdentityHashMap<>();
   /** Constructors (union variants and record-alias constructors) the last module declared. */
   private final Map<String, Scheme> declaredCtors = new HashMap<>();
   /** Type aliases the last module declared (so a project checker can re-expose them). */
@@ -487,9 +488,22 @@ public final class Infer {
     return new Ty.Var(level, c);
   }
 
+  /**
+   * Per-expression inferred types (deep-pruned), recorded during inference. Lets a backend that
+   * needs type information — notably the type-directed WASM codegen for strings and records — look
+   * up the type of any sub-expression after {@link #inferModule}/{@link #inferProject} has run.
+   */
+  public Map<Expr, Ty> nodeTypes() {
+    Map<Expr, Ty> out = new IdentityHashMap<>();
+    nodeTypes.forEach((e, t) -> out.put(e, Types.deepPrune(t)));
+    return out;
+  }
+
   public Ty infer(TypeEnv env, Expr expr) {
     try {
-      return infer0(env, expr);
+      Ty t = infer0(env, expr);
+      nodeTypes.put(expr, t);
+      return t;
     } catch (ElmTypeError e) {
       // Attach the innermost expression's location (and a hint) the first time an error bubbles
       // through an expression that has one, so the report points at the actual offending code.

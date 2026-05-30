@@ -70,12 +70,13 @@ public final class WasmCompiler {
    * WASM backend can join the recursive benchmark and differential tests.
    */
   public static byte[] moduleFromSource(String source) {
+    pl.matsuo.elm.ast.Module module = pl.matsuo.elm.parser.Parser.parseModule(source);
     List<Func> funcs = new ArrayList<>();
     // Custom-type constructors: each variant gets a tag (its index in the union) and an arity, so a
     // value `Ctor a b` is a heap cell {tag, a, b} and a `case` dispatches on the loaded tag word.
     Map<String, Integer> ctorTag = new HashMap<>();
     Map<String, Integer> ctorArity = new HashMap<>();
-    for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(source).decls()) {
+    for (Decl d : module.decls()) {
       if (d instanceof Decl.Union u) {
         for (int i = 0; i < u.variants().size(); i++) {
           Decl.Union.Variant variant = u.variants().get(i);
@@ -84,7 +85,7 @@ public final class WasmCompiler {
         }
       }
     }
-    for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(source).decls()) {
+    for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v) {
         List<String> params = new ArrayList<>();
         for (Pattern p : v.params()) {
@@ -97,7 +98,19 @@ public final class WasmCompiler {
         funcs.add(new Func(v.name(), params, v.body()));
       }
     }
-    return assemble(funcs, ctorTag, ctorArity);
+    // Per-expression inferred types power the type-directed codegen for records (and strings): the
+    // compiler walks the same Expr instances, so an IdentityHashMap keyed by expression resolves
+    // field layouts and operator overloads. Best-effort — if inference can't type the module we just
+    // proceed without it (records/strings then fall back to "unsupported").
+    Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes;
+    try {
+      pl.matsuo.elm.types.Infer infer = new pl.matsuo.elm.types.Infer();
+      infer.inferModule(module, pl.matsuo.elm.types.Signatures.globals());
+      nodeTypes = infer.nodeTypes();
+    } catch (RuntimeException e) {
+      nodeTypes = Map.of();
+    }
+    return assemble(funcs, ctorTag, ctorArity, nodeTypes);
   }
 
   // --- per-function code generation --------------------------------------
@@ -108,6 +121,7 @@ public final class WasmCompiler {
     private final Map<String, Integer> ctorTag; // constructor name -> tag (index in its union)
     private final Map<String, Integer> ctorArity; // constructor name -> number of fields
     private final Map<Integer, Integer> arityType; // call arity -> wasm type index (for call_indirect)
+    private final Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes; // inferred type per expression
     private int localCount; // all locals are i64; params occupy 0..numParams-1
     private final int numParams;
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
@@ -117,11 +131,13 @@ public final class WasmCompiler {
         List<String> params,
         Map<String, Integer> ctorTag,
         Map<String, Integer> ctorArity,
-        Map<Integer, Integer> arityType) {
+        Map<Integer, Integer> arityType,
+        Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes) {
       this.funcs = funcs;
       this.ctorTag = ctorTag;
       this.ctorArity = ctorArity;
       this.arityType = arityType;
+      this.nodeTypes = nodeTypes;
       this.numParams = params.size();
       for (int i = 0; i < params.size(); i++) {
         locals.put(params.get(i), i);
@@ -217,6 +233,9 @@ public final class WasmCompiler {
         case Expr.Tuple t -> emitTuple(t.items());
         case Expr.Ctor c when ctorTag.containsKey(c.name()) -> emitCtor(c.name(), List.of());
         case Expr.Case c -> intCase(c);
+        case Expr.Record r -> emitRecord(r);
+        case Expr.RecordAccess a -> emitRecordAccess(a);
+        case Expr.RecordUpdate u -> emitRecordUpdate(u);
         default -> throw unsupported(e.getClass().getSimpleName());
       }
     }
@@ -348,6 +367,95 @@ public final class WasmCompiler {
       }
       code.write(0x20);
       leb(code, addr);
+    }
+
+    // --- records: a heap block of one i64 word per field, in canonical (name-sorted) order ------
+    // The sorted layout is independent of the literal's field order, so a literal and a later
+    // `.field` access (whose record type is known and closed) agree on every field's offset.
+
+    /** Allocates a record literal: its fields stored at their name-sorted offsets; leaves the i64
+     *  pointer. */
+    private void emitRecord(Expr.Record rec) {
+      List<Expr.Record.Field> fs = new ArrayList<>(rec.fields());
+      fs.sort(java.util.Comparator.comparing(Expr.Record.Field::name));
+      int addr = freshLocal();
+      code.write(0x23);
+      leb(code, 0);
+      code.write(0xAD);
+      code.write(0x21);
+      leb(code, addr);
+      bumpHeap(fs.size() * 8);
+      for (int j = 0; j < fs.size(); j++) {
+        int jj = j;
+        store(addr, j * 8, () -> intExpr(fs.get(jj).value()));
+      }
+      code.write(0x20);
+      leb(code, addr);
+    }
+
+    /** Loads {@code target.field}: the record's i64 word at the field's name-sorted offset. */
+    private void emitRecordAccess(Expr.RecordAccess acc) {
+      List<String> fields = closedRecordFields(acc.target());
+      int idx = fields.indexOf(acc.field());
+      if (idx < 0) {
+        throw unsupported("record field ." + acc.field());
+      }
+      int addr = freshLocal();
+      intExpr(acc.target()); // i64 pointer
+      code.write(0x21);
+      leb(code, addr);
+      load(addr, idx * 8);
+    }
+
+    /** {@code { base | f = v, … }}: a fresh record, copying {@code base}'s words then overwriting the
+     *  updated fields (at their name-sorted offsets). */
+    private void emitRecordUpdate(Expr.RecordUpdate up) {
+      Integer baseLocal = locals.get(up.base());
+      if (baseLocal == null) {
+        throw unsupported("record update of non-local '" + up.base() + "'");
+      }
+      List<String> fields = closedRecordFields(up); // the result has the base record's fields
+      java.util.Map<String, Expr> updates = new java.util.HashMap<>();
+      for (Expr.Record.Field f : up.fields()) {
+        updates.put(f.name(), f.value());
+      }
+      int addr = freshLocal();
+      code.write(0x23);
+      leb(code, 0);
+      code.write(0xAD);
+      code.write(0x21);
+      leb(code, addr);
+      bumpHeap(fields.size() * 8);
+      for (int j = 0; j < fields.size(); j++) {
+        int off = j * 8;
+        Expr updated = updates.get(fields.get(j));
+        if (updated != null) {
+          store(addr, off, () -> intExpr(updated));
+        } else {
+          // copy base.word(off): store at addr+off the value loaded from base+off
+          store(
+              addr,
+              off,
+              () -> {
+                code.write(0x20);
+                leb(code, baseLocal);
+                code.write(0xA7); // i32.wrap_i64 -> base address
+                code.write(0x29); // i64.load
+                leb(code, 3);
+                leb(code, off);
+              });
+        }
+      }
+      code.write(0x20);
+      leb(code, addr);
+    }
+
+    /** The name-sorted field list of {@code e}'s record type, requiring it to be known and closed. */
+    private List<String> closedRecordFields(Expr e) {
+      if (nodeTypes.get(e) instanceof pl.matsuo.elm.types.Ty.Record r && r.tail() == null) {
+        return new ArrayList<>(new java.util.TreeSet<>(r.fields().keySet()));
+      }
+      throw unsupported("record with an unknown or open (row-polymorphic) type in WASM");
     }
 
     /** Dispatches a {@code case} to the list or the custom-type compiler by its branch patterns. */
@@ -629,6 +737,14 @@ public final class WasmCompiler {
 
   private static byte[] assemble(
       List<Func> funcList, Map<String, Integer> ctorTag, Map<String, Integer> ctorArity) {
+    return assemble(funcList, ctorTag, ctorArity, Map.of());
+  }
+
+  private static byte[] assemble(
+      List<Func> funcList,
+      Map<String, Integer> ctorTag,
+      Map<String, Integer> ctorArity,
+      Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes) {
     // Function table: name -> {index, arity}, so calls/recursion resolve to a call index.
     Map<String, int[]> table = new HashMap<>();
     for (int i = 0; i < funcList.size(); i++) {
@@ -737,7 +853,8 @@ public final class WasmCompiler {
     leb(code, funcList.size());
     for (Func f : funcList) {
       code.writeBytes(
-          new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType).compile(f.body()));
+          new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType, nodeTypes)
+              .compile(f.body()));
     }
     section(out, 10, code);
     return out.toByteArray();

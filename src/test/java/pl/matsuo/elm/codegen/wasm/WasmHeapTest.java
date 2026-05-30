@@ -136,6 +136,44 @@ class WasmHeapTest {
   }
 
   @Test
+  void buildsARecordAndReadsAFieldByName() throws Exception {
+    // A record literal lays its fields out in name-sorted order; the annotated (closed) record type
+    // lets the field accesses resolve to the matching offsets.
+    agrees(
+        """
+        type alias Point = { x : Int, y : Int }
+        normSq : Point -> Int
+        normSq p = p.x * p.x + p.y * p.y
+        main = normSq { x = 3, y = 4 }
+        """);
+  }
+
+  @Test
+  void recordFieldOrderDoesNotDependOnLiteralOrder() throws Exception {
+    // The literal lists fields out of alphabetical order; sorted layout must still read correctly.
+    agrees(
+        """
+        type alias R = { b : Int, a : Int }
+        diff : R -> Int
+        diff r = r.a - r.b
+        main = diff { b = 10, a = 30 }
+        """);
+  }
+
+  @Test
+  void updatesARecordImmutably() throws Exception {
+    agrees(
+        """
+        type alias Counter = { count : Int, step : Int }
+        bump : Counter -> Counter
+        bump c = { c | count = c.count + c.step }
+        get : Counter -> Int
+        get c = c.count
+        main = get (bump (bump { count = 0, step = 5 }))
+        """);
+  }
+
+  @Test
   void appliesAFunctionPassedAsAValue() throws Exception {
     // A top-level function used as a value (its table index) and invoked via call_indirect.
     agrees(
