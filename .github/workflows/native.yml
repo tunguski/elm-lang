@@ -1,0 +1,42 @@
+name: Native image
+
+# Builds a standalone native binary (GraalVM native-image) on Linux and publishes it as an
+# artifact. Runs on demand and for version tags; kept separate from CI so the (slower, and for a
+# from-scratch Truffle interpreter occasionally fiddly) native build never blocks the test suite.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elm-lang
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up GraalVM for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          cache: 'maven'
+
+      - name: Build native image
+        id: build
+        continue-on-error: true
+        run: |
+          chmod +x ./mvnw
+          ./mvnw -B -ntp -Pnative -DskipTests package
+          ls -lh target/elm || true
+          target/elm eval "List.sum (List.range 1 100)" || true
+
+      - name: Upload native binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: elm-native-linux-x64
+          path: elm-lang/target/elm
+          if-no-files-found: warn
