@@ -62,6 +62,10 @@ java -cp <classpath> pl.matsuo.elm.Main run path/to/Main.elm --backend interp
 java -cp <classpath> pl.matsuo.elm.Main js path/to/Main.elm
 ```
 
+The [`elm.sh`](elm.sh) wrapper runs any command without the full `java -cp …`
+invocation (e.g. `./elm.sh eval "List.range 1 5"`); it compiles the project first if
+`Main.class` is missing and caches the classpath for fast subsequent calls.
+
 CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]`,
 `js <file.elm> [--min] [--map]`, `eval "<expr>" [--backend ...]`,
 `check <file.elm> [more.elm …]` (type-check a module or project), `repl`, `lsp`
