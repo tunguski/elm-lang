@@ -25,7 +25,9 @@
       "Read(//tmp/**)",
       "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/truffle/truffle-api/maven-metadata.xml)",
       "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/truffle/truffle-dsl-processor/maven-metadata.xml)",
-      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/polyglot/polyglot/maven-metadata.xml)"
+      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/polyglot/polyglot/maven-metadata.xml)",
+      "Bash(rm -f dbg.java dbgo/*)",
+      "Bash(./mvnw -B -ntp test -Dtest=\"EditorInterpreterTest,HeadlessChromeTest#multiFileEditorRendersResultsAndDebugger\" -Dproject.build.directory=target-ci)"
     ]
   }
 }

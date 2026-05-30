@@ -166,6 +166,24 @@ public final class JsCompiler {
     return JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + c.declarations();
   }
 
+  /**
+   * Kernel + DOM/TEA runtime + every module's declarations of a multi-module project, with no entry
+   * point (no mount). Top-level names are module-qualified ({@code _$Module$name}). For embedding or
+   * calling specific functions of a bundled project (e.g. under Node) without mounting a program.
+   */
+  public static String declarationsScriptWithDomProject(String... sources) {
+    List<Module> modules = new ArrayList<>();
+    for (String s : sources) {
+      modules.add(Parser.parseModule(s));
+    }
+    Map<String, ModuleInfo> scope = buildScope(modules);
+    StringBuilder decls = new StringBuilder();
+    for (Module m : orderModules(modules)) {
+      decls.append(new JsCompiler(m, scope).declarations());
+    }
+    return JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + decls;
+  }
+
   /** A browser app bundle: kernel + DOM/TEA runtime + module + a mount call. */
   public static String appBundle(String source) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));

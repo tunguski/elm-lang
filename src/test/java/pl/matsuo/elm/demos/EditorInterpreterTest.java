@@ -8,27 +8,42 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import pl.matsuo.elm.codegen.js.JsCompiler;
 import pl.matsuo.elm.interp.Apply;
-import pl.matsuo.elm.interp.Interpreter;
+import pl.matsuo.elm.interp.Project;
 import pl.matsuo.elm.interp.Show;
 import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmTuple;
 import pl.matsuo.elm.util.Resources;
 
 /**
- * The Elm-in-Elm interpreter (editor.elm, written in Elm) must itself evaluate correctly when run
- * by this project's interpreter — i.e. Elm interpreting Elm — and compile via the JS backend (so
- * the editor runs in the browser). It now covers a functional subset: numbers, strings, booleans,
- * lists, comparison/logic/append operators, if/let and lambdas with closures.
+ * The Elm-in-Elm interpreter (the Lang/Lexer/Parser/Eval/Main modules, written in Elm) must itself
+ * evaluate correctly when run by this project's interpreter — i.e. Elm interpreting Elm — and
+ * compile via the JS backend (so the editor runs in the browser). Covers a functional subset:
+ * numbers, strings, booleans, lists, operators, if/let, lambdas with closures, custom types/case,
+ * cross-file top-level definitions and the time-travel debugger.
  */
 class EditorInterpreterTest {
 
-  private static final Interpreter EDITOR = Interpreter.load(Resources.read("/elm/demos/editor.elm"));
-  private static final String SRC = Resources.read("/elm/demos/editor.elm");
-  private static final Object EVAL = EDITOR.value("eval");
+  private static final String[] MODULE_PATHS = {
+    "/elm/editor/Lang.elm",
+    "/elm/editor/Lexer.elm",
+    "/elm/editor/Parser.elm",
+    "/elm/editor/Eval.elm",
+    "/elm/editor/Main.elm",
+  };
 
-  /** Calls the Elm-written `eval : String -> String` on a source expression. */
+  private static String[] moduleSources() {
+    String[] s = new String[MODULE_PATHS.length];
+    for (int i = 0; i < MODULE_PATHS.length; i++) {
+      s[i] = Resources.read(MODULE_PATHS[i]);
+    }
+    return s;
+  }
+
+  private static final Project EDITOR = Project.load(moduleSources());
+
+  /** Calls the Elm-written `Eval.eval : String -> String` on a source expression. */
   private String eval(String expression) {
-    return Show.plain(Apply.apply(EVAL, expression));
+    return Show.plain(Apply.apply(EDITOR.value("Eval", "eval"), expression));
   }
 
   /** Builds the Elm `List (String, String)` of (filename, content) from alternating args. */
@@ -40,15 +55,16 @@ class EditorInterpreterTest {
     return ElmList.fromJava(pairs);
   }
 
-  /** Calls `evalProject : List (String,String) -> String -> String`. */
+  /** Calls `Eval.evalProject : List (String,String) -> String -> String`. */
   private String evalProject(ElmList files, String entry) {
-    return Show.plain(Apply.applyAll(EDITOR.value("evalProject"), files, entry));
+    return Show.plain(Apply.applyAll(EDITOR.value("Eval", "evalProject"), files, entry));
   }
 
-  /** Calls `debugSteps : List (String,String) -> List String -> List String`. */
+  /** Calls `Eval.debugSteps : List (String,String) -> List String -> List String`. */
   @SuppressWarnings("unchecked")
   private List<Object> debugSteps(ElmList files, String... messages) {
-    Object r = Apply.applyAll(EDITOR.value("debugSteps"), files, ElmList.fromJava(List.of(messages)));
+    Object r =
+        Apply.applyAll(EDITOR.value("Eval", "debugSteps"), files, ElmList.fromJava(List.of(messages)));
     return ((ElmList) r).toJava();
   }
 
@@ -158,8 +174,8 @@ class EditorInterpreterTest {
 
   @Test
   void compilesToJavaScriptForTheBrowser() {
-    // The editor is a Browser.sandbox program; it must compile via the JS backend without throwing.
-    String page = JsCompiler.htmlPage(SRC, null);
+    // The editor is a multi-module Browser.sandbox program; the JS backend must bundle all modules.
+    String page = JsCompiler.htmlPageProject(null, moduleSources());
     assertTrue(page.contains("$start"), "editor compiles to a runnable JS bundle");
   }
 }

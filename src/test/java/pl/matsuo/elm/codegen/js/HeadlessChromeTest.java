@@ -156,11 +156,16 @@ class HeadlessChromeTest {
   @Test
   void multiFileEditorRendersResultsAndDebugger() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
-    String editor =
-        new String(
-            HeadlessChromeTest.class.getResourceAsStream("/elm/demos/editor.elm").readAllBytes(),
-            StandardCharsets.UTF_8);
-    String dom = renderPage(JsCompiler.htmlPage(editor, null));
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] =
+          new String(
+              HeadlessChromeTest.class
+                  .getResourceAsStream(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i])
+                  .readAllBytes(),
+              StandardCharsets.UTF_8);
+    }
+    String dom = renderPage(JsCompiler.htmlPageProject(null, modules));
     // Assert on rendered-only text (these strings are produced at runtime, not present in the
     // inlined bundle source): the result of evaluating `main` across files, and stepped views.
     assertTrue(dom.contains("Hello, world!"), "Result pane evaluated `main` across files");

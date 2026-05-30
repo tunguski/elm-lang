@@ -408,13 +408,29 @@ public final class SiteGenerator {
     Files.writeString(outDir.resolve("backends.html"), page, StandardCharsets.UTF_8);
   }
 
+  /** The editor's Elm modules (a small interpreter + an Ellie-style multi-file UI), bundled together. */
+  public static final String[] EDITOR_MODULES = {
+    "/elm/editor/Lang.elm",
+    "/elm/editor/Lexer.elm",
+    "/elm/editor/Parser.elm",
+    "/elm/editor/Eval.elm",
+    "/elm/editor/Main.elm",
+  };
+
   /**
-   * The Ellie-style editor page: an interpreter written in Elm (editor.elm), compiled by the JS
-   * backend and running live in the browser — edit an expression, see it evaluated.
+   * The Ellie-style editor page: a multi-file interpreter written in Elm (the Lang/Lexer/Parser/
+   * Eval/Main modules), bundled by the JS backend and running live in the browser — edit files, see
+   * the result and step through a time-travel debugger.
    */
   private void writeEditorPage() throws IOException {
-    String src = pl.matsuo.elm.util.Resources.read("/elm/demos/editor.elm");
-    Files.writeString(outDir.resolve("editor.html"), JsCompiler.htmlPage(src, null), StandardCharsets.UTF_8);
+    String[] sources = new String[EDITOR_MODULES.length];
+    for (int i = 0; i < EDITOR_MODULES.length; i++) {
+      sources[i] = pl.matsuo.elm.util.Resources.read(EDITOR_MODULES[i]);
+    }
+    Files.writeString(
+        outDir.resolve("editor.html"),
+        JsCompiler.htmlPageProject(null, sources),
+        StandardCharsets.UTF_8);
   }
 
   /** Numeric functions for the interactive playground (single Int argument each). */

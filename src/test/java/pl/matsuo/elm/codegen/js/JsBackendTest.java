@@ -168,17 +168,19 @@ class JsBackendTest {
         """);
   }
 
-  /** Runs the Elm-in-Elm editor's `eval` under Node, to catch interpreter/JS-kernel divergence. */
+  /** Runs the Elm-in-Elm editor's `Eval.eval` under Node, to catch interpreter/JS-kernel divergence. */
   private String editorEval(String input) {
-    String editor = pl.matsuo.elm.util.Resources.read("/elm/demos/editor.elm");
-    // declarationsScript = kernel + compiled top-levels (no DOM/mount), so we can call _$eval.
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = pl.matsuo.elm.util.Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
     String escaped = input.replace("\\", "\\\\").replace("\"", "\\\"");
-    // The DOM kernel attaches to `window`; under Node we alias it to the global object. `main =
-    // Browser.sandbox …` then builds an inert program value at load (it is never mounted here).
+    // The DOM kernel attaches to `window`; under Node we alias it to the global object. The bundle
+    // is loaded without mounting, so we can call the (module-qualified) `Eval.eval` directly.
     String program =
         "globalThis.window = globalThis;\n"
-            + JsCompiler.declarationsScriptWithDom(editor)
-            + "\nprocess.stdout.write(_$eval(\""
+            + JsCompiler.declarationsScriptWithDomProject(modules)
+            + "\nprocess.stdout.write(_$Eval$eval(\""
             + escaped
             + "\"));\n";
     return runNode(program);
