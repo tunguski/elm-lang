@@ -12,7 +12,7 @@ other functions, by design. Reuse it elsewhere with `Editor.program myFiles`.
 -}
 
 import Browser
-import Eval exposing (appInit, appUpdate, appView, hasApp, lookup, mainValue, renderValue)
+import Eval exposing (appInit, appUpdate, appView, applyHandler, hasApp, lookup, mainValue, renderValue)
 import Html exposing (Html, button, div, h1, h3, input, li, node, p, pre, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
@@ -34,6 +34,7 @@ type Msg
     | AddFile
     | RemoveFile String
     | Interp Value
+    | NoOp
 
 
 {-| Builds an editor program over the given files (the first file is selected initially). -}
@@ -116,6 +117,9 @@ update msg model =
 
         Interp interpMsg ->
             { model | app = model.app |> Result.andThen (\m -> appUpdate (selectedFile model) interpMsg m) }
+
+        NoOp ->
+            model
 
 
 setFile : String -> String -> List ( String, String ) -> List ( String, String )
@@ -236,7 +240,7 @@ liveApp model =
         Ok appModel ->
             case appView (selectedFile model) appModel of
                 Ok html ->
-                    renderHtml html
+                    renderHtml (selectedFile model) html
 
                 Err e ->
                     errorBox e
@@ -246,7 +250,7 @@ staticMain : List ( String, String ) -> Html Msg
 staticMain files =
     case mainValue files of
         Ok v ->
-            renderHtml v
+            renderHtml files v
 
         Err e ->
             errorBox e
@@ -257,26 +261,41 @@ errorBox e =
     pre [ style "color" "#a00", style "margin" "0", style "white-space" "pre-wrap" ] [ text ("Error: " ++ e) ]
 
 
-{-| Converts an interpreted Html `Value` tree into real `Html Msg`, wiring interpreted click
-handlers back to the editor as `Interp` messages; a non-Html value is shown via its rendering. -}
-renderHtml : Value -> Html Msg
-renderHtml v =
+{-| Converts an interpreted Html `Value` tree into real `Html Msg`, wiring interpreted event handlers
+back to the editor as `Interp` messages; a non-Html value is shown via its rendering. {@code files}
+is threaded so an `onInput` handler can be applied to the input string at event time. -}
+renderHtml : List ( String, String ) -> Value -> Html Msg
+renderHtml files v =
     case v of
         VCtor "Html.text" [ VStr s ] ->
             text s
 
         VCtor "Html.node" [ VStr tag, VList attrs, VList children ] ->
-            node tag (List.filterMap renderAttr attrs) (List.map renderHtml children)
+            node tag (List.filterMap (renderAttr files) attrs) (List.map (renderHtml files) children)
 
         _ ->
             text (renderValue v)
 
 
-renderAttr : Value -> Maybe (Html.Attribute Msg)
-renderAttr v =
+renderAttr : List ( String, String ) -> Value -> Maybe (Html.Attribute Msg)
+renderAttr files v =
     case v of
         VCtor "Html.on" [ VStr "click", msg ] ->
             Just (onClick (Interp msg))
+
+        VCtor "Html.on" [ VStr "input", handler ] ->
+            -- Apply the handler to the typed text to build the message, then dispatch it.
+            Just
+                (onInput
+                    (\s ->
+                        case applyHandler files handler s of
+                            Ok msg ->
+                                Interp msg
+
+                            Err _ ->
+                                NoOp
+                    )
+                )
 
         VCtor "Html.style" [ VStr k, VStr val ] ->
             Just (style k val)

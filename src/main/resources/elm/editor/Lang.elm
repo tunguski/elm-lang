@@ -12,6 +12,7 @@ type Value
     | VList (List Value)
     | VCtor String (List Value)
     | VRecord (List ( String, Value ))
+    | VTup (List Value)
     | VClosure (List String) Expr (List ( String, Value ))
     | VRec String (List String) Expr (List ( String, Value ))
     | VBuiltin String (List Value)
@@ -34,6 +35,7 @@ type Expr
     | RecordLit (List ( String, Expr ))
     | RecordGet Expr String
     | RecordUpdate String (List ( String, Expr ))
+    | Tup (List Expr)
 
 
 type Pattern
@@ -45,6 +47,7 @@ type Pattern
     | PCtor String (List Pattern)
     | PNil
     | PCons Pattern Pattern
+    | PTup (List Pattern)
 
 
 {-| A top-level definition `name args = body`. -}

@@ -18,6 +18,8 @@ in-browser interpreter's supported subset (Html, records, lists, recursion, sand
 examples : List ( String, String )
 examples =
     [ ( "Buttons.elm", buttons )
+    , ( "TextField.elm", textField )
+    , ( "Element.elm", element )
     , ( "Hello.elm", hello )
     , ( "Greeting.elm", greeting )
     , ( "Factorial.elm", factorial )
@@ -52,6 +54,58 @@ view model =
         [ button [ onClick Decrement ] [ text "-" ]
         , div [] [ text (String.fromInt model) ]
         , button [ onClick Increment ] [ text "+" ]
+        ]
+"""
+
+
+textField : String
+textField =
+    """module Main exposing (main)
+
+import Browser
+import Html exposing (div, input, text)
+import Html.Events exposing (onInput)
+
+main = Browser.sandbox { init = init, update = update, view = view }
+
+init = ""
+
+update msg model =
+    case msg of
+        SetText s ->
+            s
+
+view model =
+    div []
+        [ input [ onInput SetText ] []
+        , div [] [ text ("You typed: " ++ model) ]
+        ]
+"""
+
+
+element : String
+element =
+    """module Main exposing (main)
+
+import Browser
+import Html exposing (button, div, text)
+import Html.Events exposing (onClick)
+
+main = Browser.element { init = init, update = update, view = view, subscriptions = subs }
+
+init flags = ( 0, Cmd.none )
+
+update msg model =
+    case msg of
+        Bump ->
+            ( model + 1, Cmd.none )
+
+subs model = Sub.none
+
+view model =
+    div []
+        [ button [ onClick Bump ] [ text "bump" ]
+        , div [] [ text (String.fromInt model) ]
         ]
 """
 

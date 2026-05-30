@@ -183,6 +183,9 @@ parseAtom tokens =
                             TRParen :: rest2 ->
                                 Ok ( Tuple.first r, rest2 )
 
+                            TComma :: afterComma ->
+                                parseTupleItems afterComma [ Tuple.first r ]
+
                             _ ->
                                 Err "expected a closing )"
                     )
@@ -195,6 +198,24 @@ parseAtom tokens =
 
         _ ->
             Err "expected an expression"
+
+
+{-| Parses the remaining items of a tuple `( e1, e2, … )` (the first item already parsed). -}
+parseTupleItems : List Token -> List Expr -> Result String ( Expr, List Token )
+parseTupleItems tokens acc =
+    parseExpr tokens
+        |> Result.andThen
+            (\r ->
+                case Tuple.second r of
+                    TComma :: rest ->
+                        parseTupleItems rest (acc ++ [ Tuple.first r ])
+
+                    TRParen :: rest ->
+                        Ok ( Tup (acc ++ [ Tuple.first r ]), rest )
+
+                    _ ->
+                        Err "expected ',' or ')' in tuple"
+            )
 
 
 {-| A record literal `{ a = e, … }`, an update `{ r | a = e, … }`, or the empty record `{}`. -}
@@ -426,6 +447,24 @@ startsPatternAtom tokens =
             False
 
 
+{-| Parses the remaining items of a tuple pattern `( p1, p2, … )` (first already parsed). -}
+parseTuplePat : List Token -> List Pattern -> Result String ( Pattern, List Token )
+parseTuplePat tokens acc =
+    parsePattern tokens
+        |> Result.andThen
+            (\r ->
+                case Tuple.second r of
+                    TComma :: rest ->
+                        parseTuplePat rest (acc ++ [ Tuple.first r ])
+
+                    TRParen :: rest ->
+                        Ok ( PTup (acc ++ [ Tuple.first r ]), rest )
+
+                    _ ->
+                        Err "expected ',' or ')' in tuple pattern"
+            )
+
+
 parsePatternAtom : List Token -> Result String ( Pattern, List Token )
 parsePatternAtom tokens =
     case tokens of
@@ -460,6 +499,9 @@ parsePatternAtom tokens =
                         case Tuple.second r of
                             TRParen :: rest2 ->
                                 Ok ( Tuple.first r, rest2 )
+
+                            TComma :: afterComma ->
+                                parseTuplePat afterComma [ Tuple.first r ]
 
                             _ ->
                                 Err "expected ')' in pattern"

@@ -105,8 +105,9 @@ step-back/forward overlay; `window.$app` exposes `history()`, `goto(i)`, `live()
 [JS-vs-WASM page](https://tunguski.github.io/elm-lang/backends.html), an interactive
 [playground](https://tunguski.github.io/elm-lang/playground.html), and a reusable
 [editor](https://tunguski.github.io/elm-lang/editor.html) — a gallery of example files that runs
-each one's `main` live in the browser (static views, interactive `Browser.sandbox` apps, or computed
-values), all via a from-scratch Elm interpreter written in Elm.
+each one's `main` live in the browser (static views, computed values, and interactive
+`Browser.sandbox`/`Browser.element` apps with `onClick`/`onInput`, tuples, `List`/`Maybe` helpers and
+opaque `Cmd`/`Sub`), all via a from-scratch Elm interpreter written in Elm.
 
 ## Type inference
 

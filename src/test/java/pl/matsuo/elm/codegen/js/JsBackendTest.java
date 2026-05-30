@@ -214,6 +214,31 @@ class JsBackendTest {
     assertEquals("5", editorEval("let abc1 = 5 in abc1")); // identifier with a digit -> isAlphaNum
     assertEquals("42", editorEval("(\\x y -> x * y) 6 7"));
     assertEquals("True", editorEval("1 < 2 && 2 < 3"));
+    assertEquals("3", editorEval("case ( 1, 2 ) of ( a, b ) -> a + b")); // tuples + tuple patterns
+  }
+
+  @Test
+  void editorRunsTextFieldAndElementPrograms() {
+    // onInput: a text field whose view echoes the model (empty initially).
+    String field =
+        editorRender(
+            "main = Browser.sandbox { init = init, update = update, view = view }\n"
+                + "init = \"\"\n"
+                + "update msg model = case msg of\n    SetText s ->\n        s\n"
+                + "view model = div [] [ input [ onInput SetText ] [], div [] [ text (\"You typed: \" ++ model) ] ]\n");
+    assertTrue(field.contains("<input"), field);
+    assertTrue(field.contains("You typed:"), field);
+
+    // Browser.element: init/update return (model, Cmd) tuples; the editor unwraps the model.
+    String el =
+        editorRender(
+            "main = Browser.element { init = init, update = update, view = view, subscriptions = subs }\n"
+                + "init flags = ( 0, Cmd.none )\n"
+                + "update msg model = case msg of\n    Bump ->\n        ( model + 1, Cmd.none )\n"
+                + "subs model = Sub.none\n"
+                + "view model = div [] [ button [ onClick Bump ] [ text \"bump\" ], div [] [ text (String.fromInt model) ] ]\n");
+    assertTrue(el.contains(">bump<"), el);
+    assertTrue(el.contains("<div>0</div>"), el); // initial model unwrapped from (0, Cmd.none)
   }
 
   /** Runs the editor's `Eval.renderProgram` on a single-file source, returning the serialized view. */

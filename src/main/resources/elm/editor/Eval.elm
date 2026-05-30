@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -16,7 +16,8 @@ Elm Architecture programs (Browser.sandbox apps) can be rendered live by the edi
 builtins : List String
 builtins =
     htmlTags
-        ++ [ "text", "onClick", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox" ]
+        ++ [ "text", "onClick", "onInput", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat" ]
+        ++ [ "Browser.sandbox", "Browser.element" ]
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
 
 
@@ -29,7 +30,7 @@ htmlTags =
 {-| How many arguments a builtin consumes before it runs. -}
 arity : String -> Int
 arity name =
-    if List.member name [ "text", "onClick", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox", "List.length", "List.sum" ] then
+    if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
     else
@@ -146,7 +147,11 @@ evalExpr globals env expr =
                         qualified =
                             moduleName ++ "." ++ field
                     in
-                    if List.member qualified builtins then
+                    if moduleName == "Cmd" || moduleName == "Sub" then
+                        -- Effects are opaque no-ops in the editor (Cmd.none, Sub.none, Cmd.batch …).
+                        Ok (VCtor moduleName [])
+
+                    else if List.member qualified builtins then
                         Ok (VBuiltin qualified [])
 
                     else
@@ -189,6 +194,19 @@ evalExpr globals env expr =
                             _ ->
                                 Err ("cannot update " ++ name ++ ": not a record")
                     )
+
+        Tup items ->
+            evalTupleItems globals env items []
+
+
+evalTupleItems : Globals -> Env -> List Expr -> List Value -> Result String Value
+evalTupleItems globals env items acc =
+    case items of
+        [] ->
+            Ok (VTup (List.reverse acc))
+
+        x :: rest ->
+            evalExpr globals env x |> Result.andThen (\v -> evalTupleItems globals env rest (v :: acc))
 
 
 evalFields : Globals -> Env -> List ( String, Expr ) -> List ( String, Value ) -> Result String Value
@@ -282,6 +300,10 @@ runBuiltin globals name args =
             ( "onClick", [ msg ] ) ->
                 Ok (VCtor "Html.on" [ VStr "click", msg ])
 
+            ( "onInput", [ handler ] ) ->
+                -- The handler (e.g. a Msg constructor) is applied to the input string at event time.
+                Ok (VCtor "Html.on" [ VStr "input", handler ])
+
             ( "style", [ k, v ] ) ->
                 Ok (VCtor "Html.style" [ k, v ])
 
@@ -305,6 +327,9 @@ runBuiltin globals name args =
 
             ( "Browser.sandbox", [ config ] ) ->
                 -- The editor drives init/update/view directly; evaluating `main` just yields the config.
+                Ok config
+
+            ( "Browser.element", [ config ] ) ->
                 Ok config
 
             ( "List.length", [ VList xs ] ) ->
@@ -441,6 +466,13 @@ matchPattern pat value =
             else
                 Nothing
 
+        ( PTup pats, VTup vs ) ->
+            if List.length pats == List.length vs then
+                matchAll pats vs
+
+            else
+                Nothing
+
         _ ->
             Nothing
 
@@ -559,6 +591,9 @@ valueEq a b =
         ( VCtor n1 a1, VCtor n2 a2 ) ->
             n1 == n2 && listEq a1 a2
 
+        ( VTup x, VTup y ) ->
+            listEq x y
+
         ( VRecord f1, VRecord f2 ) ->
             List.length f1 == List.length f2 && List.all (fieldMatches f2) f1
 
@@ -625,6 +660,9 @@ renderValue v =
 
         VList items ->
             "[" ++ String.join ", " (List.map renderValue items) ++ "]"
+
+        VTup items ->
+            "(" ++ String.join ", " (List.map renderValue items) ++ ")"
 
         VCtor name args ->
             if List.isEmpty args then
@@ -801,16 +839,48 @@ hasApp files =
             False
 
 
-{-| The app's initial model value. -}
+{-| The app's initial model value. For a Browser.element program `init` is `flags -> (model, cmd)`,
+so it is applied to unit flags and the model taken from the tuple; for Browser.sandbox `init` is the
+model directly. -}
 appInit : List ( String, String ) -> Result String Value
 appInit files =
-    parseProject files |> Result.andThen (\globals -> evalGlobal globals "init")
+    parseProject files
+        |> Result.andThen
+            (\globals ->
+                evalGlobal globals "init"
+                    |> Result.andThen
+                        (\initVal ->
+                            case initVal of
+                                VClosure _ _ _ ->
+                                    applyValue globals initVal (VTup []) |> Result.map modelOf
+
+                                VRec _ _ _ _ ->
+                                    applyValue globals initVal (VTup []) |> Result.map modelOf
+
+                                _ ->
+                                    Ok (modelOf initVal)
+                        )
+            )
 
 
-{-| Runs `update msg model`, producing the next model value. -}
+{-| Runs `update msg model`, producing the next model value (unwrapping a Browser.element
+`(model, cmd)` tuple to just the model). -}
 appUpdate : List ( String, String ) -> Value -> Value -> Result String Value
 appUpdate files msg model =
-    parseProject files |> Result.andThen (\globals -> applyUpdate globals msg model)
+    parseProject files
+        |> Result.andThen (\globals -> applyUpdate globals msg model |> Result.map modelOf)
+
+
+{-| The model out of an init/update result: the first element of a `(model, Cmd)` tuple, else the
+value itself (a Browser.sandbox model). -}
+modelOf : Value -> Value
+modelOf v =
+    case v of
+        VTup (m :: _) ->
+            m
+
+        _ ->
+            v
 
 
 {-| Evaluates `view model` to the Html `Value` tree the editor renders to live Html. -}
@@ -829,6 +899,14 @@ a plain value) — what the editor renders for the selected file. -}
 mainValue : List ( String, String ) -> Result String Value
 mainValue files =
     parseProject files |> Result.andThen (\globals -> evalExpr globals [] (Var "main"))
+
+
+{-| Applies an event handler (e.g. an `onInput` message constructor) to the event's string payload,
+producing the message value to dispatch. -}
+applyHandler : List ( String, String ) -> Value -> String -> Result String Value
+applyHandler files handler payload =
+    parseProject files
+        |> Result.andThen (\globals -> applyValue globals handler (VStr payload))
 
 
 {-| Headless render of a single-file app's initial view to an HTML string (used in tests and as a
