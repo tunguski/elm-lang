@@ -12,10 +12,13 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
 import pl.matsuo.elm.codegen.js.JsCompiler;
+import pl.matsuo.elm.codegen.wasm.WasmCompiler;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
+import pl.matsuo.elm.parser.Parser;
 
 /**
  * Property-based differential testing: randomly generated (well-typed, total) Elm expressions must
@@ -37,7 +40,9 @@ class DifferentialPropertyTest {
       if (depth <= 0 || rng.nextInt(100) < 25) {
         return Integer.toString(rng.nextInt(20)); // small non-negative literal
       }
-      return switch (rng.nextInt(9)) {
+      // `wasmSafe` restricts to the fragment the WASM backend supports (no lists).
+      int n = wasmSafe ? 8 : 9;
+      return switch (rng.nextInt(n)) {
         case 0 -> "(" + expr(depth - 1) + " + " + expr(depth - 1) + ")";
         case 1 -> "(" + expr(depth - 1) + " * " + expr(depth - 1) + ")";
         case 2 -> "(" + expr(depth - 1) + " - " + expr(depth - 1) + ")";
@@ -58,6 +63,8 @@ class DifferentialPropertyTest {
         default -> "(List.sum (List.map (\\n -> n + 1) (List.range 0 " + (1 + rng.nextInt(5)) + ")))";
       };
     }
+
+    boolean wasmSafe = false;
   }
 
   @Test
@@ -87,6 +94,75 @@ class DifferentialPropertyTest {
       for (int i = 0; i < exprs.size(); i++) {
         assertEquals(interp.get(i), js[i], "interp vs JS: " + exprs.get(i));
       }
+    }
+  }
+
+  @Test
+  void allFourBackendsAgreeOnNumericSubset() throws Exception {
+    Gen gen = new Gen(424242L);
+    gen.wasmSafe = true; // the fragment the WASM backend supports (no lists)
+    List<String> exprs = new ArrayList<>();
+    List<Expr> parsed = new ArrayList<>();
+    for (int i = 0; i < 100; i++) {
+      String e = gen.expr(4);
+      exprs.add(e);
+      parsed.add(Parser.parseExpression(e));
+    }
+
+    List<String> interp = new ArrayList<>();
+    for (String e : exprs) {
+      interp.add(Show.plain(Interpreter.eval(e)));
+      assertEquals(
+          interp.get(interp.size() - 1), Show.plain(BytecodeInterpreter.eval(e)), "bytecode: " + e);
+    }
+
+    // JS (one Node run) and WASM (one Node run) compared against the interpreter.
+    String js = runNode(JsCompiler.expressionsProgram(exprs));
+    if (js != null) {
+      String[] r = js.split("\n", -1);
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), r[i], "JS: " + exprs.get(i));
+      }
+    }
+    List<String> wasm = runWasm(WasmCompiler.module(parsed), exprs.size());
+    if (wasm != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), wasm.get(i), "WASM: " + exprs.get(i));
+      }
+    }
+  }
+
+  /** Instantiates a wasm module under Node, runs f0..fN-1, returns results (or null without Node). */
+  private static List<String> runWasm(byte[] module, int count) {
+    try {
+      Path wasm = Files.createTempFile("elm-diff-", ".wasm");
+      Files.write(wasm, module);
+      Path js = Files.createTempFile("elm-diff-", ".js");
+      Files.writeString(
+          js,
+          "const fs=require('fs');"
+              + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+              + "const ex=r.instance.exports,out=[];for(let i=0;i<"
+              + count
+              + ";i++)out.push(ex['f'+i]().toString());"
+              + "process.stdout.write(out.join('\\n'));}).catch(e=>{console.error(e);process.exit(1);});",
+          StandardCharsets.UTF_8);
+      Process p =
+          new ProcessBuilder("node", js.toString(), wasm.toString())
+              .redirectErrorStream(false)
+              .start();
+      String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+      String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+      p.waitFor(60, TimeUnit.SECONDS);
+      Files.deleteIfExists(wasm);
+      Files.deleteIfExists(js);
+      assertTrue(p.exitValue() == 0, "node/wasm failed: " + err);
+      return List.of(out.split("\n", -1));
+    } catch (IOException e) {
+      return null;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return null;
     }
   }
 
