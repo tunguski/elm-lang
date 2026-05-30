@@ -138,5 +138,66 @@ class LspServerTest {
     assertTrue(response.contains("referencesProvider"), response);
     assertTrue(response.contains("documentSymbolProvider"), response);
     assertTrue(response.contains("renameProvider"), response);
+    assertTrue(response.contains("semanticTokensProvider"), response);
+  }
+
+  // --- workspace-wide navigation -----------------------------------------
+
+  private static java.util.Map<String, String> workspace() {
+    java.util.Map<String, String> ws = new java.util.LinkedHashMap<>();
+    ws.put(
+        "file:///Util.elm",
+        "module Util exposing (square)\n\nsquare : Int -> Int\nsquare n =\n    n * n\n");
+    ws.put(
+        "file:///Main.elm",
+        "module Main exposing (main)\n\nimport Util\n\nmain =\n    Util.square 7\n");
+    return ws;
+  }
+
+  @Test
+  void definitionResolvesAcrossModules() {
+    // Cursor on `square` of `Util.square` in Main.elm (line 5, the `square` part after the dot).
+    var loc = server.workspaceDefinition(workspace(), "file:///Main.elm", 5, 9);
+    assertTrue(loc.isPresent(), "should resolve into Util.elm");
+    assertEquals("file:///Util.elm", loc.get().uri());
+    assertEquals(3, loc.get().line()); // `square n =` is 0-based line 3
+  }
+
+  @Test
+  void definitionPrefersTheCurrentDocument() {
+    var loc = server.workspaceDefinition(workspace(), "file:///Util.elm", 3, 2); // on `square n =`
+    assertTrue(loc.isPresent());
+    assertEquals("file:///Util.elm", loc.get().uri());
+  }
+
+  @Test
+  void referencesAndRenameSpanTheWorkspace() {
+    // `square` is declared in Util.elm and used in Main.elm — both files should appear.
+    var refs = server.workspaceReferences(workspace(), "file:///Util.elm", 3, 0);
+    assertTrue(refs.containsKey("file:///Util.elm"), refs.toString());
+    assertTrue(refs.containsKey("file:///Main.elm"), refs.toString());
+    // Util.elm names it on the annotation and the definition: at least two occurrences.
+    assertTrue(refs.get("file:///Util.elm").size() >= 2, refs.toString());
+  }
+
+  // --- semantic tokens ---------------------------------------------------
+
+  @Test
+  void semanticTokensCoverKeywordsTypesAndLiterals() {
+    int[] data = server.semanticTokens("x : Int\nx =\n    if True then 1 else 0\n");
+    assertEquals(0, data.length % 5, "5 ints per token");
+    java.util.Set<Integer> types = new java.util.HashSet<>();
+    for (int i = 3; i < data.length; i += 5) {
+      types.add(data[i]);
+    }
+    int keyword = LspServer.SEMANTIC_TOKEN_TYPES.indexOf("keyword");
+    int type = LspServer.SEMANTIC_TOKEN_TYPES.indexOf("type");
+    int number = LspServer.SEMANTIC_TOKEN_TYPES.indexOf("number");
+    assertTrue(types.contains(keyword), "should mark `if`/`then`/`else` as keywords");
+    assertTrue(types.contains(type), "should mark `Int`/`True` as types");
+    assertTrue(types.contains(number), "should mark the integer literals");
+    // The first token `x` (LOWER) sits at line 0, char 0 with delta 0,0.
+    assertEquals(0, data[0]);
+    assertEquals(0, data[1]);
   }
 }

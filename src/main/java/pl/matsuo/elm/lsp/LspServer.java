@@ -3,12 +3,16 @@ package pl.matsuo.elm.lsp;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
@@ -23,15 +27,19 @@ import pl.matsuo.elm.types.TypeChecker;
 /**
  * A minimal Language Server (LSP) over stdio for Elm: it publishes diagnostics (parse and type
  * errors, located) on open/change, answers hover with the inferred type of the definition under the
- * cursor, resolves go-to-definition for module-local names, offers completion (module-local names
- * plus the stdlib), lists document symbols (the outline), and finds references / renames an
- * identifier (token-level, within the document). Reuses the existing parser and Hindley–Milner type
- * checker.
+ * cursor, resolves go-to-definition, offers completion (module-local names plus the stdlib), lists
+ * document symbols (the outline), produces semantic tokens for highlighting, and finds references /
+ * renames an identifier. Go-to-definition, references and rename are <b>workspace-wide</b>: on
+ * initialize the server indexes every {@code .elm} file under the workspace root, so navigation and
+ * rename cross module boundaries. Reuses the existing parser and Hindley–Milner type checker.
  */
 public final class LspServer {
 
   /** A diagnostic at a 0-based (line, character) range. */
   public record Diagnostic(int line, int startChar, int endChar, String message) {}
+
+  /** A workspace location: the document URI and a 0-based (line, character). */
+  public record Location(String uri, int line, int character) {}
 
   private final Map<String, String> docs = new LinkedHashMap<>();
 
@@ -96,6 +104,11 @@ public final class LspServer {
     if (word.isEmpty()) {
       return Optional.empty();
     }
+    return localDefinition(source, word);
+  }
+
+  /** The 0-based {@code [line, char]} of the top-level definition of {@code name} in {@code source}. */
+  private static Optional<int[]> localDefinition(String source, String name) {
     Module module;
     try {
       module = Parser.parseModule(source);
@@ -105,26 +118,60 @@ public final class LspServer {
     for (Decl d : module.decls()) {
       switch (d) {
         case Decl.Value v -> {
-          if (v.name().equals(word)) {
+          if (v.name().equals(name)) {
             return Optional.of(new int[] {v.pos().line() - 1, v.pos().col() - 1});
           }
         }
         case Decl.Union u -> {
-          if (u.name().equals(word)) {
+          if (u.name().equals(name)) {
             return Optional.of(new int[] {u.pos().line() - 1, u.pos().col() - 1});
           }
           for (Decl.Union.Variant variant : u.variants()) {
-            if (variant.name().equals(word)) {
+            if (variant.name().equals(name)) {
               return Optional.of(new int[] {u.pos().line() - 1, u.pos().col() - 1});
             }
           }
         }
         case Decl.TypeAlias ta -> {
-          if (ta.name().equals(word)) {
+          if (ta.name().equals(name)) {
             return Optional.of(new int[] {ta.pos().line() - 1, ta.pos().col() - 1});
           }
         }
         default -> {}
+      }
+    }
+    return Optional.empty();
+  }
+
+  /**
+   * Workspace-wide go-to-definition. Resolves the name under the cursor to its top-level definition,
+   * looking first in the current document, then — for a name imported from another module — in the
+   * other indexed documents. A qualified name ({@code Module.value}) targets that module's file when
+   * it is in the workspace; an unqualified name matches the first document that declares it.
+   */
+  public Optional<Location> workspaceDefinition(
+      Map<String, String> workspace, String uri, int line0, int char0) {
+    String src = workspace.getOrDefault(uri, "");
+    String word = wordAt(src, line0, char0);
+    if (word.isEmpty()) {
+      return Optional.empty();
+    }
+    Optional<int[]> here = localDefinition(src, word);
+    if (here.isPresent()) {
+      return Optional.of(new Location(uri, here.get()[0], here.get()[1]));
+    }
+    String qualifier = qualifierAt(src, line0, char0); // e.g. "Foo" in `Foo.bar`, or "" / an alias
+    String targetModule = qualifier.isEmpty() ? null : resolveModuleAlias(src, qualifier);
+    for (Map.Entry<String, String> e : workspace.entrySet()) {
+      if (e.getKey().equals(uri)) {
+        continue;
+      }
+      if (targetModule != null && !targetModule.equals(moduleName(e.getValue()))) {
+        continue;
+      }
+      Optional<int[]> there = localDefinition(e.getValue(), word);
+      if (there.isPresent()) {
+        return Optional.of(new Location(e.getKey(), there.get()[0], there.get()[1]));
       }
     }
     return Optional.empty();
@@ -377,6 +424,133 @@ public final class LspServer {
     return out;
   }
 
+  /**
+   * Workspace-wide references: every occurrence of the identifier under the cursor, in every indexed
+   * document, keyed by URI. The same token-level matching as {@link #occurrences} — adequate for an
+   * unqualified value name, which is unique per module by Elm's scoping rules.
+   */
+  public Map<String, List<int[]>> workspaceReferences(
+      Map<String, String> workspace, String uri, int line0, int char0) {
+    String word = wordAt(workspace.getOrDefault(uri, ""), line0, char0);
+    Map<String, List<int[]>> out = new LinkedHashMap<>();
+    if (word.isEmpty()) {
+      return out;
+    }
+    for (Map.Entry<String, String> e : workspace.entrySet()) {
+      List<int[]> locs = occurrences(e.getValue(), word);
+      if (!locs.isEmpty()) {
+        out.put(e.getKey(), locs);
+      }
+    }
+    return out;
+  }
+
+  /** The declared module name of {@code source} (its {@code module X …} header), or "" if none. */
+  static String moduleName(String source) {
+    try {
+      return Parser.parseModule(source).name();
+    } catch (RuntimeException e) {
+      return "";
+    }
+  }
+
+  /** The module qualifier of the (possibly qualified) identifier at a 0-based (line, char), or "". */
+  static String qualifierAt(String source, int line0, int char0) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return "";
+    }
+    String line = lines[line0];
+    int n = line.length();
+    int start = Math.min(Math.max(char0, 0), n);
+    while (start > 0 && isIdentChar(line.charAt(start - 1))) {
+      start--;
+    }
+    int end = Math.min(Math.max(char0, 0), n);
+    while (end < n && isIdentChar(line.charAt(end))) {
+      end++;
+    }
+    String token = line.substring(start, end);
+    int dot = token.lastIndexOf('.');
+    return dot >= 0 ? token.substring(0, dot) : "";
+  }
+
+  /** Resolves a qualifier (a module alias or full name) to the imported module it refers to. */
+  static String resolveModuleAlias(String source, String qualifier) {
+    try {
+      for (Module.Import imp : Parser.parseModule(source).imports()) {
+        if (imp.alias().isPresent() && imp.alias().get().equals(qualifier)) {
+          return imp.module();
+        }
+      }
+    } catch (RuntimeException ignored) {
+      // fall through: treat the qualifier as a module name itself
+    }
+    return qualifier;
+  }
+
+  // --- semantic tokens (syntax highlighting) -----------------------------
+
+  /** The semantic token type legend, in the order their indices are emitted. */
+  public static final List<String> SEMANTIC_TOKEN_TYPES =
+      List.of("keyword", "type", "function", "number", "string", "operator");
+
+  /**
+   * Semantic tokens for the whole document, in the LSP delta encoding: a flat array of 5 ints per
+   * token — {@code [deltaLine, deltaStartChar, length, tokenType, tokenModifiers]} — where the type
+   * index references {@link #SEMANTIC_TOKEN_TYPES}. Built straight from the lexer.
+   */
+  public int[] semanticTokens(String source) {
+    List<pl.matsuo.elm.lexer.Token> tokens;
+    try {
+      tokens = pl.matsuo.elm.lexer.Lexer.tokenize(source);
+    } catch (RuntimeException e) {
+      return new int[0];
+    }
+    List<int[]> rows = new ArrayList<>(); // {line, col, length, typeIndex} (0-based line/col)
+    for (pl.matsuo.elm.lexer.Token t : tokens) {
+      int type = semanticType(t.type());
+      if (type < 0) {
+        continue; // punctuation/EOF: not highlighted
+      }
+      String text = t.text();
+      if (text == null || text.isEmpty() || text.indexOf('\n') >= 0) {
+        continue; // skip multi-line tokens (e.g. triple-quoted strings) — they break line deltas
+      }
+      rows.add(new int[] {t.line() - 1, t.col() - 1, text.length(), type});
+    }
+    int[] data = new int[rows.size() * 5];
+    int prevLine = 0, prevCol = 0;
+    for (int i = 0; i < rows.size(); i++) {
+      int[] r = rows.get(i);
+      int deltaLine = r[0] - prevLine;
+      int deltaCol = deltaLine == 0 ? r[1] - prevCol : r[1];
+      data[i * 5] = deltaLine;
+      data[i * 5 + 1] = deltaCol;
+      data[i * 5 + 2] = r[2];
+      data[i * 5 + 3] = r[3];
+      data[i * 5 + 4] = 0; // no modifiers
+      prevLine = r[0];
+      prevCol = r[1];
+    }
+    return data;
+  }
+
+  /** Maps a lexer token kind to a {@link #SEMANTIC_TOKEN_TYPES} index, or -1 to skip it. */
+  private static int semanticType(pl.matsuo.elm.lexer.TokenType t) {
+    return switch (t) {
+      case KW_IF, KW_THEN, KW_ELSE, KW_CASE, KW_OF, KW_LET, KW_IN, KW_TYPE, KW_MODULE, KW_WHERE,
+              KW_IMPORT, KW_EXPOSING, KW_AS, KW_PORT ->
+          0; // keyword
+      case UPPER -> 1; // type / constructor / module
+      case LOWER -> 2; // value / field
+      case INT, FLOAT -> 3; // number
+      case STRING, CHAR -> 4; // string
+      case OPERATOR, ARROW, EQUALS, COLON, PIPE, BACKSLASH -> 5; // operator
+      default -> -1;
+    };
+  }
+
   /** The identifier (possibly qualified, e.g. {@code List.map}) at a 0-based (line, char), or "". */
   static String wordAt(String source, int line0, int char0) {
     String[] lines = source.split("\n", -1);
@@ -436,11 +610,14 @@ public final class LspServer {
     Map<String, Object> params =
         msg.get("params") instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     switch (method == null ? "" : method) {
-      case "initialize" -> reply(out, id, capabilities());
+      case "initialize" -> {
+        indexWorkspace(params);
+        reply(out, id, capabilities());
+      }
       case "textDocument/didOpen" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         String uri = (String) td.get("uri");
-        docs.put(uri, (String) td.get("text"));
+        putDoc(uri, (String) td.get("text"));
         publishDiagnostics(out, uri);
       }
       case "textDocument/didChange" -> {
@@ -448,7 +625,7 @@ public final class LspServer {
         String uri = (String) td.get("uri");
         List<Object> changes = (List<Object>) params.get("contentChanges");
         if (changes != null && !changes.isEmpty()) {
-          docs.put(uri, (String) ((Map<String, Object>) changes.get(changes.size() - 1)).get("text"));
+          putDoc(uri, (String) ((Map<String, Object>) changes.get(changes.size() - 1)).get("text"));
         }
         publishDiagnostics(out, uri);
       }
@@ -475,11 +652,11 @@ public final class LspServer {
         String uri = (String) td.get("uri");
         int line = ((Number) pos.get("line")).intValue();
         int ch = ((Number) pos.get("character")).intValue();
-        Optional<int[]> loc = definition(docs.getOrDefault(uri, ""), line, ch);
+        Optional<Location> loc = workspaceDefinition(docs, uri, line, ch);
         if (loc.isPresent()) {
           Map<String, Object> location = new LinkedHashMap<>();
-          location.put("uri", uri);
-          location.put("range", range(loc.get()[0], loc.get()[1], loc.get()[1]));
+          location.put("uri", loc.get().uri());
+          location.put("range", range(loc.get().line(), loc.get().character(), loc.get().character()));
           reply(out, id, location);
         } else {
           reply(out, id, JsonEncode.NULL);
@@ -518,15 +695,18 @@ public final class LspServer {
         String uri = (String) td.get("uri");
         int line = ((Number) pos.get("line")).intValue();
         int ch = ((Number) pos.get("character")).intValue();
-        String src = docs.getOrDefault(uri, "");
-        String word = wordAt(src, line, ch);
+        String word = wordAt(docs.getOrDefault(uri, ""), line, ch);
         List<Object> locations = new ArrayList<>();
-        for (int[] loc : references(src, line, ch)) {
-          Map<String, Object> location = new LinkedHashMap<>();
-          location.put("uri", uri);
-          location.put("range", range(loc[0], loc[1], loc[1] + word.length()));
-          locations.add(location);
-        }
+        workspaceReferences(docs, uri, line, ch)
+            .forEach(
+                (docUri, locs) -> {
+                  for (int[] loc : locs) {
+                    Map<String, Object> location = new LinkedHashMap<>();
+                    location.put("uri", docUri);
+                    location.put("range", range(loc[0], loc[1], loc[1] + word.length()));
+                    locations.add(location);
+                  }
+                });
         reply(out, id, locations);
       }
       case "textDocument/rename" -> {
@@ -536,17 +716,20 @@ public final class LspServer {
         String newName = (String) params.get("newName");
         int line = ((Number) pos.get("line")).intValue();
         int ch = ((Number) pos.get("character")).intValue();
-        String src = docs.getOrDefault(uri, "");
-        String word = wordAt(src, line, ch);
-        List<Object> edits = new ArrayList<>();
-        for (int[] loc : references(src, line, ch)) {
-          Map<String, Object> edit = new LinkedHashMap<>();
-          edit.put("range", range(loc[0], loc[1], loc[1] + word.length()));
-          edit.put("newText", newName);
-          edits.add(edit);
-        }
+        String word = wordAt(docs.getOrDefault(uri, ""), line, ch);
         Map<String, Object> changes = new LinkedHashMap<>();
-        changes.put(uri, edits);
+        workspaceReferences(docs, uri, line, ch)
+            .forEach(
+                (docUri, locs) -> {
+                  List<Object> edits = new ArrayList<>();
+                  for (int[] loc : locs) {
+                    Map<String, Object> edit = new LinkedHashMap<>();
+                    edit.put("range", range(loc[0], loc[1], loc[1] + word.length()));
+                    edit.put("newText", newName);
+                    edits.add(edit);
+                  }
+                  changes.put(docUri, edits);
+                });
         Map<String, Object> workspaceEdit = new LinkedHashMap<>();
         workspaceEdit.put("changes", changes);
         reply(out, id, workspaceEdit);
@@ -574,6 +757,18 @@ public final class LspServer {
         }
         reply(out, id, actions);
       }
+      case "textDocument/semanticTokens/full" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String uri = (String) td.get("uri");
+        int[] tokens = semanticTokens(docs.getOrDefault(uri, ""));
+        List<Object> data = new ArrayList<>(tokens.length);
+        for (int v : tokens) {
+          data.add((long) v);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("data", data);
+        reply(out, id, result);
+      }
       case "shutdown" -> reply(out, id, JsonEncode.NULL);
       default -> {
         if (id != null) {
@@ -594,9 +789,87 @@ public final class LspServer {
     caps.put("renameProvider", true);
     caps.put("codeActionProvider", true);
 
+    Map<String, Object> legend = new LinkedHashMap<>();
+    legend.put("tokenTypes", SEMANTIC_TOKEN_TYPES);
+    legend.put("tokenModifiers", List.of());
+    Map<String, Object> semantic = new LinkedHashMap<>();
+    semantic.put("legend", legend);
+    semantic.put("full", true);
+    caps.put("semanticTokensProvider", semantic);
+
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("capabilities", caps);
     return result;
+  }
+
+  /**
+   * Indexes every {@code .elm} file under the workspace root(s) given in the {@code initialize}
+   * params ({@code rootUri} or {@code workspaceFolders}) into {@code docs}, so workspace-wide
+   * navigation and rename work before the files are opened. Best-effort: skips unreadable trees.
+   */
+  @SuppressWarnings("unchecked")
+  void indexWorkspace(Map<String, Object> params) {
+    List<String> roots = new ArrayList<>();
+    if (params.get("rootUri") instanceof String r) {
+      roots.add(r);
+    }
+    if (params.get("workspaceFolders") instanceof List<?> folders) {
+      for (Object f : folders) {
+        if (f instanceof Map<?, ?> m && m.get("uri") instanceof String u) {
+          roots.add(u);
+        }
+      }
+    }
+    for (String root : roots) {
+      Path dir;
+      try {
+        dir = Path.of(URI.create(root));
+      } catch (RuntimeException e) {
+        continue; // not a file:// root we can walk
+      }
+      if (!Files.isDirectory(dir)) {
+        continue;
+      }
+      try (Stream<Path> walk = Files.walk(dir)) {
+        walk.filter(p -> p.toString().endsWith(".elm") && Files.isRegularFile(p))
+            .forEach(
+                p -> {
+                  String uri = p.toUri().toString();
+                  if (!docs.containsKey(uri)) {
+                    try {
+                      docs.put(uri, Files.readString(p, StandardCharsets.UTF_8));
+                    } catch (IOException ignored) {
+                      // skip files we can't read
+                    }
+                  }
+                });
+      } catch (IOException ignored) {
+        // skip roots we can't walk
+      }
+    }
+  }
+
+  /** Stores a document, dropping any stale entry that points at the same file under a different URI. */
+  private void putDoc(String uri, String source) {
+    Path target = pathOf(uri);
+    if (target != null) {
+      docs.keySet()
+          .removeIf(
+              existing -> {
+                Path p = pathOf(existing);
+                return p != null && !existing.equals(uri) && p.equals(target);
+              });
+    }
+    docs.put(uri, source);
+  }
+
+  /** The normalized filesystem path for a {@code file://} URI, or null if it isn't one. */
+  private static Path pathOf(String uri) {
+    try {
+      return Path.of(URI.create(uri)).toAbsolutePath().normalize();
+    } catch (RuntimeException e) {
+      return null;
+    }
   }
 
   private void publishDiagnostics(OutputStream out, String uri) throws IOException {

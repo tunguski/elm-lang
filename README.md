@@ -87,7 +87,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `docs <file.elm>` | Generate Markdown API docs from doc comments + inferred types. |
 | `coverage <file.elm> [--value NAME]` | Run a definition and report which top-level definitions executed. |
 | `repl` | Interactive REPL: expressions, persistent `x = …` definitions, `:type`, multi-line input. |
-| `lsp` | Language server over stdio (diagnostics, hover, go-to-definition, completion, document symbols, find-references, rename, code actions). |
+| `lsp` | Language server over stdio (diagnostics, hover, completion, document symbols, code actions, semantic-token highlighting, and **workspace-wide** go-to-definition, find-references and rename across modules). |
 | `script <file.elm> [args…]` | Run an Elm file as a POSIX-style CLI script (the bundled `Posix` module). |
 | `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
