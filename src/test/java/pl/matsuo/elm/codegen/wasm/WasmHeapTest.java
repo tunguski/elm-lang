@@ -52,6 +52,71 @@ class WasmHeapTest {
     assertEquals(expected, runMain(source), source);
   }
 
+  /** Runs `main`, treating its i64 result as a pointer to a heap string, and decodes the bytes. */
+  private String runMainString(String source) throws Exception {
+    Path wasm = Files.createTempFile("elm-str-", ".wasm");
+    Files.write(wasm, WasmCompiler.moduleFromSource(source));
+    Path js = Files.createTempFile("elm-runstr-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs');"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "const ex=r.instance.exports; const ptr=Number(ex.main());"
+            + "const dv=new DataView(ex.memory.buffer);"
+            + "const len=Number(dv.getBigInt64(ptr,true));"
+            + "const bytes=new Uint8Array(ex.memory.buffer, ptr+8, len);"
+            + "process.stdout.write(Buffer.from(bytes).toString('utf8'));"
+            + "}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p = new ProcessBuilder("node", js.toString(), wasm.toString()).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    if (!p.waitFor(30, TimeUnit.SECONDS)) {
+      p.destroyForcibly();
+      throw new IllegalStateException("node timed out");
+    }
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    return out;
+  }
+
+  @Test
+  void stringLengthLoadsTheLengthWord() throws Exception {
+    agrees("main = String.length \"hello\"\n");
+  }
+
+  @Test
+  void stringConcatThenLength() throws Exception {
+    agrees("main = String.length (\"ab\" ++ \"cde\")\n");
+  }
+
+  @Test
+  void stringEqualityDrivesABranch() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // == and /= over strings (statically typed String via annotations), exercised through `if`;
+    // the result is an Int the host can read. Equal/different and equal/different lengths.
+    agrees(
+        """
+        cmp : String -> String -> Int
+        cmp x y = if x == y then 1 else 0
+        ne : String -> String -> Int
+        ne x y = if x /= y then 1 else 0
+        main = cmp "abc" "abc" + cmp "abc" "abd" + ne "ab" "abc" + cmp "ab" "abc"
+        """);
+  }
+
+  @Test
+  void stringConcatProducesTheRightBytes() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("foobar", runMainString("main = \"foo\" ++ \"bar\"\n"));
+    // A chained concat and an empty operand.
+    assertEquals("Hello, world!", runMainString("main = \"Hello\" ++ \", \" ++ \"world!\"\n"));
+    assertEquals("abc", runMainString("main = \"\" ++ \"abc\"\n"));
+  }
+
   @Test
   void sumsAListLiteralRecursively() throws Exception {
     agrees(

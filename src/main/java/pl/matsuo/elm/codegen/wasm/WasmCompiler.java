@@ -35,10 +35,19 @@ import pl.matsuo.elm.parser.Parser;
  * <p><b>First-class top-level functions</b> work too: every function is placed in a funcref table,
  * a function used as a value compiles to its table index (carried as an i64), and applying a
  * function value held in a parameter dispatches via {@code call_indirect}. So higher-order code over
- * named functions ({@code apply f x = f x}; {@code main = apply inc 5}) runs in wasm. What is still
- * unsupported is <b>closures</b> (capturing locals) and <b>currying / partial application</b>, plus
- * strings and records, which need a richer (encoded / type-directed) representation; those remain on
- * the JS backend.
+ * named functions ({@code apply f x = f x}; {@code main = apply inc 5}) runs in wasm.
+ *
+ * <p><b>Strings and records</b> are <b>type-directed</b>: the backend runs Hindley–Milner inference
+ * over the module and consults each expression's type (see {@code Infer.nodeTypes}). A string is a
+ * heap object {@code {byteLength : i64, bytes…}} — literals allocate, {@code String.length} loads
+ * the length word, and {@code ++}/{@code ==} call two hand-assembled runtime functions
+ * ({@code $strConcat}, {@code $strEq}). A record is a heap block of one i64 word per field in
+ * canonical name-sorted order, so a literal and a {@code .field} access agree on offsets; access and
+ * update require the record's type to be known and <b>closed</b> (non row-polymorphic), e.g. via an
+ * annotation. Because dispatch is static, {@code ++}/{@code ==} need operands typed concretely as
+ * {@code String} at the use site (a polymorphic {@code comparable}/{@code appendable} function does
+ * not carry that). Still unsupported: <b>floats</b>, <b>closures</b> (capturing locals) and
+ * <b>currying / partial application</b>.
  */
 public final class WasmCompiler {
 
@@ -236,6 +245,7 @@ public final class WasmCompiler {
         case Expr.Record r -> emitRecord(r);
         case Expr.RecordAccess a -> emitRecordAccess(a);
         case Expr.RecordUpdate u -> emitRecordUpdate(u);
+        case Expr.StrLit s -> emitStringLit(s.value());
         default -> throw unsupported(e.getClass().getSimpleName());
       }
     }
@@ -450,6 +460,46 @@ public final class WasmCompiler {
       leb(code, addr);
     }
 
+    // --- strings: a heap object {byteLength : i64, bytes…}; the value is the i64 pointer ----------
+
+    /** Allocates a string literal (length word + the UTF-8 bytes); leaves its i64 pointer. */
+    private void emitStringLit(String s) {
+      byte[] bytes = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+      int addr = freshLocal();
+      code.write(0x23);
+      leb(code, 0);
+      code.write(0xAD);
+      code.write(0x21);
+      leb(code, addr); // addr = $hp (as i64)
+      bumpHeap(8 + bytes.length);
+      store(
+          addr,
+          0,
+          () -> {
+            code.write(0x42); // i64.const byteLength
+            sleb(code, bytes.length);
+          });
+      for (int k = 0; k < bytes.length; k++) {
+        code.write(0x20);
+        leb(code, addr);
+        code.write(0xA7); // i32.wrap_i64 -> address
+        code.write(0x41);
+        sleb(code, bytes[k] & 0xFF); // i32.const byte
+        code.write(0x3A); // i32.store8
+        leb(code, 0); // align
+        leb(code, 8 + k); // offset
+      }
+      code.write(0x20);
+      leb(code, addr); // leave the i64 pointer
+    }
+
+    /** Whether the recorded type of {@code e} is {@code String}. */
+    private boolean isString(Expr e) {
+      return nodeTypes.get(e) instanceof pl.matsuo.elm.types.Ty.Con c
+          && c.name().equals("String")
+          && c.args().isEmpty();
+    }
+
     /** The name-sorted field list of {@code e}'s record type, requiring it to be known and closed. */
     private List<String> closedRecordFields(Expr e) {
       if (nodeTypes.get(e) instanceof pl.matsuo.elm.types.Ty.Record r && r.tail() == null) {
@@ -577,6 +627,16 @@ public final class WasmCompiler {
         emitCons(() -> intExpr(b.left()), () -> intExpr(b.right()));
         return;
       }
+      if (b.op().equals("++")) {
+        if (!isString(b.left()) && !isString(b.right())) {
+          throw unsupported("++ on non-strings");
+        }
+        intExpr(b.left());
+        intExpr(b.right());
+        code.write(0x10); // call $strConcat
+        leb(code, funcs.get("$strConcat")[0]);
+        return;
+      }
       int op =
           switch (b.op()) {
             case "+" -> 0x7C; // i64.add
@@ -601,6 +661,17 @@ public final class WasmCompiler {
         code.write(0x21); // local.set
         leb(code, idx);
         intExpr(lam.body());
+        return;
+      }
+      // String.length s  ->  load the string's i64 length word
+      if (app.fn() instanceof Expr.Var sv
+          && "String".equals(sv.module())
+          && sv.name().equals("length")) {
+        intExpr(app.arg()); // i64 pointer
+        code.write(0xA7); // i32.wrap_i64
+        code.write(0x29); // i64.load (offset 0 = the length)
+        leb(code, 3);
+        leb(code, 0);
         return;
       }
       // abs x
@@ -707,6 +778,18 @@ public final class WasmCompiler {
           code.write(0x72); // i32.or
         }
         case "<", ">", "<=", ">=", "==", "/=" -> {
+          if ((b.op().equals("==") || b.op().equals("/=")) && (isString(b.left()) || isString(b.right()))) {
+            // String (in)equality: compare via the $strEq runtime, then map its i64 0/1 to an i32.
+            intExpr(b.left());
+            intExpr(b.right());
+            code.write(0x10); // call $strEq
+            leb(code, funcs.get("$strEq")[0]);
+            code.write(0xA7); // i32.wrap_i64 -> 0/1
+            if (b.op().equals("/=")) {
+              code.write(0x45); // i32.eqz -> invert
+            }
+            return;
+          }
           intExpr(b.left());
           intExpr(b.right());
           code.write(
@@ -733,6 +816,247 @@ public final class WasmCompiler {
     return new ElmRuntimeError("WASM backend does not support " + what + " (numeric subset only)");
   }
 
+  // --- native string runtime ----------------------------------------------
+  // A String is a heap object {byteLength : i64 at offset 0, then the UTF-8 bytes}. Its value is the
+  // i64 pointer, like every other heap value. Equality and concatenation need byte loops, so they
+  // are emitted once as two hand-assembled wasm functions ($strEq, $strConcat) and called directly.
+
+  /** A function whose body is pre-assembled wasm bytes (the string runtime), not compiled Elm. */
+  private record Native(String name, int arity, byte[] entry) {}
+
+  private static List<Native> stringRuntime() {
+    return List.of(new Native("$strEq", 2, strEqEntry()), new Native("$strConcat", 2, strConcatEntry()));
+  }
+
+  private static void lget(ByteArrayOutputStream b, int i) {
+    b.write(0x20);
+    leb(b, i);
+  }
+
+  private static void lset(ByteArrayOutputStream b, int i) {
+    b.write(0x21);
+    leb(b, i);
+  }
+
+  private static void i32c(ByteArrayOutputStream b, int v) {
+    b.write(0x41);
+    sleb(b, v);
+  }
+
+  /** {@code $strEq(a, b) -> i64}: 1 if the two strings have equal length and bytes, else 0. */
+  private static byte[] strEqEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // locals (after params a=0, b=1): lenA=2 (i64), i=3, baseA=4, baseB=5 (i32)
+    lget(b, 0);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0); // lenA = i64.load(a)
+    lset(b, 2);
+    lget(b, 2);
+    lget(b, 1);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0); // i64.load(b)
+    b.write(0x52); // i64.ne
+    b.write(0x04);
+    b.write(0x40); // if (void) -> lengths differ
+    b.write(0x42);
+    sleb(b, 0);
+    b.write(0x0F); // return 0
+    b.write(0x0B); // end if
+    lget(b, 0);
+    b.write(0xA7);
+    i32c(b, 8);
+    b.write(0x6A);
+    lset(b, 4); // baseA = wrap(a) + 8
+    lget(b, 1);
+    b.write(0xA7);
+    i32c(b, 8);
+    b.write(0x6A);
+    lset(b, 5); // baseB = wrap(b) + 8
+    i32c(b, 0);
+    lset(b, 3); // i = 0
+    b.write(0x02);
+    b.write(0x40); // block (void)
+    b.write(0x03);
+    b.write(0x40); // loop (void)
+    lget(b, 3);
+    lget(b, 2);
+    b.write(0xA7);
+    b.write(0x4F); // i >= (i32)lenA ?
+    b.write(0x0D);
+    leb(b, 1); // br_if 1 -> exit block (all matched)
+    lget(b, 4);
+    lget(b, 3);
+    b.write(0x6A);
+    b.write(0x2D);
+    leb(b, 0);
+    leb(b, 0); // load8(baseA + i)
+    lget(b, 5);
+    lget(b, 3);
+    b.write(0x6A);
+    b.write(0x2D);
+    leb(b, 0);
+    leb(b, 0); // load8(baseB + i)
+    b.write(0x47); // i32.ne
+    b.write(0x04);
+    b.write(0x40); // if bytes differ
+    b.write(0x42);
+    sleb(b, 0);
+    b.write(0x0F); // return 0
+    b.write(0x0B);
+    lget(b, 3);
+    i32c(b, 1);
+    b.write(0x6A);
+    lset(b, 3); // i++
+    b.write(0x0C);
+    leb(b, 0); // br 0 -> loop
+    b.write(0x0B); // end loop
+    b.write(0x0B); // end block
+    b.write(0x42);
+    sleb(b, 1); // result: 1 (equal)
+    return entry(b, new int[][] {{1, I64}, {3, I32}});
+  }
+
+  /** {@code $strConcat(a, b) -> i64}: a fresh heap string holding a's bytes followed by b's. */
+  private static byte[] strConcatEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // locals: lenA=2, lenB=3 (i64); result=4, i=5, total=6, delta=7 (i32)
+    lget(b, 0);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0);
+    lset(b, 2); // lenA
+    lget(b, 1);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0);
+    lset(b, 3); // lenB
+    b.write(0x23);
+    leb(b, 0);
+    lset(b, 4); // result = $hp
+    i32c(b, 8);
+    lget(b, 2);
+    b.write(0xA7);
+    b.write(0x6A);
+    lget(b, 3);
+    b.write(0xA7);
+    b.write(0x6A);
+    lset(b, 6); // total = 8 + lenA + lenB
+    lget(b, 4);
+    lget(b, 6);
+    b.write(0x6A);
+    b.write(0x24);
+    leb(b, 0); // $hp = result + total
+    // grow: delta = ceilPages($hp) - memory.size; if delta > 0 memory.grow(delta)
+    b.write(0x23);
+    leb(b, 0);
+    i32c(b, 65535);
+    b.write(0x6A);
+    i32c(b, 16);
+    b.write(0x76); // ($hp + 65535) >> 16  (i32.shr_u)
+    b.write(0x3F);
+    b.write(0x00); // memory.size
+    b.write(0x6B); // i32.sub
+    lset(b, 7);
+    lget(b, 7);
+    i32c(b, 0);
+    b.write(0x4A); // delta > 0 ? (i32.gt_s)
+    b.write(0x04);
+    b.write(0x40);
+    lget(b, 7);
+    b.write(0x40);
+    b.write(0x00); // memory.grow(delta)
+    b.write(0x1A); // drop
+    b.write(0x0B);
+    // result.length = lenA + lenB
+    lget(b, 4);
+    lget(b, 2);
+    lget(b, 3);
+    b.write(0x7C); // i64.add
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 0); // i64.store(result, 0)
+    copyLoop(b, /*destBaseExtra*/ 0, /*srcParam*/ 0, /*lenLocal*/ 2, /*destLenOffsetLocal*/ -1);
+    copyLoop(b, 0, 1, 3, 2); // B copied after A's lenA bytes
+    lget(b, 4);
+    b.write(0xAD); // result as i64 pointer
+    return entry(b, new int[][] {{2, I64}, {4, I32}});
+  }
+
+  /**
+   * Emits a byte-copy loop into {@code $strConcat}'s body: copies {@code lenLocal} bytes from string
+   * {@code srcParam}'s data into {@code result}'s data, offset by the length in {@code
+   * destLenOffsetLocal} (or 0 when that is negative). Uses loop counter local 5.
+   */
+  private static void copyLoop(
+      ByteArrayOutputStream b, int unused, int srcParam, int lenLocal, int destLenOffsetLocal) {
+    i32c(b, 0);
+    lset(b, 5); // i = 0
+    b.write(0x02);
+    b.write(0x40); // block
+    b.write(0x03);
+    b.write(0x40); // loop
+    lget(b, 5);
+    lget(b, lenLocal);
+    b.write(0xA7);
+    b.write(0x4F); // i >= (i32)len ?
+    b.write(0x0D);
+    leb(b, 1); // br_if 1
+    // dest = result + 8 + [destLenOffset] + i
+    lget(b, 4);
+    i32c(b, 8);
+    b.write(0x6A);
+    if (destLenOffsetLocal >= 0) {
+      lget(b, destLenOffsetLocal);
+      b.write(0xA7);
+      b.write(0x6A);
+    }
+    lget(b, 5);
+    b.write(0x6A);
+    // src = wrap(srcParam) + 8 + i ; then load8
+    lget(b, srcParam);
+    b.write(0xA7);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 5);
+    b.write(0x6A);
+    b.write(0x2D);
+    leb(b, 0);
+    leb(b, 0); // load8(src)
+    b.write(0x3A);
+    leb(b, 0);
+    leb(b, 0); // store8(dest, byte)
+    lget(b, 5);
+    i32c(b, 1);
+    b.write(0x6A);
+    lset(b, 5); // i++
+    b.write(0x0C);
+    leb(b, 0); // br 0
+    b.write(0x0B);
+    b.write(0x0B); // end loop, end block
+  }
+
+  /** Wraps a pre-assembled function body in a code entry: locals declaration + body + end, size-led. */
+  private static byte[] entry(ByteArrayOutputStream body, int[][] localGroups) {
+    ByteArrayOutputStream full = new ByteArrayOutputStream();
+    leb(full, localGroups.length);
+    for (int[] g : localGroups) {
+      leb(full, g[0]);
+      full.write(g[1]);
+    }
+    full.writeBytes(body.toByteArray());
+    full.write(0x0B); // end
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    leb(out, full.size());
+    out.writeBytes(full.toByteArray());
+    return out.toByteArray();
+  }
+
   // --- module assembly ----------------------------------------------------
 
   private static byte[] assemble(
@@ -745,20 +1069,29 @@ public final class WasmCompiler {
       Map<String, Integer> ctorTag,
       Map<String, Integer> ctorArity,
       Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes) {
+    // The string runtime ($strEq/$strConcat) is appended after the user functions, so a function's
+    // position is: user funcs 0..U-1, then the natives. Every function (user + native) shares the
+    // table, type, element and code sections.
+    List<Native> natives = stringRuntime();
+    int userCount = funcList.size();
+    int total = userCount + natives.size();
+
     // Function table: name -> {index, arity}, so calls/recursion resolve to a call index.
     Map<String, int[]> table = new HashMap<>();
-    for (int i = 0; i < funcList.size(); i++) {
+    for (int i = 0; i < userCount; i++) {
       table.put(funcList.get(i).name(), new int[] {i, funcList.get(i).params().size()});
+    }
+    for (int i = 0; i < natives.size(); i++) {
+      table.put(natives.get(i).name(), new int[] {userCount + i, natives.get(i).arity()});
     }
     // One wasm function type per distinct arity: (i64 x arity) -> i64.
     List<Integer> arities = new ArrayList<>();
     Map<Integer, Integer> arityType = new HashMap<>();
     for (Func f : funcList) {
-      int a = f.params().size();
-      if (!arityType.containsKey(a)) {
-        arityType.put(a, arities.size());
-        arities.add(a);
-      }
+      arityType.computeIfAbsent(f.params().size(), a -> { arities.add(a); return arities.size() - 1; });
+    }
+    for (Native n : natives) {
+      arityType.computeIfAbsent(n.arity(), a -> { arities.add(a); return arities.size() - 1; });
     }
 
     ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -778,11 +1111,14 @@ public final class WasmCompiler {
     }
     section(out, 1, types);
 
-    // Function section: each function's type index (by its arity).
+    // Function section: each function's type index (by its arity), user functions then natives.
     ByteArrayOutputStream funcs = new ByteArrayOutputStream();
-    leb(funcs, funcList.size());
+    leb(funcs, total);
     for (Func f : funcList) {
       leb(funcs, arityType.get(f.params().size()));
+    }
+    for (Native n : natives) {
+      leb(funcs, arityType.get(n.arity()));
     }
     section(out, 3, funcs);
 
@@ -792,7 +1128,7 @@ public final class WasmCompiler {
     leb(tableSec, 1); // one table
     tableSec.write(0x70); // funcref
     tableSec.write(0x00); // limits: min only
-    leb(tableSec, funcList.size()); // min = number of functions
+    leb(tableSec, total); // min = number of functions
     section(out, 4, tableSec);
 
     // Memory section (id 5): one memory, min 1 page (64 KiB), no max — the heap for cons-cells,
@@ -842,19 +1178,22 @@ public final class WasmCompiler {
     elem.write(0x41);
     sleb(elem, 0); // i32.const 0 (offset)
     elem.write(0x0B); // end
-    leb(elem, funcList.size());
-    for (int i = 0; i < funcList.size(); i++) {
+    leb(elem, total);
+    for (int i = 0; i < total; i++) {
       leb(elem, i);
     }
     section(out, 9, elem);
 
-    // Code section.
+    // Code section: user functions (compiled from Elm) then the native string runtime (raw bytes).
     ByteArrayOutputStream code = new ByteArrayOutputStream();
-    leb(code, funcList.size());
+    leb(code, total);
     for (Func f : funcList) {
       code.writeBytes(
           new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType, nodeTypes)
               .compile(f.body()));
+    }
+    for (Native n : natives) {
+      code.writeBytes(n.entry());
     }
     section(out, 10, code);
     return out.toByteArray();
