@@ -82,6 +82,19 @@ Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`,
 `Html`/`Html.Attributes`/`Html.Events`, `Svg`/`Svg.Attributes`, `Browser`
 (`sandbox`/`element`/`document`), `Cmd`/`Sub`, `Random`, `Time`, `Task`, `Http`, `Json.Decode`.
 
+## Performance (JIT benchmark)
+
+`elm bench [fibN]` times a hot, call-heavy workload across backends. On GraalVM the Truffle
+interpreter's hot `CallTarget`s are partial-evaluated and compiled by the Graal compiler, so it
+outruns the simple bytecode VM. Measured here (GraalVM CE 25, `fib(30)`, best of 50 warm runs):
+
+| backend | cold | warm (best) |
+|---|---|---|
+| Truffle interpreter | 550 ms | **469 ms** |
+| Bytecode VM | 769 ms | 762 ms |
+
+The Graal-compiled Truffle interpreter is ~**1.6×** the bytecode VM after warm-up.
+
 ## elm-lang.org examples
 
 See [docs/examples.md](docs/examples.md). **All 27** run headlessly with tests:

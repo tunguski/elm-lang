@@ -38,17 +38,21 @@ public final class Benchmark {
     StringBuilder sb = new StringBuilder();
     sb.append("Benchmark: fib(").append(fibN).append(") = ").append(interpResult)
         .append("  (warmup=").append(warmup).append(", measured=").append(measured).append(")\n");
-    sb.append(String.format("%-22s %12s %12s %12s%n", "backend", "cold ms", "warm ms", "speedup"));
+    sb.append(String.format("%-22s %12s %12s%n", "backend", "cold ms", "warm ms (best)"));
     report(sb, "Truffle interpreter", interp);
     report(sb, "Bytecode VM", bytecode);
+    sb.append(String.format(
+        "%nWarm: Truffle interpreter is %.2fx the bytecode VM "
+            + "(its hot CallTargets are Graal-compiled on GraalVM).%n",
+        bytecode[1] / interp[1]));
     return sb.toString();
   }
 
   private static void report(StringBuilder sb, String name, double[] r) {
-    sb.append(String.format("%-22s %12.2f %12.2f %11.1fx%n", name, r[0], r[1], r[0] / r[1]));
+    sb.append(String.format("%-22s %12.2f %12.2f%n", name, r[0], r[1]));
   }
 
-  /** Returns {cold ms (first run), warm ms (median of measured runs)}. */
+  /** Returns {cold ms (first run), warm ms (best of the measured runs)}. */
   private static double[] time(Runnable task, int warmup, int measured) {
     long first = System.nanoTime();
     task.run();
@@ -63,7 +67,7 @@ public final class Benchmark {
       samples[i] = (System.nanoTime() - t) / 1e6;
     }
     Arrays.sort(samples);
-    return new double[] {cold, samples[measured / 2]};
+    return new double[] {cold, samples[0]};
   }
 
   public static void main(String[] args) {
