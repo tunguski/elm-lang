@@ -23,7 +23,7 @@ import pl.matsuo.elm.runtime.ElmData;
 
 /**
  * Command-line entry point, built on <a href="https://picocli.info">picocli</a>: {@code elm} with
- * subcommands {@code run/js/make/eval/check/repl/lsp/format/project/bench/site/init}. Use
+ * subcommands {@code run/js/make/eval/script/check/repl/lsp/format/project/bench/site/init}. Use
  * {@code --help} on any command for usage.
  */
 @Command(
@@ -36,6 +36,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Js.class,
       Main.Make.class,
       Main.Eval.class,
+      Main.Script.class,
       Main.Check.class,
       Main.Repl.class,
       Main.Lsp.class,
@@ -192,6 +193,29 @@ public final class Main implements Runnable {
       Object v = backend.equals("bytecode") ? BytecodeInterpreter.eval(expression) : Interpreter.eval(expression);
       System.out.println(Show.plain(v));
       return 0;
+    }
+  }
+
+  @Command(
+      name = "script",
+      description = "Run an Elm file as a POSIX-style command-line script (JIT). See the Posix module.")
+  static final class Script implements Callable<Integer> {
+    @Parameters(index = "0", description = "The script .elm file (its `main : Posix.Io`).")
+    Path file;
+
+    @Parameters(index = "1..*", arity = "0..*", description = "Arguments passed to the script.")
+    List<String> scriptArgs = new ArrayList<>();
+
+    @Override
+    public Integer call() throws IOException {
+      String userSource = Files.readString(file);
+      String posix = pl.matsuo.elm.util.Resources.read("/elm/lib/Posix.elm");
+      Object main = pl.matsuo.elm.interp.Project.load(userSource, posix).main();
+      return pl.matsuo.elm.script.ScriptRunner.run(
+          main,
+          scriptArgs == null ? List.of() : scriptArgs,
+          new java.io.BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)),
+          System.out);
     }
   }
 

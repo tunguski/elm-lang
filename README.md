@@ -70,8 +70,9 @@ CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--stri
 `js <file.elm> [--min] [--map]`, `make <file.elm> [-o out.html|out.js] [--optimize]`
 (deployable artifact), `eval "<expr>" [--backend ...]`, `check <file.elm> [more.elm …]`
 (type-check a module or project), `format <file.elm> [--write|--check|--project]`, `repl`,
-`lsp` (language server over stdio), `project <elm.json|dir> [check|run]`, `init` (scaffold
-`elm.json` + `src/`), `bench [fibN]`, `site <examplesDir> <Playground.elm> <outDir>`.
+`lsp` (language server over stdio), `script <file.elm> [args…]` (run an Elm file as a
+command-line script), `project <elm.json|dir> [check|run]`, `init` (scaffold `elm.json` + `src/`),
+`bench [fibN]`, `site <examplesDir> <Playground.elm> <outDir>`.
 
 It also ships a **REPL** (`elm repl`), a **language server** (`elm lsp` — diagnostics
 + hover types, reusing the parser and HM checker), `elm.json` **project mode**, and JS
@@ -111,6 +112,21 @@ Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`,
 `Array`, `Debug`, plus
 `Html`/`Html.Attributes`/`Html.Events`, `Svg`/`Svg.Attributes`, `Browser`
 (`sandbox`/`element`/`document`), `Cmd`/`Sub`, `Random`, `Time`, `Task`, `Http`, `Json.Decode`.
+
+## Scripting (POSIX-style)
+
+`elm script <file.elm> [args…]` runs an Elm file as a command-line script on the JIT interpreter,
+inspired by [elm-posix](https://github.com/albertdahlin/elm-posix). The bundled
+[`Posix`](elm-lang/src/main/resources/elm/lib/Posix.elm) module gives a script's `main : Posix.Io`
+a description of effects — `print`, `readLine`, `readFile`, `writeFile`, `getArgs`, `exit`, `done` —
+which the runner walks, performing the real I/O and returning the process exit code. Effects that
+produce a value take a continuation, so scripts are written in continuation-passing style. The
+[`wordcount.elm`](elm-lang/src/main/resources/elm/demos/wordcount.elm) example is a `wc`-style
+line/word/char counter:
+
+```sh
+./elm.sh script elm-lang/src/main/resources/elm/demos/wordcount.elm README.md
+```
 
 ## Packages & dependencies
 
