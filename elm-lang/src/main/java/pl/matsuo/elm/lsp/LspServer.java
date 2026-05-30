@@ -20,8 +20,9 @@ import pl.matsuo.elm.types.TypeChecker;
 
 /**
  * A minimal Language Server (LSP) over stdio for Elm: it publishes diagnostics (parse and type
- * errors, located) on open/change and answers hover with the inferred type of the definition under
- * the cursor. Reuses the existing parser and Hindley–Milner type checker.
+ * errors, located) on open/change, answers hover with the inferred type of the definition under the
+ * cursor, resolves go-to-definition for module-local names, and offers completion (module-local
+ * names plus the stdlib). Reuses the existing parser and Hindley–Milner type checker.
  */
 public final class LspServer {
 
@@ -79,6 +80,102 @@ public final class LspServer {
       }
     }
     return Optional.empty();
+  }
+
+  /**
+   * The 0-based (line, character) where the name under the cursor is defined, if it is a top-level
+   * value, union constructor or type/alias declared in this module. Returns empty otherwise (e.g.
+   * the name comes from an import, or the cursor isn't on an identifier).
+   */
+  public Optional<int[]> definition(String source, int line0, int char0) {
+    String word = wordAt(source, line0, char0);
+    if (word.isEmpty()) {
+      return Optional.empty();
+    }
+    Module module;
+    try {
+      module = Parser.parseModule(source);
+    } catch (RuntimeException e) {
+      return Optional.empty();
+    }
+    for (Decl d : module.decls()) {
+      switch (d) {
+        case Decl.Value v -> {
+          if (v.name().equals(word)) {
+            return Optional.of(new int[] {v.pos().line() - 1, v.pos().col() - 1});
+          }
+        }
+        case Decl.Union u -> {
+          if (u.name().equals(word)) {
+            return Optional.of(new int[] {u.pos().line() - 1, u.pos().col() - 1});
+          }
+          for (Decl.Union.Variant variant : u.variants()) {
+            if (variant.name().equals(word)) {
+              return Optional.of(new int[] {u.pos().line() - 1, u.pos().col() - 1});
+            }
+          }
+        }
+        case Decl.TypeAlias ta -> {
+          if (ta.name().equals(word)) {
+            return Optional.of(new int[] {ta.pos().line() - 1, ta.pos().col() - 1});
+          }
+        }
+        default -> {}
+      }
+    }
+    return Optional.empty();
+  }
+
+  /**
+   * Completion labels for the document: the module's own top-level values, union constructors and
+   * type aliases, plus the builtin/stdlib names known to the type checker. Sorted and de-duplicated.
+   */
+  public List<String> complete(String source) {
+    java.util.TreeSet<String> names = new java.util.TreeSet<>();
+    names.addAll(pl.matsuo.elm.types.Signatures.globals().keySet());
+    try {
+      Module module = Parser.parseModule(source);
+      for (Decl d : module.decls()) {
+        switch (d) {
+          case Decl.Value v -> names.add(v.name());
+          case Decl.TypeAlias ta -> names.add(ta.name());
+          case Decl.Union u -> u.variants().forEach(variant -> names.add(variant.name()));
+          default -> {}
+        }
+      }
+    } catch (RuntimeException ignored) {
+      // offer at least the builtins even while the document doesn't parse
+    }
+    return new ArrayList<>(names);
+  }
+
+  /** The identifier (possibly qualified, e.g. {@code List.map}) at a 0-based (line, char), or "". */
+  static String wordAt(String source, int line0, int char0) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return "";
+    }
+    String line = lines[line0];
+    int n = line.length();
+    if (char0 < 0 || char0 > n) {
+      return "";
+    }
+    int start = Math.min(char0, n);
+    while (start > 0 && isIdentChar(line.charAt(start - 1))) {
+      start--;
+    }
+    int end = Math.min(char0, n);
+    while (end < n && isIdentChar(line.charAt(end))) {
+      end++;
+    }
+    // For a qualified name like `List.map`, take only the final segment (the value's own name).
+    String token = line.substring(start, end);
+    int dot = token.lastIndexOf('.');
+    return dot >= 0 ? token.substring(dot + 1) : token;
+  }
+
+  private static boolean isIdentChar(char c) {
+    return Character.isLetterOrDigit(c) || c == '_' || c == '.';
   }
 
   private static Diagnostic at(pl.matsuo.elm.error.Position p, String message) {
@@ -144,6 +241,35 @@ public final class LspServer {
           reply(out, id, JsonEncode.NULL);
         }
       }
+      case "textDocument/definition" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        String uri = (String) td.get("uri");
+        int line = ((Number) pos.get("line")).intValue();
+        int ch = ((Number) pos.get("character")).intValue();
+        Optional<int[]> loc = definition(docs.getOrDefault(uri, ""), line, ch);
+        if (loc.isPresent()) {
+          Map<String, Object> location = new LinkedHashMap<>();
+          location.put("uri", uri);
+          location.put("range", range(loc.get()[0], loc.get()[1], loc.get()[1]));
+          reply(out, id, location);
+        } else {
+          reply(out, id, JsonEncode.NULL);
+        }
+      }
+      case "textDocument/completion" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String uri = (String) td.get("uri");
+        List<Object> items = new ArrayList<>();
+        for (String name : complete(docs.getOrDefault(uri, ""))) {
+          Map<String, Object> item = new LinkedHashMap<>();
+          item.put("label", name);
+          // Uppercase first letter -> a constructor/type (kind 4/7); else a function (kind 3).
+          item.put("kind", !name.isEmpty() && Character.isUpperCase(name.charAt(0)) ? 4L : 3L);
+          items.add(item);
+        }
+        reply(out, id, items);
+      }
       case "shutdown" -> reply(out, id, JsonEncode.NULL);
       default -> {
         if (id != null) {
@@ -157,6 +283,9 @@ public final class LspServer {
     Map<String, Object> caps = new LinkedHashMap<>();
     caps.put("textDocumentSync", 1L); // full document sync
     caps.put("hoverProvider", true);
+    caps.put("definitionProvider", true);
+    caps.put("completionProvider", new LinkedHashMap<>()); // no trigger characters
+
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("capabilities", caps);
     return result;

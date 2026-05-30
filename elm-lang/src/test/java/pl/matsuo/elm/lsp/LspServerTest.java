@@ -41,6 +41,36 @@ class LspServerTest {
   }
 
   @Test
+  void gotoDefinitionFindsTopLevelValue() {
+    String src = "double n = n * 2\nmain = double 21\n";
+    // Cursor on the `double` use in line 2 (0-based line 1, char 8) -> its definition on line 1.
+    Optional<int[]> loc = server.definition(src, 1, 8);
+    assertTrue(loc.isPresent());
+    assertEquals(0, loc.get()[0]); // defined on 0-based line 0
+  }
+
+  @Test
+  void gotoDefinitionResolvesUnionConstructor() {
+    String src = "type Color = Red | Green\nname c = Red\n";
+    Optional<int[]> loc = server.definition(src, 1, 10); // cursor on `Red` use
+    assertTrue(loc.isPresent());
+    assertEquals(0, loc.get()[0]); // the `type Color` line
+  }
+
+  @Test
+  void completionIncludesLocalNamesAndBuiltins() {
+    List<String> items = server.complete("greet name = name\nmain = greet \"x\"\n");
+    assertTrue(items.contains("greet"), "local value");
+    assertTrue(items.contains("main"), "local value");
+    assertTrue(items.stream().anyMatch(n -> n.startsWith("List.")), "stdlib names present");
+  }
+
+  @Test
+  void wordAtExtractsFinalSegmentOfQualifiedName() {
+    assertEquals("map", LspServer.wordAt("x = List.map f xs\n", 0, 9));
+  }
+
+  @Test
   void initializeAdvertisesCapabilitiesOverJsonRpc() throws Exception {
     String body =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
