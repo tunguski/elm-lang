@@ -71,6 +71,32 @@ class LspServerTest {
   }
 
   @Test
+  void documentSymbolsListTopLevelDeclarations() {
+    String src =
+        "type Color = Red | Green\ntype alias Model = Int\nport out : String -> Cmd msg\nmain = 1\n";
+    var names = server.documentSymbols(src).stream().map(LspServer.Symbol::name).toList();
+    assertTrue(names.contains("Color"), names.toString());
+    assertTrue(names.contains("Red") && names.contains("Green"), names.toString()); // constructors
+    assertTrue(names.contains("Model"), names.toString());
+    assertTrue(names.contains("out"), names.toString()); // port
+    assertTrue(names.contains("main"), names.toString());
+  }
+
+  @Test
+  void findsAllReferencesOfAName() {
+    String src = "double n = n * 2\nmain = double (double 3)\n";
+    // Cursor on the definition of `double`; expect three occurrences (def + two uses).
+    assertEquals(3, server.references(src, 0, 2).size());
+  }
+
+  @Test
+  void renameRewritesEveryOccurrence() {
+    String src = "double n = n * 2\nmain = double 3\n";
+    // Rename reuses the same occurrence set; here two occurrences of `double`.
+    assertEquals(2, server.references(src, 0, 2).size());
+  }
+
+  @Test
   void initializeAdvertisesCapabilitiesOverJsonRpc() throws Exception {
     String body =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
@@ -82,5 +108,8 @@ class LspServerTest {
     assertTrue(response.contains("Content-Length:"), response);
     assertTrue(response.contains("hoverProvider"), response);
     assertTrue(response.contains("textDocumentSync"), response);
+    assertTrue(response.contains("referencesProvider"), response);
+    assertTrue(response.contains("documentSymbolProvider"), response);
+    assertTrue(response.contains("renameProvider"), response);
   }
 }

@@ -21,8 +21,10 @@ import pl.matsuo.elm.types.TypeChecker;
 /**
  * A minimal Language Server (LSP) over stdio for Elm: it publishes diagnostics (parse and type
  * errors, located) on open/change, answers hover with the inferred type of the definition under the
- * cursor, resolves go-to-definition for module-local names, and offers completion (module-local
- * names plus the stdlib). Reuses the existing parser and Hindley–Milner type checker.
+ * cursor, resolves go-to-definition for module-local names, offers completion (module-local names
+ * plus the stdlib), lists document symbols (the outline), and finds references / renames an
+ * identifier (token-level, within the document). Reuses the existing parser and Hindley–Milner type
+ * checker.
  */
 public final class LspServer {
 
@@ -149,6 +151,66 @@ public final class LspServer {
     return new ArrayList<>(names);
   }
 
+  /** A top-level symbol for the outline: its name, LSP {@code SymbolKind}, and 0-based location. */
+  public record Symbol(String name, int kind, int line, int character) {}
+
+  /** Top-level symbols (values, type aliases, unions and their constructors, ports) for the outline. */
+  public List<Symbol> documentSymbols(String source) {
+    List<Symbol> out = new ArrayList<>();
+    Module module;
+    try {
+      module = Parser.parseModule(source);
+    } catch (RuntimeException e) {
+      return out;
+    }
+    for (Decl d : module.decls()) {
+      switch (d) {
+        case Decl.Value v -> out.add(symbol(v.name(), v.params().isEmpty() ? 13 : 12, v.pos())); // Variable / Function
+        case Decl.TypeAlias ta -> out.add(symbol(ta.name(), 5, ta.pos())); // Class
+        case Decl.Union u -> {
+          out.add(symbol(u.name(), 10, u.pos())); // Enum
+          for (Decl.Union.Variant variant : u.variants()) {
+            out.add(symbol(variant.name(), 9, u.pos())); // Constructor (located at the union)
+          }
+        }
+        case Decl.Port p -> out.add(symbol(p.name(), 12, p.pos())); // Function
+        default -> {}
+      }
+    }
+    return out;
+  }
+
+  private static Symbol symbol(String name, int kind, pl.matsuo.elm.error.Position p) {
+    return new Symbol(name, kind, Math.max(0, p.line() - 1), Math.max(0, p.col() - 1));
+  }
+
+  /** All 0-based {@code [line, char]} occurrences of the identifier under the cursor (token-level). */
+  public List<int[]> references(String source, int line0, int char0) {
+    return occurrences(source, wordAt(source, line0, char0));
+  }
+
+  /** All 0-based {@code [line, char]} positions where the identifier {@code name} appears as a token. */
+  public List<int[]> occurrences(String source, String name) {
+    List<int[]> out = new ArrayList<>();
+    if (name.isEmpty()) {
+      return out;
+    }
+    List<pl.matsuo.elm.lexer.Token> tokens;
+    try {
+      tokens = pl.matsuo.elm.lexer.Lexer.tokenize(source);
+    } catch (RuntimeException e) {
+      return out;
+    }
+    for (pl.matsuo.elm.lexer.Token t : tokens) {
+      if (name.equals(t.text())
+          && (t.is(pl.matsuo.elm.lexer.TokenType.LOWER)
+              || t.is(pl.matsuo.elm.lexer.TokenType.UPPER))) {
+        out.add(new int[] {t.line() - 1, t.col() - 1});
+      }
+    }
+    return out;
+  }
+
   /** The identifier (possibly qualified, e.g. {@code List.map}) at a 0-based (line, char), or "". */
   static String wordAt(String source, int line0, int char0) {
     String[] lines = source.split("\n", -1);
@@ -270,6 +332,59 @@ public final class LspServer {
         }
         reply(out, id, items);
       }
+      case "textDocument/documentSymbol" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String uri = (String) td.get("uri");
+        List<Object> symbols = new ArrayList<>();
+        for (Symbol s : documentSymbols(docs.getOrDefault(uri, ""))) {
+          Map<String, Object> sym = new LinkedHashMap<>();
+          sym.put("name", s.name());
+          sym.put("kind", (long) s.kind());
+          sym.put("range", range(s.line(), s.character(), s.character() + s.name().length()));
+          sym.put("selectionRange", range(s.line(), s.character(), s.character() + s.name().length()));
+          symbols.add(sym);
+        }
+        reply(out, id, symbols);
+      }
+      case "textDocument/references" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        String uri = (String) td.get("uri");
+        int line = ((Number) pos.get("line")).intValue();
+        int ch = ((Number) pos.get("character")).intValue();
+        String src = docs.getOrDefault(uri, "");
+        String word = wordAt(src, line, ch);
+        List<Object> locations = new ArrayList<>();
+        for (int[] loc : references(src, line, ch)) {
+          Map<String, Object> location = new LinkedHashMap<>();
+          location.put("uri", uri);
+          location.put("range", range(loc[0], loc[1], loc[1] + word.length()));
+          locations.add(location);
+        }
+        reply(out, id, locations);
+      }
+      case "textDocument/rename" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        String uri = (String) td.get("uri");
+        String newName = (String) params.get("newName");
+        int line = ((Number) pos.get("line")).intValue();
+        int ch = ((Number) pos.get("character")).intValue();
+        String src = docs.getOrDefault(uri, "");
+        String word = wordAt(src, line, ch);
+        List<Object> edits = new ArrayList<>();
+        for (int[] loc : references(src, line, ch)) {
+          Map<String, Object> edit = new LinkedHashMap<>();
+          edit.put("range", range(loc[0], loc[1], loc[1] + word.length()));
+          edit.put("newText", newName);
+          edits.add(edit);
+        }
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put(uri, edits);
+        Map<String, Object> workspaceEdit = new LinkedHashMap<>();
+        workspaceEdit.put("changes", changes);
+        reply(out, id, workspaceEdit);
+      }
       case "shutdown" -> reply(out, id, JsonEncode.NULL);
       default -> {
         if (id != null) {
@@ -285,6 +400,9 @@ public final class LspServer {
     caps.put("hoverProvider", true);
     caps.put("definitionProvider", true);
     caps.put("completionProvider", new LinkedHashMap<>()); // no trigger characters
+    caps.put("referencesProvider", true);
+    caps.put("documentSymbolProvider", true);
+    caps.put("renameProvider", true);
 
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("capabilities", caps);
