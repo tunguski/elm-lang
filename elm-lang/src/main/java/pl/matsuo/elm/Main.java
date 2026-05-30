@@ -35,6 +35,27 @@ public final class Main {
       pl.matsuo.elm.repl.Repl.loop(new java.io.InputStreamReader(System.in), System.out);
       return;
     }
+    if (args[0].equals("project")) {
+      if (args.length < 2) {
+        System.out.println("usage: project <elm.json|dir> [check|run [value]]");
+        return;
+      }
+      java.util.List<String> sources =
+          pl.matsuo.elm.project.ProjectLoader.loadSources(Path.of(args[1]));
+      String mode = args.length > 2 ? args[2] : "check";
+      if (mode.equals("run")) {
+        System.out.println(
+            render(pl.matsuo.elm.interp.Project.load(sources.toArray(new String[0])).main()));
+      } else {
+        try {
+          pl.matsuo.elm.types.TypeChecker.checkProject(sources.toArray(new String[0]))
+              .forEach((name, type) -> System.out.println(name + " : " + type));
+        } catch (pl.matsuo.elm.error.ElmTypeError e) {
+          System.out.println("Type error: " + e.getMessage());
+        }
+      }
+      return;
+    }
     if (args[0].equals("site")) {
       if (args.length < 4) {
         System.out.println("usage: site <examplesDir> <Playground.elm> <outDir>");
@@ -151,6 +172,7 @@ public final class Main {
           check <file.elm> [more.elm ...]      type-check a module or multi-module project
           bench [fibN]
           repl
+          project <elm.json|dir> [check|run]   load source-directories and check/run
           site  <examplesDir> <Playground.elm> <outDir>
 
         --strict type-checks before running and refuses to evaluate on a type error.
