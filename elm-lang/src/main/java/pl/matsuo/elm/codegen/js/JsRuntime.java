@@ -61,6 +61,7 @@ public final class JsRuntime {
       }
       function $compose(f, g){ return function(x){ return f(g(x)); }; }
       function $ord(c){ return $data(c<0?'LT':(c===0?'EQ':'GT'), []); }
+      function $ordToInt(o){ return o.$==='LT'?-1:(o.$==='GT'?1:0); }
 
       // ---- show (matches Show.plain in the interpreter) ----
       function $showArg(x){
@@ -132,6 +133,16 @@ public final class JsRuntime {
         'List.member': function(x){ return function(xs){ return $listToArray(xs).some(function(y){return $eq(x,y);}); }; },
         'List.append': function(a){ return function(b){ return $append(a,b); }; },
         'List.concat': function(xss){ var out=[]; $listToArray(xss).forEach(function(xs){ out=out.concat($listToArray(xs)); }); return $list(out); },
+        'List.concatMap': function(f){ return function(xs){ var out=[]; $listToArray(xs).forEach(function(x){ out=out.concat($listToArray(f(x))); }); return $list(out); }; },
+        'List.filterMap': function(f){ return function(xs){ var out=[]; $listToArray(xs).forEach(function(x){ var m=f(x); if(m&&m.$==='Just') out.push(m._[0]); }); return $list(out); }; },
+        'List.map3': function(f){ return function(a){ return function(b){ return function(c){ var aa=$listToArray(a),bb=$listToArray(b),cc=$listToArray(c),n=Math.min(aa.length,bb.length,cc.length),o=[]; for(var i=0;i<n;i++) o.push(f(aa[i])(bb[i])(cc[i])); return $list(o); }; }; }; },
+        'List.repeat': function(n){ return function(x){ var o=[]; for(var i=0;i<n;i++) o.push(x); return $list(o); }; },
+        'List.all': function(f){ return function(xs){ return $listToArray(xs).every(function(x){return f(x);}); }; },
+        'List.any': function(f){ return function(xs){ return $listToArray(xs).some(function(x){return f(x);}); }; },
+        'List.maximum': function(xs){ var a=$listToArray(xs); return a.length?$data('Just',[a.reduce(function(m,x){return $cmp(x,m)>0?x:m;})]):$data('Nothing',[]); },
+        'List.minimum': function(xs){ var a=$listToArray(xs); return a.length?$data('Just',[a.reduce(function(m,x){return $cmp(x,m)<0?x:m;})]):$data('Nothing',[]); },
+        'List.sortWith': function(f){ return function(xs){ return $list($listToArray(xs).slice().sort(function(a,b){ return $ordToInt(f(a)(b)); })); }; },
+        'List.intersperse': function(sep){ return function(xs){ var a=$listToArray(xs),o=[]; for(var i=0;i<a.length;i++){ if(i>0)o.push(sep); o.push(a[i]); } return $list(o); }; },
         'List.sum': function(xs){ return $listToArray(xs).reduce(function(a,b){return a+b;},0); },
         'List.product': function(xs){ return $listToArray(xs).reduce(function(a,b){return a*b;},1); },
         'List.range': function(lo){ return function(hi){ var out=[]; for(var i=lo;i<=hi;i++) out.push(i); return $list(out); }; },
@@ -334,6 +345,24 @@ public final class JsRuntime {
         $rt['Time.toSecond']=function(z){ return function(p){ return Math.floor(zoned(p,z)/1000)%60; }; };
         $rt['Time.toMillis']=function(z){ return function(p){ return zoned(p,z)%1000; }; };
         $rt['Time.every']=function(ms){ return function(toMsg){ return $sub('every:'+ms, function(d){ var id=setInterval(function(){ d(toMsg(Date.now())); }, ms); return function(){ clearInterval(id); }; }); }; };
+        // Browser.Events / Browser.Dom: real DOM events as subscriptions (used by elm-playground).
+        function domSub(key, target, type, make){ return $sub(key, function(d){ var h=function(e){ var m=make(e); if(m!==undefined) d(m); }; target.addEventListener(type, h); return function(){ target.removeEventListener(type, h); }; }); }
+        $rt['Browser.Events.onResize']=function(toMsg){ return domSub('resize', window, 'resize', function(){ return toMsg(window.innerWidth)(window.innerHeight); }); };
+        $rt['Browser.Events.onKeyDown']=function(dec){ return domSub('keydown', document, 'keydown', function(e){ var r=dec._[0](e); return r.ok?r.v:undefined; }); };
+        $rt['Browser.Events.onKeyUp']=function(dec){ return domSub('keyup', document, 'keyup', function(e){ var r=dec._[0](e); return r.ok?r.v:undefined; }); };
+        $rt['Browser.Events.onKeyPress']=function(dec){ return domSub('keypress', document, 'keypress', function(e){ var r=dec._[0](e); return r.ok?r.v:undefined; }); };
+        $rt['Browser.Events.onClick']=function(dec){ return domSub('click', document, 'click', function(e){ var r=dec._[0](e); return r.ok?r.v:undefined; }); };
+        $rt['Browser.Events.onMouseMove']=function(dec){ return domSub('mousemove', document, 'mousemove', function(e){ var r=dec._[0](e); return r.ok?r.v:undefined; }); };
+        $rt['Browser.Events.onMouseDown']=function(dec){ return domSub('mousedown', document, 'mousedown', function(e){ var r=dec._[0](e); return r.ok?r.v:undefined; }); };
+        $rt['Browser.Events.onMouseUp']=function(dec){ return domSub('mouseup', document, 'mouseup', function(e){ var r=dec._[0](e); return r.ok?r.v:undefined; }); };
+        $rt['Browser.Events.onVisibilityChange']=function(toMsg){ return domSub('vis', document, 'visibilitychange', function(){ return toMsg(document.hidden?$data('Hidden',[]):$data('Visible',[])); }); };
+        $rt['Browser.Events.Visible']=$data('Visible',[]); $rt['Browser.Events.Hidden']=$data('Hidden',[]);
+        $rt['Browser.Events.onAnimationFrame']=function(toMsg){ return $sub('raf', function(d){ var id; function tick(){ d(toMsg(Date.now())); id=requestAnimationFrame(tick); } id=requestAnimationFrame(tick); return function(){ cancelAnimationFrame(id); }; }); };
+        $rt['Browser.Events.onAnimationFrameDelta']=function(toMsg){ return $sub('rafd', function(d){ var id, last=Date.now(); function tick(){ var now=Date.now(); d(toMsg(now-last)); last=now; id=requestAnimationFrame(tick); } id=requestAnimationFrame(tick); return function(){ cancelAnimationFrame(id); }; }); };
+        function viewportRecord(){ var w=window.innerWidth||800, h=window.innerHeight||600; return {scene:{width:w,height:h}, viewport:{x:0,y:0,width:w,height:h}}; }
+        $rt['Browser.Dom.getViewport']=$task(function(ok,err){ ok(viewportRecord()); });
+        $rt['Browser.Dom.setViewport']=function(x){ return function(y){ return $task(function(ok,err){ window.scrollTo(x,y); ok($unit); }); }; };
+        $rt['Browser.Dom.focus']=function(id){ return $task(function(ok,err){ var el=document.getElementById(id); if(el){el.focus(); ok($unit);} else err($data('NotFound',[id])); }); };
         // File: real <input type=file> selection and FileReader-based reads.
         $rt['File.decoder']=$dec(function(j){ return (j&&typeof j==='object')?{ok:1,v:j}:{ok:0,v:'expected a file'}; });
         $rt['File.name']=function(f){ return f.name||''; };
@@ -344,6 +373,106 @@ public final class JsRuntime {
         function selectInput(multiple, mimes){ var inp=document.createElement('input'); inp.type='file'; inp.accept=$listToArray(mimes).join(','); if(multiple) inp.multiple=true; return inp; }
         $rt['File.Select.file']=function(mimes){ return function(toMsg){ return $cmd(function(d){ var inp=selectInput(false,mimes); inp.onchange=function(){ if(inp.files[0]) d(toMsg(inp.files[0])); }; inp.click(); }); }; };
         $rt['File.Select.files']=function(mimes){ return function(toMsg){ return $cmd(function(d){ var inp=selectInput(true,mimes); inp.onchange=function(){ var fs=[].slice.call(inp.files); if(fs.length) d(toMsg(fs[0])($list(fs.slice(1)))); }; inp.click(); }); }; };
+        // Set / Dict: backed by a plain object keyed by $show(key) (a canonical key for comparables).
+        function $k(x){ return $show(x); }
+        $rt['Set.empty']=$data('$Set',[{}]);
+        $rt['Set.singleton']=function(x){ var o={}; o[$k(x)]=x; return $data('$Set',[o]); };
+        $rt['Set.insert']=function(x){ return function(s){ var o=Object.assign({},s._[0]); o[$k(x)]=x; return $data('$Set',[o]); }; };
+        $rt['Set.remove']=function(x){ return function(s){ var o=Object.assign({},s._[0]); delete o[$k(x)]; return $data('$Set',[o]); }; };
+        $rt['Set.member']=function(x){ return function(s){ return Object.prototype.hasOwnProperty.call(s._[0],$k(x)); }; };
+        $rt['Set.size']=function(s){ return Object.keys(s._[0]).length; };
+        $rt['Set.isEmpty']=function(s){ return Object.keys(s._[0]).length===0; };
+        $rt['Set.toList']=function(s){ var o=s._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k]; })); };
+        $rt['Set.fromList']=function(l){ var o={}; $listToArray(l).forEach(function(x){ o[$k(x)]=x; }); return $data('$Set',[o]); };
+        $rt['Set.union']=function(a){ return function(b){ return $data('$Set',[Object.assign({},b._[0],a._[0])]); }; };
+        $rt['Set.foldl']=function(f){ return function(acc){ return function(s){ var o=s._[0]; Object.keys(o).sort().forEach(function(k){ acc=f(o[k])(acc); }); return acc; }; }; };
+        $rt['Set.map']=function(f){ return function(s){ var o={}; var src=s._[0]; Object.keys(src).forEach(function(k){ var y=f(src[k]); o[$k(y)]=y; }); return $data('$Set',[o]); }; };
+        $rt['Dict.empty']=$data('$Dict',[{}]);
+        $rt['Dict.singleton']=function(k){ return function(v){ var o={}; o[$k(k)]=$tuple([k,v]); return $data('$Dict',[o]); }; };
+        $rt['Dict.insert']=function(k){ return function(v){ return function(d){ var o=Object.assign({},d._[0]); o[$k(k)]=$tuple([k,v]); return $data('$Dict',[o]); }; }; };
+        $rt['Dict.remove']=function(k){ return function(d){ var o=Object.assign({},d._[0]); delete o[$k(k)]; return $data('$Dict',[o]); }; };
+        $rt['Dict.get']=function(k){ return function(d){ var e=d._[0][$k(k)]; return e?$data('Just',[e.vs[1]]):$data('Nothing',[]); }; };
+        $rt['Dict.member']=function(k){ return function(d){ return Object.prototype.hasOwnProperty.call(d._[0],$k(k)); }; };
+        $rt['Dict.size']=function(d){ return Object.keys(d._[0]).length; };
+        $rt['Dict.isEmpty']=function(d){ return Object.keys(d._[0]).length===0; };
+        $rt['Dict.keys']=function(d){ var o=d._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k].vs[0]; })); };
+        $rt['Dict.values']=function(d){ var o=d._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k].vs[1]; })); };
+        $rt['Dict.toList']=function(d){ var o=d._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k]; })); };
+        $rt['Dict.fromList']=function(l){ var o={}; $listToArray(l).forEach(function(p){ o[$k(p.vs[0])]=p; }); return $data('$Dict',[o]); };
+        $rt['Dict.update']=function(k){ return function(f){ return function(d){ var o=Object.assign({},d._[0]); var cur=o[$k(k)]; var mb=f(cur?$data('Just',[cur.vs[1]]):$data('Nothing',[])); if(mb.$==='Just'){ o[$k(k)]=$tuple([k,mb._[0]]); } else { delete o[$k(k)]; } return $data('$Dict',[o]); }; }; };
+        $rt['Dict.map']=function(f){ return function(d){ var o={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; o[kk]=$tuple([p.vs[0], f(p.vs[0])(p.vs[1])]); }); return $data('$Dict',[o]); }; };
+        $rt['Dict.foldl']=function(f){ return function(acc){ return function(d){ var o=d._[0]; Object.keys(o).sort().forEach(function(kk){ acc=f(o[kk].vs[0])(o[kk].vs[1])(acc); }); return acc; }; }; };
+
+        // ---- Math.Vector2/3/4 (plain JS arrays) and Math.Matrix4 (column-major Float32Array) ----
+        function v3(x,y,z){ return [x,y,z]; }
+        $rt['Math.Vector2.vec2']=function(x){ return function(y){ return [x,y]; }; };
+        $rt['Math.Vector2.getX']=function(v){ return v[0]; }; $rt['Math.Vector2.getY']=function(v){ return v[1]; };
+        $rt['Math.Vector3.vec3']=function(x){ return function(y){ return function(z){ return [x,y,z]; }; }; };
+        $rt['Math.Vector3.getX']=function(v){ return v[0]; }; $rt['Math.Vector3.getY']=function(v){ return v[1]; }; $rt['Math.Vector3.getZ']=function(v){ return v[2]; };
+        $rt['Math.Vector3.setX']=function(x){ return function(v){ return [x,v[1],v[2]]; }; };
+        $rt['Math.Vector3.setY']=function(y){ return function(v){ return [v[0],y,v[2]]; }; };
+        $rt['Math.Vector3.setZ']=function(z){ return function(v){ return [v[0],v[1],z]; }; };
+        $rt['Math.Vector3.add']=function(a){ return function(b){ return [a[0]+b[0],a[1]+b[1],a[2]+b[2]]; }; };
+        $rt['Math.Vector3.sub']=function(a){ return function(b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }; };
+        $rt['Math.Vector3.scale']=function(s){ return function(v){ return [v[0]*s,v[1]*s,v[2]*s]; }; };
+        $rt['Math.Vector3.dot']=function(a){ return function(b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }; };
+        $rt['Math.Vector3.cross']=function(a){ return function(b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }; };
+        $rt['Math.Vector3.length']=function(v){ return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); };
+        $rt['Math.Vector3.normalize']=function(v){ var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])||1; return [v[0]/l,v[1]/l,v[2]/l]; };
+        $rt['Math.Vector3.i']=[1,0,0]; $rt['Math.Vector3.j']=[0,1,0]; $rt['Math.Vector3.k']=[0,0,1];
+        $rt['Math.Vector3.toRecord']=function(v){ return {x:v[0],y:v[1],z:v[2]}; };
+        $rt['Math.Vector3.fromRecord']=function(r){ return [r.x,r.y,r.z]; };
+        $rt['Math.Vector4.vec4']=function(x){ return function(y){ return function(z){ return function(w){ return [x,y,z,w]; }; }; }; };
+        function m4id(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+        function m4mul(a,b){ var o=new Float32Array(16); for(var c=0;c<4;c++){ for(var r=0;r<4;r++){ var s=0; for(var k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s; } } return o; }
+        function norm3(v){ var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])||1; return [v[0]/l,v[1]/l,v[2]/l]; }
+        function cross3(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+        function dot3(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+        $rt['Math.Matrix4.identity']=m4id();
+        $rt['Math.Matrix4.mul']=function(a){ return function(b){ return m4mul(a,b); }; };
+        $rt['Math.Matrix4.makeTranslate']=function(v){ var m=m4id(); m[12]=v[0]; m[13]=v[1]; m[14]=v[2]; return m; };
+        $rt['Math.Matrix4.makeTranslate3']=function(x){ return function(y){ return function(z){ var m=m4id(); m[12]=x; m[13]=y; m[14]=z; return m; }; }; };
+        $rt['Math.Matrix4.makeScale3']=function(x){ return function(y){ return function(z){ var m=m4id(); m[0]=x; m[5]=y; m[10]=z; return m; }; }; };
+        $rt['Math.Matrix4.makeRotate']=function(angle){ return function(axis){ var a=norm3(axis), x=a[0],y=a[1],z=a[2], c=Math.cos(angle), s=Math.sin(angle), t=1-c; return new Float32Array([ t*x*x+c, t*x*y+s*z, t*x*z-s*y, 0, t*x*y-s*z, t*y*y+c, t*y*z+s*x, 0, t*x*z+s*y, t*y*z-s*x, t*z*z+c, 0, 0,0,0,1 ]); }; };
+        $rt['Math.Matrix4.makePerspective']=function(fovy){ return function(aspect){ return function(near){ return function(far){ var f=1/Math.tan(fovy*Math.PI/360), nf=1/(near-far); return new Float32Array([ f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0 ]); }; }; }; };
+        $rt['Math.Matrix4.makeOrtho']=function(l){ return function(r){ return function(b){ return function(t){ return function(n){ return function(fa){ return new Float32Array([ 2/(r-l),0,0,0, 0,2/(t-b),0,0, 0,0,-2/(fa-n),0, -(r+l)/(r-l),-(t+b)/(t-b),-(fa+n)/(fa-n),1 ]); }; }; }; }; }; };
+        $rt['Math.Matrix4.makeLookAt']=function(eye){ return function(center){ return function(up){ var z=norm3([eye[0]-center[0],eye[1]-center[1],eye[2]-center[2]]); var x=norm3(cross3(up,z)); var y=cross3(z,x); return new Float32Array([ x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot3(x,eye),-dot3(y,eye),-dot3(z,eye),1 ]); }; }; };
+        $rt['Math.Matrix4.transform']=function(m){ return function(v){ var w=m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]||1; return [ (m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12])/w, (m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13])/w, (m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14])/w ]; }; };
+
+        // ---- WebGL: meshes, entities, and a canvas renderer driven by a $GL attribute ----
+        $rt['WebGL.triangles']=function(l){ return $data('$Mesh',[l]); };
+        $rt['WebGL.indexedTriangles']=function(verts){ return function(idx){ return $data('$MeshIdx',[verts,idx]); }; };
+        $rt['WebGL.entity']=function(vs){ return function(fs){ return function(mesh){ return function(uni){ return $data('$Entity',[vs,fs,mesh,uni]); }; }; }; };
+        $rt['WebGL.entityWith']=function(s){ return $rt['WebGL.entity']; };
+        $rt['WebGL.depth']=function(z){ return $data('$Opt',['depth',z]); };
+        $rt['WebGL.clearColor']=function(r){ return function(g){ return function(b){ return function(a){ return $data('$Opt',['clear',[r,g,b,a]]); }; }; }; };
+        $rt['WebGL.alpha']=function(b){ return $data('$Opt',['alpha',b]); };
+        $rt['WebGL.antialias']=$data('$Opt',['antialias',true]);
+        function glNode(attrs, entities, clear){ return $data('$Node',['canvas', $cons($data('$GL',[entities,clear]), attrs), $nil]); }
+        $rt['WebGL.toHtml']=function(attrs){ return function(entities){ return glNode(attrs, entities, null); }; };
+        $rt['WebGL.toHtmlWith']=function(opts){ return function(attrs){ return function(entities){ var clear=null; $listToArray(opts).forEach(function(o){ if(o&&o.$==='$Opt'&&o._[0]==='clear') clear=o._[1]; }); return glNode(attrs, entities, clear); }; }; };
+        // WebGL.Texture: load an Image; the GL texture is uploaded lazily on first draw.
+        $rt['WebGL.Texture.load']=function(url){ return $task(function(ok,err){ var img=new Image(); img.crossOrigin='anonymous'; img.onload=function(){ ok($data('$Texture',[img])); }; img.onerror=function(){ err($data('$LoadError',[])); }; img.src=url; }); };
+        $rt['WebGL.Texture.loadWith']=function(opts){ return $rt['WebGL.Texture.load']; };
+        $rt['WebGL.Texture.size']=function(t){ var i=t._[0]; return $tuple([(i&&i.width)||0,(i&&i.height)||0]); };
+        ['nearest','linear','nearestMipmapNearest','linearMipmapLinear','repeat','clampToEdge','mirroredRepeat'].forEach(function(n){ $rt['WebGL.Texture.'+n]=$data('$TexOpt',[n]); });
+
+        function glContext(c){ if(c.$ctx!==undefined) return c.$ctx; var gl=null; try{ gl=c.getContext('webgl',{premultipliedAlpha:false})||c.getContext('experimental-webgl'); }catch(e){} c.$ctx=gl; c.$progs={}; return gl; }
+        function glShader(gl,type,src){ var s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); return s; }
+        function glProgram(gl,c,vsrc,fsrc){ var key=vsrc+' '+fsrc; if(c.$progs[key]) return c.$progs[key]; var p=gl.createProgram(); gl.attachShader(p, glShader(gl,gl.VERTEX_SHADER,vsrc)); gl.attachShader(p, glShader(gl,gl.FRAGMENT_SHADER,fsrc)); gl.linkProgram(p); c.$progs[key]=p; return p; }
+        function attrSize(v){ return Array.isArray(v)?v.length:1; }
+        function setUniform(gl,loc,v,texUnit){ if(v instanceof Float32Array && v.length===16){ gl.uniformMatrix4fv(loc,false,v); } else if(Array.isArray(v)){ if(v.length===2)gl.uniform2fv(loc,new Float32Array(v)); else if(v.length===3)gl.uniform3fv(loc,new Float32Array(v)); else if(v.length===4)gl.uniform4fv(loc,new Float32Array(v)); } else if(typeof v==='number'){ gl.uniform1f(loc,v); } else if(v&&v.$==='$Texture'){ bindTexture(gl,loc,v,texUnit); } }
+        function bindTexture(gl,loc,t,unit){ if(!t.$tex){ var tx=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tx); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,t._[0]); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); t.$tex=tx; } gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t.$tex); gl.uniform1i(loc,unit); }
+        function drawEntity(gl,c,e){ var prog=glProgram(gl,c,e._[0]._[0],e._[1]._[0]); gl.useProgram(prog); var mesh=e._[2], verts=[], indices=null;
+          if(mesh.$==='$Mesh'){ $listToArray(mesh._[0]).forEach(function(tri){ verts.push(tri.vs[0],tri.vs[1],tri.vs[2]); }); }
+          else if(mesh.$==='$MeshIdx'){ verts=$listToArray(mesh._[0]); indices=[]; $listToArray(mesh._[1]).forEach(function(t){ indices.push(t.vs[0],t.vs[1],t.vs[2]); }); }
+          if(verts.length===0) return;
+          Object.keys(verts[0]).forEach(function(name){ var loc=gl.getAttribLocation(prog,name); if(loc<0) return; var size=attrSize(verts[0][name]); var arr=new Float32Array(verts.length*size); for(var i=0;i<verts.length;i++){ var val=verts[i][name]; if(size===1) arr[i]=val; else for(var j=0;j<size;j++) arr[i*size+j]=val[j]; } var buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0); });
+          var uni=e._[3], unit=0; Object.keys(uni).forEach(function(name){ var loc=gl.getUniformLocation(prog,name); if(loc==null) return; setUniform(gl,loc,uni[name],unit); if(uni[name]&&uni[name].$==='$Texture') unit++; });
+          if(indices){ var ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(indices),gl.STATIC_DRAW); gl.drawElements(gl.TRIANGLES,indices.length,gl.UNSIGNED_SHORT,0); }
+          else { gl.drawArrays(gl.TRIANGLES,0,verts.length); }
+        }
+        function drawGL(c){ var gl=glContext(c); if(!gl) return; gl.viewport(0,0,c.width||400,c.height||400); var cc=c.$glClear; gl.clearColor(cc?cc[0]:0, cc?cc[1]:0, cc?cc[2]:0, cc?cc[3]:0); gl.enable(gl.DEPTH_TEST); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT); $listToArray(c.$glEntities).forEach(function(e){ try{ drawEntity(gl,c,e); }catch(err){} }); }
 
         function setAttr(el, a){
           var t=a.$, nm=a._[0], val=a._[1];
@@ -355,6 +484,12 @@ public final class JsRuntime {
           }
           else if (t==='$Prop'){ if (typeof val==='boolean'){ el[nm]=val; if(val) el.setAttribute(nm,''); else el.removeAttribute(nm); } else { el[nm]=val; el.setAttribute(nm,String(val)); } }
           else if (t==='$Style'){ el.style.setProperty(nm, val); }
+          else if (t==='$GL'){
+            // A WebGL canvas: stash the entities/clear-colour and (re)draw after sizing attributes
+            // have been applied. Redrawn on every render, so animated scenes update each frame.
+            el.$glEntities=a._[0]; el.$glClear=a._[1];
+            requestAnimationFrame(function(){ drawGL(el); });
+          }
           else if (t==='$On'){
             var ev=nm, h=a._[1];
             var domEvent = ev==='check'?'change':ev;

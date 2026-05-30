@@ -1,6 +1,7 @@
 package pl.matsuo.elm.site;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -56,12 +57,22 @@ class SiteGeneratorTest {
   }
 
   @Test
-  void playgroundFallsBackToRenderedSnapshot() throws IOException {
+  void playgroundIsBundledAsLiveJs() throws IOException {
     Path out = generate();
     String demo = Files.readString(out.resolve("demos/picture.html"), StandardCharsets.UTF_8);
-    // Multi-module Playground program: server-side-rendered initial frame (SVG), not a JS bundle.
-    assertTrue(demo.contains("<svg"), "picture snapshot should contain rendered SVG");
+    // Multi-module Playground program: bundled live (Playground + example), not a server snapshot.
+    assertTrue(demo.contains("$start"), "picture should be a compiled JS bundle");
+    assertTrue(demo.contains("$Playground$") || demo.contains("Playground"), "Playground is bundled");
     String wrapper = Files.readString(out.resolve("picture.html"), StandardCharsets.UTF_8);
-    assertTrue(wrapper.contains("badge snapshot"), "picture should be labelled snapshot");
+    assertTrue(wrapper.contains("badge live"), "picture should be labelled live");
+  }
+
+  @Test
+  void everyExampleIsLiveCompiledJs() throws IOException {
+    Path out = generate();
+    // After multi-module bundling + the WebGL/effect kernels, all examples run as live JS.
+    String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
+    assertFalse(index.contains("badge snapshot"), "no example should fall back to a snapshot");
+    assertFalse(index.contains("badge failed"), "no example should be source-only");
   }
 }

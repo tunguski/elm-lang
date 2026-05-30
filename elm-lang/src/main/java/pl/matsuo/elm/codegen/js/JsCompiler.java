@@ -38,9 +38,26 @@ public final class JsCompiler {
   private final Deque<Set<String>> localFrames = new ArrayDeque<>();
   private int counter = 0;
 
+  /** Per-module export info for multi-module bundling (null for a single-module compile). */
+  record ModuleInfo(
+      String tag,
+      Set<String> values,
+      Map<String, List<String>> recordAliases,
+      Map<String, Integer> ctorArity) {}
+
+  /** Other modules in the same bundle, by module name. Null when compiling a single module. */
+  private final Map<String, ModuleInfo> project;
+  private final String moduleTag;
+
   private JsCompiler(Module module) {
+    this(module, null);
+  }
+
+  private JsCompiler(Module module, Map<String, ModuleInfo> project) {
     this.module = module;
+    this.project = project;
     this.currentModule = module.name();
+    this.moduleTag = sanitizeTag(module.name());
     this.ctorArity = Prelude.defaultCtorArity();
     this.unqualified = Prelude.defaultUnqualified();
     for (Decl d : module.decls()) {
@@ -54,6 +71,16 @@ public final class JsCompiler {
       }
       if (d instanceof Decl.TypeAlias ta && ta.type() instanceof Type.Record rec) {
         recordAliases.put(ta.name(), rec.fields().stream().map(Type.Record.Field::name).toList());
+      }
+    }
+    // In a bundle, other modules' constructors are referenced by name, so merge their record-alias
+    // field lists and union-constructor arities into this module's tables.
+    if (project != null) {
+      for (var e : project.entrySet()) {
+        if (!e.getKey().equals(currentModule)) {
+          e.getValue().recordAliases().forEach(recordAliases::putIfAbsent);
+          e.getValue().ctorArity().forEach(ctorArity::putIfAbsent);
+        }
       }
     }
     for (Module.Import imp : module.imports()) {
@@ -73,6 +100,15 @@ public final class JsCompiler {
     }
   }
 
+  private static String sanitizeTag(String moduleName) {
+    return moduleName.replaceAll("[^A-Za-z0-9]", "_");
+  }
+
+  /** The global JS identifier for one of this module's top-level definitions. */
+  private String topLevelId(String name) {
+    return project == null ? "_$" + name : "_$" + moduleTag + "$" + name;
+  }
+
   // --- public API --------------------------------------------------------
 
   /** Full program that prints {@code main} (a pure value) via {@code $show}. */
@@ -90,6 +126,106 @@ public final class JsCompiler {
         + "\n"
         + c.declarations()
         + "\nwindow.$start(_$main, document.getElementById('app'));\n";
+  }
+
+  /**
+   * A browser app bundle for a multi-module program: every module's source is compiled into one
+   * bundle (top-level names are module-qualified to avoid collisions) and the entry module's
+   * {@code main} is mounted. The entry is the module defining {@code main} (else the last source).
+   */
+  public static String appBundleProject(String... sources) {
+    List<Module> modules = new ArrayList<>();
+    for (String s : sources) {
+      modules.add(Parser.parseModule(s));
+    }
+    Map<String, ModuleInfo> scope = buildScope(modules);
+    Module entry = entryModule(modules);
+    StringBuilder decls = new StringBuilder();
+    for (Module m : orderModules(modules)) { // imported modules first, so eager values resolve
+      decls.append(new JsCompiler(m, scope).declarations());
+    }
+    String mainId = "_$" + sanitizeTag(entry.name()) + "$main";
+    return JsRuntime.SOURCE
+        + "\n"
+        + JsRuntime.DOM
+        + "\n"
+        + decls
+        + "\nwindow.$start(" + mainId + ", document.getElementById('app'));\n";
+  }
+
+  /** A full HTML page hosting {@link #appBundleProject}. */
+  public static String htmlPageProject(String driver, String... sources) {
+    return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
+        + "<script>\n"
+        + appBundleProject(sources)
+        + "\n"
+        + (driver == null ? "" : driver)
+        + "\n</script></body></html>\n";
+  }
+
+  /** Orders modules so an imported module is emitted before its importer (cycles keep order). */
+  private static List<Module> orderModules(List<Module> modules) {
+    Set<String> names = new HashSet<>();
+    for (Module m : modules) {
+      names.add(m.name());
+    }
+    List<Module> out = new ArrayList<>();
+    Set<String> done = new HashSet<>();
+    boolean progress = true;
+    while (out.size() < modules.size() && progress) {
+      progress = false;
+      for (Module m : modules) {
+        if (done.contains(m.name())) {
+          continue;
+        }
+        boolean ready =
+            m.imports().stream()
+                .allMatch(imp -> !names.contains(imp.module()) || done.contains(imp.module()));
+        if (ready) {
+          out.add(m);
+          done.add(m.name());
+          progress = true;
+        }
+      }
+    }
+    for (Module m : modules) {
+      if (!done.contains(m.name())) {
+        out.add(m);
+      }
+    }
+    return out;
+  }
+
+  private static Module entryModule(List<Module> modules) {
+    for (int i = modules.size() - 1; i >= 0; i--) {
+      Module m = modules.get(i);
+      if (m.decls().stream().anyMatch(d -> d instanceof Decl.Value v && v.name().equals("main"))) {
+        return m;
+      }
+    }
+    return modules.get(modules.size() - 1);
+  }
+
+  private static Map<String, ModuleInfo> buildScope(List<Module> modules) {
+    Map<String, ModuleInfo> scope = new HashMap<>();
+    for (Module m : modules) {
+      Set<String> values = new HashSet<>();
+      Map<String, List<String>> recAliases = new HashMap<>();
+      Map<String, Integer> arity = new HashMap<>();
+      for (Decl d : m.decls()) {
+        if (d instanceof Decl.Value v) {
+          values.add(v.name());
+        } else if (d instanceof Decl.TypeAlias ta && ta.type() instanceof Type.Record rec) {
+          recAliases.put(ta.name(), rec.fields().stream().map(Type.Record.Field::name).toList());
+        } else if (d instanceof Decl.Union u) {
+          for (Decl.Union.Variant variant : u.variants()) {
+            arity.put(variant.name(), variant.args().size());
+          }
+        }
+      }
+      scope.put(m.name(), new ModuleInfo(sanitizeTag(m.name()), values, recAliases, arity));
+    }
+    return scope;
   }
 
   /** A full HTML page hosting {@link #appBundle}; {@code driver} (may be null) runs after mount. */
@@ -129,7 +265,7 @@ public final class JsCompiler {
         if (v.params().isEmpty()) {
           values.put(v.name(), v);
         } else {
-          sb.append("var ").append(jsVar(v.name())).append(" = ")
+          sb.append("var ").append(topLevelId(v.name())).append(" = ")
               .append(compileLambda(v.params(), v.body())).append(";\n");
         }
       }
@@ -157,7 +293,7 @@ public final class JsCompiler {
       emitValue(dep, values, emitted, visiting, sb);
     }
     if (emitted.add(name)) {
-      sb.append("var ").append(jsVar(name)).append(" = ").append(compile(v.body())).append(";\n");
+      sb.append("var ").append(topLevelId(name)).append(" = ").append(compile(v.body())).append(";\n");
     }
   }
 
@@ -256,8 +392,15 @@ public final class JsCompiler {
 
   private String compileVar(Expr.Var v) {
     if (v.module() == null) {
-      if (isLocal(v.name()) || topLevelNames.contains(v.name())) {
+      if (isLocal(v.name())) {
         return jsVar(v.name());
+      }
+      if (topLevelNames.contains(v.name())) {
+        return topLevelId(v.name());
+      }
+      String owner = externalOwner(v.name()); // a value imported from another bundled module
+      if (owner != null) {
+        return externalId(owner, v.name());
       }
       String canonical = unqualified.get(v.name());
       if (canonical != null && builtinKeys.contains(canonical)) {
@@ -274,9 +417,38 @@ public final class JsCompiler {
       return "$g(" + jsString(canonical) + ")";
     }
     if (realModule.equals(currentModule) && topLevelNames.contains(v.name())) {
-      return jsVar(v.name());
+      return topLevelId(v.name());
     }
-    throw new ElmRuntimeError("Unbound qualified name in JS codegen: " + v.module() + "." + v.name());
+    if (project != null
+        && project.containsKey(realModule)
+        && project.get(realModule).values().contains(v.name())) {
+      return externalId(realModule, v.name());
+    }
+    // Not a known interpreter builtin, local or project name: assume it is provided by the JS
+    // runtime kernel (which has effect/Math/WebGL builtins the interpreter list doesn't enumerate)
+    // and resolve it dynamically. $g throws a clear "Unbound: <name>" at runtime if it is missing.
+    return "$g(" + jsString(canonical) + ")";
+  }
+
+  /** The module that exports unqualified {@code name} to this one (via imports), or null. */
+  private String externalOwner(String name) {
+    if (project == null) {
+      return null;
+    }
+    for (Module.Import imp : module.imports()) {
+      ModuleInfo info = project.get(imp.module());
+      if (info == null || !info.values().contains(name)) {
+        continue;
+      }
+      if (imp.exposing().open() || imp.exposing().names().contains(name)) {
+        return imp.module();
+      }
+    }
+    return null;
+  }
+
+  private String externalId(String moduleName, String name) {
+    return "_$" + project.get(moduleName).tag() + "$" + name;
   }
 
   private String compileCtor(String name) {

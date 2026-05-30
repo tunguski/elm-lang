@@ -146,6 +146,10 @@ public final class SiteGenerator {
 
   private String tryLiveJs(String source) {
     try {
+      // Playground games are multi-module: bundle the real Playground source with the example.
+      if (source.contains("import Playground")) {
+        return JsCompiler.htmlPageProject(null, playgroundSource, source);
+      }
       return JsCompiler.htmlPage(source, null);
     } catch (Throwable t) {
       return null;

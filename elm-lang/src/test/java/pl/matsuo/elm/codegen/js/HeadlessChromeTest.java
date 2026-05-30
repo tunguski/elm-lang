@@ -59,14 +59,20 @@ class HeadlessChromeTest {
 
   /** Compiles the source to a page, renders it in headless Chrome and returns the serialized DOM. */
   private String renderInBrowser(String source, String driver) throws Exception {
+    return renderPage(JsCompiler.htmlPage(source, driver));
+  }
+
+  /** Renders the given full HTML page in headless Chrome and returns the serialized DOM. */
+  private String renderPage(String html) throws Exception {
     Path page = Files.createTempFile("elm-page-", ".html");
-    Files.writeString(page, JsCompiler.htmlPage(source, driver), StandardCharsets.UTF_8);
+    Files.writeString(page, html, StandardCharsets.UTF_8);
     Path userData = Files.createTempDirectory("elm-chrome-");
     Process p =
         new ProcessBuilder(
                 CHROME,
                 "--headless=new",
                 "--disable-gpu",
+                "--enable-unsafe-swiftshader",
                 "--no-sandbox",
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -187,5 +193,33 @@ class HeadlessChromeTest {
     // The change-event decoder (Json.Decode.at/list/File.decoder) must build without throwing.
     String dom = renderInBrowser(example("upload"), null);
     assertTrue(dom.contains("type=\"file\""), dom);
+  }
+
+  @Test
+  void playgroundPictureRendersAsMultiModuleBundle() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The real evancz/elm-playground source is bundled with the example into one JS program that
+    // runs live in the browser (previously this could only be a server-rendered snapshot).
+    String playground = example2("/Playground.elm");
+    String dom = renderPage(JsCompiler.htmlPageProject(null, playground, example("picture")));
+    assertTrue(dom.contains("<svg"), dom);
+    assertTrue(dom.contains("<rect") && dom.contains("<circle"), dom);
+  }
+
+  @Test
+  void webglTriangleRendersACanvas() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The WebGL kernel builds meshes/matrices and renders into a real <canvas> (software GL here).
+    String dom = renderInBrowser(example("triangle"), null);
+    assertTrue(dom.contains("<canvas"), dom);
+    assertTrue(dom.contains("width=\"400\""), dom);
+  }
+
+  private static String example2(String path) {
+    try (InputStream in = HeadlessChromeTest.class.getResourceAsStream(path)) {
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 }
