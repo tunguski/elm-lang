@@ -41,6 +41,65 @@ class SourceMapTest {
     assertEquals(2, mappedSrcLine, "0-based source line for `main` (Elm line 3)");
   }
 
+  @Test
+  void everyDeclarationRoundTripsToItsElmSourceLine() {
+    // Each generated `var _$NAME = ...` line must map back, through the source map, to the Elm line
+    // where `NAME` is defined — the round-trip a debugger performs to relocate a stack frame.
+    String src = "first = 1\nsecond = first + 1\nthird = second * 2\nmain = third\n";
+    JsCompiler.Mapped m = JsCompiler.moduleProgramWithSourceMap(src, "Main.elm");
+    @SuppressWarnings("unchecked")
+    Map<String, Object> map = (Map<String, Object>) JsonParse.parse(m.map());
+    List<int[]> decoded = decode((String) map.get("mappings"));
+
+    Map<String, Integer> elmLineOf =
+        Map.of("first", 0, "second", 1, "third", 2, "main", 3); // 0-based Elm lines
+    String[] gen = m.code().split("\n", -1);
+    for (var e : elmLineOf.entrySet()) {
+      int genLine = lineStartingWith(gen, "var _$" + e.getKey() + " = ");
+      assertTrue(genLine >= 0, "generated decl for " + e.getKey());
+      assertEquals(
+          e.getValue().intValue(),
+          resolveFrame(decoded, genLine),
+          "generated line " + genLine + " -> Elm source line for " + e.getKey());
+    }
+  }
+
+  @Test
+  void stackTraceFrameResolvesToElmFileAndLine() {
+    // Simulate a browser stack frame `at out.js:<genLine>:0` and resolve it via the map, as
+    // devtools would, to a human-readable Elm location.
+    String src = "a = 1\nb = 2\nmain = a + b\n";
+    JsCompiler.Mapped m = JsCompiler.moduleProgramWithSourceMap(src, "Main.elm");
+    @SuppressWarnings("unchecked")
+    Map<String, Object> map = (Map<String, Object>) JsonParse.parse(m.map());
+    List<int[]> decoded = decode((String) map.get("mappings"));
+
+    int frameLine = lineStartingWith(m.code().split("\n", -1), "var _$main = ");
+    int srcLine0 = resolveFrame(decoded, frameLine);
+    String source = ((List<?>) map.get("sources")).get(0).toString();
+    assertEquals("Main.elm:3", source + ":" + (srcLine0 + 1));
+  }
+
+  private static int lineStartingWith(String[] lines, String prefix) {
+    int found = -1;
+    for (int i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith(prefix)) {
+        found = i;
+      }
+    }
+    return found;
+  }
+
+  /** Resolves a generated line to its mapped 0-based source line (-1 if unmapped). */
+  private static int resolveFrame(List<int[]> decoded, int genLine) {
+    for (int[] seg : decoded) {
+      if (seg[0] == genLine) {
+        return seg[1];
+      }
+    }
+    return -1;
+  }
+
   /** Decodes a line-level mappings string into {generatedLine, sourceLine0} pairs. */
   private static List<int[]> decode(String mappings) {
     List<int[]> out = new ArrayList<>();
