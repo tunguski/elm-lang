@@ -79,6 +79,17 @@ class SiteGeneratorTest {
   }
 
   @Test
+  void playgroundPageEmbedsBothBackends() throws IOException {
+    Path out = generate();
+    String page = Files.readString(out.resolve("playground.html"), StandardCharsets.UTF_8);
+    assertTrue(page.contains("_$fib"), "embeds the compiled JS function");
+    assertTrue(page.contains("WebAssembly.instantiate"), "embeds the wasm module");
+    assertTrue(page.contains("performance.now"), "times both backends");
+    assertTrue(
+        Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8).contains("playground.html"));
+  }
+
+  @Test
   void everyExampleIsLiveCompiledJs() throws IOException {
     Path out = generate();
     // After multi-module bundling + the WebGL/effect kernels, all examples run as live JS.

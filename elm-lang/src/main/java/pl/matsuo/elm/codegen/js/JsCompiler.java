@@ -137,6 +137,12 @@ public final class JsCompiler {
     return new Mapped(code, map);
   }
 
+  /** Kernel + the module's compiled top-level declarations (no entry point), for embedding/calling. */
+  public static String declarationsScript(String source) {
+    JsCompiler c = new JsCompiler(Parser.parseModule(source));
+    return JsRuntime.SOURCE + "\n" + c.declarations();
+  }
+
   /** A browser app bundle: kernel + DOM/TEA runtime + module + a mount call. */
   public static String appBundle(String source) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));

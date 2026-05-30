@@ -110,6 +110,7 @@ public final class SiteGenerator {
       built.add(buildExample(ex));
     }
     writeBackendsPage();
+    writePlaygroundPage();
     writeIndex(built);
     System.out.println("Site written to " + outDir.toAbsolutePath());
     for (Built b : built) {
@@ -353,6 +354,92 @@ public final class SiteGenerator {
     Files.writeString(outDir.resolve("backends.html"), page, StandardCharsets.UTF_8);
   }
 
+  /** Numeric functions for the interactive playground (single Int argument each). */
+  private static final String PLAYGROUND_SRC =
+      """
+      fib n = if n < 2 then n else fib (n - 1) + fib (n - 2)
+      factorial n = if n < 1 then 1 else n * factorial (n - 1)
+      sumTo n = if n == 0 then 0 else n + sumTo (n - 1)
+      triple n = n * 3
+      """;
+
+  /**
+   * An interactive page: pick a function and an input, and it's computed live in the browser by
+   * BOTH compiled backends — the JavaScript backend and the WebAssembly backend — with timings.
+   * (The compiler is on the JVM, so the functions are pre-compiled; the inputs are interactive.)
+   */
+  private void writePlaygroundPage() throws IOException {
+    String jsScript = JsCompiler.declarationsScript(PLAYGROUND_SRC);
+    String wasmB64 = Base64.getEncoder().encodeToString(WasmCompiler.moduleFromSource(PLAYGROUND_SRC));
+    String page =
+        """
+        <!doctype html>
+        <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Playground — elm-lang</title>
+        %STYLE%
+        </head>
+        <body>
+        <header class="bar">
+          <a class="home" href="index.html">&larr; All examples</a>
+          <span class="badge live">compiled JS + WASM, live</span>
+        </header>
+        <main>
+          <h1>Interactive backend playground</h1>
+          <p>These Elm functions were compiled ahead of time to both JavaScript and WebAssembly.
+          Pick one and an input — it runs in <em>both</em> compiled backends right here, with timings.</p>
+          <pre class="src"><code class="language-elm">%SRC%</code></pre>
+          <div class="controls">
+            <select id="fn"><option>fib</option><option>factorial</option><option>sumTo</option><option>triple</option></select>
+            <input id="n" type="number" value="25" min="0" max="40">
+            <button id="run">Run</button>
+          </div>
+          <table>
+            <tr><th>Backend</th><th>Result</th><th>Time</th></tr>
+            <tr><td>JavaScript</td><td id="jsr">—</td><td id="jst"></td></tr>
+            <tr><td>WebAssembly</td><td id="wr">—</td><td id="wt"></td></tr>
+          </table>
+          <p id="agree"></p>
+        </main>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script>%JS%</script>
+        <script>
+        var wasmExports=null;
+        WebAssembly.instantiate(Uint8Array.from(atob("%WASM%"), function(c){return c.charCodeAt(0);}))
+          .then(function(r){ wasmExports=r.instance.exports; run(); });
+        function run(){
+          var fn=document.getElementById('fn').value, n=parseInt(document.getElementById('n').value,10)||0;
+          var jsFn=window['_$'+fn];
+          var t0=performance.now(); var jr=jsFn(n); var jt=performance.now()-t0;
+          document.getElementById('jsr').textContent=String(jr);
+          document.getElementById('jst').textContent=jt.toFixed(3)+' ms';
+          if(wasmExports){
+            var w0=performance.now(); var wr=wasmExports[fn](BigInt(n)); var wt=performance.now()-w0;
+            document.getElementById('wr').textContent=wr.toString();
+            document.getElementById('wt').textContent=wt.toFixed(3)+' ms';
+            document.getElementById('agree').textContent =
+              (String(jr)===wr.toString()) ? '✓ both backends agree' : '✗ backends disagree';
+          }
+        }
+        document.getElementById('run').addEventListener('click', run);
+        document.getElementById('fn').addEventListener('change', run);
+        document.getElementById('n').addEventListener('input', run);
+        </script>
+        </body>
+        </html>
+        """
+            .replace("%STYLE%", BACKENDS_STYLE)
+            .replace("%SRC%", escape(PLAYGROUND_SRC))
+            .replace("%JS%", jsScript)
+            .replace("%WASM%", wasmB64);
+    Files.writeString(outDir.resolve("playground.html"), page, StandardCharsets.UTF_8);
+  }
+
   /** A small bar chart of warm fib timings per backend (best-effort; empty if it can't run). */
   private static String perfChart() {
     try {
@@ -457,6 +544,7 @@ public final class SiteGenerator {
           GPU-bound programs fall back to a server-side-rendered initial frame.</p>
           <p class="stats">%LIVE% of %TOTAL% examples run as live compiled JavaScript ·
           <a href="backends.html">JS vs WASM &#8594;</a> ·
+          <a href="playground.html">Playground &#8594;</a> ·
           <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></p>
         </header>
         <main>
