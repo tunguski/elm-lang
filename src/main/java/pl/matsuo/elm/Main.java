@@ -57,6 +57,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Script.class,
       Main.Serve.class,
       Main.TestCmd.class,
+      Main.Lint.class,
       Main.Check.class,
       Main.Repl.class,
       Main.Lsp.class,
@@ -380,6 +381,28 @@ public final class Main implements Runnable {
       var result = pl.matsuo.elm.test.TestRunner.run(sources);
       System.out.print(result.report());
       return result.exitCode();
+    }
+  }
+
+  @Command(
+      name = "lint",
+      description = "Lint Elm source: leftover Debug.* calls and unused top-level definitions.")
+  static final class Lint implements Callable<Integer> {
+    @Parameters(arity = "1..*", description = "One or more .elm files.")
+    List<Path> files;
+
+    @Override
+    public Integer call() throws IOException {
+      int total = 0;
+      for (Path p : files) {
+        var findings = pl.matsuo.elm.lint.Linter.lint(Files.readString(p));
+        for (var f : findings) {
+          System.out.println(p + ":" + f);
+        }
+        total += findings.size();
+      }
+      System.out.println(total == 0 ? "No issues." : total + " issue(s)");
+      return total == 0 ? 0 : 1;
     }
   }
 
