@@ -22,24 +22,45 @@ class ServerRunnerTest {
 
   @Test
   void routesAndStatusesAreCorrect() {
-    assertEquals(200, ServerRunner.dispatch(HANDLER, "GET", "/", "").status());
-    assertTrue(ServerRunner.dispatch(HANDLER, "GET", "/", "").body().contains("Hello from Elm"));
+    assertEquals(200, ServerRunner.dispatch(HANDLER, "GET", "/", "", "").status());
+    assertTrue(ServerRunner.dispatch(HANDLER, "GET", "/", "", "").body().contains("Hello from Elm"));
 
-    ServerRunner.Resp ping = ServerRunner.dispatch(HANDLER, "GET", "/ping", "");
+    ServerRunner.Resp ping = ServerRunner.dispatch(HANDLER, "GET", "/ping", "", "");
     assertEquals("pong", ping.body());
     assertEquals("text/plain", ping.contentType());
 
-    ServerRunner.Resp js = ServerRunner.dispatch(HANDLER, "GET", "/json", "");
+    ServerRunner.Resp js = ServerRunner.dispatch(HANDLER, "GET", "/json", "", "");
     assertEquals("application/json", js.contentType());
     assertTrue(js.body().contains("\"lang\":\"elm\""), js.body());
 
-    assertEquals(404, ServerRunner.dispatch(HANDLER, "GET", "/missing", "").status());
+    assertEquals(404, ServerRunner.dispatch(HANDLER, "GET", "/missing", "", "").status());
   }
 
   @Test
   void echoesPostBodyButRejectsGet() {
-    assertEquals("you said: hi there", ServerRunner.dispatch(HANDLER, "POST", "/echo", "hi there").body());
-    assertEquals(405, ServerRunner.dispatch(HANDLER, "GET", "/echo", "").status());
+    assertEquals(
+        "you said: hi there", ServerRunner.dispatch(HANDLER, "POST", "/echo", "", "hi there").body());
+    assertEquals(405, ServerRunner.dispatch(HANDLER, "GET", "/echo", "", "").status());
+  }
+
+  @Test
+  void resolvesPathParameters() {
+    // /users/7 -> the `id` segment is captured and echoed as JSON.
+    ServerRunner.Resp r = ServerRunner.dispatch(HANDLER, "GET", "/users/7", "", "");
+    assertEquals("application/json", r.contentType());
+    assertTrue(r.body().contains("\"id\":\"7\""), r.body());
+  }
+
+  @Test
+  void readsQueryParameters() {
+    assertEquals(
+        "Hello, Ada!", ServerRunner.dispatch(HANDLER, "GET", "/hello", "name=Ada", "").body());
+    // URL-encoded values are decoded.
+    assertEquals(
+        "Hello, Ada Lovelace!",
+        ServerRunner.dispatch(HANDLER, "GET", "/hello", "name=Ada%20Lovelace", "").body());
+    // Missing parameter -> the Nothing branch.
+    assertEquals("Hello!", ServerRunner.dispatch(HANDLER, "GET", "/hello", "", "").body());
   }
 
   @Test

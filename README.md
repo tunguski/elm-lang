@@ -143,18 +143,20 @@ import Server exposing (..)
 
 handle : Request -> Response
 handle req =
-    case req.path of
-        "/ping" -> text "pong"
-        "/echo" -> if req.method == "POST" then text req.body else notFound
+    case segments req of
+        [ "ping" ] -> text "pong"
+        [ "hello" ] -> text ("Hello, " ++ Maybe.withDefault "world" (param "name" req))
+        [ "users", id ] -> json ("{\"id\":\"" ++ id ++ "\"}")   -- path parameter
         _ -> notFound
 ```
 
 The runner (on the JDK's built-in HTTP server, no dependencies) builds a `Request` for each
-incoming request, applies `handle` on the JIT interpreter, and writes the `Response`. Because the
-handler is a pure `Request -> Response`, it is trivial to unit-test — `ServerRunnerTest` checks
-routing/status by direct dispatch and also over a real socket. The
-[`server.elm`](src/main/resources/elm/demos/server.elm) example routes `/`, `/ping`,
-`/json` and `/echo`.
+incoming request — method, path, parsed `query` parameters, body — applies `handle` on the JIT
+interpreter, and writes the `Response`. `segments` gives the path parts for routing (capturing path
+parameters via `case`), `param` looks up a query parameter, and a JSON body is decoded with the
+`Json.Decode` module. Because the handler is a pure `Request -> Response`, it is trivial to
+unit-test — `ServerRunnerTest` checks routing, path/query parameters and status by direct dispatch
+and also over a real socket. See [`server.elm`](src/main/resources/elm/demos/server.elm).
 
 ## Packages & dependencies
 

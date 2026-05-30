@@ -6,6 +6,8 @@ module Server exposing
     , json
     , response
     , notFound
+    , param
+    , segments
     )
 
 {-| A tiny HTTP server API for writing Elm programs that handle requests server-side, run by
@@ -27,10 +29,13 @@ The runner builds a `Request` for each incoming HTTP request, applies `handle`, 
 -}
 
 
-{-| An incoming HTTP request: the method (e.g. "GET"), the path (e.g. "/users"), and the body. -}
+{-| An incoming HTTP request: the method (e.g. "GET"), the path (e.g. "/users/7"), the parsed
+query parameters, and the body. Decode a JSON body with the `Json.Decode` module.
+-}
 type alias Request =
     { method : String
     , path : String
+    , query : List ( String, String )
     , body : String
     }
 
@@ -71,3 +76,24 @@ response status contentType body =
 notFound : Response
 notFound =
     { status = 404, contentType = "text/plain", body = "Not Found" }
+
+
+{-| Looks up a query parameter by name, e.g. `param "name" req` for `?name=…`. -}
+param : String -> Request -> Maybe String
+param name req =
+    req.query
+        |> List.filter (\pair -> Tuple.first pair == name)
+        |> List.head
+        |> Maybe.map Tuple.second
+
+
+{-| The non-empty path segments, for routing: `/users/7` -> `[ "users", "7" ]`. Match with `case`:
+
+    case segments req of
+        [ "users", id ] ->
+            json ("{\"id\":\"" ++ id ++ "\"}")
+
+-}
+segments : Request -> List String
+segments req =
+    List.filter (\s -> s /= "") (String.split "/" req.path)

@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import pl.matsuo.elm.interp.Apply;
 import pl.matsuo.elm.interp.Thunk;
 import pl.matsuo.elm.runtime.ElmRecord;
@@ -24,14 +23,37 @@ public final class ServerRunner {
   public record Resp(int status, String contentType, String body) {}
 
   /** Applies the Elm handler to a request and decodes the response — pure, so it is unit-testable. */
-  public static Resp dispatch(Object handler, String method, String path, String body) {
-    Object request =
-        new ElmRecord(Map.of("method", method, "path", path, "body", body == null ? "" : body));
-    Object result = Thunk.resolve(Apply.apply(handler, request));
+  public static Resp dispatch(
+      Object handler, String method, String path, String rawQuery, String body) {
+    java.util.Map<String, Object> fields = new java.util.LinkedHashMap<>();
+    fields.put("method", method);
+    fields.put("path", path);
+    fields.put("query", parseQuery(rawQuery));
+    fields.put("body", body == null ? "" : body);
+    Object result = Thunk.resolve(Apply.apply(handler, new ElmRecord(fields)));
     if (!(result instanceof ElmRecord r)) {
       throw new IllegalStateException("handle must return a Server.Response record, got: " + result);
     }
     return new Resp(intOf(r.get("status")), str(r.get("contentType")), str(r.get("body")));
+  }
+
+  /** Parses {@code a=1&b=2} into an Elm {@code List (String, String)} of decoded key/value tuples. */
+  private static pl.matsuo.elm.runtime.ElmList parseQuery(String rawQuery) {
+    java.util.List<Object> pairs = new java.util.ArrayList<>();
+    if (rawQuery != null && !rawQuery.isEmpty()) {
+      for (String part : rawQuery.split("&")) {
+        int eq = part.indexOf('=');
+        String k = eq < 0 ? part : part.substring(0, eq);
+        String v = eq < 0 ? "" : part.substring(eq + 1);
+        pairs.add(
+            new pl.matsuo.elm.runtime.ElmTuple(new Object[] {urlDecode(k), urlDecode(v)}));
+      }
+    }
+    return pl.matsuo.elm.runtime.ElmList.fromJava(pairs);
+  }
+
+  private static String urlDecode(String s) {
+    return java.net.URLDecoder.decode(s, StandardCharsets.UTF_8);
   }
 
   /** Binds and starts an HTTP server dispatching to {@code handler}; returns it (already started). */
@@ -44,9 +66,10 @@ public final class ServerRunner {
           try {
             String method = exchange.getRequestMethod();
             String path = exchange.getRequestURI().getPath();
+            String rawQuery = exchange.getRequestURI().getRawQuery();
             String body =
                 new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            resp = dispatch(handler, method, path, body);
+            resp = dispatch(handler, method, path, rawQuery, body);
           } catch (RuntimeException e) {
             resp = new Resp(500, "text/plain", "Server error: " + e.getMessage());
           }

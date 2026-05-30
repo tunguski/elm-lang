@@ -1,8 +1,8 @@
 module Main exposing (handle)
 
-{-| An example HTTP server written in Elm, run by `elm server server.elm`. It routes on the request
-path and method, echoes POST bodies, and returns 404 for unknown routes — a small but complete
-request handler. `handle` is a pure function, so it is trivial to unit-test.
+{-| An example HTTP server written in Elm, run by `elm server server.elm`. It routes on the path
+segments (path parameters), reads a query parameter, echoes POST bodies, and returns 404 otherwise —
+a small but complete request handler. `handle` is a pure function, so it is trivial to unit-test.
 -}
 
 import Server exposing (..)
@@ -10,17 +10,28 @@ import Server exposing (..)
 
 handle : Request -> Response
 handle req =
-    case req.path of
-        "/" ->
-            html "<h1>Hello from Elm</h1><p>Try /ping, /echo (POST) or /json.</p>"
+    case segments req of
+        [] ->
+            html "<h1>Hello from Elm</h1><p>Try /ping, /hello?name=you, /users/7 or /echo (POST).</p>"
 
-        "/ping" ->
+        [ "ping" ] ->
             text "pong"
 
-        "/json" ->
+        [ "json" ] ->
             json "{\"message\":\"hello\",\"lang\":\"elm\"}"
 
-        "/echo" ->
+        [ "hello" ] ->
+            case param "name" req of
+                Just name ->
+                    text ("Hello, " ++ name ++ "!")
+
+                Nothing ->
+                    text "Hello!"
+
+        [ "users", id ] ->
+            json ("{\"id\":\"" ++ id ++ "\"}")
+
+        [ "echo" ] ->
             if req.method == "POST" then
                 text ("you said: " ++ req.body)
 
