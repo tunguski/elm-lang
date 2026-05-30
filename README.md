@@ -21,7 +21,11 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    code compile and run anywhere `WebAssembly` does.
 
 All four share one value model and are **differential-tested** against each other (including
-property-based testing over randomly generated expressions).
+property-based testing over randomly generated expressions, and a non-trivial records/lists/closures
+"task summary" core that must agree on all four). A flagship **TodoMVC** app
+([`demos/todomvc.elm`](src/main/resources/elm/demos/todomvc.elm)) runs end to end on the two
+TEA-capable backends — driven through add/toggle/delete/clear on the interpreter and rendered +
+reacted live by the JavaScript backend in headless Chrome.
 
 ## Build & test
 

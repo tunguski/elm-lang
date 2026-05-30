@@ -57,6 +57,31 @@ class HeadlessChromeTest {
     }
   }
 
+  private static String resource(String path) {
+    try (InputStream in = HeadlessChromeTest.class.getResourceAsStream(path)) {
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Test
+  void todoMvcRendersAndReactsInTheBrowser() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The flagship TodoMVC app compiled by the JS backend, driven via dispatched messages: add two
+    // todos, toggle the first complete, and check the rendered DOM and the live count.
+    String driver =
+        "window.$app.dispatch($data('UpdateField',['milk']));"
+            + "window.$app.dispatch($data('Add',[]));"
+            + "window.$app.dispatch($data('UpdateField',['eggs']));"
+            + "window.$app.dispatch($data('Add',[]));"
+            + "window.$app.dispatch($data('Toggle',[1]));";
+    String dom = renderInBrowser(resource("/elm/demos/todomvc.elm"), driver);
+    assertTrue(dom.contains("milk") && dom.contains("eggs"), dom);
+    assertTrue(dom.contains("1 items left"), dom); // one toggled complete
+    assertTrue(dom.contains("[x]"), dom); // the completed marker
+  }
+
   /** Compiles the source to a page, renders it in headless Chrome and returns the serialized DOM. */
   private String renderInBrowser(String source, String driver) throws Exception {
     return renderPage(JsCompiler.htmlPage(source, driver));
