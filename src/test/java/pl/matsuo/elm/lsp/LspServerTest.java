@@ -97,6 +97,33 @@ class LspServerTest {
   }
 
   @Test
+  void codeActionAddsATypeAnnotation() {
+    // `double` on line 0 has no annotation; the action inserts the inferred signature above it.
+    var actions = server.codeActions("double n = n * 2\nmain = double 21\n", 0);
+    assertTrue(actions.stream().anyMatch(a -> a.title().equals("Add type annotation")), actions.toString());
+    var add =
+        actions.stream().filter(a -> a.title().equals("Add type annotation")).findFirst().get();
+    assertTrue(add.newText().contains("double : number -> number"), add.newText());
+    assertEquals(0, add.line()); // inserted above the definition
+  }
+
+  @Test
+  void codeActionFillsMissingCaseBranches() {
+    String src =
+        "type Color = Red | Green | Blue\n"
+            + "name c =\n"
+            + "    case c of\n"
+            + "        Red -> \"r\"\n";
+    var actions = server.codeActions(src, 2); // cursor on the `case` line
+    var fill =
+        actions.stream().filter(a -> a.title().equals("Add missing case branches")).findFirst();
+    assertTrue(fill.isPresent(), actions.toString());
+    // The two unmatched constructors are offered as stub branches.
+    assertTrue(fill.get().newText().contains("Green ->"), fill.get().newText());
+    assertTrue(fill.get().newText().contains("Blue ->"), fill.get().newText());
+  }
+
+  @Test
   void initializeAdvertisesCapabilitiesOverJsonRpc() throws Exception {
     String body =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";

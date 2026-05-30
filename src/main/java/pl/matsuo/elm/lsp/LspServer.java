@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import pl.matsuo.elm.ast.Decl;
+import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
+import pl.matsuo.elm.ast.Pattern;
 import pl.matsuo.elm.error.ElmSyntaxError;
 import pl.matsuo.elm.error.ElmTypeError;
 import pl.matsuo.elm.json.JsonEncode;
@@ -149,6 +151,170 @@ public final class LspServer {
       // offer at least the builtins even while the document doesn't parse
     }
     return new ArrayList<>(names);
+  }
+
+  /** A single-insertion code action: insert {@code newText} at the 0-based (line, character). */
+  public record CodeAction(String title, int line, int character, String newText) {}
+
+  /**
+   * Code actions available at the 0-based cursor line: "Add type annotation" for a top-level value
+   * that lacks one, and "Add missing branches" for a non-exhaustive {@code case} (constructors of
+   * the scrutinee's union — declared here or a builtin — that no branch matches).
+   */
+  public List<CodeAction> codeActions(String source, int line0) {
+    List<CodeAction> out = new ArrayList<>();
+    Module module;
+    try {
+      module = Parser.parseModule(source);
+    } catch (RuntimeException e) {
+      return out;
+    }
+    addTypeAnnotationAction(source, module, line0, out);
+    fillCaseBranchesAction(module, line0, out);
+    return out;
+  }
+
+  private void addTypeAnnotationAction(String source, Module module, int line0, List<CodeAction> out) {
+    Map<String, String> types;
+    try {
+      types = TypeChecker.checkModule(source);
+    } catch (RuntimeException e) {
+      return;
+    }
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v
+          && v.pos().line() == line0 + 1
+          && v.annotation().isEmpty()
+          && types.containsKey(v.name())) {
+        int col = Math.max(0, v.pos().col() - 1);
+        String indent = " ".repeat(col);
+        out.add(
+            new CodeAction(
+                "Add type annotation",
+                line0,
+                0,
+                indent + v.name() + " : " + types.get(v.name()) + "\n"));
+      }
+    }
+  }
+
+  private void fillCaseBranchesAction(Module module, int line0, List<CodeAction> out) {
+    Map<String, List<String>> unionCtors = new java.util.HashMap<>();
+    Map<String, String> ctorUnion = new java.util.HashMap<>();
+    Map<String, Integer> ctorArity = new java.util.HashMap<>();
+    seedBuiltinUnions(unionCtors, ctorUnion, ctorArity);
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Union u) {
+        List<String> names = new ArrayList<>();
+        for (Decl.Union.Variant variant : u.variants()) {
+          names.add(variant.name());
+          ctorUnion.put(variant.name(), u.name());
+          ctorArity.put(variant.name(), variant.args().size());
+        }
+        unionCtors.put(u.name(), names);
+      }
+    }
+    // Find the case nearest the cursor line.
+    List<Expr.Case> cases = new ArrayList<>();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v) {
+        collectCases(v.body(), cases);
+      }
+    }
+    Expr.Case best = null;
+    int bestDist = Integer.MAX_VALUE;
+    for (Expr.Case c : cases) {
+      int dist = Math.abs(c.pos().line() - 1 - line0);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = c;
+      }
+    }
+    if (best == null) {
+      return;
+    }
+    java.util.Set<String> matched = new java.util.HashSet<>();
+    String union = null;
+    for (Expr.Case.Branch br : best.branches()) {
+      if (br.pattern() instanceof Pattern.Ctor ct) {
+        matched.add(ct.name());
+        if (ctorUnion.containsKey(ct.name())) {
+          union = ctorUnion.get(ct.name());
+        }
+      }
+    }
+    if (union == null) {
+      return;
+    }
+    StringBuilder branches = new StringBuilder();
+    for (String ctor : unionCtors.get(union)) {
+      if (!matched.contains(ctor)) {
+        branches.append("        ").append(ctor);
+        for (int i = 0; i < ctorArity.getOrDefault(ctor, 0); i++) {
+          branches.append(" _");
+        }
+        branches.append(" ->\n            Debug.todo \"branch\"\n\n");
+      }
+    }
+    if (branches.length() > 0) {
+      out.add(new CodeAction("Add missing case branches", line0 + 1, 0, branches.toString()));
+    }
+  }
+
+  private static void seedBuiltinUnions(
+      Map<String, List<String>> unionCtors,
+      Map<String, String> ctorUnion,
+      Map<String, Integer> ctorArity) {
+    record U(String name, List<String> ctors, List<Integer> arities) {}
+    for (U u :
+        List.of(
+            new U("Bool", List.of("True", "False"), List.of(0, 0)),
+            new U("Maybe", List.of("Just", "Nothing"), List.of(1, 0)),
+            new U("Result", List.of("Err", "Ok"), List.of(1, 1)),
+            new U("Order", List.of("LT", "EQ", "GT"), List.of(0, 0, 0)))) {
+      unionCtors.put(u.name(), u.ctors());
+      for (int i = 0; i < u.ctors().size(); i++) {
+        ctorUnion.put(u.ctors().get(i), u.name());
+        ctorArity.put(u.ctors().get(i), u.arities().get(i));
+      }
+    }
+  }
+
+  private static void collectCases(Expr e, List<Expr.Case> out) {
+    switch (e) {
+      case Expr.Case c -> {
+        out.add(c);
+        collectCases(c.scrutinee(), out);
+        c.branches().forEach(b -> collectCases(b.body(), out));
+      }
+      case Expr.App a -> {
+        collectCases(a.fn(), out);
+        collectCases(a.arg(), out);
+      }
+      case Expr.BinOp b -> {
+        collectCases(b.left(), out);
+        collectCases(b.right(), out);
+      }
+      case Expr.If i -> {
+        collectCases(i.cond(), out);
+        collectCases(i.thenBranch(), out);
+        collectCases(i.elseBranch(), out);
+      }
+      case Expr.Lambda l -> collectCases(l.body(), out);
+      case Expr.Let let -> {
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            collectCases(v.body(), out);
+          }
+        }
+        collectCases(let.body(), out);
+      }
+      case Expr.ListLit l -> l.items().forEach(x -> collectCases(x, out));
+      case Expr.Tuple t -> t.items().forEach(x -> collectCases(x, out));
+      case Expr.Negate n -> collectCases(n.operand(), out);
+      case Expr.RecordAccess a -> collectCases(a.target(), out);
+      default -> {}
+    }
   }
 
   /** A top-level symbol for the outline: its name, LSP {@code SymbolKind}, and 0-based location. */
@@ -385,6 +551,29 @@ public final class LspServer {
         workspaceEdit.put("changes", changes);
         reply(out, id, workspaceEdit);
       }
+      case "textDocument/codeAction" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> range = (Map<String, Object>) params.get("range");
+        Map<String, Object> start = (Map<String, Object>) range.get("start");
+        String uri = (String) td.get("uri");
+        int line = ((Number) start.get("line")).intValue();
+        List<Object> actions = new ArrayList<>();
+        for (CodeAction a : codeActions(docs.getOrDefault(uri, ""), line)) {
+          Map<String, Object> edit = new LinkedHashMap<>();
+          edit.put("range", range(a.line(), a.character(), a.character()));
+          edit.put("newText", a.newText());
+          Map<String, Object> changes = new LinkedHashMap<>();
+          changes.put(uri, List.of(edit));
+          Map<String, Object> workspaceEdit = new LinkedHashMap<>();
+          workspaceEdit.put("changes", changes);
+          Map<String, Object> action = new LinkedHashMap<>();
+          action.put("title", a.title());
+          action.put("kind", "quickfix");
+          action.put("edit", workspaceEdit);
+          actions.add(action);
+        }
+        reply(out, id, actions);
+      }
       case "shutdown" -> reply(out, id, JsonEncode.NULL);
       default -> {
         if (id != null) {
@@ -403,6 +592,7 @@ public final class LspServer {
     caps.put("referencesProvider", true);
     caps.put("documentSymbolProvider", true);
     caps.put("renameProvider", true);
+    caps.put("codeActionProvider", true);
 
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("capabilities", caps);
