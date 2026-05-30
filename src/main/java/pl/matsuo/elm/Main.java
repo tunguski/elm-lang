@@ -59,6 +59,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.TestCmd.class,
       Main.Lint.class,
       Main.Docs.class,
+      Main.CoverageCmd.class,
       Main.Check.class,
       Main.Repl.class,
       Main.Lsp.class,
@@ -382,6 +383,25 @@ public final class Main implements Runnable {
       var result = pl.matsuo.elm.test.TestRunner.run(sources);
       System.out.print(result.report());
       return result.exitCode();
+    }
+  }
+
+  @Command(
+      name = "coverage",
+      description = "Run a definition and report which top-level definitions were executed.")
+  static final class CoverageCmd implements Callable<Integer> {
+    @Parameters(index = "0", description = "The .elm file.")
+    Path file;
+
+    @Option(names = "--value", description = "Top-level name to run (default: main).")
+    String value = "main";
+
+    @Override
+    public Integer call() throws IOException {
+      Interpreter interp = Interpreter.loadWithCoverage(Files.readString(file));
+      render(interp.value(value)); // force and render, exercising the program
+      System.out.print(interp.coverageReport());
+      return 0;
     }
   }
 

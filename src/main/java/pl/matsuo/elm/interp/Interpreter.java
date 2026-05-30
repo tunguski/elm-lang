@@ -18,8 +18,16 @@ public final class Interpreter {
   private final RuntimeEnv env;
   private final Compiler compiler;
   private final Scope rootScope = Scope.root();
+  private final boolean coverage;
+  private final java.util.Set<String> coverable = new java.util.LinkedHashSet<>();
+  private final java.util.Set<String> covered = new java.util.LinkedHashSet<>();
 
   private Interpreter(Module module) {
+    this(module, false);
+  }
+
+  private Interpreter(Module module, boolean coverage) {
+    this.coverage = coverage;
     Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
     Map<String, java.util.List<String>> recordCtors = new HashMap<>();
     for (Decl d : module.decls()) {
@@ -76,6 +84,34 @@ public final class Interpreter {
     return new Interpreter(Parser.parseModule(source));
   }
 
+  /** Loads with execution coverage tracking of top-level definitions (see {@link #coverageReport}). */
+  public static Interpreter loadWithCoverage(String source) {
+    return new Interpreter(Parser.parseModule(source), true);
+  }
+
+  /** Top-level definitions defined in the module (the coverable set). */
+  public java.util.Set<String> coverableNames() {
+    return coverable;
+  }
+
+  /** Top-level definitions actually executed so far (a subset of {@link #coverableNames}). */
+  public java.util.Set<String> coveredNames() {
+    return covered;
+  }
+
+  /** A one-line-per-definition coverage report ("✓"/"✗"), with a percentage summary. */
+  public String coverageReport() {
+    StringBuilder sb = new StringBuilder();
+    for (String name : coverable) {
+      sb.append(covered.contains(name) ? "✓ " : "✗ ").append(name).append("\n");
+    }
+    int total = coverable.size();
+    int hit = covered.size();
+    int pct = total == 0 ? 100 : 100 * hit / total;
+    sb.append("\n").append(hit).append("/").append(total).append(" definitions (").append(pct).append("%)\n");
+    return sb.toString();
+  }
+
   /** Builds an interpreter with only the prelude, for evaluating standalone expressions. */
   public static Interpreter empty() {
     return new Interpreter(new Module("Main", Module.Exposing.ALL, java.util.List.of(),
@@ -91,16 +127,27 @@ public final class Interpreter {
     // Pass 1: bind all functions (definitions with parameters) as closures.
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && !v.params().isEmpty()) {
+        coverable.add(v.name());
         Object closure = compiler.compileLambda(v.params(), v.body(), v.name()).execute(rootScope);
-        env.defineTopLevel(v.name(), closure);
+        env.defineTopLevel(v.name(), recordingValue(v.name(), closure));
       }
     }
     // Pass 2: bind values (definitions without parameters) as lazy thunks, so they may
     // reference one another regardless of source order.
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && v.params().isEmpty()) {
+        coverable.add(v.name());
         ElmNode node = compiler.compile(v.body());
-        env.defineTopLevel(v.name(), new Thunk(() -> node.execute(rootScope)));
+        String name = v.name();
+        env.defineTopLevel(
+            name,
+            new Thunk(
+                () -> {
+                  if (coverage) {
+                    covered.add(name);
+                  }
+                  return node.execute(rootScope);
+                }));
       }
     }
     // Ports: an outgoing port (`a -> Cmd msg`) is a function producing a Cmd that carries the sent
@@ -134,6 +181,30 @@ public final class Interpreter {
       t = a.to();
     }
     return t instanceof pl.matsuo.elm.ast.Type.Con c && c.name().equals("Sub");
+  }
+
+  /** When coverage is on, wraps a top-level function so its invocation is recorded as covered. */
+  private Object recordingValue(String name, Object value) {
+    if (!coverage || !(value instanceof pl.matsuo.elm.runtime.ElmCallable c)) {
+      return value;
+    }
+    return new pl.matsuo.elm.runtime.ElmCallable() {
+      @Override
+      public int arity() {
+        return c.arity();
+      }
+
+      @Override
+      public String name() {
+        return c.name();
+      }
+
+      @Override
+      public Object invoke(Object[] args) {
+        covered.add(name);
+        return c.invoke(args);
+      }
+    };
   }
 
   public RuntimeEnv env() {
