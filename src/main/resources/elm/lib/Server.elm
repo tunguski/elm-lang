@@ -4,10 +4,14 @@ module Server exposing
     , text
     , html
     , json
+    , css
+    , javascript
     , response
     , notFound
     , param
     , segments
+    , Program
+    , program
     )
 
 {-| A tiny HTTP server API for writing Elm programs that handle requests server-side, run by
@@ -66,6 +70,18 @@ json body =
     { status = 200, contentType = "application/json", body = body }
 
 
+{-| A 200 text/css response. -}
+css : String -> Response
+css body =
+    { status = 200, contentType = "text/css", body = body }
+
+
+{-| A 200 application/javascript response. -}
+javascript : String -> Response
+javascript body =
+    { status = 200, contentType = "application/javascript", body = body }
+
+
 {-| A response with an explicit status, Content-Type and body. -}
 response : Int -> String -> String -> Response
 response status contentType body =
@@ -97,3 +113,34 @@ param name req =
 segments : Request -> List String
 segments req =
     List.filter (\s -> s /= "") (String.split "/" req.path)
+
+
+
+-- STATEFUL SERVERS
+
+
+{-| A stateful server program holding an in-memory `model`:
+
+  - `init` — the initial model;
+  - `onRequest` — handles a request against the current model, returning an updated model and a
+    response;
+  - `onTick` — a background step run every `tickMillis` milliseconds (e.g. to advance a simulation
+    or expire data), returning the next model;
+  - `tickMillis` — the tick interval (use 0 to disable ticking).
+
+Expose it as `main : Server.Program Model` and the runner holds the model for you. (A simpler
+stateless server instead exposes `handle : Request -> Response`.)
+
+-}
+type alias Program model =
+    { init : model
+    , onRequest : Request -> model -> ( model, Response )
+    , onTick : model -> model
+    , tickMillis : Int
+    }
+
+
+{-| Builds a stateful server program (currently the identity — provided for readable `main =`). -}
+program : Program model -> Program model
+program config =
+    config

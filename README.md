@@ -161,6 +161,14 @@ parameters via `case`), `param` looks up a query parameter, and a JSON body is d
 unit-test — `ServerRunnerTest` checks routing, path/query parameters and status by direct dispatch
 and also over a real socket. See [`simple-server-showcase.elm`](src/main/resources/elm/demos/simple-server-showcase.elm).
 
+For **stateful** servers, expose `main : Server.Program model` instead — an in-memory `model`, an
+`onRequest : Request -> model -> ( model, Response )`, and a background `onTick : model -> model`
+run every `tickMillis`. The runner holds the model (guarded across the request and tick threads).
+The [`live-dashboard.elm`](src/main/resources/elm/demos/live-dashboard.elm) example is a full-stack
+demo: an in-memory time series advanced by a **server-side seeded random walk** on every tick, with
+the Elm server also serving its own client — an HTML page, a stylesheet, and JavaScript that polls
+`/api/series` once a second and draws the series as an SVG graph (`elm server live-dashboard`).
+
 ## Packages & dependencies
 
 The standard library is **built in**: every prelude module (`elm/core`, `elm/html`, `elm/browser`,

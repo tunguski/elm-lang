@@ -296,8 +296,20 @@ public final class Main implements Runnable {
     public Integer call() throws IOException, InterruptedException {
       String userSource = readElmSource(file);
       String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Server.elm");
-      Object handler = pl.matsuo.elm.interp.Project.load(userSource, lib).entryValue("handle");
-      var server = pl.matsuo.elm.server.ServerRunner.start(handler, port);
+      var project = pl.matsuo.elm.interp.Project.load(userSource, lib);
+      // A stateful app exposes `main : Server.Program model`; a stateless one exposes `handle`.
+      Object main = null;
+      try {
+        main = project.entryValue("main");
+      } catch (RuntimeException ignored) {
+        // no `main` -> stateless `handle`
+      }
+      com.sun.net.httpserver.HttpServer server;
+      if (main instanceof pl.matsuo.elm.runtime.ElmRecord r && r.has("onRequest")) {
+        server = pl.matsuo.elm.server.ServerRunner.startStateful(r, port);
+      } else {
+        server = pl.matsuo.elm.server.ServerRunner.start(project.entryValue("handle"), port);
+      }
       System.out.println("Serving " + file + " on http://localhost:" + port + " (Ctrl-C to stop)");
       Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));
       Thread.currentThread().join(); // block until the process is interrupted
