@@ -317,8 +317,11 @@ publishes it as an artifact.
   **row-polymorphic** — fields are looked up by name at runtime), first-class functions, **closures
   and currying** (a uniform closure value + a generic `$apply` runtime, with lambdas lambda-lifted),
   and a small **standard library** (`List.map`/`foldl`/`foldr`/`filter`/`range`/`reverse`/…,
-  `Maybe`/`Result` helpers) written in the same subset and prepended when used. The main remaining
-  gap is the rest of the larger standard library (most `String`/`Dict`/`Array` operations).
+  `Maybe`/`Result` helpers) written in the same subset and prepended when used. The growable heap has
+  a sound **arena reclamation** — a scalar-returning call that consumes a heap argument frees what it
+  allocated (purity makes this safe), keeping "reduce a structure, in a loop" programs bounded; a
+  general GC (WasmGC) is future work. The other gap is the rest of the larger standard library (most
+  `String`/`Dict`/`Array` operations).
 - **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
   the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,
   keyboard, turtle, mario) type-checks end to end — exercising module-level let-generalization (SCC

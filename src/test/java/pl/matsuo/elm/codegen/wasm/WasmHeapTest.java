@@ -1,6 +1,7 @@
 package pl.matsuo.elm.codegen.wasm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -50,6 +51,52 @@ class WasmHeapTest {
     assumeTrue(NODE, "node not available");
     String expected = Show.plain(Interpreter.load(source).value("main"));
     assertEquals(expected, runMain(source), source);
+  }
+
+  @Test
+  void scalarReducingLoopKeepsMemoryBounded() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // Each iteration builds a 1000-element list and reduces it to an Int; arena reclamation frees
+    // that list after every `List.sum (List.range …)` call, so memory stays tiny across 2000
+    // iterations instead of accumulating ~2,000,000 cons cells (~32 MB).
+    String source =
+        """
+        inner n = List.sum (List.range 1 n)
+        loop k = if k == 0 then 0 else inner 1000 + loop (k - 1)
+        main = loop 2000
+        """;
+    long[] r = runMainAndPages(source);
+    assertEquals(1_001_000_000L, r[0], "2000 * sum(1..1000)");
+    assertTrue(r[1] < 32, "memory should stay bounded (was " + r[1] + " pages of 64 KiB)");
+  }
+
+  /** Runs `main` (an Int result), returning {result, finalMemoryPages}. */
+  private long[] runMainAndPages(String source) throws Exception {
+    Path wasm = Files.createTempFile("elm-mem-", ".wasm");
+    Files.write(wasm, WasmCompiler.moduleFromSource(source));
+    Path js = Files.createTempFile("elm-runmem-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs');"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "const ex=r.instance.exports; const v=ex.main();"
+            + "process.stdout.write(v.toString()+','+(ex.memory.buffer.byteLength/65536));"
+            + "}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p = new ProcessBuilder("node", js.toString(), wasm.toString()).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    if (!p.waitFor(30, TimeUnit.SECONDS)) {
+      p.destroyForcibly();
+      throw new IllegalStateException("node timed out");
+    }
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    String[] parts = out.trim().split(",");
+    return new long[] {Long.parseLong(parts[0]), Long.parseLong(parts[1])};
   }
 
   @Test

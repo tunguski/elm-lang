@@ -65,9 +65,15 @@ import pl.matsuo.elm.parser.Parser;
  * foldr}/{@code filter}/{@code length}/{@code sum}/{@code range}/{@code reverse}, {@code
  * Maybe}/{@code Result} helpers — is written in this same subset and prepended when a module uses it
  * ({@code Maybe}/{@code Result} constructors are built in). Booleans are first-class {@code i64}
- * values (0/1), so they can be stored in lists, returned and compared like any other value. The
- * remaining gap is the rest of the larger standard library (most {@code String}/{@code Dict}/{@code
- * Array} operations).
+ * values (0/1), so they can be stored in lists, returned and compared like any other value.
+ *
+ * <p>Memory is a growable bump allocator with a sound <b>arena reclamation</b> (see {@code
+ * emitApp}): a call whose result is scalar and which consumes a heap argument has the heap pointer
+ * reset afterwards, freeing everything it allocated — correct because the language is pure and a
+ * scalar result holds no heap pointer. This keeps "reduce a structure, in a loop" programs bounded.
+ * A general moving/mark-sweep collector would need object headers and root scanning (or WasmGC) and
+ * remains future work; the other gap is the rest of the larger standard library (most {@code
+ * String}/{@code Dict}/{@code Array} operations).
  */
 public final class WasmCompiler {
 
@@ -568,7 +574,7 @@ public final class WasmCompiler {
             throw unsupported("variable " + (v.module() == null ? "" : v.module() + ".") + v.name());
           }
         }
-        case Expr.App app -> intApp(app);
+        case Expr.App app -> emitApp(app);
         case Expr.ListLit l -> emitList(l.items(), 0);
         case Expr.Tuple t -> emitTuple(t.items());
         // Booleans are first-class i64 values (0/1), so they can be stored, returned and compared.
@@ -1015,6 +1021,62 @@ public final class WasmCompiler {
       intExpr(b.left());
       intExpr(b.right());
       code.write(op);
+    }
+
+    /**
+     * Compiles an application, with a sound <b>arena reclamation</b>: if the call's result type is a
+     * scalar ({@code Int}/{@code Float}/{@code Bool}) and it consumes a heap argument, the heap
+     * pointer is saved before the call and restored after. Everything the call allocated is then
+     * reclaimed — provably dead, since a scalar result holds no heap pointer and the language is pure
+     * (no mutation makes those allocations reachable). This keeps memory bounded for the common
+     * "reduce a structure, in a loop" shape (e.g. repeatedly {@code List.sum (List.range …)}).
+     */
+    private void emitApp(Expr.App app) {
+      if (!arenaResettable(app)) {
+        intApp(app);
+        return;
+      }
+      int saved = freshLocal();
+      code.write(0x23);
+      leb(code, 0); // global.get $hp
+      code.write(0xAD); // i64.extend_i32_u
+      code.write(0x21);
+      leb(code, saved); // saved = $hp
+      intApp(app); // leaves the (scalar) result on the stack
+      code.write(0x20);
+      leb(code, saved);
+      code.write(0xA7); // i32.wrap_i64 -> the saved address
+      code.write(0x24);
+      leb(code, 0); // global.set $hp (reclaim everything the call allocated)
+    }
+
+    /** Whether {@code app}'s result is scalar and it consumes a heap argument (so resetting the heap
+     *  pointer after the call is both sound and worthwhile). */
+    private boolean arenaResettable(Expr.App app) {
+      if (!isScalarType(nodeTypes.get(app))) {
+        return false;
+      }
+      Expr head = app;
+      boolean anyHeapArg = false;
+      while (head instanceof Expr.App a) {
+        if (isHeapType(nodeTypes.get(a.arg()))) {
+          anyHeapArg = true;
+        }
+        head = a.fn();
+      }
+      return anyHeapArg;
+    }
+
+    /** A scalar (non-heap) result/value type: Int, Float or Bool. */
+    private static boolean isScalarType(pl.matsuo.elm.types.Ty t) {
+      return t instanceof pl.matsuo.elm.types.Ty.Con c
+          && c.args().isEmpty()
+          && (c.name().equals("Int") || c.name().equals("Float") || c.name().equals("Bool"));
+    }
+
+    /** A definitely heap-allocated type (a known compound type), used to gate arena reclamation. */
+    private static boolean isHeapType(pl.matsuo.elm.types.Ty t) {
+      return t != null && !(t instanceof pl.matsuo.elm.types.Ty.Var) && !isScalarType(t);
     }
 
     /** Handles the builtin applications {@code modBy m x}, {@code abs x} and {@code (\x->..) arg}. */
