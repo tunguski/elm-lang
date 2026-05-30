@@ -560,9 +560,17 @@ public final class Main implements Runnable {
     @Parameters(index = "1", arity = "0..1", description = "check (default) or run.")
     String mode = "check";
 
+    @Option(
+        names = "--registry",
+        description = "Package cache for dependency sources (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
     @Override
     public Integer call() {
-      List<String> sources = pl.matsuo.elm.project.ProjectLoader.loadSources(path);
+      List<String> sources =
+          registry != null
+              ? pl.matsuo.elm.project.ProjectLoader.loadSources(path, registry)
+              : pl.matsuo.elm.project.ProjectLoader.loadSources(path);
       if (mode.equals("run")) {
         System.out.println(render(pl.matsuo.elm.interp.Project.load(sources.toArray(new String[0])).main()));
       } else {
@@ -638,13 +646,14 @@ public final class Main implements Runnable {
       description = "Add a package to elm.json and re-solve dependencies (against a local registry).",
       footerHeading = "%nExample:%n",
       footer = {
-        "  elm install elm/regex                 # add the newest compatible version",
-        "  elm install elm/regex --registry ./vendor",
+        "  elm install acme/strings                          # from the local cache",
+        "  elm install acme/strings --from http://host/reg   # solve + download into the cache",
         "",
-        "The registry is an on-disk cache laid out as <root>/<author>/<name>/<version>/elm.json.",
-        "Defaults to $ELM_REGISTRY, else ~/.elm/registry. A package elm.json declares its own",
-        "dependencies as constraint strings (\"1.0.0 <= v < 2.0.0\"); the solver pins a compatible",
-        "version of every package in the transitive closure.",
+        "The cache is laid out as <root>/<author>/<name>/<version>/{elm.json, src/…} and defaults",
+        "to $ELM_REGISTRY, else ~/.elm/registry. The solver pins a compatible version of every",
+        "package in the transitive closure (constraints like \"1.0.0 <= v < 2.0.0\"). With --from it",
+        "solves against, and downloads sources from, a remote registry; `project`/`check`/`run`",
+        "then compile and run the installed package's modules alongside your own.",
       })
   static final class Install implements Callable<Integer> {
     @Parameters(index = "0", description = "Package to install, as author/name (e.g. elm/regex).")
@@ -660,15 +669,37 @@ public final class Main implements Runnable {
         description = "Project directory containing elm.json (default: current directory).")
     Path dir = Path.of(".");
 
+    @Option(
+        names = "--from",
+        description =
+            "Remote registry base URL to solve against and download sources from into the cache.")
+    String from;
+
     @Override
     public Integer call() throws IOException {
       Path registryRoot = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
-      var reg = new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
+      // Solve against the remote registry when --from is given, else the local cache.
+      pl.matsuo.elm.pkg.Registry reg =
+          from != null
+              ? new pl.matsuo.elm.pkg.HttpRegistry(from)
+              : new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
       try {
         var result = pl.matsuo.elm.pkg.Installer.install(dir, pkg, reg);
         if (result.alreadyPresent()) {
           System.out.println(pkg + " is already a direct dependency (" + result.installed() + ").");
           return 0;
+        }
+        if (from != null) {
+          // Download every resolved (non-bundled) package's sources into the cache so the project
+          // loader and compiler can use them.
+          var fetcher = new pl.matsuo.elm.pkg.PackageFetcher(from);
+          var all = new java.util.TreeMap<>(result.indirect());
+          all.putAll(result.direct());
+          for (var dep : all.entrySet()) {
+            if (!pl.matsuo.elm.project.ProjectLoader.BUNDLED.contains(dep.getKey())) {
+              fetcher.fetch(dep.getKey(), dep.getValue(), registryRoot);
+            }
+          }
         }
         System.out.println("Installed " + pkg + " " + result.installed() + ".");
         System.out.println(
@@ -677,6 +708,10 @@ public final class Main implements Runnable {
         return 0;
       } catch (pl.matsuo.elm.pkg.Solver.Unsolvable | IllegalStateException e) {
         System.err.println("Install failed: " + e.getMessage());
+        return 1;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        System.err.println("Install interrupted while downloading.");
         return 1;
       }
     }

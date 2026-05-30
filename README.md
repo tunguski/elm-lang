@@ -94,7 +94,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
 | `init [dir]` | Scaffold `elm.json` + `src/`. |
-| `install <author/name> [--registry DIR]` | Add a package to `elm.json` and re-solve dependencies against a local registry. |
+| `install <author/name> [--registry DIR] [--from URL]` | Add a package to `elm.json`, re-solve dependencies, and (with `--from`) download its sources into the cache so it compiles and runs. |
 | `bench [fibN]` | Benchmark the four backends on a recursive workload. |
 | `site <examplesDir> <Playground.elm> <outDir> [docsDir]` | Generate the static example gallery (optionally rendering Markdown docs). |
 
@@ -143,7 +143,7 @@ falls through to evaluation).
 | The Elm Architecture (`Browser.sandbox`/`element`/`document`), virtual-DOM | ✅ | with a time-travel debugger |
 | Effects: `Random`, `Time`, `Task`, `Http`, `File`, `Browser.Events`/`Dom` | ✅ | |
 | WebGL (`Math.Vector*`/`Matrix4`, shaders, textures) | ✅ | renders in a real `<canvas>` |
-| Third-party packages from the registry | ⚠️ | `elm install` solves & pins deps from a local registry; sources not yet compiled — see Known limitations |
+| Third-party packages from the registry | ⚠️ | `elm install` solves, downloads (`--from`) and the interpreter/type-checker compile & run them; public registry + JS/WASM loading pending — see Known limitations |
 | GLSL custom binary operators from packages (`\|.`, `</>`) | ⚠️ | lex & parse; run only if you define them |
 
 **Prelude**: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`, `Set`,
@@ -207,23 +207,26 @@ directory before falling through to the Elm handler (path traversal is refused).
 
 The standard library is **built in**: every prelude module (`elm/core`, `elm/html`, `elm/browser`,
 `elm/json`, `elm/time`, `elm/url`, the WebGL/playground builtins the examples use …) is provided
-directly by the interpreter, type checker and JS kernel — there is **no package downloading and no
-`~/.elm` package cache**. `elm init` writes a conventional `elm.json` (an `application` with the
-usual direct/indirect dependencies) so the file is recognisable to real Elm tooling, but those
-version constraints are **not fetched or resolved**: they're a manifest, and `project`/`check`/
-`make` simply read its `source-directories` to find your modules. Anything outside the bundled set
-(a third-party package such as `elm/parser` or `elm-community/*`) is therefore **not available** to
-the compiler yet; its custom infix operators lex and parse but won't run.
+directly by the interpreter, type checker and JS kernel. On top of that there is a **working
+package manager** for everything outside the bundled set:
 
-There **is** a working dependency layer, though. `elm install <author/name>` adds a package to your
-`elm.json` and re-solves the dependency set: a real semantic-version model, Elm-style `LOWER <= v <
-UPPER` constraints, and a **backtracking constraint solver** that pins one compatible version of
-every package in the transitive closure (preferring the highest allowed, backing off on conflict).
-It resolves against an **on-disk registry** — a cache laid out as
-`<root>/<author>/<name>/<version>/elm.json` (default `$ELM_REGISTRY` or `~/.elm/registry`) — so it
-works offline and is the same shape a mirrored remote registry would take. What remains is the
-network layer (fetching/mirroring the public registry) and feeding installed package *sources* into
-the compiler and type checker; the solver and manifest handling are done.
+- **Solving.** `elm install <author/name>` adds a package to your `elm.json` and re-solves the
+  dependency set with a real semantic-version model, Elm-style `LOWER <= v < UPPER` constraints, and
+  a **backtracking constraint solver** that pins one compatible version of every package in the
+  transitive closure (highest allowed, backing off on conflict).
+- **Cache.** Packages live in an on-disk cache laid out as
+  `<root>/<author>/<name>/<version>/{elm.json, src/…}` (default `$ELM_REGISTRY` or `~/.elm/registry`).
+- **Download.** With `--from <url>` the solver runs against a remote registry (a tiny static-file
+  protocol — `versions.txt`, per-version `elm.json`, `files.txt`) and the resolved packages' sources
+  are downloaded into the cache.
+- **Compilation.** `project`/`check`/`run` load the resolved dependencies' modules from the cache
+  alongside your local `source-directories`, so an installed package's modules are handed to the
+  **same type checker and interpreter** as your own code — `import`s of it resolve, type-check and
+  run. (Built-in packages are skipped to avoid double-defining the standard library.)
+
+What remains is integrating the **public** `package.elm-lang.org` registry (its GitHub-zipball
+download protocol differs from the simple static-file one above) and the JS/WASM backends loading
+package sources the way the interpreter and type checker now do.
 
 ## Performance (JIT benchmark)
 
@@ -291,11 +294,12 @@ publishes it as an artifact.
 
 ## Known limitations
 
-- **Package manager — partial**: `elm install` works with a real version-constraint solver against
-  an on-disk registry, but there is no network layer (the public registry isn't fetched/mirrored)
-  and installed package *sources* aren't yet fed into the compiler/type checker. So beyond the
-  bundled standard library, third-party package *definitions* still don't execute (their custom
-  infix operators lex and parse). See [Packages & dependencies](#packages--dependencies).
+- **Package manager — public registry**: `elm install` solves dependencies, downloads sources from
+  a remote registry (`--from`), and the interpreter + type checker compile and run installed
+  packages' modules. The remaining gaps are the **public `package.elm-lang.org`** protocol (it
+  serves GitHub zipballs, not the simple static-file layout used here) and the **JS/WASM backends**
+  loading package sources the way the interpreter/checker now do. See
+  [Packages & dependencies](#packages--dependencies).
 - **WASM backend** scope: numbers/booleans, a growable linear-memory heap for cons-lists, tuples,
   tagged custom types, **strings** and **records** (the last two type-directed — record access needs
   a known closed type, and `++`/`==` need operands statically typed `String`), plus first-class
