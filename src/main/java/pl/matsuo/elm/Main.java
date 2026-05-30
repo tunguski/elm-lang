@@ -58,6 +58,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Serve.class,
       Main.TestCmd.class,
       Main.Lint.class,
+      Main.Docs.class,
       Main.Check.class,
       Main.Repl.class,
       Main.Lsp.class,
@@ -381,6 +382,18 @@ public final class Main implements Runnable {
       var result = pl.matsuo.elm.test.TestRunner.run(sources);
       System.out.print(result.report());
       return result.exitCode();
+    }
+  }
+
+  @Command(name = "docs", description = "Generate Markdown API docs from a module's exposed declarations.")
+  static final class Docs implements Callable<Integer> {
+    @Parameters(index = "0", description = "The .elm file.")
+    Path file;
+
+    @Override
+    public Integer call() throws IOException {
+      System.out.println(pl.matsuo.elm.doc.DocGenerator.markdown(Files.readString(file)));
+      return 0;
     }
   }
 
