@@ -124,7 +124,7 @@ produce a value take a continuation, so scripts are written in continuation-pass
 line/word/char counter:
 
 ```sh
-./elm.sh script src/main/resources/elm/demos/wordcount.elm README.md
+./elm.sh script wordcount README.md   # 'wordcount' resolves to the bundled demo; or pass a path
 ```
 
 ## HTTP server (server-side Elm)

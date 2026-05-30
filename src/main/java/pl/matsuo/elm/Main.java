@@ -240,7 +240,7 @@ public final class Main implements Runnable {
       description = "Run an Elm file as a POSIX-style command-line script (JIT). See the Posix module.",
       footerHeading = "%nExample:%n",
       footer = {
-        "  elm script src/main/resources/elm/demos/wordcount.elm README.md",
+        "  elm script wordcount README.md     # 'wordcount' is the bundled demo (or pass a path)",
         "",
         "The script's `main : Posix.Io` describes effects in continuation-passing style:",
         "print, readLine, readFile, writeFile, getArgs, exit, done (see the bundled Posix module).",
@@ -254,7 +254,7 @@ public final class Main implements Runnable {
 
     @Override
     public Integer call() throws IOException {
-      String userSource = Files.readString(file);
+      String userSource = readElmSource(file);
       String posix = pl.matsuo.elm.util.Resources.read("/elm/lib/Posix.elm");
       Object main = pl.matsuo.elm.interp.Project.load(userSource, posix).main();
       return pl.matsuo.elm.script.ScriptRunner.run(
@@ -270,8 +270,8 @@ public final class Main implements Runnable {
       description = "Serve HTTP using an Elm `handle : Server.Request -> Server.Response` app.",
       footerHeading = "%nExample:%n",
       footer = {
-        "  elm server src/main/resources/elm/demos/server.elm --port 8080",
-        "  curl localhost:8080/ping      # -> pong",
+        "  elm server server --port 8080     # 'server' is the bundled demo (or pass a path)",
+        "  curl localhost:8080/ping          # -> pong",
         "",
         "The app exposes `handle : Request -> Response` (a pure function). The Server module",
         "provides Request/Response and helpers: text, html, json, response, notFound.",
@@ -287,7 +287,7 @@ public final class Main implements Runnable {
 
     @Override
     public Integer call() throws IOException, InterruptedException {
-      String userSource = Files.readString(file);
+      String userSource = readElmSource(file);
       String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Server.elm");
       Object handler = pl.matsuo.elm.interp.Project.load(userSource, lib).entryValue("handle");
       var server = pl.matsuo.elm.server.ServerRunner.start(handler, port);
@@ -513,6 +513,28 @@ public final class Main implements Runnable {
           }
       }
       """;
+
+  /**
+   * Reads an Elm source file, falling back to a bundled demo when the path isn't on disk: the file's
+   * base name (with or without {@code .elm}) is looked up under {@code /elm/demos/}. So {@code elm
+   * script wordcount} and {@code elm script wordcount.elm} both run the bundled example, while a real
+   * file on disk always takes precedence. A genuinely missing file still yields a clean error.
+   */
+  static String readElmSource(Path file) throws IOException {
+    if (Files.exists(file)) {
+      return Files.readString(file);
+    }
+    String name = file.getFileName().toString();
+    if (!name.endsWith(".elm")) {
+      name = name + ".elm";
+    }
+    try (var in = Main.class.getResourceAsStream("/elm/demos/" + name)) {
+      if (in != null) {
+        return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+      }
+    }
+    throw new java.nio.file.NoSuchFileException(file.toString());
+  }
 
   /** Renders a value: Browser programs and Html nodes become HTML, everything else uses Show. */
   static String render(Object value) {
