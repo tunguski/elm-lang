@@ -31,6 +31,10 @@ public final class Main {
       System.out.print(pl.matsuo.elm.bench.Benchmark.run(n, 50, 50));
       return;
     }
+    if (args[0].equals("repl")) {
+      pl.matsuo.elm.repl.Repl.loop(new java.io.InputStreamReader(System.in), System.out);
+      return;
+    }
     if (args[0].equals("site")) {
       if (args.length < 4) {
         System.out.println("usage: site <examplesDir> <Playground.elm> <outDir>");
@@ -146,6 +150,7 @@ public final class Main {
           eval  "<expression>" [--backend interp|bytecode]
           check <file.elm> [more.elm ...]      type-check a module or multi-module project
           bench [fibN]
+          repl
           site  <examplesDir> <Playground.elm> <outDir>
 
         --strict type-checks before running and refuses to evaluate on a type error.
