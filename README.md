@@ -1,5 +1,8 @@
 # elm-lang
 
+[![CI](https://github.com/tunguski/elm-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/tunguski/elm-lang/actions/workflows/ci.yml)
+[![Example gallery](https://img.shields.io/badge/gallery-tunguski.github.io%2Felm--lang-5fabdc)](https://tunguski.github.io/elm-lang/)
+
 An implementation of the [Elm](https://elm-lang.org) language in Java 25, built around
 **GraalVM Truffle**. It has one front end (lexer + parser) feeding **three backends**:
 
@@ -122,7 +125,30 @@ The WebGL examples execute correctly and produce the scene structure + a `<canva
 rasterized pixels need a real GPU/WebGL context**, which a headless JVM cannot provide. Verifying
 pixels would require running the JS backend in a real browser.
 
+## Example gallery
+
+A static gallery of the **JavaScript-compiled** examples is published to
+**<https://tunguski.github.io/elm-lang/>** by the [Pages workflow](.github/workflows/pages.yml).
+For each example it emits a self-contained demo page (`JsCompiler.htmlPage`) plus a wrapper that
+shows the demo next to its Elm source; 20 of 27 examples run as live compiled JavaScript and the
+rest (multi-module Playground games, GPU-bound WebGL) fall back to an interpreter-rendered initial
+frame. Build it locally with:
+
+```sh
+cd elm-lang
+./mvnw.cmd -DskipTests package
+java -jar target/elm.jar site src/test/resources/examples src/test/resources/Playground.elm target/site
+```
+
+## Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds and runs the full test suite on
+GraalVM for JDK 25 (via the Maven wrapper) for every push and pull request.
+
 ## Known limitations
 
-- No type inference: numeric literals default to `Int`; use float literals in `Float` contexts.
+- Type inference exists (Hindley–Milner, see above) but is **not a mandatory pass** before
+  evaluation: the prelude signatures cover elm/core, not yet every `Html`/`WebGL` builtin, so
+  `check` cannot type the most effect-heavy programs end to end. Evaluation runs the inferencer
+  best-effort to decide `Int` vs `Float` for numeric literals and otherwise proceeds untyped.
 - Operator characters exclude `.`, so dot-operators (e.g. elm/parser's `|.`) aren't lexed.

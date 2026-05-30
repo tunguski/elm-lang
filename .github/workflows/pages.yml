@@ -1,0 +1,63 @@
+name: Deploy example gallery to GitHub Pages
+
+# Builds the project, generates the static gallery of compiled examples
+# (SiteGenerator), and publishes it to https://tunguski.github.io/elm-lang/.
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; newer pushes cancel an in-flight build.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elm-lang
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up GraalVM for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          cache: 'maven'
+
+      - name: Build runnable JAR
+        run: |
+          chmod +x ./mvnw
+          ./mvnw -B -ntp clean package -DskipTests
+
+      - name: Generate the example gallery
+        run: |
+          java -jar target/elm.jar site \
+            src/test/resources/examples \
+            src/test/resources/Playground.elm \
+            target/site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: elm-lang/target/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

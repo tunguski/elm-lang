@@ -31,6 +31,15 @@ public final class Main {
       System.out.print(pl.matsuo.elm.bench.Benchmark.run(n, 50, 50));
       return;
     }
+    if (args[0].equals("site")) {
+      if (args.length < 4) {
+        System.out.println("usage: site <examplesDir> <Playground.elm> <outDir>");
+        return;
+      }
+      pl.matsuo.elm.site.SiteGenerator.generate(
+          Path.of(args[1]), Path.of(args[2]), Path.of(args[3]));
+      return;
+    }
     if (args.length < 2) {
       usage();
       return;
@@ -108,6 +117,7 @@ public final class Main {
           eval  "<expression>" [--backend interp|bytecode]
           check <file.elm>
           bench [fibN]
+          site  <examplesDir> <Playground.elm> <outDir>
         """);
   }
 }
