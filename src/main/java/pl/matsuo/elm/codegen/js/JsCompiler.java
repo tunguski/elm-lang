@@ -133,15 +133,16 @@ public final class JsCompiler {
   public record Mapped(String code, String map) {}
 
   /**
-   * Compiles to JS with a Source Map v3 (line-level: each generated declaration maps to its Elm
-   * source line). The code carries an inline {@code //# sourceMappingURL} data URI.
+   * Compiles to JS with a Source Map v3. Each generated declaration line carries two segments: its
+   * column 0 maps to the declaration's source line/column, and the body column maps to the body
+   * expression's source line/column. The code carries an inline {@code //# sourceMappingURL} URI.
    */
   public static Mapped moduleProgramWithSourceMap(String source, String sourceName) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
     String prefix = JsRuntime.SOURCE + "\n";
     String decls = c.declarations();
     int prefixLines = prefix.split("\n", -1).length - 1; // generated lines before the declarations
-    String map = SourceMap.json(sourceName, source, prefixLines, c.declSourceLines());
+    String map = SourceMap.json(sourceName, source, prefixLines, c.declSourceMappings());
     String b64 = java.util.Base64.getEncoder().encodeToString(map.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     String code =
         prefix + decls + "\nprocess.stdout.write($show(_$main));\n"
@@ -385,16 +386,27 @@ public final class JsCompiler {
    * parameterless values in dependency order, so a value that references another is emitted after
    * it (JS {@code var} initialisers run eagerly, unlike the interpreter's lazy thunks).
    */
-  /** Elm source line (1-based) of each emitted top-level declaration, in generated-line order. */
-  private final List<Integer> declSrcLines = new ArrayList<>();
+  /** Source-map segments for each generated declaration line, in generated-line order. */
+  private final List<List<SourceMap.Seg>> declMappings = new ArrayList<>();
 
-  /** Source lines (1-based) for each declaration line emitted by the last {@link #declarations}. */
-  public List<Integer> declSourceLines() {
-    return declSrcLines;
+  /** Source-map segments for each declaration line emitted by the last {@link #declarations}. */
+  public List<List<SourceMap.Seg>> declSourceMappings() {
+    return declMappings;
+  }
+
+  /** Two segments for a declaration line: column 0 -> the name, and the body column -> the body. */
+  private void recordMapping(String name, pl.matsuo.elm.error.Position declPos, Expr body) {
+    List<SourceMap.Seg> segs = new ArrayList<>();
+    segs.add(new SourceMap.Seg(0, declPos.line() - 1, declPos.col() - 1));
+    if (body != null) {
+      int prefixLen = ("var " + topLevelId(name) + " = ").length();
+      segs.add(new SourceMap.Seg(prefixLen, body.pos().line() - 1, body.pos().col() - 1));
+    }
+    declMappings.add(segs);
   }
 
   public String declarations() {
-    declSrcLines.clear();
+    declMappings.clear();
     StringBuilder sb = new StringBuilder();
     java.util.Map<String, Decl.Value> values = new java.util.LinkedHashMap<>(); // parameterless
     java.util.Map<String, Decl.Value> byName = new java.util.LinkedHashMap<>(); // all top-levels
@@ -406,7 +418,7 @@ public final class JsCompiler {
         } else {
           sb.append("var ").append(topLevelId(v.name())).append(" = ")
               .append(compileLambda(v.params(), v.body())).append(";\n");
-          declSrcLines.add(v.pos().line());
+          recordMapping(v.name(), v.pos(), v.body());
         }
       }
     }
@@ -421,7 +433,7 @@ public final class JsCompiler {
             .append(incoming ? " = $portIn(" : " = $portOut(")
             .append(jsString(p.name()))
             .append(");\n");
-        declSrcLines.add(p.pos().line());
+        recordMapping(p.name(), p.pos(), null);
       }
     }
     java.util.Set<String> emitted = new java.util.HashSet<>();
@@ -452,7 +464,7 @@ public final class JsCompiler {
     if (emitted.add(name)) {
       sb.append("var ").append(topLevelId(name)).append(" = ").append(compile(values.get(name).body()))
           .append(";\n");
-      declSrcLines.add(values.get(name).pos().line());
+      recordMapping(name, values.get(name).pos(), values.get(name).body());
     }
   }
 

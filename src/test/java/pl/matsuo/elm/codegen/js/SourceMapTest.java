@@ -100,20 +100,55 @@ class SourceMapTest {
     return -1;
   }
 
-  /** Decodes a line-level mappings string into {generatedLine, sourceLine0} pairs. */
+  /** Decodes the mappings into {generatedLine, sourceLine0} pairs (the first segment of each line). */
   private static List<int[]> decode(String mappings) {
+    List<int[]> out = new ArrayList<>();
+    for (int[] seg : decodeSegments(mappings)) {
+      if (seg[1] == 0) { // first segment of a generated line (generated column 0)
+        out.add(new int[] {seg[0], seg[2]});
+      }
+    }
+    return out;
+  }
+
+  /** Decodes all segments into {generatedLine, generatedCol, sourceLine0, sourceCol0}. */
+  private static List<int[]> decodeSegments(String mappings) {
     List<int[]> out = new ArrayList<>();
     String[] groups = mappings.split(";", -1);
     int srcLine = 0;
+    int srcCol = 0;
     for (int gl = 0; gl < groups.length; gl++) {
       if (groups[gl].isEmpty()) {
         continue;
       }
-      int[] fields = vlqDecode(groups[gl]);
-      srcLine += fields[2]; // field[2] = source line delta
-      out.add(new int[] {gl, srcLine});
+      int genCol = 0;
+      for (String seg : groups[gl].split(",")) {
+        int[] f = vlqDecode(seg);
+        genCol += f[0];
+        srcLine += f[2];
+        srcCol += f[3];
+        out.add(new int[] {gl, genCol, srcLine, srcCol});
+      }
     }
     return out;
+  }
+
+  @Test
+  void bodyExpressionColumnIsMapped() {
+    // `answer = 42` -> the `42` body starts at source column 10 (1-based) / 9 (0-based); its
+    // generated segment must carry that source column, not 0 (line-level only).
+    String src = "answer = 42\n";
+    JsCompiler.Mapped m = JsCompiler.moduleProgramWithSourceMap(src, "Main.elm");
+    @SuppressWarnings("unchecked")
+    Map<String, Object> map = (Map<String, Object>) JsonParse.parse(m.map());
+    int genLine = lineStartingWith(m.code().split("\n", -1), "var _$answer = ");
+    int bodyCol = -1;
+    for (int[] seg : decodeSegments((String) map.get("mappings"))) {
+      if (seg[0] == genLine && seg[1] > 0) { // a non-zero generated column on the decl line
+        bodyCol = seg[3];
+      }
+    }
+    assertEquals(9, bodyCol, "0-based source column of `42` in `answer = 42`");
   }
 
   private static int[] vlqDecode(String s) {

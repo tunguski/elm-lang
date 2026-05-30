@@ -33,35 +33,48 @@ public final class SourceMap {
   }
 
   /**
-   * Mappings string: {@code prefixLines} unmapped lines, then one segment per declaration line
-   * mapping generated column 0 to source 0 at the given 1-based source line.
+   * Mappings string: {@code prefixLines} unmapped lines, then the segments for each generated line.
+   * Generated-column deltas reset at the start of every line; source line/column deltas are
+   * cumulative across the whole file (Source Map v3 semantics).
    */
-  static String mappings(int prefixLines, List<Integer> srcLines1Based) {
+  static String mappings(int prefixLines, List<List<Seg>> lines) {
     StringBuilder sb = new StringBuilder();
     sb.append(";".repeat(Math.max(0, prefixLines)));
     int prevSrcLine = 0;
-    for (int i = 0; i < srcLines1Based.size(); i++) {
-      int srcLine0 = srcLines1Based.get(i) - 1;
-      sb.append(vlq(0)) // generated column 0
-          .append(vlq(0)) // source index delta (always source 0)
-          .append(vlq(srcLine0 - prevSrcLine)) // source line delta
-          .append(vlq(0)); // source column 0
-      prevSrcLine = srcLine0;
+    int prevSrcCol = 0;
+    for (List<Seg> segs : lines) {
+      int prevGenCol = 0;
+      for (int i = 0; i < segs.size(); i++) {
+        if (i > 0) {
+          sb.append(',');
+        }
+        Seg s = segs.get(i);
+        sb.append(vlq(s.genColumn() - prevGenCol)) // generated column delta (resets each line)
+            .append(vlq(0)) // source index delta (always source 0)
+            .append(vlq(s.sourceLine() - prevSrcLine)) // source line delta
+            .append(vlq(s.sourceColumn() - prevSrcCol)); // source column delta
+        prevGenCol = s.genColumn();
+        prevSrcLine = s.sourceLine();
+        prevSrcCol = s.sourceColumn();
+      }
       sb.append(';');
     }
     return sb.toString();
   }
 
+  /** A mapping segment: a 0-based generated column to a 0-based source line/column (source 0). */
+  public record Seg(int genColumn, int sourceLine, int sourceColumn) {}
+
   /** A complete Source Map v3 JSON document. */
   public static String json(
-      String sourceName, String sourceContent, int prefixLines, List<Integer> srcLines1Based) {
+      String sourceName, String sourceContent, int prefixLines, List<List<Seg>> lines) {
     Map<String, Object> m = new LinkedHashMap<>();
     m.put("version", 3L);
     m.put("file", "out.js");
     m.put("sources", List.of(sourceName));
     m.put("sourcesContent", List.of(sourceContent));
     m.put("names", List.of());
-    m.put("mappings", mappings(prefixLines, srcLines1Based));
+    m.put("mappings", mappings(prefixLines, lines));
     return JsonEncode.serialize(m, 0);
   }
 }
