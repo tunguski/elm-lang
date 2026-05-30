@@ -31,6 +31,24 @@ import pl.matsuo.elm.runtime.ElmData;
     mixinStandardHelpOptions = true,
     version = "elm-lang 0.1",
     description = "An Elm interpreter/compiler (Truffle JIT, bytecode VM, JS and WASM backends).",
+    footerHeading = "%nExamples:%n",
+    footer = {
+      "  elm eval \"List.map ((*) 2) [1,2,3]\"      Evaluate an expression",
+      "  elm run Main.elm                          Run a program (Html renders to HTML)",
+      "  elm make Main.elm -o index.html --optimize  Build a deployable HTML page",
+      "  elm check src/Main.elm src/Lib.elm        Type-check a module or project",
+      "  elm format Main.elm --write               Reformat in place (--check to verify)",
+      "  elm script wordcount.elm a.txt b.txt      Run an Elm file as a CLI script",
+      "  elm server server.elm --port 8080         Serve HTTP from a `handle` function",
+      "  elm repl                                  Start the interactive REPL",
+      "  elm init                                  Scaffold elm.json + src/",
+      "",
+      "Bundled examples live under elm-lang/src/main/resources/elm/demos/ — e.g.:",
+      "  elm script elm-lang/src/main/resources/elm/demos/wordcount.elm README.md",
+      "  elm server elm-lang/src/main/resources/elm/demos/server.elm   # then: curl localhost:8080/ping",
+      "",
+      "Run 'elm <command> --help' for command-specific options and examples.",
+    },
     subcommands = {
       Main.Run.class,
       Main.Js.class,
@@ -81,7 +99,15 @@ public final class Main implements Runnable {
     CommandLine.usage(this, System.out); // no subcommand -> show help
   }
 
-  @Command(name = "run", description = "Evaluate a definition and print it (Html/programs as HTML).")
+  @Command(
+      name = "run",
+      description = "Evaluate a definition and print it (Html/programs as HTML).",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm run Main.elm                  # render `main` (Html -> HTML, Program -> mounted)",
+        "  elm run Main.elm --value answer   # evaluate a specific top-level value",
+        "  elm run Main.elm --strict         # type-check first; refuse to run on a type error",
+      })
   static final class Run implements Callable<Integer> {
     @Parameters(index = "0", description = "The .elm file.")
     Path file;
@@ -141,7 +167,12 @@ public final class Main implements Runnable {
 
   @Command(
       name = "make",
-      description = "Compile a program to a deployable artifact (HTML page, or a .js bundle).")
+      description = "Compile a program to a deployable artifact (HTML page, or a .js bundle).",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm make Main.elm                       # -> index.html (app inlined + mounted)",
+        "  elm make Main.elm -o app.js --optimize  # -> minified JS bundle",
+      })
   static final class Make implements Callable<Integer> {
     @Parameters(arity = "1..*", description = "The .elm entry file (plus any sibling modules).")
     List<Path> files;
@@ -181,7 +212,14 @@ public final class Main implements Runnable {
     }
   }
 
-  @Command(name = "eval", description = "Evaluate a single expression.")
+  @Command(
+      name = "eval",
+      description = "Evaluate a single expression.",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm eval \"1 + 2 * 3\"",
+        "  elm eval \"List.range 1 4\" --backend bytecode",
+      })
   static final class Eval implements Callable<Integer> {
     @Parameters(index = "0", description = "The expression.")
     String expression;
@@ -199,7 +237,14 @@ public final class Main implements Runnable {
 
   @Command(
       name = "script",
-      description = "Run an Elm file as a POSIX-style command-line script (JIT). See the Posix module.")
+      description = "Run an Elm file as a POSIX-style command-line script (JIT). See the Posix module.",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm script elm-lang/src/main/resources/elm/demos/wordcount.elm README.md",
+        "",
+        "The script's `main : Posix.Io` describes effects in continuation-passing style:",
+        "print, readLine, readFile, writeFile, getArgs, exit, done (see the bundled Posix module).",
+      })
   static final class Script implements Callable<Integer> {
     @Parameters(index = "0", description = "The script .elm file (its `main : Posix.Io`).")
     Path file;
@@ -222,7 +267,15 @@ public final class Main implements Runnable {
 
   @Command(
       name = "server",
-      description = "Serve HTTP using an Elm `handle : Server.Request -> Server.Response` app.")
+      description = "Serve HTTP using an Elm `handle : Server.Request -> Server.Response` app.",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm server elm-lang/src/main/resources/elm/demos/server.elm --port 8080",
+        "  curl localhost:8080/ping      # -> pong",
+        "",
+        "The app exposes `handle : Request -> Response` (a pure function). The Server module",
+        "provides Request/Response and helpers: text, html, json, response, notFound.",
+      })
   static final class Serve implements Callable<Integer> {
     @Parameters(index = "0", description = "The server .elm file (its `handle`).")
     Path file;
@@ -290,7 +343,15 @@ public final class Main implements Runnable {
     }
   }
 
-  @Command(name = "format", description = "Format Elm source (elm-format style).")
+  @Command(
+      name = "format",
+      description = "Format Elm source (elm-format style).",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm format Main.elm              # print formatted source to stdout",
+        "  elm format Main.elm --write      # rewrite the file in place",
+        "  elm format elm.json --project --check   # CI gate: non-zero if anything is unformatted",
+      })
   static final class Format implements Callable<Integer> {
     @Parameters(index = "0", description = "A .elm file, or an elm.json/dir with --project.")
     Path path;

@@ -112,6 +112,17 @@ class MainCliTest {
   }
 
   @Test
+  void helpListsExamplesIncludingScriptAndServer() {
+    String help = invoke("--help").out();
+    assertTrue(help.contains("Examples:"), help);
+    assertTrue(help.contains("elm script"), help);
+    assertTrue(help.contains("elm server"), help);
+    // Each command also carries its own examples (shown via `help <command>`).
+    String scriptHelp = invoke("help", "script").out();
+    assertTrue(scriptHelp.contains("wordcount.elm"), scriptHelp);
+  }
+
+  @Test
   void formatCheckSucceedsOnFormattedFileAndFailsOnUnformatted() throws Exception {
     // Already-formatted output is a fixed point of `format`, so re-checking it passes.
     Path tidy = tempElm(pl.matsuo.elm.fmt.Formatter.format("module Main exposing (..)\nmain = 1\n"));
