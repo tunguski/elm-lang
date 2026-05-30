@@ -59,6 +59,30 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsCustomTypesAndCase() {
+    // Constructors are any capitalised name; case branches are ';'-separated.
+    assertEquals("14", eval("case Just (3 + 4) of Just n -> n * 2 ; Nothing -> 0"));
+    assertEquals("0", eval("case Nothing of Just n -> n ; Nothing -> 0"));
+    // Nested constructor pattern + a value that renders as a constructor application.
+    assertEquals("Pair 1 2", eval("Pair 1 2"));
+    assertEquals("3", eval("case Pair 1 2 of Pair a b -> a + b"));
+    // List patterns in case.
+    assertEquals("10", eval("case [10, 20] of [] -> 0 ; h :: t -> h"));
+    // Wildcard fallthrough.
+    assertEquals("99", eval("case Blue of Red -> 1 ; _ -> 99"));
+  }
+
+  @Test
+  void interpretsRecursiveCustomTypeViaCase() {
+    // A recursive tree summed by a recursive function with case — closures + ctors + matching.
+    assertEquals(
+        "6",
+        eval(
+            "let sum = \\t -> case t of Leaf n -> n ; Node l r -> sum l + sum r "
+                + "in sum (Node (Node (Leaf 1) (Leaf 2)) (Leaf 3))"));
+  }
+
+  @Test
   void reportsErrors() {
     assertTrue(eval("1 +").startsWith("Error"), eval("1 +")); // truncated input
     assertTrue(eval("1 / 0").contains("division by zero"), eval("1 / 0"));
