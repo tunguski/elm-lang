@@ -270,6 +270,27 @@ class WasmHeapTest {
   }
 
   @Test
+  void polymorphicRecordAccessAcrossShapes() throws Exception {
+    // `get r = r.x` is row-polymorphic: it knows only the `x` field, yet works on records of
+    // different shapes because access looks the field up by name at runtime.
+    agrees(
+        """
+        getX r = r.x
+        main = getX { x = 7, y = 99 } + getX { x = 3, name = 5, z = 2 }
+        """);
+  }
+
+  @Test
+  void polymorphicRecordUpdate() throws Exception {
+    agrees(
+        """
+        getX r = r.x
+        setX r v = { r | x = v }
+        main = getX (setX { x = 1, y = 2 } 100)
+        """);
+  }
+
+  @Test
   void updatesARecordImmutably() throws Exception {
     agrees(
         """

@@ -47,20 +47,21 @@ import pl.matsuo.elm.parser.Parser;
  * over the module and consults each expression's type (see {@code Infer.nodeTypes}). A string is a
  * heap object {@code {byteLength : i64, bytes…}} — literals allocate, {@code String.length} loads
  * the length word, and {@code ++}/{@code ==} call two hand-assembled runtime functions
- * ({@code $strConcat}, {@code $strEq}). A record is a heap block of one i64 word per field in
- * canonical name-sorted order, so a literal and a {@code .field} access agree on offsets; access and
- * update require the record's type to be known and <b>closed</b> (non row-polymorphic), e.g. via an
- * annotation. Because dispatch is static, {@code ++}/{@code ==} need operands typed concretely as
- * {@code String} at the use site (a polymorphic {@code comparable}/{@code appendable} function does
- * not carry that).
+ * ({@code $strConcat}, {@code $strEq}). Because string dispatch is static, {@code ++}/{@code ==}
+ * need operands typed concretely as {@code String} at the use site (a polymorphic {@code
+ * comparable}/{@code appendable} function does not carry that).
+ *
+ * <p><b>Records are self-describing</b> and fully <b>row-polymorphic</b>: a record is a heap block
+ * {@code {count, fieldId…, value…}} that stores its field-name ids, so the {@code $recordGet} /
+ * {@code $recordSet} runtime looks fields up by name — a function that knows only some of a record's
+ * fields ({@code getX r = r.x}) works on any shape, with no need for a closed type.
  *
  * <p><b>Floats</b> are type-directed too: an {@code f64} is stored as its i64 bit pattern, so values
  * stay uniformly i64 on the stack and heap; literals and the arithmetic ({@code + - * /}),
  * comparisons, {@code negate} and the {@code toFloat}/{@code round}/{@code floor}/{@code
  * ceiling}/{@code truncate} conversions reinterpret to {@code f64} as needed.
  *
- * <p>The main remaining gap is <b>row-polymorphic records</b> (record access still needs a known,
- * closed record type) and most of the larger standard library.
+ * <p>The main remaining gap is most of the larger standard library.
  */
 public final class WasmCompiler {
 
@@ -328,6 +329,7 @@ public final class WasmCompiler {
     private final Map<Integer, Integer> arityType; // call arity -> wasm type index (for call_indirect)
     private final Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes; // inferred type per expression
     private final Map<Expr.Lambda, Lifted> lifted; // lambda -> its lifted top-level function
+    private final Map<String, Integer> fieldIds; // record field name -> small global id (shared)
     private int localCount; // all locals are i64; params occupy 0..numParams-1
     private final int numParams;
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
@@ -339,13 +341,15 @@ public final class WasmCompiler {
         Map<String, Integer> ctorArity,
         Map<Integer, Integer> arityType,
         Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes,
-        Map<Expr.Lambda, Lifted> lifted) {
+        Map<Expr.Lambda, Lifted> lifted,
+        Map<String, Integer> fieldIds) {
       this.funcs = funcs;
       this.ctorTag = ctorTag;
       this.ctorArity = ctorArity;
       this.arityType = arityType;
       this.nodeTypes = nodeTypes;
       this.lifted = lifted;
+      this.fieldIds = fieldIds;
       this.numParams = params.size();
       for (int i = 0; i < params.size(); i++) {
         locals.put(params.get(i), i);
@@ -597,84 +601,64 @@ public final class WasmCompiler {
     }
 
     // --- records: a heap block of one i64 word per field, in canonical (name-sorted) order ------
-    // The sorted layout is independent of the literal's field order, so a literal and a later
-    // `.field` access (whose record type is known and closed) agree on every field's offset.
+    // Layout: {count:i64, fieldId_0..fieldId_{n-1}, value_0..value_{n-1}} (fields name-sorted). The
+    // stored field-name ids make access and update look fields up by name at runtime, so even a
+    // row-polymorphic function — which knows only some of a record's fields — resolves correctly.
 
-    /** Allocates a record literal: its fields stored at their name-sorted offsets; leaves the i64
-     *  pointer. */
+    /** A small global integer id for a field name (shared across the module via {@code fieldIds}). */
+    private int fieldId(String name) {
+      return fieldIds.computeIfAbsent(name, k -> fieldIds.size());
+    }
+
+    /** Allocates a self-describing record literal; leaves the i64 pointer. */
     private void emitRecord(Expr.Record rec) {
       List<Expr.Record.Field> fs = new ArrayList<>(rec.fields());
       fs.sort(java.util.Comparator.comparing(Expr.Record.Field::name));
+      int n = fs.size();
       int addr = freshLocal();
       code.write(0x23);
       leb(code, 0);
       code.write(0xAD);
       code.write(0x21);
       leb(code, addr);
-      bumpHeap(fs.size() * 8);
-      for (int j = 0; j < fs.size(); j++) {
+      bumpHeap((1 + 2 * n) * 8);
+      store(addr, 0, () -> { code.write(0x42); sleb(code, n); }); // count
+      for (int j = 0; j < n; j++) {
+        int id = fieldId(fs.get(j).name());
+        store(addr, (1 + j) * 8, () -> { code.write(0x42); sleb(code, id); }); // field id
+      }
+      for (int j = 0; j < n; j++) {
         int jj = j;
-        store(addr, j * 8, () -> intExpr(fs.get(jj).value()));
+        store(addr, (1 + n + j) * 8, () -> intExpr(fs.get(jj).value())); // value
       }
       code.write(0x20);
       leb(code, addr);
     }
 
-    /** Loads {@code target.field}: the record's i64 word at the field's name-sorted offset. */
+    /** Loads {@code target.field} via the {@code $recordGet} runtime (look up by field-name id). */
     private void emitRecordAccess(Expr.RecordAccess acc) {
-      List<String> fields = closedRecordFields(acc.target());
-      int idx = fields.indexOf(acc.field());
-      if (idx < 0) {
-        throw unsupported("record field ." + acc.field());
-      }
-      int addr = freshLocal();
-      intExpr(acc.target()); // i64 pointer
-      code.write(0x21);
-      leb(code, addr);
-      load(addr, idx * 8);
+      intExpr(acc.target()); // i64 record pointer
+      code.write(0x42); // i64.const fieldId
+      sleb(code, fieldId(acc.field()));
+      code.write(0x10); // call $recordGet
+      leb(code, funcs.get("$recordGet")[0]);
     }
 
-    /** {@code { base | f = v, … }}: a fresh record, copying {@code base}'s words then overwriting the
-     *  updated fields (at their name-sorted offsets). */
+    /** {@code { base | f = v, … }}: chained {@code $recordSet} calls, each replacing one field. */
     private void emitRecordUpdate(Expr.RecordUpdate up) {
       Integer baseLocal = locals.get(up.base());
       if (baseLocal == null) {
         throw unsupported("record update of non-local '" + up.base() + "'");
       }
-      List<String> fields = closedRecordFields(up); // the result has the base record's fields
-      java.util.Map<String, Expr> updates = new java.util.HashMap<>();
-      for (Expr.Record.Field f : up.fields()) {
-        updates.put(f.name(), f.value());
-      }
-      int addr = freshLocal();
-      code.write(0x23);
-      leb(code, 0);
-      code.write(0xAD);
-      code.write(0x21);
-      leb(code, addr);
-      bumpHeap(fields.size() * 8);
-      for (int j = 0; j < fields.size(); j++) {
-        int off = j * 8;
-        Expr updated = updates.get(fields.get(j));
-        if (updated != null) {
-          store(addr, off, () -> intExpr(updated));
-        } else {
-          // copy base.word(off): store at addr+off the value loaded from base+off
-          store(
-              addr,
-              off,
-              () -> {
-                code.write(0x20);
-                leb(code, baseLocal);
-                code.write(0xA7); // i32.wrap_i64 -> base address
-                code.write(0x29); // i64.load
-                leb(code, 3);
-                leb(code, off);
-              });
-        }
-      }
       code.write(0x20);
-      leb(code, addr);
+      leb(code, baseLocal); // the base record pointer
+      for (Expr.Record.Field f : up.fields()) {
+        code.write(0x42); // i64.const fieldId
+        sleb(code, fieldId(f.name()));
+        intExpr(f.value());
+        code.write(0x10); // call $recordSet(rec, id, value) -> new record
+        leb(code, funcs.get("$recordSet")[0]);
+      }
     }
 
     // --- strings: a heap object {byteLength : i64, bytes…}; the value is the i64 pointer ----------
@@ -747,14 +731,6 @@ public final class WasmCompiler {
     private void emitFloatConst(double v) {
       emitRawF64Const(v);
       code.write(0xBD); // i64.reinterpret_f64
-    }
-
-    /** The name-sorted field list of {@code e}'s record type, requiring it to be known and closed. */
-    private List<String> closedRecordFields(Expr e) {
-      if (nodeTypes.get(e) instanceof pl.matsuo.elm.types.Ty.Record r && r.tail() == null) {
-        return new ArrayList<>(new java.util.TreeSet<>(r.fields().keySet()));
-      }
-      throw unsupported("record with an unknown or open (row-polymorphic) type in WASM");
     }
 
     /** Dispatches a {@code case} to the list or the custom-type compiler by its branch patterns. */
@@ -1278,6 +1254,78 @@ public final class WasmCompiler {
     b.write(0x0B); // end if
   }
 
+  // A record is a self-describing heap block {count:i64, fieldId_0..fieldId_{n-1}, value_0..value_{n-1}}
+  // with fields in name-sorted order. Storing the field-name ids lets access and update look fields
+  // up by name at runtime, so a row-polymorphic function (which knows only some of a record's fields)
+  // works without a closed type.
+
+  /** {@code $recordGet(ptr, fieldId) -> i64}: the value of the named field (linear scan by id). */
+  private static byte[] recordGetEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // locals: count i64 (2); i (3), base (4) i32
+    lget(b, 0); b.write(0xA7); lset(b, 4); // base = wrap(ptr)
+    lget(b, 4); nload64(b, 0); lset(b, 2); // count
+    i32c(b, 0); lset(b, 3); // i = 0
+    b.write(0x02); b.write(0x40); b.write(0x03); b.write(0x40);
+    lget(b, 3); lget(b, 2); b.write(0xA7); b.write(0x4F); b.write(0x0D); leb(b, 1); // i>=count -> exit
+    // if load(base + 8 + 8i) == fieldId: return load(base + 8 + 8*count + 8i)
+    lget(b, 4); i32c(b, 8); b.write(0x6A); lget(b, 3); i32c(b, 8); b.write(0x6C); b.write(0x6A);
+    nload64(b, 0);
+    lget(b, 1); b.write(0x51); // == fieldId
+    b.write(0x04); b.write(0x40); // if (void)
+    lget(b, 4); i32c(b, 8); b.write(0x6A); lget(b, 2); b.write(0xA7); i32c(b, 8); b.write(0x6C);
+    b.write(0x6A); lget(b, 3); i32c(b, 8); b.write(0x6C); b.write(0x6A); // base + 8 + 8*count + 8i
+    nload64(b, 0);
+    b.write(0x0F); // return value
+    b.write(0x0B); // end if
+    lget(b, 3); i32c(b, 1); b.write(0x6A); lset(b, 3); // i++
+    b.write(0x0C); leb(b, 0); b.write(0x0B); b.write(0x0B); // br 0; end loop; end block
+    b.write(0x42); sleb(b, 0); // unreachable in well-typed code; yield 0
+    return entry(b, new int[][] {{1, I64}, {2, I32}});
+  }
+
+  /** {@code $recordSet(ptr, fieldId, val) -> i64}: a copy of the record with one field replaced. */
+  private static byte[] recordSetEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // locals: count i64 (3); i (4), src (5), dst (6), bytes (7), delta (8) i32
+    lget(b, 0); b.write(0xA7); lset(b, 5); // src = wrap(ptr)
+    lget(b, 5); nload64(b, 0); lset(b, 3); // count
+    b.write(0x23); leb(b, 0); lset(b, 6); // dst = $hp
+    // bytes = (1 + 2*count) * 8
+    i32c(b, 1); lget(b, 3); b.write(0xA7); i32c(b, 2); b.write(0x6C); b.write(0x6A); i32c(b, 8); b.write(0x6C); lset(b, 7);
+    lget(b, 6); lget(b, 7); b.write(0x6A); b.write(0x24); leb(b, 0); // $hp += bytes
+    // grow
+    b.write(0x23); leb(b, 0); i32c(b, 65535); b.write(0x6A); i32c(b, 16); b.write(0x76);
+    b.write(0x3F); b.write(0x00); b.write(0x6B); lset(b, 8);
+    lget(b, 8); i32c(b, 0); b.write(0x4A); b.write(0x04); b.write(0x40);
+    lget(b, 8); b.write(0x40); b.write(0x00); b.write(0x1A); b.write(0x0B);
+    lget(b, 6); lget(b, 3); nstore64(b, 0); // dst[0] = count
+    i32c(b, 0); lset(b, 4); // i = 0
+    b.write(0x02); b.write(0x40); b.write(0x03); b.write(0x40);
+    lget(b, 4); lget(b, 3); b.write(0xA7); b.write(0x4F); b.write(0x0D); leb(b, 1); // i>=count -> exit
+    // copy id: dst[8+8i] = src[8+8i]
+    lget(b, 6); i32c(b, 8); b.write(0x6A); lget(b, 4); i32c(b, 8); b.write(0x6C); b.write(0x6A); // dst id addr
+    lget(b, 5); i32c(b, 8); b.write(0x6A); lget(b, 4); i32c(b, 8); b.write(0x6C); b.write(0x6A); nload64(b, 0); // src id
+    nstore64(b, 0);
+    // dst value addr = dst + 8 + 8*count + 8i
+    lget(b, 6); i32c(b, 8); b.write(0x6A); lget(b, 3); b.write(0xA7); i32c(b, 8); b.write(0x6C); b.write(0x6A);
+    lget(b, 4); i32c(b, 8); b.write(0x6C); b.write(0x6A);
+    // value: if src id_i == fieldId then val else src value_i
+    lget(b, 5); i32c(b, 8); b.write(0x6A); lget(b, 4); i32c(b, 8); b.write(0x6C); b.write(0x6A); nload64(b, 0); // src id_i
+    lget(b, 1); b.write(0x51); // == fieldId
+    b.write(0x04); b.write(0x7E); // if (result i64)
+    lget(b, 2); // val
+    b.write(0x05); // else
+    lget(b, 5); i32c(b, 8); b.write(0x6A); lget(b, 3); b.write(0xA7); i32c(b, 8); b.write(0x6C); b.write(0x6A);
+    lget(b, 4); i32c(b, 8); b.write(0x6C); b.write(0x6A); nload64(b, 0); // src value_i
+    b.write(0x0B); // end if
+    nstore64(b, 0); // store the chosen value at dst value addr
+    lget(b, 4); i32c(b, 1); b.write(0x6A); lset(b, 4); // i++
+    b.write(0x0C); leb(b, 0); b.write(0x0B); b.write(0x0B);
+    lget(b, 6); b.write(0xAD); // return dst as i64 pointer
+    return entry(b, new int[][] {{1, I64}, {5, I32}});
+  }
+
   private static void lget(ByteArrayOutputStream b, int i) {
     b.write(0x20);
     leb(b, i);
@@ -1527,7 +1575,12 @@ public final class WasmCompiler {
     for (Func f : funcList) {
       arityType.computeIfAbsent(f.params().size(), a -> { arities.add(a); return arities.size() - 1; });
     }
-    arityType.computeIfAbsent(2, a -> { arities.add(a); return arities.size() - 1; });
+    arityType.computeIfAbsent(2, a -> { arities.add(a); return arities.size() - 1; }); // 2-arg natives
+    arityType.computeIfAbsent(3, a -> { arities.add(a); return arities.size() - 1; }); // $recordSet
+
+    // Field-name ids are assigned lazily but shared across every function, so a record literal and a
+    // later access/update agree on each field's id.
+    Map<String, Integer> fieldIds = new HashMap<>();
 
     // The closure runtime ($apply) dispatches over the arities a closure may carry — i.e. the
     // arities of the user/lifted functions (>= 1), each mapped to its function-type index.
@@ -1542,6 +1595,8 @@ public final class WasmCompiler {
     // the natives. Every function (user + native) shares the table, type, element and code sections.
     List<Native> natives = new ArrayList<>(stringRuntime());
     natives.add(new Native("$apply", 2, applyEntry(dispatch)));
+    natives.add(new Native("$recordGet", 2, recordGetEntry()));
+    natives.add(new Native("$recordSet", 3, recordSetEntry()));
     int userCount = funcList.size();
     int total = userCount + natives.size();
 
@@ -1649,7 +1704,7 @@ public final class WasmCompiler {
     leb(code, total);
     for (Func f : funcList) {
       code.writeBytes(
-          new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType, nodeTypes, lifted)
+          new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType, nodeTypes, lifted, fieldIds)
               .compile(f.body()));
     }
     for (Native n : natives) {
