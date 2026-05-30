@@ -13,11 +13,11 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    curried arrow functions), in the spirit of the official Elm compiler. Bundles multiple modules
    and ships a browser runtime (virtual-DOM diff, effects: Random/Http/Time/Task/File, WebGL).
 3. **Bytecode compiler + stack VM** — a compact 24-opcode bytecode and an operand-stack VM.
-4. **WebAssembly compiler** — emits a wasm binary (no external assembler) for the numeric/boolean
-   fragment plus a growable linear-memory heap (cons-lists, tuples, tagged custom types, **strings**
-   and **records**, the last two type-directed), first-class top-level functions (funcref table +
-   `call_indirect`), so recursive list/ADT, string, record and higher-order code compile and run
-   anywhere `WebAssembly` does.
+4. **WebAssembly compiler** — emits a wasm binary (no external assembler) for the integer/boolean/
+   **float** fragment plus a growable linear-memory heap (cons-lists, tuples, tagged custom types,
+   **strings** and **records**, the last two type-directed), first-class top-level functions (funcref
+   table + `call_indirect`), so recursive list/ADT, float, string, record and higher-order code
+   compile and run anywhere `WebAssembly` does.
 
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions).
@@ -300,12 +300,13 @@ publishes it as an artifact.
   serves GitHub zipballs, not the simple static-file layout used here) and the **JS/WASM backends**
   loading package sources the way the interpreter/checker now do. See
   [Packages & dependencies](#packages--dependencies).
-- **WASM backend** scope: numbers/booleans, a growable linear-memory heap for cons-lists, tuples,
-  tagged custom types, **strings** and **records** (the last two type-directed — record access needs
-  a known closed type, and `++`/`==` need operands statically typed `String`), plus first-class
-  **top-level functions** (a funcref table + `call_indirect`, so higher-order code over named
-  functions works). Still not in WASM: **floats, closures** (capturing locals) and **currying /
-  partial application** — those remain on the JS backend.
+- **WASM backend** scope: integers/booleans/**floats** (an `f64` stored as its i64 bit pattern, with
+  arithmetic, comparison and `toFloat`/`round`/`floor`/`ceiling`/`truncate`), a growable
+  linear-memory heap for cons-lists, tuples, tagged custom types, **strings** and **records** (the
+  last two type-directed — record access needs a known closed type, and `++`/`==` need operands
+  statically typed `String`), plus first-class **top-level functions** (a funcref table +
+  `call_indirect`, so higher-order code over named functions works). Still not in WASM: **closures**
+  (capturing locals) and **currying / partial application** — those remain on the JS backend.
 - The full **1700-line elm-playground** still hits a few type-inference edge cases (every
   single-module elm-lang.org example type-checks); `run`/`make` fall through to evaluation when the
   checker can't fully analyze a program.

@@ -83,6 +83,50 @@ class WasmHeapTest {
     return out;
   }
 
+  /** Runs `main` whose result is a Float, reinterpreting the returned i64 bit pattern to a double. */
+  private void agreesFloat(String source) throws Exception {
+    assumeTrue(NODE, "node not available");
+    double expected = ((Number) Interpreter.load(source).value("main")).doubleValue();
+    double actual = Double.longBitsToDouble(Long.parseLong(runMain(source).trim()));
+    assertEquals(expected, actual, 1e-9, source);
+  }
+
+  @Test
+  void floatArithmetic() throws Exception {
+    agreesFloat("main = 1.5 + 2.25\n");
+    agreesFloat("main = 7.0 / 2.0\n");
+    agreesFloat("main = 3.0 * 1.5 - 0.5\n");
+    agreesFloat("main = -2.5 + 2.5\n"); // negate on a float
+  }
+
+  @Test
+  void floatComparisonDrivesABranch() throws Exception {
+    agrees("main = if 1.5 < 2.0 then 1 else 0\n"); // Int result
+    agrees("main = if 2.5 >= 2.5 then 1 else 0\n");
+  }
+
+  @Test
+  void intFloatConversions() throws Exception {
+    agreesFloat("main = toFloat 5 / 2.0\n"); // 2.5
+    agrees("main = round (7.0 / 2.0)\n"); // 4 (half up)
+    agrees("main = floor 3.9\n"); // 3
+    agrees("main = ceiling 3.1\n"); // 4
+    agrees("main = truncate -3.9\n"); // -3
+  }
+
+  @Test
+  void floatRecordFieldAndLiteralCoercion() throws Exception {
+    // The `3`/`4` literals are inferred Float (the record's fields), so they must be emitted as
+    // float bit patterns, and the arithmetic as f64.
+    agreesFloat(
+        """
+        type alias V = { x : Float, y : Float }
+        area : V -> Float
+        area v = v.x * v.y
+        main = area { x = 3, y = 4 }
+        """);
+  }
+
   @Test
   void stringLengthLoadsTheLengthWord() throws Exception {
     agrees("main = String.length \"hello\"\n");

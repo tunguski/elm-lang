@@ -46,8 +46,13 @@ import pl.matsuo.elm.parser.Parser;
  * update require the record's type to be known and <b>closed</b> (non row-polymorphic), e.g. via an
  * annotation. Because dispatch is static, {@code ++}/{@code ==} need operands typed concretely as
  * {@code String} at the use site (a polymorphic {@code comparable}/{@code appendable} function does
- * not carry that). Still unsupported: <b>floats</b>, <b>closures</b> (capturing locals) and
- * <b>currying / partial application</b>.
+ * not carry that).
+ *
+ * <p><b>Floats</b> are type-directed too: an {@code f64} is stored as its i64 bit pattern, so values
+ * stay uniformly i64 on the stack and heap; literals and the arithmetic ({@code + - * /}),
+ * comparisons, {@code negate} and the {@code toFloat}/{@code round}/{@code floor}/{@code
+ * ceiling}/{@code truncate} conversions reinterpret to {@code f64} as needed. Still unsupported:
+ * <b>closures</b> (capturing locals) and <b>currying / partial application</b>.
  */
 public final class WasmCompiler {
 
@@ -189,14 +194,26 @@ public final class WasmCompiler {
     private void intExpr(Expr e) {
       switch (e) {
         case Expr.IntLit lit -> {
-          code.write(0x42); // i64.const
-          sleb(code, lit.value());
+          if (isFloat(lit)) {
+            // A numeric literal inference resolved to Float (e.g. a Float record field).
+            emitFloatConst(lit.value());
+          } else {
+            code.write(0x42); // i64.const
+            sleb(code, lit.value());
+          }
         }
+        case Expr.FloatLit lit -> emitFloatConst(lit.value());
         case Expr.Negate n -> {
-          code.write(0x42);
-          sleb(code, 0);
-          intExpr(n.operand());
-          code.write(0x7D); // i64.sub  (0 - x)
+          if (isFloat(n)) {
+            pushF64(n.operand());
+            code.write(0x9A); // f64.neg
+            code.write(0xBD); // back to i64 bits
+          } else {
+            code.write(0x42);
+            sleb(code, 0);
+            intExpr(n.operand());
+            code.write(0x7D); // i64.sub  (0 - x)
+          }
         }
         case Expr.BinOp b -> intBinOp(b);
         case Expr.If iff -> {
@@ -500,6 +517,38 @@ public final class WasmCompiler {
           && c.args().isEmpty();
     }
 
+    // --- floats: an f64 stored as its i64 bit pattern, so values stay uniformly i64 -------------
+    // Arithmetic/comparison reinterpret the bits to f64 (0xBF), compute, and (for results) back to
+    // i64 (0xBD). Whether an expression is a Float is read from its inferred type.
+
+    /** Whether the recorded type of {@code e} is {@code Float}. */
+    private boolean isFloat(Expr e) {
+      return nodeTypes.get(e) instanceof pl.matsuo.elm.types.Ty.Con c
+          && c.name().equals("Float")
+          && c.args().isEmpty();
+    }
+
+    /** Leaves an f64 on the stack: evaluates {@code e} (an i64 bit pattern) and reinterprets it. */
+    private void pushF64(Expr e) {
+      intExpr(e);
+      code.write(0xBF); // f64.reinterpret_i64
+    }
+
+    /** Pushes a bare f64 constant (8 little-endian bytes) onto the stack. */
+    private void emitRawF64Const(double v) {
+      code.write(0x44); // f64.const
+      long bits = Double.doubleToRawLongBits(v);
+      for (int i = 0; i < 8; i++) {
+        code.write((int) ((bits >> (8 * i)) & 0xFF));
+      }
+    }
+
+    /** Pushes the f64 constant {@code v} as its i64 bit pattern (the uniform value representation). */
+    private void emitFloatConst(double v) {
+      emitRawF64Const(v);
+      code.write(0xBD); // i64.reinterpret_f64
+    }
+
     /** The name-sorted field list of {@code e}'s record type, requiring it to be known and closed. */
     private List<String> closedRecordFields(Expr e) {
       if (nodeTypes.get(e) instanceof pl.matsuo.elm.types.Ty.Record r && r.tail() == null) {
@@ -637,6 +686,21 @@ public final class WasmCompiler {
         leb(code, funcs.get("$strConcat")[0]);
         return;
       }
+      // Float arithmetic: `/` is float-only; `+ - *` are float when the operands are Float.
+      if (b.op().equals("/") || ((b.op().equals("+") || b.op().equals("-") || b.op().equals("*"))
+          && (isFloat(b.left()) || isFloat(b.right())))) {
+        pushF64(b.left());
+        pushF64(b.right());
+        code.write(
+            switch (b.op()) {
+              case "+" -> 0xA0; // f64.add
+              case "-" -> 0xA1; // f64.sub
+              case "*" -> 0xA2; // f64.mul
+              default -> 0xA3; // f64.div
+            });
+        code.write(0xBD); // i64.reinterpret_f64 -> uniform i64 bits
+        return;
+      }
       int op =
           switch (b.op()) {
             case "+" -> 0x7C; // i64.add
@@ -673,6 +737,38 @@ public final class WasmCompiler {
         leb(code, 3);
         leb(code, 0);
         return;
+      }
+      // Int/Float conversions (Basics): toFloat : Int -> Float, and round/floor/ceiling/truncate :
+      // Float -> Int. Results stay in the uniform i64 representation (float bits, or an integer).
+      if (app.fn() instanceof Expr.Var cv && cv.module() == null) {
+        switch (cv.name()) {
+          case "toFloat" -> {
+            intExpr(app.arg()); // i64 integer
+            code.write(0xB9); // f64.convert_i64_s
+            code.write(0xBD); // i64.reinterpret_f64 -> float bits
+            return;
+          }
+          case "floor", "ceiling", "truncate" -> {
+            pushF64(app.arg());
+            code.write(switch (cv.name()) {
+              case "floor" -> 0x9C; // f64.floor
+              case "ceiling" -> 0x9B; // f64.ceil
+              default -> 0x9D; // f64.trunc
+            });
+            code.write(0xB0); // i64.trunc_f64_s
+            return;
+          }
+          case "round" -> {
+            // Elm/JS round is half-up: floor(x + 0.5).
+            pushF64(app.arg());
+            emitRawF64Const(0.5);
+            code.write(0xA0); // f64.add
+            code.write(0x9C); // f64.floor
+            code.write(0xB0); // i64.trunc_f64_s
+            return;
+          }
+          default -> {}
+        }
       }
       // abs x
       if (app.fn() instanceof Expr.Var v && v.name().equals("abs")) {
@@ -788,6 +884,20 @@ public final class WasmCompiler {
             if (b.op().equals("/=")) {
               code.write(0x45); // i32.eqz -> invert
             }
+            return;
+          }
+          if (isFloat(b.left()) || isFloat(b.right())) {
+            pushF64(b.left());
+            pushF64(b.right());
+            code.write(
+                switch (b.op()) {
+                  case "<" -> 0x63; // f64.lt
+                  case ">" -> 0x64; // f64.gt
+                  case "<=" -> 0x65; // f64.le
+                  case ">=" -> 0x66; // f64.ge
+                  case "==" -> 0x61; // f64.eq
+                  default -> 0x62; // f64.ne
+                });
             return;
           }
           intExpr(b.left());
