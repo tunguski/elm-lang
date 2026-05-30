@@ -103,8 +103,10 @@ The compiled TEA runtime also ships a **time-travel debugger**: append `?debug` 
 step-back/forward overlay; `window.$app` exposes `history()`, `goto(i)`, `live()`, `messages()` and
 `replay(log)` (deterministic re-fold of a recorded message log). The gallery includes a
 [JS-vs-WASM page](https://tunguski.github.io/elm-lang/backends.html), an interactive
-[playground](https://tunguski.github.io/elm-lang/playground.html), and a multi-file
-[editor](https://tunguski.github.io/elm-lang/editor.html) running in the browser.
+[playground](https://tunguski.github.io/elm-lang/playground.html), and a reusable
+[editor](https://tunguski.github.io/elm-lang/editor.html) — a gallery of example files that runs
+each one's `main` live in the browser (static views, interactive `Browser.sandbox` apps, or computed
+values), all via a from-scratch Elm interpreter written in Elm.
 
 ## Type inference
 

@@ -542,6 +542,7 @@ public final class SiteGenerator {
     "/elm/editor/Lexer.elm",
     "/elm/editor/Parser.elm",
     "/elm/editor/Eval.elm",
+    "/elm/editor/Editor.elm",
     "/elm/editor/Main.elm",
   };
 

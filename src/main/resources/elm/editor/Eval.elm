@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -15,7 +15,9 @@ scope nor the project's top-level definitions). Includes Html element/attribute 
 Elm Architecture programs (Browser.sandbox apps) can be rendered live by the editor. -}
 builtins : List String
 builtins =
-    htmlTags ++ [ "text", "onClick", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox" ]
+    htmlTags
+        ++ [ "text", "onClick", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox" ]
+        ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
 
 
 {-| The Html element builtins (each takes a list of attributes then a list of children). -}
@@ -27,7 +29,7 @@ htmlTags =
 {-| How many arguments a builtin consumes before it runs. -}
 arity : String -> Int
 arity name =
-    if List.member name [ "text", "onClick", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox" ] then
+    if List.member name [ "text", "onClick", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox", "List.length", "List.sum" ] then
         1
 
     else
@@ -250,7 +252,7 @@ applyValue globals fn arg =
                     args ++ [ arg ]
             in
             if List.length collected >= arity name then
-                runBuiltin name collected
+                runBuiltin globals name collected
 
             else
                 Ok (VBuiltin name collected)
@@ -260,9 +262,10 @@ applyValue globals fn arg =
 
 
 {-| Runs a fully-applied builtin. Html element/attribute builtins produce a structured `Value` tree
-(VCtor "Html.node"/"Html.text"/"Html.on"/"Html.style") the editor renders to live Html. -}
-runBuiltin : String -> List Value -> Result String Value
-runBuiltin name args =
+(VCtor "Html.node"/"Html.text"/"Html.on"/"Html.style") the editor renders to live Html. Threads
+`globals` so higher-order builtins (List.map) can apply the function value they're given. -}
+runBuiltin : Globals -> String -> List Value -> Result String Value
+runBuiltin globals name args =
     if List.member name htmlTags then
         case args of
             [ attrs, children ] ->
@@ -304,8 +307,66 @@ runBuiltin name args =
                 -- The editor drives init/update/view directly; evaluating `main` just yields the config.
                 Ok config
 
+            ( "List.length", [ VList xs ] ) ->
+                Ok (VNum (toFloat (List.length xs)))
+
+            ( "List.sum", [ VList xs ] ) ->
+                Ok (VNum (List.sum (List.filterMap asNum xs)))
+
+            ( "List.range", [ VNum a, VNum b ] ) ->
+                Ok (VList (List.map (\n -> VNum (toFloat n)) (List.range (round a) (round b))))
+
+            ( "List.map", [ f, VList xs ] ) ->
+                mapValues globals f xs |> Result.map VList
+
+            ( "String.join", [ VStr sep, VList xs ] ) ->
+                Ok (VStr (String.join sep (List.map renderStr xs)))
+
+            ( "Maybe.withDefault", [ dflt, v ] ) ->
+                case v of
+                    VCtor "Just" [ x ] ->
+                        Ok x
+
+                    VCtor "Nothing" [] ->
+                        Ok dflt
+
+                    _ ->
+                        Ok dflt
+
             _ ->
                 Err ("bad arguments to " ++ name)
+
+
+asNum : Value -> Maybe Float
+asNum v =
+    case v of
+        VNum n ->
+            Just n
+
+        _ ->
+            Nothing
+
+
+renderStr : Value -> String
+renderStr v =
+    case v of
+        VStr s ->
+            s
+
+        _ ->
+            renderValue v
+
+
+{-| Maps a function value over a list, short-circuiting on the first error. -}
+mapValues : Globals -> Value -> List Value -> Result String (List Value)
+mapValues globals f xs =
+    case xs of
+        [] ->
+            Ok []
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen (\y -> mapValues globals f rest |> Result.map (\ys -> y :: ys))
 
 
 applyClosure : Globals -> List String -> Expr -> Env -> Value -> Result String Value
@@ -763,6 +824,13 @@ appView files model =
             )
 
 
+{-| Evaluates the project's `main` to a value (e.g. a static Html tree, a Browser.sandbox config, or
+a plain value) — what the editor renders for the selected file. -}
+mainValue : List ( String, String ) -> Result String Value
+mainValue files =
+    parseProject files |> Result.andThen (\globals -> evalExpr globals [] (Var "main"))
+
+
 {-| Headless render of a single-file app's initial view to an HTML string (used in tests and as a
 quick non-DOM preview): runs `init` then `view`, serialising the Html `Value` tree. -}
 renderProgram : String -> String
@@ -771,17 +839,23 @@ renderProgram source =
         files =
             [ ( "Main.elm", source ) ]
     in
-    case appInit files of
-        Err e ->
-            "init error: " ++ e
+    if hasApp files then
+        -- A Browser.sandbox-style app: render the initial view (init |> view).
+        case appInit files |> Result.andThen (appView files) of
+            Ok html ->
+                htmlToString html
 
-        Ok model ->
-            case appView files model of
-                Ok html ->
-                    htmlToString html
+            Err e ->
+                "app error: " ++ e
 
-                Err e ->
-                    "view error: " ++ e
+    else
+        -- A static program: render `main` (a Html value or a plain value) directly.
+        case mainValue files of
+            Ok v ->
+                htmlToString v
+
+            Err e ->
+                "main error: " ++ e
 
 
 htmlToString : Value -> String

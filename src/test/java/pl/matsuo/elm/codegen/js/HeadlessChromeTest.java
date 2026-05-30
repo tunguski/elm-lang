@@ -154,7 +154,7 @@ class HeadlessChromeTest {
   }
 
   @Test
-  void editorRendersTheButtonsAppResultAndDebugger() throws Exception {
+  void editorRendersTheSelectedFilesMainLive() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
     for (int i = 0; i < modules.length; i++) {
@@ -166,14 +166,13 @@ class HeadlessChromeTest {
               StandardCharsets.UTF_8);
     }
     String dom = renderPage(JsCompiler.htmlPageProject(null, modules));
-    // The default editor content is the elm-lang.org "buttons" app. Assert on rendered-only text
-    // (produced at runtime, not present in the inlined bundle source):
-    // the live app's view (its minus button), the result of `main` (the Browser.sandbox config),
-    // and the debugger stepping `update` (two Increments -> model 2).
-    assertTrue(dom.contains(">-<"), "live app rendered the interpreted view (the minus button)");
-    assertTrue(dom.contains("init = 0"), "result pane evaluated `main` (Browser.sandbox config)");
-    assertTrue(dom.contains("model: 0"), "debugger rendered the initial model from init");
-    assertTrue(dom.contains("model: 2"), "debugger stepped the model via update");
+    // The reusable Editor is configured (by Main) with a gallery of examples and renders the
+    // selected file's `main` live. Assert on rendered-only text (produced at runtime, not present
+    // in the inlined bundle source): the example file list, and the default file (Buttons.elm) run
+    // as a live app — its minus button and its initial model rendered as <div>0</div>.
+    assertTrue(dom.contains("Squares.elm") && dom.contains("Toggle.elm"), "example gallery listed");
+    assertTrue(dom.contains(">-<"), "selected file's main rendered live (the minus button)");
+    assertTrue(dom.contains("<div>0</div>"), "live app shows the initial interpreted model");
   }
 
   @Test

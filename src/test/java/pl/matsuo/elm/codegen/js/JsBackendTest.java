@@ -271,4 +271,25 @@ class JsBackendTest {
     assertTrue(html.contains("<div>0</div>"), html);
     assertTrue(html.contains("onclick=Decrement") && html.contains("onclick=Increment"), html);
   }
+
+  @Test
+  void editorRendersStaticHtmlValuesAndComputations() {
+    // Static Html `main`.
+    assertEquals("<div>Hello, Elm!</div>", editorRender("main = div [] [ text \"Hello, Elm!\" ]\n"));
+    // A computed String through a helper.
+    assertEquals(
+        "Hello, world!",
+        editorRender("main = text (greet \"world\")\ngreet name = \"Hello, \" ++ name ++ \"!\"\n"));
+    // Recursion + String.fromInt.
+    assertEquals(
+        "120",
+        editorRender("main = text (String.fromInt (fact 5))\nfact n = if n <= 1 then 1 else n * fact (n - 1)\n"));
+    // List builtins: range + sum.
+    assertEquals("5050", editorRender("main = text (String.fromInt (List.sum (List.range 1 100)))\n"));
+    // Higher-order List.map building Html.
+    String squares =
+        editorRender(
+            "main = div [] (List.map sq (List.range 1 4))\nsq n = div [] [ text (String.fromInt (n * n)) ]\n");
+    assertTrue(squares.contains("<div>1</div>") && squares.contains("<div>16</div>"), squares);
+  }
 }
