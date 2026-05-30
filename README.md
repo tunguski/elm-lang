@@ -14,7 +14,8 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    and ships a browser runtime (virtual-DOM diff, effects: Random/Http/Time/Task/File, WebGL).
 3. **Bytecode compiler + stack VM** — a compact 24-opcode bytecode and an operand-stack VM.
 4. **WebAssembly compiler** — emits a wasm binary (no external assembler) for the numeric/boolean
-   `Int`/`Bool` fragment; runs anywhere `WebAssembly` does.
+   fragment plus a linear-memory heap (cons-lists, tuples, tagged custom types), so recursive
+   list/ADT functions compile and run anywhere `WebAssembly` does.
 
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions).
@@ -68,58 +69,84 @@ The [`elm.sh`](elm.sh) wrapper runs any command without the full `java -cp …`
 invocation (e.g. `./elm.sh eval "List.range 1 5"`); it compiles the project first if
 `Main.class` is missing and caches the classpath for fast subsequent calls.
 
-CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]`,
-`js <file.elm> [--min] [--map]`, `make <file.elm> [-o out.html|out.js] [--optimize]`
-(deployable artifact), `eval "<expr>" [--backend ...]`, `check <file.elm> [more.elm …]`
-(type-check a module or project), `format <file.elm> [--write|--check|--project]`, `repl`,
-`lsp` (language server over stdio), `script <file.elm> [args…]` (run an Elm file as a
-command-line script), `server <file.elm> [--port N]` (serve HTTP from an Elm handler),
-`test <file.elm…>` (run `Test` suites with the bundled Test/Expect modules),
-`project <elm.json|dir> [check|run]`, `init` (scaffold `elm.json` + `src/`), `bench [fibN]`,
-`site <examplesDir> <Playground.elm> <outDir>`.
+### CLI commands
 
-It also ships a **REPL** (`elm repl`), a **language server** (`elm lsp` — diagnostics, hover,
-go-to-definition, completion, document symbols, find-references and rename), `elm.json` **project
-mode**, JS **source maps** (`js --map`, column-level), and a **time-travel debugger** for compiled
-TEA programs (append `?debug` to the page URL for a step-back/forward overlay; `window.$app` exposes
-`history()`/`goto(i)`/`live()`). The gallery includes a [JS-vs-WASM
-page](https://tunguski.github.io/elm-lang/backends.html) and an interactive
-[playground](https://tunguski.github.io/elm-lang/playground.html) running both compiled
-backends in the browser.
+Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -jar target/elm.jar
+<command>`, or the native binary. Pass `--help` to any command for full options.
+
+| Command | What it does |
+|---|---|
+| `run <file.elm> [--value NAME] [--backend interp\|bytecode] [--watch] [--no-check]` | Evaluate a definition (default `main`) and print it; Html/programs render to HTML. Type-checks first. |
+| `eval "<expr>" [--backend interp\|bytecode]` | Evaluate a single expression. |
+| `make <file.elm…> [-o out.html\|out.js] [--optimize] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--optimize` tree-shakes + minifies. |
+| `js <file.elm> [--min] [--map]` | Emit JavaScript (optionally minified, with an inline column-level source map). |
+| `check <file.elm> [more.elm…]` | Type-check a module or a multi-module project. |
+| `test <file.elm…>` | Run `Test` suites (bundled `Test`/`Expect`); reports pass/fail, non-zero exit on failure. |
+| `format <file.elm> [--write \| --check \| --project]` | Format (elm-format style); `--check` gates CI. |
+| `lint <file.elm…>` | Report leftover `Debug.*` and unused definitions (non-zero exit on findings). |
+| `docs <file.elm>` | Generate Markdown API docs from doc comments + inferred types. |
+| `coverage <file.elm> [--value NAME]` | Run a definition and report which top-level definitions executed. |
+| `repl` | Interactive REPL: expressions, persistent `x = …` definitions, `:type`, multi-line input. |
+| `lsp` | Language server over stdio (diagnostics, hover, go-to-definition, completion, document symbols, find-references, rename, code actions). |
+| `script <file.elm> [args…]` | Run an Elm file as a POSIX-style CLI script (the bundled `Posix` module). |
+| `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
+| `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
+| `init [dir]` | Scaffold `elm.json` + `src/`. |
+| `bench [fibN]` | Benchmark the four backends on a recursive workload. |
+| `site <examplesDir> <Playground.elm> <outDir>` | Generate the static example gallery. |
+
+The compiled TEA runtime also ships a **time-travel debugger**: append `?debug` to a page URL for a
+step-back/forward overlay; `window.$app` exposes `history()`, `goto(i)`, `live()`, `messages()` and
+`replay(log)` (deterministic re-fold of a recorded message log). The gallery includes a
+[JS-vs-WASM page](https://tunguski.github.io/elm-lang/backends.html), an interactive
+[playground](https://tunguski.github.io/elm-lang/playground.html), and a multi-file
+[editor](https://tunguski.github.io/elm-lang/editor.html) running in the browser.
 
 ## Type inference
 
-A from-scratch **Hindley–Milner** type checker ([`pl.matsuo.elm.types`](src/main/java/pl/matsuo/elm/types/))
-infers types for expressions and whole modules, with Elm's constrained type variables
-(`number`/`comparable`/`appendable`), let-generalization, row-polymorphic records, custom types,
-record-alias constructors, type-alias expansion and annotation checking. So `1 + 1.5 : Float`,
-`List.map : (a -> b) -> List a -> List b`, and mistakes like `1 + "a"`, a non-`Bool` `if`
-condition, or `\f -> f f` are reported as type errors. It runs via `check` / `TypeChecker`; it is
-not wired as a mandatory pass before evaluation. The prelude signatures cover elm/core plus the
-`Html`/`Svg`/`Browser`/`Events`/`Dom`, effect (`Cmd`/`Sub`/`Random`/`Time`/`Task`/`Http`/`Json`/
-`File`), collection and `Math.*`/`WebGL`/`WebGL.Texture` builtins the examples use, so **all 21
-single-module elm-lang.org examples type-check end to end** (`ModuleCheckTest`). It also does
-**multi-module/project** checking — `TypeChecker.checkProject` (CLI `check a.elm b.elm …`) orders
-modules by their imports and resolves names, constructors and aliases across module boundaries.
-Error messages are Elm-style: a source excerpt, a caret under the offending sub-expression, the
-location and a hint. `run` and `make` **type-check by default**, refusing to run/compile on a type
-error (pass `--no-check` to skip; a checker *limitation* on a program it can't fully analyze is
-non-fatal and falls through to evaluation). The checker also detects **non-exhaustive and
-unreachable `case` branches** (Maranget's usefulness algorithm), reporting a witness of the missing
-input (e.g. `Missing a branch for: Blue`).
+A from-scratch **Hindley–Milner** type checker ([`pl.matsuo.elm.types`](src/main/java/pl/matsuo/elm/types/)),
+in the style of Algorithm W. Highlights:
+
+- **Constrained type variables** — `number`, `comparable`, `appendable` (so `1 + 1.5 : Float`,
+  `List.map : (a -> b) -> List a -> List b`).
+- **Let-generalization** in dependency order (Tarjan SCCs), **row-polymorphic records**, custom
+  types, record-alias constructors, type-alias expansion, and annotation checking.
+- **Exhaustiveness & redundancy** for `case` (Maranget's usefulness algorithm), reporting a witness
+  of the missing input (e.g. `Missing a branch for: Blue`) and unreachable branches.
+- **Elm-style errors**: a source excerpt, a caret under the offending sub-expression, the location,
+  a hint, and **"Did you mean …?"** suggestions for misspelled names.
+- **Multi-module/project** checking (`check a.elm b.elm …`) across module boundaries.
+- Catches `1 + "a"`, a non-`Bool` `if`, `\f -> f f`, unknown names, etc.
+
+The prelude signatures cover elm/core plus the `Html`/`Svg`/`Browser`/`Events`/`Dom`, effect
+(`Cmd`/`Sub`/`Random`/`Time`/`Task`/`Http`/`Json`/`File`), collection and
+`Math.*`/`WebGL`/`WebGL.Texture` builtins the examples use, so **all 21 single-module
+elm-lang.org examples type-check end to end**. `run` and `make` **type-check by default** (pass
+`--no-check` to skip; a checker *limitation* on a program it can't fully analyze is non-fatal and
+falls through to evaluation).
 
 ## Language coverage
 
-Modules, imports (incl. `exposing (..)`, aliases), custom types, type aliases (incl. record
-constructors), type annotations; expressions: literals, lists, tuples, records (access/update/
-accessor), `if`, `case` (full patterns: ctor/tuple/list/cons/record/alias/literal), `let`,
-lambdas, curried application, operators with the elm/core fixity table, qualified names. Layout
-is handled by the offside rule.
+| Feature | Status | Notes |
+|---|---|---|
+| Modules, imports (`as`, `exposing (..)`), qualified names | ✅ | |
+| Custom types, type aliases (incl. record constructors), annotations | ✅ | |
+| Literals, lists, tuples, records (access / update / `.field` accessor) | ✅ | |
+| `if`, `let`, lambdas, curried application | ✅ | |
+| `case` with full patterns (ctor / tuple / list / cons / record / alias / literal / as) | ✅ | exhaustiveness-checked |
+| Operators with the elm/core fixity table; layout / offside rule | ✅ | |
+| **Ports** (`port module`, `Cmd`/`Sub` ports) | ✅ | |
+| **User/package-defined infix operators** (`(+++) a b = …`) | ✅ | non-standard in app code; here they run |
+| The Elm Architecture (`Browser.sandbox`/`element`/`document`), virtual-DOM | ✅ | with a time-travel debugger |
+| Effects: `Random`, `Time`, `Task`, `Http`, `File`, `Browser.Events`/`Dom` | ✅ | |
+| WebGL (`Math.Vector*`/`Matrix4`, shaders, textures) | ✅ | renders in a real `<canvas>` |
+| Third-party packages from the registry | ❌ | no package manager — see Known limitations |
+| GLSL custom binary operators from packages (`\|.`, `</>`) | ⚠️ | lex & parse; run only if you define them |
 
-Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`, `Set`,
-`Array`, `Debug`, plus
-`Html`/`Html.Attributes`/`Html.Events`, `Svg`/`Svg.Attributes`, `Browser`
-(`sandbox`/`element`/`document`), `Cmd`/`Sub`, `Random`, `Time`, `Task`, `Http`, `Json.Decode`.
+**Prelude**: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`, `Set`,
+`Array`, `Debug`; `Html`/`Html.Attributes`/`Html.Events`, `Svg`/`Svg.Attributes`, `Browser`
+(`sandbox`/`element`/`document`), `Cmd`/`Sub`, `Random`, `Time`, `Task`, `Http`, `Json.Decode`/
+`Json.Encode`, `Url`, `WebGL`/`WebGL.Texture`/`Math.*`.
 
 ## Scripting (POSIX-style)
 
@@ -253,14 +280,16 @@ publishes it as an artifact.
 
 ## Known limitations
 
-- Type inference (Hindley–Milner, see above) is **not a mandatory pass** before evaluation
-  (`run --strict` opts in). `check` handles single modules and multi-module projects
-  (`check a.elm b.elm`); the full 1700-line elm-playground still hits inference edge cases, though
-  every single-module example type-checks.
-- The **WASM backend** covers the numeric/boolean `Int`/`Bool` fragment only — lists, strings,
-  records and effects (which need a heap) are left to the JS backend.
-- The textured WebGL examples depend on cross-origin images and a real GPU; `first-person` waits on
-  asset/viewport state.
-- **No package manager**: only the bundled standard library is available; third-party packages and
-  their custom infix operators (`|.`, `</>`, …) lex and parse but aren't fetched or executed. See
-  [Packages & dependencies](#packages--dependencies).
+- **No package manager**: only the bundled standard library is available; third-party packages
+  aren't fetched or executed (their custom infix operators lex and parse, but the *definitions*
+  aren't loaded). See [Packages & dependencies](#packages--dependencies). This is the biggest gap.
+- **WASM backend** scope: numbers/booleans, plus a linear-memory heap for cons-lists, tuples and
+  tagged custom types (so recursive list/ADT functions compile and run). **Strings, records and
+  first-class functions/closures** are not in WASM yet — they remain on the JS backend.
+- The full **1700-line elm-playground** still hits a few type-inference edge cases (every
+  single-module elm-lang.org example type-checks); `run`/`make` fall through to evaluation when the
+  checker can't fully analyze a program.
+- The textured **WebGL** examples need a real GPU and same-origin images (cross-origin textures are
+  vendored into the gallery); verifying rasterized pixels requires a real browser.
+- **Type inference** is HM without records-as-extensible-everywhere subtleties of real Elm and
+  without kind checking; it's sound for the supported subset.
