@@ -31,6 +31,28 @@ public final class Infer {
   /** Aliases from already-checked modules, seeded into each module's scope by a project check. */
   private final Map<String, AliasDef> importedAliases = new HashMap<>();
 
+  // Union registry for exhaustiveness checking: which constructors each union has, which union a
+  // constructor belongs to, and each constructor's arity. Seeded with the builtin unions and
+  // accumulated across a project's modules (so a `case` can be checked against an imported union).
+  private final Map<String, List<String>> unionCtors = new HashMap<>();
+  private final Map<String, String> ctorUnion = new HashMap<>();
+  private final Map<String, Integer> ctorArity = new HashMap<>();
+
+  {
+    registerBuiltinUnion("Bool", List.of("True", "False"), List.of(0, 0));
+    registerBuiltinUnion("Maybe", List.of("Just", "Nothing"), List.of(1, 0));
+    registerBuiltinUnion("Result", List.of("Err", "Ok"), List.of(1, 1));
+    registerBuiltinUnion("Order", List.of("LT", "EQ", "GT"), List.of(0, 0, 0));
+  }
+
+  private void registerBuiltinUnion(String union, List<String> ctors, List<Integer> arities) {
+    unionCtors.put(union, ctors);
+    for (int i = 0; i < ctors.size(); i++) {
+      ctorUnion.put(ctors.get(i), union);
+      ctorArity.put(ctors.get(i), arities.get(i));
+    }
+  }
+
   private record AliasDef(List<String> params, Type body) {}
 
   /**
@@ -367,6 +389,13 @@ public final class Infer {
     }
     Ty result = new Ty.Con(u.name(), new ArrayList<>(params.values()));
     List<Ty.Var> vars = params.values().stream().map(t -> (Ty.Var) t).toList();
+    List<String> variantNames = new ArrayList<>();
+    for (Decl.Union.Variant variant : u.variants()) {
+      variantNames.add(variant.name());
+      ctorUnion.put(variant.name(), u.name());
+      ctorArity.put(variant.name(), variant.args().size());
+    }
+    unionCtors.put(u.name(), variantNames);
     for (Decl.Union.Variant variant : u.variants()) {
       Ty ctor = result;
       List<Type> args = variant.args();
@@ -592,6 +621,7 @@ public final class Infer {
       Unify.unify(pat, scrut);
       Unify.unify(result, infer(extendMono(env, binds), branch.body()));
     }
+    new Exhaustiveness(unionCtors, ctorUnion, ctorArity).check(c);
     return result;
   }
 
