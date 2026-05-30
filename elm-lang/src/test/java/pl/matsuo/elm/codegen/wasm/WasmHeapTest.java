@@ -107,6 +107,47 @@ class WasmHeapTest {
         """);
   }
 
+  @Test
+  void randomListFoldsAgreeWithInterpreter() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // Property: for random integer lists, a recursive sum/length/max in wasm equals the
+    // interpreter's — exercising the bump allocator across many shapes and lengths.
+    java.util.Random rng = new java.util.Random(20260530L);
+    for (int trial = 0; trial < 25; trial++) {
+      int n = rng.nextInt(12); // 0..11 elements
+      StringBuilder list = new StringBuilder("[");
+      for (int i = 0; i < n; i++) {
+        if (i > 0) {
+          list.append(", ");
+        }
+        list.append(rng.nextInt(200) - 100); // -100..99
+      }
+      list.append("]");
+      String fold =
+          switch (trial % 3) {
+            case 0 -> "sum";
+            case 1 -> "len";
+            default -> "maxOr0";
+          };
+      String source =
+          """
+          sum xs = case xs of
+              [] -> 0
+              h :: t -> h + sum t
+          len xs = case xs of
+              [] -> 0
+              h :: t -> 1 + len t
+          maxOr0 xs = case xs of
+              [] -> 0
+              h :: t -> let m = maxOr0 t in if h > m then h else m
+          main = %s %s
+          """
+              .formatted(fold, list);
+      String expected = Show.plain(Interpreter.load(source).value("main"));
+      assertEquals(expected, runMain(source), source);
+    }
+  }
+
   private static boolean nodeAvailable() {
     try {
       Process p = new ProcessBuilder("node", "--version").start();
