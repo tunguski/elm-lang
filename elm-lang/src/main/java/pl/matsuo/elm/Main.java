@@ -23,8 +23,8 @@ import pl.matsuo.elm.runtime.ElmData;
 
 /**
  * Command-line entry point, built on <a href="https://picocli.info">picocli</a>: {@code elm} with
- * subcommands {@code run/js/make/eval/script/check/repl/lsp/format/project/bench/site/init}. Use
- * {@code --help} on any command for usage.
+ * subcommands {@code run/js/make/eval/script/server/check/repl/lsp/format/project/bench/site/init}.
+ * Use {@code --help} on any command for usage.
  */
 @Command(
     name = "elm",
@@ -37,6 +37,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Make.class,
       Main.Eval.class,
       Main.Script.class,
+      Main.Serve.class,
       Main.Check.class,
       Main.Repl.class,
       Main.Lsp.class,
@@ -216,6 +217,31 @@ public final class Main implements Runnable {
           scriptArgs == null ? List.of() : scriptArgs,
           new java.io.BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)),
           System.out);
+    }
+  }
+
+  @Command(
+      name = "server",
+      description = "Serve HTTP using an Elm `handle : Server.Request -> Server.Response` app.")
+  static final class Serve implements Callable<Integer> {
+    @Parameters(index = "0", description = "The server .elm file (its `handle`).")
+    Path file;
+
+    @Option(
+        names = {"-p", "--port"},
+        description = "Port to listen on (default 8080).")
+    int port = 8080;
+
+    @Override
+    public Integer call() throws IOException, InterruptedException {
+      String userSource = Files.readString(file);
+      String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Server.elm");
+      Object handler = pl.matsuo.elm.interp.Project.load(userSource, lib).entryValue("handle");
+      var server = pl.matsuo.elm.server.ServerRunner.start(handler, port);
+      System.out.println("Serving " + file + " on http://localhost:" + port + " (Ctrl-C to stop)");
+      Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));
+      Thread.currentThread().join(); // block until the process is interrupted
+      return 0;
     }
   }
 

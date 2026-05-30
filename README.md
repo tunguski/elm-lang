@@ -71,8 +71,9 @@ CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--stri
 (deployable artifact), `eval "<expr>" [--backend ...]`, `check <file.elm> [more.elm …]`
 (type-check a module or project), `format <file.elm> [--write|--check|--project]`, `repl`,
 `lsp` (language server over stdio), `script <file.elm> [args…]` (run an Elm file as a
-command-line script), `project <elm.json|dir> [check|run]`, `init` (scaffold `elm.json` + `src/`),
-`bench [fibN]`, `site <examplesDir> <Playground.elm> <outDir>`.
+command-line script), `server <file.elm> [--port N]` (serve HTTP from an Elm handler),
+`project <elm.json|dir> [check|run]`, `init` (scaffold `elm.json` + `src/`), `bench [fibN]`,
+`site <examplesDir> <Playground.elm> <outDir>`.
 
 It also ships a **REPL** (`elm repl`), a **language server** (`elm lsp` — diagnostics
 + hover types, reusing the parser and HM checker), `elm.json` **project mode**, and JS
@@ -127,6 +128,29 @@ line/word/char counter:
 ```sh
 ./elm.sh script elm-lang/src/main/resources/elm/demos/wordcount.elm README.md
 ```
+
+## HTTP server (server-side Elm)
+
+`elm server <file.elm> [--port N]` serves HTTP from an Elm application that exposes a pure handler,
+using the bundled [`Server`](elm-lang/src/main/resources/elm/lib/Server.elm) API:
+
+```elm
+import Server exposing (..)
+
+handle : Request -> Response
+handle req =
+    case req.path of
+        "/ping" -> text "pong"
+        "/echo" -> if req.method == "POST" then text req.body else notFound
+        _ -> notFound
+```
+
+The runner (on the JDK's built-in HTTP server, no dependencies) builds a `Request` for each
+incoming request, applies `handle` on the JIT interpreter, and writes the `Response`. Because the
+handler is a pure `Request -> Response`, it is trivial to unit-test — `ServerRunnerTest` checks
+routing/status by direct dispatch and also over a real socket. The
+[`server.elm`](elm-lang/src/main/resources/elm/demos/server.elm) example routes `/`, `/ping`,
+`/json` and `/echo`.
 
 ## Packages & dependencies
 

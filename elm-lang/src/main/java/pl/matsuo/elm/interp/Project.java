@@ -130,6 +130,22 @@ public final class Project {
     return Thunk.resolve(v);
   }
 
+  /**
+   * Looks up a top-level definition by simple name, preferring the {@code Main} module, else the
+   * first module that defines it. Used to find an entry like {@code handle} in a server app.
+   */
+  public Object entryValue(String defName) {
+    if (globals.containsKey("Main." + defName)) {
+      return value("Main", defName);
+    }
+    for (String name : modules.keySet()) {
+      if (globals.containsKey(name + "." + defName)) {
+        return value(name, defName);
+      }
+    }
+    throw new ElmRuntimeError("No '" + defName + "' definition found in project");
+  }
+
   /** The {@code main} of the {@code Main} module (or the first module that defines {@code main}). */
   public Object main() {
     if (globals.containsKey("Main.main")) {

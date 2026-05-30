@@ -1,0 +1,76 @@
+package pl.matsuo.elm.server;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.sun.net.httpserver.HttpServer;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import org.junit.jupiter.api.Test;
+import pl.matsuo.elm.interp.Project;
+import pl.matsuo.elm.util.Resources;
+
+/** Tests the HTTP server runner: pure request dispatch and a real round-trip over a socket. */
+class ServerRunnerTest {
+
+  private static final String LIB = Resources.read("/elm/lib/Server.elm");
+  private static final String APP = Resources.read("/elm/demos/server.elm");
+  private static final Object HANDLER = Project.load(APP, LIB).entryValue("handle");
+
+  @Test
+  void routesAndStatusesAreCorrect() {
+    assertEquals(200, ServerRunner.dispatch(HANDLER, "GET", "/", "").status());
+    assertTrue(ServerRunner.dispatch(HANDLER, "GET", "/", "").body().contains("Hello from Elm"));
+
+    ServerRunner.Resp ping = ServerRunner.dispatch(HANDLER, "GET", "/ping", "");
+    assertEquals("pong", ping.body());
+    assertEquals("text/plain", ping.contentType());
+
+    ServerRunner.Resp js = ServerRunner.dispatch(HANDLER, "GET", "/json", "");
+    assertEquals("application/json", js.contentType());
+    assertTrue(js.body().contains("\"lang\":\"elm\""), js.body());
+
+    assertEquals(404, ServerRunner.dispatch(HANDLER, "GET", "/missing", "").status());
+  }
+
+  @Test
+  void echoesPostBodyButRejectsGet() {
+    assertEquals("you said: hi there", ServerRunner.dispatch(HANDLER, "POST", "/echo", "hi there").body());
+    assertEquals(405, ServerRunner.dispatch(HANDLER, "GET", "/echo", "").status());
+  }
+
+  @Test
+  void servesOverRealHttp() throws Exception {
+    HttpServer server = ServerRunner.start(HANDLER, 0); // ephemeral port
+    try {
+      int port = server.getAddress().getPort();
+      HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+
+      HttpResponse<String> ping =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ping")).build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals(200, ping.statusCode());
+      assertEquals("pong", ping.body());
+
+      HttpResponse<String> echo =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/echo"))
+                  .POST(HttpRequest.BodyPublishers.ofString("ahoy"))
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals("you said: ahoy", echo.body());
+
+      HttpResponse<String> missing =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/nope")).build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals(404, missing.statusCode());
+    } finally {
+      server.stop(0);
+    }
+  }
+}
