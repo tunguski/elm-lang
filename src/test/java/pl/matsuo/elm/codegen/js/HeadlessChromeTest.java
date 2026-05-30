@@ -174,6 +174,26 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void recordsAndDeterministicallyReplaysTheMessageLog() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Dispatch three increments, capture the recorded message log, then replay it from scratch and
+    // confirm the reconstructed model and history match exactly (deterministic reproduction).
+    String driver =
+        "window.$app.dispatch($data('Increment',[]));"
+            + "window.$app.dispatch($data('Increment',[]));"
+            + "window.$app.dispatch($data('Increment',[]));"
+            + "var log = window.$app.messages().slice();"
+            + "document.body.setAttribute('data-recorded', String(log.length));"
+            + "window.$app.replay(log);"
+            + "document.body.setAttribute('data-replayed', document.querySelectorAll('div')[1].textContent);"
+            + "document.body.setAttribute('data-steps', String(window.$app.history().length - 1));";
+    String dom = renderInBrowser(example("buttons"), driver);
+    assertTrue(dom.contains("data-recorded=\"3\""), dom); // three messages recorded
+    assertTrue(dom.contains("data-replayed=\"-3+\"") || dom.contains("data-replayed=\"3\""), dom); // count 3
+    assertTrue(dom.contains("data-steps=\"3\""), dom); // history rebuilt to the same length
+  }
+
+  @Test
   void timeTravelShowsHistoricalModelThenResumesLive() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Three increments produce snapshots [0,1,2,3]. goto(1) re-renders the model after the first

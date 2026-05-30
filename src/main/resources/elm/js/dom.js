@@ -395,14 +395,26 @@
       Object.keys(subs).forEach(function(k){ if(!next[k] && subs[k]) subs[k](); });
       subs = next;
     }
+    var messages=[]; // the dispatched messages, in order (the effect log)
     window.$dispatch = function(msg){
       var cmd=null;
       if (kind==='$Sandbox') model = def.update(msg)(model);
       else { var pair = def.update(msg)(model); model = pair.vs[0]; cmd = pair.vs[1]; }
-      history.push(model); viewIndex=null; // a new message returns to live mode
+      messages.push(msg); history.push(model); viewIndex=null; // a new message returns to live mode
       render(); syncSubs();
       if (cmd) runCmd(cmd, window.$dispatch);
     };
+    // Deterministic replay: re-fold a recorded message log from the initial model, applying only
+    // `update` (no Cmd side effects), so a session reproduces the exact model/view history.
+    function replay(log){
+      model = (kind==='$Sandbox') ? def.init : def.init($unit).vs[0];
+      history=[model]; messages=[]; viewIndex=null;
+      log.forEach(function(m){
+        if (kind==='$Sandbox') model = def.update(m)(model); else model = def.update(m)(model).vs[0];
+        messages.push(m); history.push(model);
+      });
+      render(); syncSubs();
+    }
     // ---- debug / time-travel overlay (opt-in via ?debug or window.$elmDebug) ----
     var debug = (typeof window!=='undefined') &&
       (window.$elmDebug===true || (window.location && /[?&]debug\b/.test(window.location.search||'')));
@@ -428,6 +440,8 @@
       model: function(){ return model; },
       ports: $portsApi(),
       history: function(){ return history; }, // model snapshots (index 0 = initial)
+      messages: function(){ return messages; }, // the recorded message log (the effects)
+      replay: function(log){ replay(log); },   // deterministically re-fold a recorded message log
       goto: function(i){ goto(i); },           // time-travel: show snapshot i
       live: function(){ viewIndex=null; render(); }
     };
