@@ -211,6 +211,7 @@ public final class SiteGenerator {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>%TITLE% — elm-lang</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
         %STYLE%
         </head>
         <body>
@@ -221,13 +222,19 @@ public final class SiteGenerator {
         <main>
           <h1>%TITLE% <small>%CATEGORY%</small></h1>
           <section class="demo">
+            <div class="demo-head">
+              <a class="newtab" href="demos/%SLUG%.html" target="_blank" rel="noopener">Open demo in a new tab &#8599;</a>
+            </div>
             <iframe title="%TITLE% demo" src="demos/%SLUG%.html" loading="lazy"></iframe>
           </section>
           <section class="src">
             <h2>Source</h2>
-            <pre><code>%SOURCE%</code></pre>
+            <pre><code class="language-elm">%SOURCE%</code></pre>
           </section>
         </main>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
+        <script>hljs.highlightAll();</script>
         </body>
         </html>
         """
@@ -347,8 +354,12 @@ public final class SiteGenerator {
       .home{color:var(--accent);text-decoration:none;font-weight:600}
       main{max-width:900px;margin:0 auto;padding:24px}
       h1 small{font-size:.9rem;color:#889;font-weight:400}
+      .demo-head{display:flex;justify-content:flex-end;margin-bottom:6px}
+      .newtab{color:var(--accent);text-decoration:none;font-size:.85rem;font-weight:600}
+      .newtab:hover{text-decoration:underline}
       .demo iframe{width:100%;min-height:420px;border:1px solid #e3e3e3;border-radius:10px;background:#fff}
-      .src pre{background:#0f1720;color:#e6edf3;padding:16px;border-radius:10px;overflow:auto;line-height:1.5}
+      .src pre{background:#0f1720;border-radius:10px;overflow:auto;line-height:1.5}
+      .src pre code{display:block;padding:16px;color:#e6edf3}
       .badge{font-size:.72rem;padding:3px 10px;border-radius:999px}
       .badge.live{background:#e3f4e1;color:#246b1e}
       .badge.snapshot{background:#fdf0d5;color:#8a5a00}
