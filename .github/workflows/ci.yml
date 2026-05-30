@@ -21,6 +21,14 @@ jobs:
           distribution: 'graalvm'
           cache: 'maven'
 
+      - name: Ensure Chrome is available (for the headless-browser fidelity tests)
+        run: |
+          if command -v google-chrome >/dev/null; then bin=$(command -v google-chrome);
+          elif command -v chromium-browser >/dev/null; then bin=$(command -v chromium-browser);
+          else sudo apt-get update && sudo apt-get install -y chromium-browser && bin=$(command -v chromium-browser); fi
+          echo "CHROME_BIN=$bin" >> "$GITHUB_ENV"
+          echo "Using Chrome at $bin"; "$bin" --version || true
+
       - name: Show toolchain
         run: |
           java -version

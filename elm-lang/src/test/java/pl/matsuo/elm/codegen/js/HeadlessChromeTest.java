@@ -21,10 +21,25 @@ class HeadlessChromeTest {
   private static final String CHROME = findChrome();
 
   private static String findChrome() {
+    // An explicit override wins (used by CI), then the usual install locations on each OS.
+    String env = System.getenv("CHROME_BIN");
+    if (env != null && !env.isBlank() && Files.exists(Path.of(env))) {
+      return env;
+    }
     String[] paths = {
+      // Windows
       "C:/Program Files/Google/Chrome/Application/chrome.exe",
       "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-      System.getProperty("user.home") + "/AppData/Local/Google/Chrome/Application/chrome.exe"
+      System.getProperty("user.home") + "/AppData/Local/Google/Chrome/Application/chrome.exe",
+      // Linux (GitHub-hosted ubuntu runners ship google-chrome-stable)
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/chromium",
+      "/snap/bin/chromium",
+      // macOS
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium"
     };
     for (String p : paths) {
       if (Files.exists(Path.of(p))) {
