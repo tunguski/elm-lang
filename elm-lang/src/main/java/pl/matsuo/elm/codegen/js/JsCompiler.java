@@ -253,6 +253,29 @@ public final class JsCompiler {
   }
 
   /**
+   * One program that evaluates several expressions and prints their {@code $show} forms, one per
+   * line. Used by differential testing to compare many results against the other backends in a
+   * single Node invocation.
+   */
+  public static String expressionsProgram(List<String> expressions) {
+    Module empty =
+        new Module(
+            "Main",
+            Module.Exposing.ALL,
+            List.of(),
+            List.of(),
+            new pl.matsuo.elm.error.Position(1, 1, 0));
+    JsCompiler c = new JsCompiler(empty);
+    StringBuilder sb = new StringBuilder(JsRuntime.SOURCE).append("\nvar $out=[];\n");
+    for (String expr : expressions) {
+      sb.append("$out.push($show((")
+          .append(c.compile(Parser.parseExpression(expr)))
+          .append(")));\n");
+    }
+    return sb.append("process.stdout.write($out.join(\"\\n\"));\n").toString();
+  }
+
+  /**
    * Compiled top-level declarations: functions first (their bodies run lazily when called), then
    * parameterless values in dependency order, so a value that references another is emitted after
    * it (JS {@code var} initialisers run eagerly, unlike the interpreter's lazy thunks).
