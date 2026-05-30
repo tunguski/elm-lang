@@ -4,16 +4,20 @@
 [![Example gallery](https://img.shields.io/badge/gallery-tunguski.github.io%2Felm--lang-5fabdc)](https://tunguski.github.io/elm-lang/)
 
 An implementation of the [Elm](https://elm-lang.org) language in Java 25, built around
-**GraalVM Truffle**. It has one front end (lexer + parser) feeding **three backends**:
+**GraalVM Truffle**. It has one front end (lexer + parser) feeding **four backends**:
 
 1. **JIT interpreter** — a Truffle language: the AST is compiled to a tree of `Node`s rooted at
    `RootCallTarget`s, so on GraalVM the Graal compiler partial-evaluates hot functions into
    machine code.
 2. **JavaScript compiler** — textual codegen plus a small kernel runtime (functions become native
-   curried arrow functions), in the spirit of the official Elm compiler.
+   curried arrow functions), in the spirit of the official Elm compiler. Bundles multiple modules
+   and ships a browser runtime (virtual-DOM diff, effects: Random/Http/Time/Task/File, WebGL).
 3. **Bytecode compiler + stack VM** — a compact 24-opcode bytecode and an operand-stack VM.
+4. **WebAssembly compiler** — emits a wasm binary (no external assembler) for the numeric/boolean
+   `Int`/`Bool` fragment; runs anywhere `WebAssembly` does.
 
-All three share one value model and are **differential-tested** against each other.
+All four share one value model and are **differential-tested** against each other (including
+property-based testing over randomly generated expressions).
 
 ## Build & test
 
@@ -58,8 +62,10 @@ java -cp <classpath> pl.matsuo.elm.Main run path/to/Main.elm --backend interp
 java -cp <classpath> pl.matsuo.elm.Main js path/to/Main.elm
 ```
 
-CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME]`, `js <file.elm>`,
-`eval "<expr>" [--backend ...]`, `check <file.elm>` (type-check and print inferred types).
+CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]`,
+`js <file.elm> [--min]`, `eval "<expr>" [--backend ...]`,
+`check <file.elm> [more.elm …]` (type-check a module or project), `bench [fibN]`,
+`site <examplesDir> <Playground.elm> <outDir>`.
 
 ## Type inference
 
@@ -72,8 +78,12 @@ condition, or `\f -> f f` are reported as type errors. It runs via `check` / `Ty
 not wired as a mandatory pass before evaluation. The prelude signatures cover elm/core plus the
 `Html`/`Svg`/`Browser`/`Events`/`Dom`, effect (`Cmd`/`Sub`/`Random`/`Time`/`Task`/`Http`/`Json`/
 `File`), collection and `Math.*`/`WebGL`/`WebGL.Texture` builtins the examples use, so **all 21
-single-module elm-lang.org examples type-check end to end** (`ModuleCheckTest`). The Playground
-games need cross-module checking (`check` is single-file), which isn't implemented yet.
+single-module elm-lang.org examples type-check end to end** (`ModuleCheckTest`). It also does
+**multi-module/project** checking — `TypeChecker.checkProject` (CLI `check a.elm b.elm …`) orders
+modules by their imports and resolves names, constructors and aliases across module boundaries.
+Error messages are Elm-style: a source excerpt, a caret under the offending sub-expression, the
+location and a hint. `run <file> --strict` type-checks before evaluating and refuses to run on a
+type error.
 
 ## Language coverage
 
@@ -132,10 +142,12 @@ pixels would require running the JS backend in a real browser.
 
 A static gallery of the **JavaScript-compiled** examples is published to
 **<https://tunguski.github.io/elm-lang/>** by the [Pages workflow](.github/workflows/pages.yml).
-For each example it emits a self-contained demo page (`JsCompiler.htmlPage`) plus a wrapper that
-shows the demo next to its Elm source; 20 of 27 examples run as live compiled JavaScript and the
-rest (multi-module Playground games, GPU-bound WebGL) fall back to an interpreter-rendered initial
-frame. Build it locally with:
+For each example it emits a self-contained live demo page plus a wrapper that shows the demo (with
+an "open in a new tab" link) next to its syntax-highlighted Elm source. **All 27 examples run as
+live compiled JavaScript** — the Playground games are bundled multi-module with the real
+evancz/elm-playground source, and the WebGL examples render into a real `<canvas>`. A separate
+[**JS vs WASM**](https://tunguski.github.io/elm-lang/backends.html) page runs numeric snippets
+through both compiled backends in the browser, side by side. Build it locally with:
 
 ```sh
 cd elm-lang
@@ -146,16 +158,19 @@ java -jar target/elm.jar site src/test/resources/examples src/test/resources/Pla
 ## Continuous integration
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds and runs the full test suite on
-GraalVM for JDK 25 (via the Maven wrapper) for every push and pull request.
+GraalVM for JDK 25 (via the Maven wrapper) for every push and pull request, with real headless
+**Chrome** installed so the browser-fidelity tests run. A separate
+[`native.yml`](.github/workflows/native.yml) builds the GraalVM native binary on Linux and
+publishes it as an artifact.
 
 ## Known limitations
 
-- Type inference (Hindley–Milner, see above) is **not a mandatory pass** before evaluation:
-  evaluation runs the inferencer best-effort to decide `Int` vs `Float` for numeric literals and
-  otherwise proceeds untyped. `check` itself is **single-module**, so the multi-module Playground
-  games can't yet be type-checked (cross-module resolution from source isn't implemented); every
-  single-module example does type-check.
-- Custom infix operators from packages (e.g. elm/parser's `|.`/`|=`, elm/url's `</>`/`<?>`) lex and
-  parse — the standard ones have their declared fixities and any other lexable operator falls back
-  to a default (left-associative, lowest precedence) — but using them at runtime still requires the
-  defining package, which isn't bundled.
+- Type inference (Hindley–Milner, see above) is **not a mandatory pass** before evaluation
+  (`run --strict` opts in). `check` handles single modules and multi-module projects
+  (`check a.elm b.elm`); the full 1700-line elm-playground still hits inference edge cases, though
+  every single-module example type-checks.
+- The **WASM backend** covers the numeric/boolean `Int`/`Bool` fragment only — lists, strings,
+  records and effects (which need a heap) are left to the JS backend.
+- The textured WebGL examples depend on cross-origin images and a real GPU; `first-person` waits on
+  asset/viewport state. Custom package infix operators (`|.`, `</>`, …) lex and parse but their
+  defining package isn't bundled for execution.
