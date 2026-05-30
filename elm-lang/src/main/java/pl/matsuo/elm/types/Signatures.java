@@ -336,6 +336,23 @@ public final class Signatures {
     g("Json.Decode.andThen", "(a -> Decoder b) -> Decoder a -> Decoder b");
     g("Json.Decode.oneOrMore", "(a -> List a -> v) -> Decoder a -> Decoder v");
 
+    g("Json.Encode.int", "Int -> Value");
+    g("Json.Encode.float", "Float -> Value");
+    g("Json.Encode.string", "String -> Value");
+    g("Json.Encode.bool", "Bool -> Value");
+    g("Json.Encode.null", "Value");
+    g("Json.Encode.list", "(a -> Value) -> List a -> Value");
+    g("Json.Encode.object", "List ( String, Value ) -> Value");
+    g("Json.Encode.encode", "Int -> Value -> String");
+
+    g("Url.fromString", "String -> Maybe Url");
+    g("Url.toString", "Url -> String");
+    g("Browser.Navigation.load", "String -> Cmd msg");
+    g("Browser.Navigation.pushUrl", "Key -> String -> Cmd msg");
+    g("Browser.Navigation.replaceUrl", "Key -> String -> Cmd msg");
+    g("Browser.Navigation.back", "Key -> Int -> Cmd msg");
+    g("Browser.Navigation.forward", "Key -> Int -> Cmd msg");
+
     g("File.decoder", "Decoder File");
     g("File.toUrl", "File -> Task x String");
     g("File.name", "File -> String");

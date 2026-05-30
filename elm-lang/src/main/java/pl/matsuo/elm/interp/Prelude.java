@@ -618,6 +618,44 @@ public final class Prelude {
       }
       return pl.matsuo.elm.json.DecoderRunner.run(a[0], json);
     });
+
+    // Json.Encode: a Value is $Json wrapping a plain Java tree; encode serializes it.
+    fn("Json.Encode.int", 1, a -> d("$Json", a[0]));
+    fn("Json.Encode.float", 1, a -> d("$Json", a[0]));
+    fn("Json.Encode.string", 1, a -> d("$Json", a[0]));
+    fn("Json.Encode.bool", 1, a -> d("$Json", a[0]));
+    BUILTINS.put("Json.Encode.null", d("$Json", pl.matsuo.elm.json.JsonEncode.NULL));
+    fn("Json.Encode.list", 2, a -> {
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      for (Object item : ((ElmList) a[1]).toJava()) {
+        out.add(jsonTree(Apply.apply(a[0], item)));
+      }
+      return d("$Json", out);
+    });
+    fn("Json.Encode.object", 1, a -> {
+      java.util.LinkedHashMap<String, Object> map = new java.util.LinkedHashMap<>();
+      for (Object pair : ((ElmList) a[0]).toJava()) {
+        ElmTuple t = (ElmTuple) pair;
+        map.put((String) t.get(0), jsonTree(t.get(1)));
+      }
+      return d("$Json", map);
+    });
+    fn("Json.Encode.encode", 2, a ->
+        pl.matsuo.elm.json.JsonEncode.serialize(jsonTree(a[1]), (int) (long) (Long) a[0]));
+
+    // Url / Browser.Navigation: minimal support (headless navigation is a no-op Cmd).
+    fn("Url.toString", 1, a -> a[0]);
+    fn("Url.fromString", 1, a -> d("Just", a[0]));
+    fn("Browser.Navigation.load", 1, a -> d("$CmdNone"));
+    fn("Browser.Navigation.pushUrl", 2, a -> d("$CmdNone"));
+    fn("Browser.Navigation.replaceUrl", 2, a -> d("$CmdNone"));
+    fn("Browser.Navigation.back", 2, a -> d("$CmdNone"));
+    fn("Browser.Navigation.forward", 2, a -> d("$CmdNone"));
+  }
+
+  /** Unwraps a {@code Json.Encode.Value} ($Json) to its underlying Java JSON tree. */
+  private static Object jsonTree(Object value) {
+    return value instanceof ElmData dd && dd.ctor().equals("$Json") ? dd.arg(0) : value;
   }
 
   /** A fixed Browser.Dom Viewport record (600x600) for headless runs. */

@@ -106,6 +106,14 @@ class JsBackendTest {
   }
 
   @Test
+  void jsonEncode() {
+    same("Json.Encode.encode 0 (Json.Encode.int 42)");
+    same("Json.Encode.encode 0 (Json.Encode.list Json.Encode.int [1, 2, 3])");
+    same("Json.Encode.encode 0 (Json.Encode.object [(\"x\", Json.Encode.bool True)])");
+    same("Json.Encode.encode 0 (Json.Encode.string \"hi\")");
+  }
+
+  @Test
   void minifiedProgramIsSmallerAndStillRuns() {
     String full = JsCompiler.moduleProgram("main = List.sum (List.range 1 10)\n");
     String min = JsCompiler.minify(full);

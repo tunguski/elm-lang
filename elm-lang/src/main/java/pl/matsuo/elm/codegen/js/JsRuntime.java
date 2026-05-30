@@ -209,6 +209,16 @@ public final class JsRuntime {
         'Debug.log': function(m){ return function(v){ console.log(m + ': ' + $show(v,true)); return v; }; }
       };
       function $g(name){ var v=$rt[name]; if (v===undefined) throw new Error('Unbound: '+name); return v; }
+      // Json.Encode (pure, lives in the kernel so it works under Node too): a Value is a native JS
+      // value and encode is JSON.stringify.
+      $rt['Json.Encode.int']=function(n){ return n; };
+      $rt['Json.Encode.float']=function(n){ return n; };
+      $rt['Json.Encode.string']=function(s){ return s; };
+      $rt['Json.Encode.bool']=function(b){ return b; };
+      $rt['Json.Encode.null']=null;
+      $rt['Json.Encode.list']=function(f){ return function(xs){ return $listToArray(xs).map(function(x){ return f(x); }); }; };
+      $rt['Json.Encode.object']=function(pairs){ var o={}; $listToArray(pairs).forEach(function(p){ o[p.vs[0]]=p.vs[1]; }); return o; };
+      $rt['Json.Encode.encode']=function(indent){ return function(v){ return JSON.stringify(v, null, indent); }; };
       """;
 
   /**
@@ -322,6 +332,14 @@ public final class JsRuntime {
         $rt['Json.Decode.oneOf']=function(l){ var ds=$listToArray(l); return $dec(function(j){ for(var i=0;i<ds.length;i++){ var x=ds[i]._[0](j); if(x.ok) return x; } return {ok:0,v:'no matching decoder'}; }); };
         $rt['Json.Decode.maybe']=function(dec){ return $dec(function(j){ var x=dec._[0](j); return x.ok?{ok:1,v:$data('Just',[x.v])}:{ok:1,v:$data('Nothing',[])}; }); };
         $rt['Json.Decode.nullable']=function(dec){ return $dec(function(j){ if(j==null) return {ok:1,v:$data('Nothing',[])}; var x=dec._[0](j); return x.ok?{ok:1,v:$data('Just',[x.v])}:x; }); };
+        // Url / Browser.Navigation: minimal browser-backed support.
+        $rt['Url.toString']=function(u){ return (u&&u.$==='$Url') ? u._[0] : String(u); };
+        $rt['Url.fromString']=function(s){ try{ new URL(s); return $data('Just',[$data('$Url',[s])]); }catch(e){ return $data('Nothing',[]); } };
+        $rt['Browser.Navigation.load']=function(url){ return $cmd(function(d){ try{ location.href=url; }catch(e){} }); };
+        $rt['Browser.Navigation.pushUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.pushState({},'',url); }catch(e){} }); }; };
+        $rt['Browser.Navigation.replaceUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.replaceState({},'',url); }catch(e){} }); }; };
+        $rt['Browser.Navigation.back']=function(key){ return function(n){ return $cmd(function(d){ try{ history.go(-n); }catch(e){} }); }; };
+        $rt['Browser.Navigation.forward']=function(key){ return function(n){ return $cmd(function(d){ try{ history.go(n); }catch(e){} }); }; };
         $rt['Json.Decode.decodeString']=function(dec){ return function(s){ try{ var x=dec._[0](JSON.parse(s)); return x.ok?$data('Ok',[x.v]):$data('Err',[$data('Failure',[String(x.v)])]); }catch(e){ return $data('Err',[$data('Failure',[String(e)])]); } }; };
         // Http: real fetch; any failure maps to an Http.Error so update's error branch renders.
         $rt['Http.expectString']=function(toMsg){ return $data('$Expect',['string',toMsg,null]); };
