@@ -11,6 +11,7 @@ type Value
     | VStr String
     | VList (List Value)
     | VCtor String (List Value)
+    | VRecord (List ( String, Value ))
     | VClosure (List String) Expr (List ( String, Value ))
     | VRec String (List String) Expr (List ( String, Value ))
     | VBuiltin String
@@ -30,6 +31,9 @@ type Expr
     | App Expr Expr
     | Let String Expr Expr
     | Case Expr (List ( Pattern, Expr ))
+    | RecordLit (List ( String, Expr ))
+    | RecordGet Expr String
+    | RecordUpdate String (List ( String, Expr ))
 
 
 type Pattern

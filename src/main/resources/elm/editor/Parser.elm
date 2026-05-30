@@ -83,18 +83,35 @@ parseUnary tokens =
 
 parseApp : List Token -> Result String ( Expr, List Token )
 parseApp tokens =
-    parseAtom tokens
+    parseAccess tokens
         |> Result.andThen (\r -> appTail (Tuple.first r) (Tuple.second r))
 
 
 appTail : Expr -> List Token -> Result String ( Expr, List Token )
 appTail fn tokens =
     if startsAtom tokens then
-        parseAtom tokens
+        parseAccess tokens
             |> Result.andThen (\r -> appTail (App fn (Tuple.first r)) (Tuple.second r))
 
     else
         Ok ( fn, tokens )
+
+
+{-| An atom followed by zero or more `.field` accesses (`record.field.sub`). -}
+parseAccess : List Token -> Result String ( Expr, List Token )
+parseAccess tokens =
+    parseAtom tokens
+        |> Result.andThen (\r -> accessTail (Tuple.first r) (Tuple.second r))
+
+
+accessTail : Expr -> List Token -> Result String ( Expr, List Token )
+accessTail e tokens =
+    case tokens of
+        TDot :: (TId field) :: rest ->
+            accessTail (RecordGet e field) rest
+
+        _ ->
+            Ok ( e, tokens )
 
 
 startsAtom : List Token -> Bool
@@ -110,6 +127,9 @@ startsAtom tokens =
             True
 
         TLBracket :: _ ->
+            True
+
+        TLBrace :: _ ->
             True
 
         (TUpper _) :: _ ->
@@ -170,8 +190,49 @@ parseAtom tokens =
         TLBracket :: rest ->
             parseListItems rest []
 
+        TLBrace :: rest ->
+            parseRecord rest
+
         _ ->
             Err "expected an expression"
+
+
+{-| A record literal `{ a = e, … }`, an update `{ r | a = e, … }`, or the empty record `{}`. -}
+parseRecord : List Token -> Result String ( Expr, List Token )
+parseRecord tokens =
+    case tokens of
+        TRBrace :: rest ->
+            Ok ( RecordLit [], rest )
+
+        (TId name) :: TPipe :: afterPipe ->
+            parseFields afterPipe []
+                |> Result.map (\r -> ( RecordUpdate name (Tuple.first r), Tuple.second r ))
+
+        _ ->
+            parseFields tokens []
+                |> Result.map (\r -> ( RecordLit (Tuple.first r), Tuple.second r ))
+
+
+parseFields : List Token -> List ( String, Expr ) -> Result String ( List ( String, Expr ), List Token )
+parseFields tokens acc =
+    case tokens of
+        (TId name) :: TEquals :: afterEq ->
+            parseExpr afterEq
+                |> Result.andThen
+                    (\r ->
+                        case Tuple.second r of
+                            TComma :: rest2 ->
+                                parseFields rest2 (acc ++ [ ( name, Tuple.first r ) ])
+
+                            TRBrace :: rest2 ->
+                                Ok ( acc ++ [ ( name, Tuple.first r ) ], rest2 )
+
+                            _ ->
+                                Err "expected ',' or '}' in record"
+                    )
+
+        _ ->
+            Err "expected 'field = value' in record"
 
 
 parseIf : List Token -> Result String ( Expr, List Token )

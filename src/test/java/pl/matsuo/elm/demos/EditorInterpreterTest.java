@@ -173,6 +173,35 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsRecordsLiteralsAccessAndUpdate() {
+    assertEquals("2", eval("{ x = 1, y = 2 }.y"));
+    assertEquals("{ x = 1, y = 2 }", eval("{ x = 1, y = 2 }"));
+    assertEquals("{}", eval("{}"));
+    // Record update via a project (the base record is a top-level binding).
+    ElmList project =
+        files("M.elm", "point = { x = 1, y = 2 }\nmoved = { point | x = 9 }");
+    assertEquals("9", evalProject(project, "moved.x"));
+    assertEquals("2", evalProject(project, "moved.y")); // untouched field preserved
+    assertEquals("True", evalProject(project, "{ a = 1, b = 2 } == { b = 2, a = 1 }")); // order-independent
+  }
+
+  @Test
+  void debuggerWithARecordModel() {
+    ElmList app =
+        files(
+            "App.elm",
+            "init = { count = 0, log = [] }\n"
+                + "update msg model = case msg of"
+                + " Inc -> { model | count = model.count + 1 } ;"
+                + " _ -> model\n"
+                + "view model = \"count = \" ++ toString model.count");
+    List<Object> steps = debugSteps(app, "Inc", "Inc", "Inc");
+    assertEquals(4, steps.size());
+    assertTrue(String.valueOf(steps.get(3)).contains("count = 3"), steps.toString());
+    assertTrue(String.valueOf(steps.get(3)).contains("count = 3"), "record field accessed in view");
+  }
+
+  @Test
   void compilesToJavaScriptForTheBrowser() {
     // The editor is a multi-module Browser.sandbox program; the JS backend must bundle all modules.
     String page = JsCompiler.htmlPageProject(null, moduleSources());

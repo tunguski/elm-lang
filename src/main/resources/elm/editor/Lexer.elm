@@ -13,6 +13,10 @@ type Token
     | TRParen
     | TLBracket
     | TRBracket
+    | TLBrace
+    | TRBrace
+    | TDot
+    | TPipe
     | TComma
     | TSemi
     | TLambda
@@ -46,6 +50,15 @@ tokenizeHelp chars acc =
 
             else if c == ']' then
                 tokenizeHelp rest (TRBracket :: acc)
+
+            else if c == '{' then
+                tokenizeHelp rest (TLBrace :: acc)
+
+            else if c == '}' then
+                tokenizeHelp rest (TRBrace :: acc)
+
+            else if c == '.' then
+                tokenizeHelp rest (TDot :: acc)
 
             else if c == ',' then
                 tokenizeHelp rest (TComma :: acc)
@@ -157,6 +170,9 @@ classifyOp s =
 
     else if s == "=" then
         Ok TEquals
+
+    else if s == "|" then
+        Ok TPipe
 
     else if List.member s [ "+", "-", "*", "/", "//", "==", "/=", "<", "<=", ">", ">=", "&&", "||", "++", "::" ] then
         Ok (TOp s)

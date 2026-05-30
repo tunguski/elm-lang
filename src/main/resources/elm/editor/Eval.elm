@@ -115,6 +115,80 @@ evalExpr globals env expr =
                             |> Result.andThen (\rv -> applyOp op lv rv)
                     )
 
+        RecordLit fields ->
+            evalFields globals env fields []
+
+        RecordGet target field ->
+            evalExpr globals env target
+                |> Result.andThen
+                    (\v ->
+                        case v of
+                            VRecord fs ->
+                                case lookup field fs of
+                                    Just x ->
+                                        Ok x
+
+                                    Nothing ->
+                                        Err ("record has no field ." ++ field)
+
+                            _ ->
+                                Err ("." ++ field ++ " needs a record")
+                    )
+
+        RecordUpdate name fields ->
+            evalExpr globals env (Var name)
+                |> Result.andThen
+                    (\v ->
+                        case v of
+                            VRecord base ->
+                                evalFields globals env fields []
+                                    |> Result.andThen
+                                        (\nv ->
+                                            case nv of
+                                                VRecord updates ->
+                                                    Ok (VRecord (mergeFields base updates))
+
+                                                _ ->
+                                                    Err "internal: record update"
+                                        )
+
+                            _ ->
+                                Err ("cannot update " ++ name ++ ": not a record")
+                    )
+
+
+evalFields : Globals -> Env -> List ( String, Expr ) -> List ( String, Value ) -> Result String Value
+evalFields globals env fields acc =
+    case fields of
+        [] ->
+            Ok (VRecord (List.reverse acc))
+
+        ( name, expr ) :: rest ->
+            evalExpr globals env expr
+                |> Result.andThen (\v -> evalFields globals env rest (( name, v ) :: acc))
+
+
+{-| Returns `base` with each field of `updates` replaced (or appended if new). -}
+mergeFields : List ( String, Value ) -> List ( String, Value ) -> List ( String, Value )
+mergeFields base updates =
+    let
+        replaced =
+            List.map
+                (\pair ->
+                    case lookup (Tuple.first pair) updates of
+                        Just v ->
+                            ( Tuple.first pair, v )
+
+                        Nothing ->
+                            pair
+                )
+                base
+
+        added =
+            List.filter (\u -> lookup (Tuple.first u) base == Nothing) updates
+    in
+    replaced ++ added
+
 
 evalList : Globals -> Env -> List Expr -> List Value -> Result String Value
 evalList globals env items acc =
@@ -366,7 +440,20 @@ valueEq a b =
         ( VCtor n1 a1, VCtor n2 a2 ) ->
             n1 == n2 && listEq a1 a2
 
+        ( VRecord f1, VRecord f2 ) ->
+            List.length f1 == List.length f2 && List.all (fieldMatches f2) f1
+
         _ ->
+            False
+
+
+fieldMatches : List ( String, Value ) -> ( String, Value ) -> Bool
+fieldMatches other pair =
+    case lookup (Tuple.first pair) other of
+        Just v ->
+            valueEq (Tuple.second pair) v
+
+        Nothing ->
             False
 
 
@@ -426,6 +513,13 @@ renderValue v =
 
             else
                 name ++ " " ++ String.join " " (List.map renderValueAtom args)
+
+        VRecord fields ->
+            if List.isEmpty fields then
+                "{}"
+
+            else
+                "{ " ++ String.join ", " (List.map (\f -> Tuple.first f ++ " = " ++ renderValue (Tuple.second f)) fields) ++ " }"
 
         VClosure _ _ _ ->
             "<function>"
