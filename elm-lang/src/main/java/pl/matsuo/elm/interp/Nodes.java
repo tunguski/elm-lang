@@ -36,23 +36,33 @@ public final class Nodes {
     private final String module;
     private final String name;
     private final RuntimeEnv env;
+    private final pl.matsuo.elm.error.Position pos;
 
     public Var(String module, String name, RuntimeEnv env) {
+      this(module, name, env, null);
+    }
+
+    public Var(String module, String name, RuntimeEnv env, pl.matsuo.elm.error.Position pos) {
       this.module = module;
       this.name = name;
       this.env = env;
+      this.pos = pos;
     }
 
     @Override
     public Object execute(Scope scope) {
-      if (module == null) {
-        Object local = scope.lookup(name);
-        if (local != null) {
-          return local;
+      try {
+        if (module == null) {
+          Object local = scope.lookup(name);
+          if (local != null) {
+            return local;
+          }
+          return env.resolveGlobal(name);
         }
-        return env.resolveGlobal(name);
+        return env.resolveQualified(module, name);
+      } catch (pl.matsuo.elm.error.ElmRuntimeError e) {
+        throw e.at(pos); // attach the source location of this reference if not already located
       }
-      return env.resolveQualified(module, name);
     }
   }
 
@@ -390,11 +400,21 @@ public final class Nodes {
     @Child private ElmNode scrutinee;
     private final Pattern[] patterns;
     @Children private final ElmNode[] bodies;
+    private final pl.matsuo.elm.error.Position pos;
 
     public Case(ElmNode scrutinee, Pattern[] patterns, ElmNode[] bodies) {
+      this(scrutinee, patterns, bodies, null);
+    }
+
+    public Case(
+        ElmNode scrutinee,
+        Pattern[] patterns,
+        ElmNode[] bodies,
+        pl.matsuo.elm.error.Position pos) {
       this.scrutinee = scrutinee;
       this.patterns = patterns;
       this.bodies = bodies;
+      this.pos = pos;
     }
 
     @Override
@@ -406,7 +426,7 @@ public final class Nodes {
           return bodies[i].execute(branch);
         }
       }
-      throw new ElmRuntimeError("Non-exhaustive pattern match on: " + value);
+      throw new ElmRuntimeError("Non-exhaustive pattern match on: " + value, pos);
     }
   }
 }

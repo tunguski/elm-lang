@@ -38,7 +38,7 @@ public final class Compiler {
       case Expr.Shader s ->
           new Nodes.Const(new pl.matsuo.elm.runtime.ElmData("$Shader", new Object[] {s.source()}));
       case Expr.Unit ignored -> new Nodes.Const(ElmUnit.INSTANCE);
-      case Expr.Var v -> new Nodes.Var(v.module(), v.name(), env);
+      case Expr.Var v -> new Nodes.Var(v.module(), v.name(), env, v.pos());
       case Expr.Ctor c -> new Nodes.Ctor(c.name(), env);
       case Expr.OpFunc o -> new Nodes.OpFunc(o.op());
       case Expr.ListLit l -> new Nodes.ListLit(compileAll(l.items()));
@@ -158,7 +158,7 @@ public final class Compiler {
       patterns[i] = c.branches().get(i).pattern();
       bodies[i] = compileTail(c.branches().get(i).body(), self, arity);
     }
-    return new Nodes.Case(compile(c.scrutinee()), patterns, bodies);
+    return new Nodes.Case(compile(c.scrutinee()), patterns, bodies, c.pos());
   }
 
   private ElmNode compileLet(Expr.Let let) {
@@ -194,6 +194,6 @@ public final class Compiler {
       patterns[i] = c.branches().get(i).pattern();
       bodies[i] = compile(c.branches().get(i).body());
     }
-    return new Nodes.Case(compile(c.scrutinee()), patterns, bodies);
+    return new Nodes.Case(compile(c.scrutinee()), patterns, bodies, c.pos());
   }
 }
