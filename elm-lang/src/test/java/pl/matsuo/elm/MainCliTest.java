@@ -76,6 +76,23 @@ class MainCliTest {
   }
 
   @Test
+  void initCreatesElmJsonAndSrc() throws Exception {
+    Path dir = Files.createTempDirectory("elm-init-");
+    String out = run("init", dir.toString());
+    assertTrue(out.contains("Created"), out);
+    assertTrue(Files.exists(dir.resolve("elm.json")), "elm.json created");
+    assertTrue(Files.isDirectory(dir.resolve("src")), "src/ created");
+    String json = Files.readString(dir.resolve("elm.json"));
+    assertTrue(json.contains("\"type\": \"application\""), json);
+    assertTrue(json.contains("source-directories"), json);
+  }
+
+  @Test
+  void helpIsShownWithNoArguments() throws Exception {
+    assertTrue(run().contains("Commands:") || run().contains("Usage:"), run());
+  }
+
+  @Test
   void checkAcceptsAMultiModuleProject() throws Exception {
     Path lib = tempElm("module Lib exposing (..)\ndouble n = n * 2\n");
     Path main = tempElm("module Main exposing (..)\nimport Lib exposing (..)\nmain = double 21\n");

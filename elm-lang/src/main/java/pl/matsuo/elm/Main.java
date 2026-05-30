@@ -1,9 +1,20 @@
 package pl.matsuo.elm;
 
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Parameters;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
 import pl.matsuo.elm.codegen.js.JsCompiler;
+import pl.matsuo.elm.error.ElmTypeError;
 import pl.matsuo.elm.html.HtmlRender;
 import pl.matsuo.elm.html.Tea;
 import pl.matsuo.elm.interp.Interpreter;
@@ -11,159 +22,301 @@ import pl.matsuo.elm.interp.Show;
 import pl.matsuo.elm.runtime.ElmData;
 
 /**
- * Command-line entry point for the Elm implementation.
- *
- * <pre>
- *   run   &lt;file.elm&gt; [--backend interp|bytecode] [--value NAME]   evaluate and print a definition
- *   js    &lt;file.elm&gt;                                              compile to JavaScript (stdout)
- *   eval  "&lt;expression&gt;" [--backend interp|bytecode]              evaluate a single expression
- * </pre>
+ * Command-line entry point, built on <a href="https://picocli.info">picocli</a>: {@code elm} with
+ * subcommands {@code run/js/eval/check/repl/lsp/format/project/bench/site/init}. Use {@code --help}
+ * on any command for usage.
  */
-public final class Main {
+@Command(
+    name = "elm",
+    mixinStandardHelpOptions = true,
+    version = "elm-lang 0.1",
+    description = "An Elm interpreter/compiler (Truffle JIT, bytecode VM, JS and WASM backends).",
+    subcommands = {
+      Main.Run.class,
+      Main.Js.class,
+      Main.Eval.class,
+      Main.Check.class,
+      Main.Repl.class,
+      Main.Lsp.class,
+      Main.Format.class,
+      Main.Project.class,
+      Main.Bench.class,
+      Main.Site.class,
+      Main.Init.class,
+      CommandLine.HelpCommand.class,
+    })
+public final class Main implements Runnable {
 
-  public static void main(String[] args) throws Exception {
-    if (args.length == 0) {
-      usage();
-      return;
+  public static void main(String[] args) {
+    new CommandLine(new Main()).execute(args);
+  }
+
+  @Override
+  public void run() {
+    CommandLine.usage(this, System.out); // no subcommand -> show help
+  }
+
+  @Command(name = "run", description = "Evaluate a definition and print it (Html/programs as HTML).")
+  static final class Run implements Callable<Integer> {
+    @Parameters(index = "0", description = "The .elm file.")
+    Path file;
+
+    @Option(names = "--backend", description = "interp (default) or bytecode.")
+    String backend = "interp";
+
+    @Option(names = "--value", description = "Top-level name to evaluate (default: main).")
+    String value = "main";
+
+    @Option(names = "--strict", description = "Type-check first; refuse to run on a type error.")
+    boolean strict;
+
+    @Override
+    public Integer call() throws IOException {
+      String source = Files.readString(file);
+      if (strict) {
+        try {
+          pl.matsuo.elm.types.TypeChecker.checkModule(source);
+        } catch (ElmTypeError e) {
+          System.out.println("Type error: " + e.getMessage());
+          return 1;
+        }
+      }
+      Object v =
+          backend.equals("bytecode")
+              ? BytecodeInterpreter.load(source).value(value)
+              : Interpreter.load(source).value(value);
+      System.out.println(render(v));
+      return 0;
     }
-    if (args[0].equals("bench")) {
-      long n = args.length > 1 ? Long.parseLong(args[1]) : 30;
-      System.out.print(pl.matsuo.elm.bench.Benchmark.run(n, 50, 50));
-      return;
+  }
+
+  @Command(name = "js", description = "Compile a module to JavaScript.")
+  static final class Js implements Callable<Integer> {
+    @Parameters(index = "0", description = "The .elm file.")
+    Path file;
+
+    @Option(names = "--min", description = "Minify the output.")
+    boolean min;
+
+    @Option(names = "--map", description = "Emit an inline Source Map v3.")
+    boolean map;
+
+    @Override
+    public Integer call() throws IOException {
+      String source = Files.readString(file);
+      if (map) {
+        System.out.println(JsCompiler.moduleProgramWithSourceMap(source, file.toString()).code());
+      } else {
+        String js = JsCompiler.moduleProgram(source);
+        System.out.println(min ? JsCompiler.minify(js) : js);
+      }
+      return 0;
     }
-    if (args[0].equals("repl")) {
-      pl.matsuo.elm.repl.Repl.loop(new java.io.InputStreamReader(System.in), System.out);
-      return;
+  }
+
+  @Command(name = "eval", description = "Evaluate a single expression.")
+  static final class Eval implements Callable<Integer> {
+    @Parameters(index = "0", description = "The expression.")
+    String expression;
+
+    @Option(names = "--backend", description = "interp (default) or bytecode.")
+    String backend = "interp";
+
+    @Override
+    public Integer call() {
+      Object v = backend.equals("bytecode") ? BytecodeInterpreter.eval(expression) : Interpreter.eval(expression);
+      System.out.println(Show.plain(v));
+      return 0;
     }
-    if (args[0].equals("lsp")) {
+  }
+
+  @Command(name = "check", description = "Type-check a module, or a multi-module project.")
+  static final class Check implements Callable<Integer> {
+    @Parameters(arity = "1..*", description = "One .elm file, or several for a project.")
+    List<Path> files;
+
+    @Override
+    public Integer call() throws IOException {
+      List<String> sources = new ArrayList<>();
+      for (Path p : files) {
+        if (p.toString().endsWith(".elm")) {
+          sources.add(Files.readString(p));
+        }
+      }
+      try {
+        var types =
+            sources.size() > 1
+                ? pl.matsuo.elm.types.TypeChecker.checkProject(sources.toArray(new String[0]))
+                : pl.matsuo.elm.types.TypeChecker.checkModule(sources.get(0));
+        types.forEach((name, type) -> System.out.println(name + " : " + type));
+        return 0;
+      } catch (ElmTypeError e) {
+        System.out.println("Type error: " + e.getMessage());
+        return 1;
+      }
+    }
+  }
+
+  @Command(name = "repl", description = "Read-eval-print loop.")
+  static final class Repl implements Callable<Integer> {
+    @Override
+    public Integer call() throws IOException {
+      pl.matsuo.elm.repl.Repl.loop(new InputStreamReader(System.in), System.out);
+      return 0;
+    }
+  }
+
+  @Command(name = "lsp", description = "Run the language server over stdio.")
+  static final class Lsp implements Callable<Integer> {
+    @Override
+    public Integer call() throws IOException {
       new pl.matsuo.elm.lsp.LspServer().serve(System.in, System.out);
-      return;
+      return 0;
     }
-    if (args[0].equals("format")) {
-      // format <file.elm>            -> print formatted source to stdout
-      // format <file.elm> --write    -> rewrite the file in place
-      // format <elm.json|dir> --project [--write]  -> format every project module
-      boolean write = flag(args, "--write");
-      if (flag(args, "--project") && args.length > 1) {
-        int formatted = 0;
-        for (Path p : pl.matsuo.elm.fmt.Formatter.projectFiles(Path.of(args[1]))) {
+  }
+
+  @Command(name = "format", description = "Format Elm source (elm-format style).")
+  static final class Format implements Callable<Integer> {
+    @Parameters(index = "0", description = "A .elm file, or an elm.json/dir with --project.")
+    Path path;
+
+    @Option(names = "--write", description = "Rewrite files in place.")
+    boolean write;
+
+    @Option(names = "--project", description = "Format every module in the project.")
+    boolean project;
+
+    @Override
+    public Integer call() throws IOException {
+      if (project) {
+        int n = 0;
+        for (Path p : pl.matsuo.elm.fmt.Formatter.projectFiles(path)) {
           String out = pl.matsuo.elm.fmt.Formatter.format(Files.readString(p));
           if (write) {
             Files.writeString(p, out);
           }
-          formatted++;
+          n++;
         }
-        System.out.println((write ? "Formatted " : "Checked ") + formatted + " file(s)");
-      } else if (args.length > 1) {
-        String out = pl.matsuo.elm.fmt.Formatter.format(Files.readString(Path.of(args[1])));
+        System.out.println((write ? "Formatted " : "Checked ") + n + " file(s)");
+      } else {
+        String out = pl.matsuo.elm.fmt.Formatter.format(Files.readString(path));
         if (write) {
-          Files.writeString(Path.of(args[1]), out);
-          System.out.println("Formatted " + args[1]);
+          Files.writeString(path, out);
+          System.out.println("Formatted " + path);
         } else {
           System.out.print(out);
         }
-      } else {
-        System.out.println("usage: format <file.elm> [--write] | format <elm.json|dir> --project [--write]");
       }
-      return;
+      return 0;
     }
-    if (args[0].equals("project")) {
-      if (args.length < 2) {
-        System.out.println("usage: project <elm.json|dir> [check|run [value]]");
-        return;
-      }
-      java.util.List<String> sources =
-          pl.matsuo.elm.project.ProjectLoader.loadSources(Path.of(args[1]));
-      String mode = args.length > 2 ? args[2] : "check";
+  }
+
+  @Command(name = "project", description = "Load an elm.json project and check or run it.")
+  static final class Project implements Callable<Integer> {
+    @Parameters(index = "0", description = "elm.json file or project directory.")
+    Path path;
+
+    @Parameters(index = "1", arity = "0..1", description = "check (default) or run.")
+    String mode = "check";
+
+    @Override
+    public Integer call() {
+      List<String> sources = pl.matsuo.elm.project.ProjectLoader.loadSources(path);
       if (mode.equals("run")) {
-        System.out.println(
-            render(pl.matsuo.elm.interp.Project.load(sources.toArray(new String[0])).main()));
+        System.out.println(render(pl.matsuo.elm.interp.Project.load(sources.toArray(new String[0])).main()));
       } else {
         try {
           pl.matsuo.elm.types.TypeChecker.checkProject(sources.toArray(new String[0]))
               .forEach((name, type) -> System.out.println(name + " : " + type));
-        } catch (pl.matsuo.elm.error.ElmTypeError e) {
+        } catch (ElmTypeError e) {
           System.out.println("Type error: " + e.getMessage());
+          return 1;
         }
       }
-      return;
-    }
-    if (args[0].equals("site")) {
-      if (args.length < 4) {
-        System.out.println("usage: site <examplesDir> <Playground.elm> <outDir>");
-        return;
-      }
-      pl.matsuo.elm.site.SiteGenerator.generate(
-          Path.of(args[1]), Path.of(args[2]), Path.of(args[3]));
-      return;
-    }
-    if (args.length < 2) {
-      usage();
-      return;
-    }
-    String command = args[0];
-    String backend = option(args, "--backend", "interp");
-    String valueName = option(args, "--value", "main");
-
-    switch (command) {
-      case "run" -> {
-        String source = Files.readString(Path.of(args[1]));
-        // --strict: type-check before evaluating and refuse to run on a type error.
-        if (flag(args, "--strict")) {
-          try {
-            pl.matsuo.elm.types.TypeChecker.checkModule(source);
-          } catch (pl.matsuo.elm.error.ElmTypeError e) {
-            System.out.println("Type error: " + e.getMessage());
-            return;
-          }
-        }
-        Object value =
-            backend.equals("bytecode")
-                ? BytecodeInterpreter.load(source).value(valueName)
-                : Interpreter.load(source).value(valueName);
-        System.out.println(render(value));
-      }
-      case "js" -> {
-        String source = Files.readString(Path.of(args[1]));
-        if (flag(args, "--map")) {
-          System.out.println(JsCompiler.moduleProgramWithSourceMap(source, args[1]).code());
-        } else {
-          String js = JsCompiler.moduleProgram(source);
-          System.out.println(flag(args, "--min") ? JsCompiler.minify(js) : js);
-        }
-      }
-      case "eval" -> {
-        Object value =
-            backend.equals("bytecode")
-                ? BytecodeInterpreter.eval(args[1])
-                : Interpreter.eval(args[1]);
-        System.out.println(Show.plain(value));
-      }
-      case "check" -> {
-        // One file -> single-module check; several files -> a multi-module project check (the
-        // module defining `main` is the entry, e.g. `check Playground.elm Picture.elm`).
-        java.util.List<String> files = new java.util.ArrayList<>();
-        for (int i = 1; i < args.length; i++) {
-          if (args[i].endsWith(".elm")) {
-            files.add(Files.readString(Path.of(args[i])));
-          }
-        }
-        try {
-          var types =
-              files.size() > 1
-                  ? pl.matsuo.elm.types.TypeChecker.checkProject(files.toArray(new String[0]))
-                  : pl.matsuo.elm.types.TypeChecker.checkModule(files.get(0));
-          types.forEach((name, type) -> System.out.println(name + " : " + type));
-        } catch (pl.matsuo.elm.error.ElmTypeError e) {
-          System.out.println("Type error: " + e.getMessage());
-        }
-      }
-      default -> usage();
+      return 0;
     }
   }
 
+  @Command(name = "bench", description = "Benchmark the backends on a recursive workload.")
+  static final class Bench implements Callable<Integer> {
+    @Parameters(index = "0", arity = "0..1", description = "fib(n) input (default 30).")
+    long fibN = 30;
+
+    @Override
+    public Integer call() {
+      System.out.print(pl.matsuo.elm.bench.Benchmark.run(fibN, 50, 50));
+      return 0;
+    }
+  }
+
+  @Command(name = "site", description = "Generate the static example gallery.")
+  static final class Site implements Callable<Integer> {
+    @Parameters(index = "0", description = "Examples directory.")
+    Path examplesDir;
+
+    @Parameters(index = "1", description = "Playground.elm source.")
+    Path playground;
+
+    @Parameters(index = "2", description = "Output directory.")
+    Path outDir;
+
+    @Override
+    public Integer call() throws IOException {
+      pl.matsuo.elm.site.SiteGenerator.generate(examplesDir, playground, outDir);
+      return 0;
+    }
+  }
+
+  @Command(name = "init", description = "Initialise an Elm project (elm.json + src/).")
+  static final class Init implements Callable<Integer> {
+    @Parameters(index = "0", arity = "0..1", description = "Target directory (default: current).")
+    Path dir = Path.of(".");
+
+    @Override
+    public Integer call() throws IOException {
+      Path elmJson = dir.resolve("elm.json");
+      if (Files.exists(elmJson)) {
+        System.out.println("elm.json already exists — nothing to do.");
+        return 0;
+      }
+      Files.createDirectories(dir.resolve("src"));
+      Files.writeString(elmJson, ELM_JSON, StandardCharsets.UTF_8);
+      System.out.println("Created " + elmJson + " and " + dir.resolve("src") + "/");
+      return 0;
+    }
+  }
+
+  /** A standard elm.json for an application project, like `elm init` produces. */
+  private static final String ELM_JSON =
+      """
+      {
+          "type": "application",
+          "source-directories": [
+              "src"
+          ],
+          "elm-version": "0.19.1",
+          "dependencies": {
+              "direct": {
+                  "elm/browser": "1.0.2",
+                  "elm/core": "1.0.5",
+                  "elm/html": "1.0.0"
+              },
+              "indirect": {
+                  "elm/json": "1.1.3",
+                  "elm/time": "1.0.0",
+                  "elm/url": "1.0.0",
+                  "elm/virtual-dom": "1.0.3"
+              }
+          },
+          "test-dependencies": {
+              "direct": {},
+              "indirect": {}
+          }
+      }
+      """;
+
   /** Renders a value: Browser programs and Html nodes become HTML, everything else uses Show. */
-  private static String render(Object value) {
+  static String render(Object value) {
     if (value instanceof ElmData d) {
       switch (d.ctor()) {
         case "$Sandbox", "$Element", "$Document" -> {
@@ -176,44 +329,5 @@ public final class Main {
       }
     }
     return Show.plain(value);
-  }
-
-  private static String option(String[] args, String name, String fallback) {
-    for (int i = 0; i < args.length - 1; i++) {
-      if (args[i].equals(name)) {
-        return args[i + 1];
-      }
-    }
-    return fallback;
-  }
-
-  private static boolean flag(String[] args, String name) {
-    for (String a : args) {
-      if (a.equals(name)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static void usage() {
-    System.out.println(
-        """
-        elm-lang - an Elm interpreter/compiler (JIT interpreter, bytecode VM, JS)
-
-        Usage:
-          run   <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]
-          js    <file.elm> [--min] [--map]
-          eval  "<expression>" [--backend interp|bytecode]
-          check <file.elm> [more.elm ...]      type-check a module or multi-module project
-          bench [fibN]
-          repl
-          lsp                                  language server (LSP) over stdio
-          format <file.elm> [--write] | format <elm.json|dir> --project [--write]
-          project <elm.json|dir> [check|run]   load source-directories and check/run
-          site  <examplesDir> <Playground.elm> <outDir>
-
-        --strict type-checks before running and refuses to evaluate on a type error.
-        """);
   }
 }
