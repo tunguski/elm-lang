@@ -97,8 +97,12 @@ public final class Main {
       }
       case "js" -> {
         String source = Files.readString(Path.of(args[1]));
-        String js = JsCompiler.moduleProgram(source);
-        System.out.println(flag(args, "--min") ? JsCompiler.minify(js) : js);
+        if (flag(args, "--map")) {
+          System.out.println(JsCompiler.moduleProgramWithSourceMap(source, args[1]).code());
+        } else {
+          String js = JsCompiler.moduleProgram(source);
+          System.out.println(flag(args, "--min") ? JsCompiler.minify(js) : js);
+        }
       }
       case "eval" -> {
         Object value =
@@ -171,7 +175,7 @@ public final class Main {
 
         Usage:
           run   <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]
-          js    <file.elm> [--min]
+          js    <file.elm> [--min] [--map]
           eval  "<expression>" [--backend interp|bytecode]
           check <file.elm> [more.elm ...]      type-check a module or multi-module project
           bench [fibN]

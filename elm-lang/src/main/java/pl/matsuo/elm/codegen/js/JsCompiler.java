@@ -117,6 +117,26 @@ public final class JsCompiler {
     return JsRuntime.SOURCE + "\n" + c.declarations() + "\nprocess.stdout.write($show(_$main));\n";
   }
 
+  /** The compiled program ({@code code}) and a Source Map v3 ({@code map}) tying it to the source. */
+  public record Mapped(String code, String map) {}
+
+  /**
+   * Compiles to JS with a Source Map v3 (line-level: each generated declaration maps to its Elm
+   * source line). The code carries an inline {@code //# sourceMappingURL} data URI.
+   */
+  public static Mapped moduleProgramWithSourceMap(String source, String sourceName) {
+    JsCompiler c = new JsCompiler(Parser.parseModule(source));
+    String prefix = JsRuntime.SOURCE + "\n";
+    String decls = c.declarations();
+    int prefixLines = prefix.split("\n", -1).length - 1; // generated lines before the declarations
+    String map = SourceMap.json(sourceName, source, prefixLines, c.declSourceLines());
+    String b64 = java.util.Base64.getEncoder().encodeToString(map.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    String code =
+        prefix + decls + "\nprocess.stdout.write($show(_$main));\n"
+            + "//# sourceMappingURL=data:application/json;base64," + b64 + "\n";
+    return new Mapped(code, map);
+  }
+
   /** A browser app bundle: kernel + DOM/TEA runtime + module + a mount call. */
   public static String appBundle(String source) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
@@ -337,7 +357,16 @@ public final class JsCompiler {
    * parameterless values in dependency order, so a value that references another is emitted after
    * it (JS {@code var} initialisers run eagerly, unlike the interpreter's lazy thunks).
    */
+  /** Elm source line (1-based) of each emitted top-level declaration, in generated-line order. */
+  private final List<Integer> declSrcLines = new ArrayList<>();
+
+  /** Source lines (1-based) for each declaration line emitted by the last {@link #declarations}. */
+  public List<Integer> declSourceLines() {
+    return declSrcLines;
+  }
+
   public String declarations() {
+    declSrcLines.clear();
     StringBuilder sb = new StringBuilder();
     java.util.Map<String, Decl.Value> values = new java.util.LinkedHashMap<>();
     for (Decl d : module.decls()) {
@@ -347,6 +376,7 @@ public final class JsCompiler {
         } else {
           sb.append("var ").append(topLevelId(v.name())).append(" = ")
               .append(compileLambda(v.params(), v.body())).append(";\n");
+          declSrcLines.add(v.pos().line());
         }
       }
     }
@@ -374,6 +404,7 @@ public final class JsCompiler {
     }
     if (emitted.add(name)) {
       sb.append("var ").append(topLevelId(name)).append(" = ").append(compile(v.body())).append(";\n");
+      declSrcLines.add(v.pos().line());
     }
   }
 
