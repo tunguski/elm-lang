@@ -12,6 +12,7 @@ import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Pattern;
+import pl.matsuo.elm.ast.Type;
 import pl.matsuo.elm.error.ElmRuntimeError;
 import pl.matsuo.elm.interp.Prelude;
 import pl.matsuo.elm.parser.Parser;
@@ -28,6 +29,8 @@ public final class JsCompiler {
   private final Map<String, String> unqualified;
   private final Map<String, String> aliases = new HashMap<>();
   private final Map<String, Integer> ctorArity;
+  /** Record type aliases: alias name -> ordered field names (they double as record constructors). */
+  private final Map<String, List<String>> recordAliases = new HashMap<>();
   private final Set<String> topLevelNames = new HashSet<>();
   private final String currentModule;
   private final Module module;
@@ -48,6 +51,9 @@ public final class JsCompiler {
       }
       if (d instanceof Decl.Value v) {
         topLevelNames.add(v.name());
+      }
+      if (d instanceof Decl.TypeAlias ta && ta.type() instanceof Type.Record rec) {
+        recordAliases.put(ta.name(), rec.fields().stream().map(Type.Record.Field::name).toList());
       }
     }
     for (Module.Import imp : module.imports()) {
@@ -279,6 +285,20 @@ public final class JsCompiler {
     }
     if (name.equals("False")) {
       return "false";
+    }
+    // A record type alias is also a constructor: positional args build the record, curried.
+    List<String> fields = recordAliases.get(name);
+    if (fields != null) {
+      StringBuilder chain = new StringBuilder();
+      StringBuilder body = new StringBuilder("({");
+      for (int i = 0; i < fields.size(); i++) {
+        chain.append("a").append(i).append("=>");
+        if (i > 0) {
+          body.append(",");
+        }
+        body.append(jsString(fields.get(i))).append(":a").append(i);
+      }
+      return "(" + chain + body.append("})") + ")";
     }
     int arity = ctorArity.getOrDefault(name, 0);
     if (arity == 0) {

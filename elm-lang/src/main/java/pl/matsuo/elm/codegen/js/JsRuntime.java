@@ -107,6 +107,21 @@ public final class JsRuntime {
         'Basics.xor': function(a){ return function(b){ return a !== b; }; },
         'Basics.pi': Math.PI,
         'Basics.e': Math.E,
+        'Basics.sin': function(n){ return Math.sin(n); },
+        'Basics.cos': function(n){ return Math.cos(n); },
+        'Basics.tan': function(n){ return Math.tan(n); },
+        'Basics.asin': function(n){ return Math.asin(n); },
+        'Basics.acos': function(n){ return Math.acos(n); },
+        'Basics.atan': function(n){ return Math.atan(n); },
+        'Basics.atan2': function(y){ return function(x){ return Math.atan2(y,x); }; },
+        'Basics.logBase': function(b){ return function(n){ return Math.log(n)/Math.log(b); }; },
+        'Basics.degrees': function(d){ return d*Math.PI/180; },
+        'Basics.radians': function(r){ return r; },
+        'Basics.turns': function(t){ return t*2*Math.PI; },
+        'Basics.toPolar': function(p){ var x=p.vs[0],y=p.vs[1]; return $tuple([Math.sqrt(x*x+y*y), Math.atan2(y,x)]); },
+        'Basics.fromPolar': function(p){ var r=p.vs[0],t=p.vs[1]; return $tuple([r*Math.cos(t), r*Math.sin(t)]); },
+        'Basics.isNaN': function(n){ return isNaN(n); },
+        'Basics.isInfinite': function(n){ return !isFinite(n) && !isNaN(n); },
         'List.map': function(f){ return function(xs){ return $list($listToArray(xs).map(function(x){return f(x);})); }; },
         'List.indexedMap': function(f){ return function(xs){ return $list($listToArray(xs).map(function(x,i){return f(i)(x);})); }; },
         'List.filter': function(f){ return function(xs){ return $list($listToArray(xs).filter(function(x){return f(x);})); }; },
@@ -223,14 +238,112 @@ public final class JsRuntime {
         $rt['Svg.text']=function(s){ return $data('$Text',[s]); };
         var svgAttrs=['width','height','viewBox','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
           'fill','stroke','strokeWidth:stroke-width','points','d','transform','opacity',
-          'textAnchor:text-anchor','fontSize:font-size','xlinkHref:xlink:href'];
+          'textAnchor:text-anchor','fontSize:font-size','xlinkHref:xlink:href',
+          'strokeLinecap:stroke-linecap','strokeLinejoin:stroke-linejoin','fillOpacity:fill-opacity',
+          'strokeOpacity:stroke-opacity','fontFamily:font-family','dominantBaseline:dominant-baseline',
+          'strokeDasharray:stroke-dasharray','offset','stopColor:stop-color','gradientUnits:gradientUnits'];
         svgAttrs.forEach(function(spec){ var p=spec.split(':'); var nm=spec.indexOf(':')<0?p[0]:spec.substring(spec.indexOf(':')+1);
           $rt['Svg.Attributes.'+p[0]]=function(v){ return $data('$Att',[nm,v]); }; });
         $rt['Browser.sandbox']=function(r){ return $data('$Sandbox',[r]); };
         $rt['Browser.element']=function(r){ return $data('$Element',[r]); };
         $rt['Browser.document']=function(r){ return $data('$Document',[r]); };
+        // ---- effects: Cmd / Sub / Task / Generator / Decoder kernels ----
+        // A Cmd is $Cmd[run] where run(dispatch) performs the side effect; none/batch compose them.
+        function $cmd(run){ return $data('$Cmd',[run]); }
+        function runCmd(c, d){
+          if(!c||c.$==='$CmdNone') return;
+          if(c.$==='$CmdBatch'){ $listToArray(c._[0]).forEach(function(x){ runCmd(x,d); }); return; }
+          if(c.$==='$Cmd'){ c._[0](d); }
+        }
         $rt['Cmd.none']=$data('$CmdNone',[]); $rt['Cmd.batch']=function(l){ return $data('$CmdBatch',[l]); };
+        $rt['Cmd.map']=function(f){ return function(c){ return $cmd(function(d){ runCmd(c, function(m){ d(f(m)); }); }); }; };
+        // A Sub is $Sub[key,start]; start(dispatch) returns a stop function. Keyed for diffing.
+        function $sub(key, start){ return $data('$Sub',[key,start]); }
+        function collectSubs(s, out){
+          if(!s||s.$==='$SubNone') return;
+          if(s.$==='$SubBatch'){ $listToArray(s._[0]).forEach(function(x){ collectSubs(x,out); }); return; }
+          if(s.$==='$Sub') out.push(s);
+        }
         $rt['Sub.none']=$data('$SubNone',[]); $rt['Sub.batch']=function(l){ return $data('$SubBatch',[l]); };
+        $rt['Sub.map']=function(f){ return function(s){ if(!s||s.$!=='$Sub') return s; return $sub('map:'+s._[0], function(d){ return s._[1](function(m){ d(f(m)); }); }); }; };
+        // A Task is $Task[run] where run(onOk,onErr).
+        function $task(run){ return $data('$Task',[run]); }
+        $rt['Task.succeed']=function(v){ return $task(function(ok,err){ ok(v); }); };
+        $rt['Task.fail']=function(e){ return $task(function(ok,err){ err(e); }); };
+        $rt['Task.andThen']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](function(v){ f(v)._[0](ok,err); }, err); }); }; };
+        $rt['Task.map']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](function(v){ ok(f(v)); }, err); }); }; };
+        $rt['Task.sequence']=function(l){ var ts=$listToArray(l); return $task(function(ok,err){ var res=[]; (function go(i){ if(i>=ts.length){ ok($list(res)); return; } ts[i]._[0](function(v){ res.push(v); go(i+1); }, err); })(0); }); };
+        $rt['Task.perform']=function(toMsg){ return function(t){ return $cmd(function(d){ t._[0](function(v){ d(toMsg(v)); }, function(e){}); }); }; };
+        $rt['Task.attempt']=function(toMsg){ return function(t){ return $cmd(function(d){ t._[0](function(v){ d(toMsg($data('Ok',[v]))); }, function(e){ d(toMsg($data('Err',[e]))); }); }); }; };
+        // Random: generators produce a value on demand (real client-side randomness).
+        function $gen(g){ return $data('$Gen',[g]); }
+        $rt['Random.int']=function(lo){ return function(hi){ return $gen(function(){ return lo+Math.floor(Math.random()*(hi-lo+1)); }); }; };
+        $rt['Random.float']=function(lo){ return function(hi){ return $gen(function(){ return lo+Math.random()*(hi-lo); }); }; };
+        $rt['Random.uniform']=function(x){ return function(xs){ var a=[x].concat($listToArray(xs)); return $gen(function(){ return a[Math.floor(Math.random()*a.length)]; }); }; };
+        $rt['Random.weighted']=function(first){ return function(rest){ var ps=[first].concat($listToArray(rest)); return $gen(function(){ var total=0,i; for(i=0;i<ps.length;i++) total+=ps[i].vs[0]; var r=Math.random()*total; for(i=0;i<ps.length;i++){ r-=ps[i].vs[0]; if(r<=0) return ps[i].vs[1]; } return ps[ps.length-1].vs[1]; }); }; };
+        $rt['Random.constant']=function(x){ return $gen(function(){ return x; }); };
+        $rt['Random.list']=function(n){ return function(g){ return $gen(function(){ var r=[]; for(var i=0;i<n;i++) r.push(g._[0]()); return $list(r); }); }; };
+        $rt['Random.pair']=function(a){ return function(b){ return $gen(function(){ return $tuple([a._[0](),b._[0]()]); }); }; };
+        $rt['Random.map']=function(f){ return function(g){ return $gen(function(){ return f(g._[0]()); }); }; };
+        $rt['Random.map2']=function(f){ return function(g1){ return function(g2){ return $gen(function(){ return f(g1._[0]())(g2._[0]()); }); }; }; };
+        $rt['Random.map3']=function(f){ return function(g1){ return function(g2){ return function(g3){ return $gen(function(){ return f(g1._[0]())(g2._[0]())(g3._[0]()); }); }; }; }; };
+        $rt['Random.andThen']=function(f){ return function(g){ return $gen(function(){ return f(g._[0]())._[0](); }); }; };
+        $rt['Random.generate']=function(toMsg){ return function(g){ return $cmd(function(d){ d(toMsg(g._[0]())); }); }; };
+        // Json.Decode: a decoder is $Dec[run] where run(jsValue) -> {ok, v}. (v is the value or error.)
+        function $dec(run){ return $data('$Dec',[run]); }
+        function $arr(j){ return Array.isArray(j)?j:(j&&typeof j.length==='number'?[].slice.call(j):null); }
+        $rt['Json.Decode.string']=$dec(function(j){ return typeof j==='string'?{ok:1,v:j}:{ok:0,v:'expected a string'}; });
+        $rt['Json.Decode.int']=$dec(function(j){ return typeof j==='number'?{ok:1,v:j|0}:{ok:0,v:'expected an int'}; });
+        $rt['Json.Decode.float']=$dec(function(j){ return typeof j==='number'?{ok:1,v:j}:{ok:0,v:'expected a float'}; });
+        $rt['Json.Decode.bool']=$dec(function(j){ return typeof j==='boolean'?{ok:1,v:j}:{ok:0,v:'expected a bool'}; });
+        $rt['Json.Decode.value']=$dec(function(j){ return {ok:1,v:j}; });
+        $rt['Json.Decode.succeed']=function(v){ return $dec(function(j){ return {ok:1,v:v}; }); };
+        $rt['Json.Decode.fail']=function(m){ return $dec(function(j){ return {ok:0,v:m}; }); };
+        $rt['Json.Decode.field']=function(name){ return function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||!(name in j)) return {ok:0,v:'no field '+name}; return dec._[0](j[name]); }); }; };
+        $rt['Json.Decode.at']=function(path){ return function(dec){ var ks=$listToArray(path); return $dec(function(j){ for(var i=0;i<ks.length;i++){ if(j==null) return {ok:0,v:'bad path'}; j=j[ks[i]]; } return dec._[0](j); }); }; };
+        $rt['Json.Decode.list']=function(dec){ return $dec(function(j){ var a=$arr(j); if(!a) return {ok:0,v:'expected a list'}; var r=[]; for(var i=0;i<a.length;i++){ var x=dec._[0](a[i]); if(!x.ok) return x; r.push(x.v); } return {ok:1,v:$list(r)}; }); };
+        $rt['Json.Decode.map']=function(f){ return function(dec){ return $dec(function(j){ var x=dec._[0](j); return x.ok?{ok:1,v:f(x.v)}:x; }); }; };
+        function decMapN(n){ return function(f){ var ds=[]; function step(d){ ds.push(d); if(ds.length<n) return step; var cap=ds.slice(); return $dec(function(j){ var acc=f; for(var i=0;i<cap.length;i++){ var x=cap[i]._[0](j); if(!x.ok) return x; acc=acc(x.v); } return {ok:1,v:acc}; }); } return step; }; }
+        $rt['Json.Decode.map2']=decMapN(2); $rt['Json.Decode.map3']=decMapN(3); $rt['Json.Decode.map4']=decMapN(4);
+        $rt['Json.Decode.map5']=decMapN(5); $rt['Json.Decode.map6']=decMapN(6);
+        $rt['Json.Decode.andThen']=function(f){ return function(dec){ return $dec(function(j){ var x=dec._[0](j); if(!x.ok) return x; return f(x.v)._[0](j); }); }; };
+        $rt['Json.Decode.oneOrMore']=function(f){ return function(dec){ return $dec(function(j){ var a=$arr(j); if(!a||a.length===0) return {ok:0,v:'expected a non-empty list'}; var head=dec._[0](a[0]); if(!head.ok) return head; var rest=[]; for(var i=1;i<a.length;i++){ var x=dec._[0](a[i]); if(!x.ok) return x; rest.push(x.v); } return {ok:1,v:f(head.v)($list(rest))}; }); }; };
+        $rt['Json.Decode.oneOf']=function(l){ var ds=$listToArray(l); return $dec(function(j){ for(var i=0;i<ds.length;i++){ var x=ds[i]._[0](j); if(x.ok) return x; } return {ok:0,v:'no matching decoder'}; }); };
+        $rt['Json.Decode.maybe']=function(dec){ return $dec(function(j){ var x=dec._[0](j); return x.ok?{ok:1,v:$data('Just',[x.v])}:{ok:1,v:$data('Nothing',[])}; }); };
+        $rt['Json.Decode.nullable']=function(dec){ return $dec(function(j){ if(j==null) return {ok:1,v:$data('Nothing',[])}; var x=dec._[0](j); return x.ok?{ok:1,v:$data('Just',[x.v])}:x; }); };
+        $rt['Json.Decode.decodeString']=function(dec){ return function(s){ try{ var x=dec._[0](JSON.parse(s)); return x.ok?$data('Ok',[x.v]):$data('Err',[$data('Failure',[String(x.v)])]); }catch(e){ return $data('Err',[$data('Failure',[String(e)])]); } }; };
+        // Http: real fetch; any failure maps to an Http.Error so update's error branch renders.
+        $rt['Http.expectString']=function(toMsg){ return $data('$Expect',['string',toMsg,null]); };
+        $rt['Http.expectJson']=function(toMsg){ return function(dec){ return $data('$Expect',['json',toMsg,dec]); }; };
+        function httpGet(req){ var url=req.url, ex=req.expect; return $cmd(function(d){
+          fetch(url).then(function(r){ if(!r.ok) throw {bad:r.status}; return ex._[0]==='json'? r.json() : r.text(); })
+            .then(function(data){ var msg; if(ex._[0]==='json'){ var x=ex._[2]._[0](data); msg=x.ok? ex._[1]($data('Ok',[x.v])) : ex._[1]($data('Err',[$data('BadBody',[String(x.v)])])); } else { msg=ex._[1]($data('Ok',[data])); } d(msg); })
+            .catch(function(e){ var err = (e&&e.bad)? $data('BadStatus',[e.bad]) : $data('NetworkError',[]); d(ex._[1]($data('Err',[err]))); });
+        }); }
+        $rt['Http.get']=function(req){ return httpGet(req); };
+        $rt['Http.request']=function(req){ return httpGet(req); };
+        // Time: real wall clock; subscriptions via setInterval. Zone carries an offset in minutes.
+        $rt['Time.millisToPosix']=function(n){ return n; };
+        $rt['Time.posixToMillis']=function(p){ return p; };
+        $rt['Time.now']=$task(function(ok,err){ ok(Date.now()); });
+        $rt['Time.utc']=$data('$Zone',[0]);
+        $rt['Time.here']=$task(function(ok,err){ ok($data('$Zone',[-new Date().getTimezoneOffset()])); });
+        function zoned(p, zone){ return p + (zone&&zone._?zone._[0]:0)*60000; }
+        $rt['Time.toHour']=function(z){ return function(p){ return Math.floor(zoned(p,z)/3600000)%24; }; };
+        $rt['Time.toMinute']=function(z){ return function(p){ return Math.floor(zoned(p,z)/60000)%60; }; };
+        $rt['Time.toSecond']=function(z){ return function(p){ return Math.floor(zoned(p,z)/1000)%60; }; };
+        $rt['Time.toMillis']=function(z){ return function(p){ return zoned(p,z)%1000; }; };
+        $rt['Time.every']=function(ms){ return function(toMsg){ return $sub('every:'+ms, function(d){ var id=setInterval(function(){ d(toMsg(Date.now())); }, ms); return function(){ clearInterval(id); }; }); }; };
+        // File: real <input type=file> selection and FileReader-based reads.
+        $rt['File.decoder']=$dec(function(j){ return (j&&typeof j==='object')?{ok:1,v:j}:{ok:0,v:'expected a file'}; });
+        $rt['File.name']=function(f){ return f.name||''; };
+        $rt['File.mime']=function(f){ return f.type||''; };
+        $rt['File.size']=function(f){ return f.size||0; };
+        $rt['File.toUrl']=function(file){ return $task(function(ok,err){ var r=new FileReader(); r.onload=function(){ ok(r.result); }; r.onerror=function(){ err($data('$FileErr',[])); }; r.readAsDataURL(file); }); };
+        $rt['File.toString']=function(file){ return $task(function(ok,err){ var r=new FileReader(); r.onload=function(){ ok(r.result); }; r.onerror=function(){ err($data('$FileErr',[])); }; r.readAsText(file); }); };
+        function selectInput(multiple, mimes){ var inp=document.createElement('input'); inp.type='file'; inp.accept=$listToArray(mimes).join(','); if(multiple) inp.multiple=true; return inp; }
+        $rt['File.Select.file']=function(mimes){ return function(toMsg){ return $cmd(function(d){ var inp=selectInput(false,mimes); inp.onchange=function(){ if(inp.files[0]) d(toMsg(inp.files[0])); }; inp.click(); }); }; };
+        $rt['File.Select.files']=function(mimes){ return function(toMsg){ return $cmd(function(d){ var inp=selectInput(true,mimes); inp.onchange=function(){ var fs=[].slice.call(inp.files); if(fs.length) d(toMsg(fs[0])($list(fs.slice(1)))); }; inp.click(); }); }; };
 
         function setAttr(el, a){
           var t=a.$, nm=a._[0], val=a._[1];
@@ -246,8 +359,13 @@ public final class JsRuntime {
             var ev=nm, h=a._[1];
             var domEvent = ev==='check'?'change':ev;
             var fn = function(e){
-              var msg = (ev==='input') ? h(e.target.value) : (ev==='check') ? h(e.target.checked) : h;
-              window.$dispatch(msg); e.stopPropagation();
+              var msg;
+              if (ev==='input') msg = h(e.target.value);
+              else if (ev==='check') msg = h(e.target.checked);
+              else if (h && h.$==='$Dec'){ var r=h._[0](e); if(!r.ok) return; msg=r.v; } // on "ev" decoder
+              else msg = h;
+              if (msg!==undefined){ window.$dispatch(msg); }
+              e.stopPropagation();
             };
             el.addEventListener(domEvent, fn);
             (el.$ls=el.$ls||[]).push([domEvent, fn]);
@@ -294,10 +412,10 @@ public final class JsRuntime {
           return dom;
         }
         window.$mount = function(program, root){
-          var def = program._[0], kind = program.$, model;
+          var def = program._[0], kind = program.$, model, initCmd=null;
           if (kind==='$Sandbox') model = def.init;
-          else { var pair = def.init($unit); model = pair.vs[0]; }
-          var current=null, dom=null;
+          else { var pair = def.init($unit); model = pair.vs[0]; initCmd = pair.vs[1]; }
+          var current=null, dom=null, subs={};
           function viewVNode(){
             var v = def.view(model);
             if (kind==='$Document'){ v = $data('$Node',['div', $nil, v.body]); }
@@ -309,13 +427,25 @@ public final class JsRuntime {
             else { dom = $patch(root, dom, current, v); }
             current = v;
           }
+          // Reconcile subscriptions: keep running ones whose key persists, start new, stop gone.
+          function syncSubs(){
+            if (kind==='$Sandbox' || !def.subscriptions) return;
+            var list=[]; collectSubs(def.subscriptions(model), list);
+            var next={};
+            list.forEach(function(s){ var k=s._[0]; next[k] = subs[k] || s._[1](window.$dispatch); });
+            Object.keys(subs).forEach(function(k){ if(!next[k] && subs[k]) subs[k](); });
+            subs = next;
+          }
           window.$dispatch = function(msg){
+            var cmd=null;
             if (kind==='$Sandbox') model = def.update(msg)(model);
-            else { var pair = def.update(msg)(model); model = pair.vs[0]; }
-            render();
+            else { var pair = def.update(msg)(model); model = pair.vs[0]; cmd = pair.vs[1]; }
+            render(); syncSubs();
+            if (cmd) runCmd(cmd, window.$dispatch);
           };
           window.$app = { dispatch: function(m){ window.$dispatch(m); }, model: function(){ return model; } };
-          render();
+          render(); syncSubs();
+          if (initCmd) runCmd(initCmd, window.$dispatch);
         };
         // Entry point: a static Html value is rendered directly; a Browser program is mounted.
         window.$start = function(main, root){

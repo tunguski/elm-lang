@@ -131,4 +131,46 @@ class HeadlessChromeTest {
     assertTrue(dom.contains("data-focused=\"true\""), dom); // focus preserved
     assertTrue(dom.contains("<div>h</div>"), dom); // model updated and re-rendered (reverse "h")
   }
+
+  // The examples below were a blank page in the browser because the JS runtime had no effect
+  // kernel: building the initial Cmd/Sub threw "Unbound: ..." and nothing rendered.
+
+  @Test
+  void formsRendersRecordAliasProgram() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: the `Model` record-alias constructor compiled to $data(...) and was applied like a
+    // function ("$data is not a function"), so forms rendered nothing.
+    String dom = renderInBrowser(example("forms"), null);
+    assertTrue(dom.contains("placeholder=\"Name\""), dom);
+    assertTrue(dom.contains("placeholder=\"Password\""), dom);
+  }
+
+  @Test
+  void numbersRollsWithRandomEffect() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Random.generate must build a Cmd (initial render) and, on clicking Roll, produce a 1..6 face.
+    assertTrue(renderInBrowser(example("numbers"), null).contains("<h1>"), "die should render");
+    String driver =
+        "document.querySelector('button').click();"
+            + "document.body.setAttribute('data-face', document.querySelector('h1').textContent);";
+    String dom = renderInBrowser(example("numbers"), driver);
+    assertTrue(dom.matches("(?s).*data-face=\"[1-6]\".*"), dom);
+  }
+
+  @Test
+  void clockRendersSvgFaceWithTimeSub() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Time.now/here Tasks and the Time.every subscription must run; the clock draws an SVG face.
+    String dom = renderInBrowser(example("clock"), null);
+    assertTrue(dom.contains("<circle"), dom);
+    assertTrue(dom.contains("<line"), dom); // the hand
+  }
+
+  @Test
+  void uploadRendersFileInput() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The change-event decoder (Json.Decode.at/list/File.decoder) must build without throwing.
+    String dom = renderInBrowser(example("upload"), null);
+    assertTrue(dom.contains("type=\"file\""), dom);
+  }
 }
