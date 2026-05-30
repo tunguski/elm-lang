@@ -169,6 +169,9 @@ demo: an in-memory time series advanced by a **server-side seeded random walk** 
 the Elm server also serving its own client — an HTML page, a stylesheet, and JavaScript that polls
 `/api/series` once a second and draws the series as an SVG graph (`elm server live-dashboard`).
 
+`elm server <app> --static <dir>` additionally serves text files (HTML/CSS/JS/JSON/SVG) from a
+directory before falling through to the Elm handler (path traversal is refused).
+
 ## Packages & dependencies
 
 The standard library is **built in**: every prelude module (`elm/core`, `elm/html`, `elm/browser`,

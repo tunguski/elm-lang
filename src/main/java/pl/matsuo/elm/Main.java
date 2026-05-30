@@ -292,6 +292,11 @@ public final class Main implements Runnable {
         description = "Port to listen on (default 8080).")
     int port = 8080;
 
+    @Option(
+        names = "--static",
+        description = "Serve text files (HTML/CSS/JS/JSON/SVG) from this directory before the handler.")
+    Path staticDir;
+
     @Override
     public Integer call() throws IOException, InterruptedException {
       String userSource = readElmSource(file);
@@ -306,9 +311,9 @@ public final class Main implements Runnable {
       }
       com.sun.net.httpserver.HttpServer server;
       if (main instanceof pl.matsuo.elm.runtime.ElmRecord r && r.has("onRequest")) {
-        server = pl.matsuo.elm.server.ServerRunner.startStateful(r, port);
+        server = pl.matsuo.elm.server.ServerRunner.startStateful(r, port, staticDir);
       } else {
-        server = pl.matsuo.elm.server.ServerRunner.start(project.entryValue("handle"), port);
+        server = pl.matsuo.elm.server.ServerRunner.start(project.entryValue("handle"), port, staticDir);
       }
       System.out.println("Serving " + file + " on http://localhost:" + port + " (Ctrl-C to stop)");
       Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));

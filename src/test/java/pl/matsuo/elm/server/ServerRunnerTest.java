@@ -94,4 +94,40 @@ class ServerRunnerTest {
       server.stop(0);
     }
   }
+
+  @Test
+  void servesStaticFilesBeforeTheHandler() throws Exception {
+    java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("static-");
+    java.nio.file.Files.writeString(dir.resolve("index.html"), "<h1>static home</h1>");
+    java.nio.file.Files.writeString(dir.resolve("style.css"), "body{color:red}");
+    ServerRunner.Resp home = ServerRunner.serveStatic(dir, "/"); // "/" -> index.html
+    assertEquals("text/html", home.contentType());
+    assertTrue(home.body().contains("static home"));
+    assertEquals("text/css", ServerRunner.serveStatic(dir, "/style.css").contentType());
+    org.junit.jupiter.api.Assertions.assertNull(ServerRunner.serveStatic(dir, "/nope.js")); // falls through
+    org.junit.jupiter.api.Assertions.assertNull(ServerRunner.serveStatic(dir, "/../secret")); // traversal refused
+  }
+
+  @Test
+  void staticDirIsServedOverHttpThenHandler() throws Exception {
+    java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("static-http-");
+    java.nio.file.Files.writeString(dir.resolve("app.js"), "console.log('hi')");
+    HttpServer server = ServerRunner.start(HANDLER, 0, dir);
+    try {
+      int port = server.getAddress().getPort();
+      HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+      HttpResponse<String> js =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/app.js")).build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertTrue(js.body().contains("console.log"), js.body()); // served from disk
+      HttpResponse<String> ping =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ping")).build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals("pong", ping.body()); // no file -> Elm handler
+    } finally {
+      server.stop(0);
+    }
+  }
 }

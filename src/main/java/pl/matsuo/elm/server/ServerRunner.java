@@ -38,8 +38,18 @@ public final class ServerRunner {
 
   /** Binds and starts an HTTP server dispatching to a stateless {@code handle}; returns it. */
   public static HttpServer start(Object handler, int port) throws IOException {
+    return start(handler, port, null);
+  }
+
+  /**
+   * As {@link #start(Object, int)} but first serves matching files from {@code staticDir} (text
+   * assets: HTML/CSS/JS/JSON/SVG), falling through to the Elm handler when no file matches.
+   */
+  public static HttpServer start(Object handler, int port, java.nio.file.Path staticDir)
+      throws IOException {
     return serve(
         port,
+        staticDir,
         exchange -> {
           var r = request(exchange);
           return dispatch(handler, r[0], r[1], r[2], r[3]);
@@ -86,11 +96,18 @@ public final class ServerRunner {
    * {@code tickMillis} on a daemon thread. Returns the {@link HttpServer} (call {@code stop}).
    */
   public static HttpServer startStateful(ElmRecord program, int port) throws IOException {
+    return startStateful(program, port, null);
+  }
+
+  /** As {@link #startStateful(ElmRecord, int)} but serving {@code staticDir} files first. */
+  public static HttpServer startStateful(ElmRecord program, int port, java.nio.file.Path staticDir)
+      throws IOException {
     Stateful state = new Stateful(program);
     int tickMillis = intOf(program.get("tickMillis"));
     HttpServer server =
         serve(
             port,
+            staticDir,
             exchange -> {
               var r = request(exchange);
               return state.handle(r[0], r[1], r[2], r[3]);
@@ -115,14 +132,16 @@ public final class ServerRunner {
     Resp handle(HttpExchange exchange) throws IOException;
   }
 
-  private static HttpServer serve(int port, Dispatcher dispatcher) throws IOException {
+  private static HttpServer serve(int port, java.nio.file.Path staticDir, Dispatcher dispatcher)
+      throws IOException {
     HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
     server.createContext(
         "/",
         exchange -> {
           Resp resp;
           try {
-            resp = dispatcher.handle(exchange);
+            Resp staticResp = staticDir == null ? null : serveStatic(staticDir, exchange.getRequestURI().getPath());
+            resp = staticResp != null ? staticResp : dispatcher.handle(exchange);
           } catch (RuntimeException e) {
             resp = new Resp(500, "text/plain", "Server error: " + e.getMessage());
           }
@@ -136,6 +155,39 @@ public final class ServerRunner {
     server.setExecutor(null);
     server.start();
     return server;
+  }
+
+  /**
+   * Serves a text asset from {@code dir} for the request path (a trailing {@code /} maps to
+   * {@code index.html}), or {@code null} if there's no readable file. Path traversal outside
+   * {@code dir} is refused. Bodies are read as UTF-8 text (binary assets aren't supported).
+   */
+  static Resp serveStatic(java.nio.file.Path dir, String path) {
+    String rel = path.equals("/") || path.isEmpty() ? "index.html" : path.replaceFirst("^/+", "");
+    java.nio.file.Path base = dir.toAbsolutePath().normalize();
+    java.nio.file.Path file = base.resolve(rel).normalize();
+    if (!file.startsWith(base) || !java.nio.file.Files.isRegularFile(file)) {
+      return null; // missing, a directory, or an attempt to escape the static root
+    }
+    try {
+      String body = java.nio.file.Files.readString(file, StandardCharsets.UTF_8);
+      return new Resp(200, contentType(file.getFileName().toString()), body);
+    } catch (IOException e) {
+      return null;
+    }
+  }
+
+  private static String contentType(String name) {
+    int dot = name.lastIndexOf('.');
+    return switch (dot < 0 ? "" : name.substring(dot + 1)) {
+      case "html", "htm" -> "text/html";
+      case "css" -> "text/css";
+      case "js", "mjs" -> "application/javascript";
+      case "json" -> "application/json";
+      case "svg" -> "image/svg+xml";
+      case "txt" -> "text/plain";
+      default -> "text/plain";
+    };
   }
 
   /** Extracts {method, path, rawQuery, body} from an exchange. */
