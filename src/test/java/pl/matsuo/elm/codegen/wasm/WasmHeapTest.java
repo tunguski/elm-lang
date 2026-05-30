@@ -136,6 +136,27 @@ class WasmHeapTest {
   }
 
   @Test
+  void growsTheHeapAcrossManyPagesForALargeTree() throws Exception {
+    // A depth-13 binary tree is ~16k cells (~6 pages, far past the initial 64 KiB), yet recursion
+    // stays shallow (depth 13). It only runs without trapping if the allocator grows memory; the
+    // total (2^13 = 8192 leaves) must still match the interpreter.
+    agrees(
+        """
+        type Tree = Leaf Int | Node Tree Tree
+        build d =
+            if d == 0 then
+                Leaf 1
+            else
+                Node (build (d - 1)) (build (d - 1))
+        total t =
+            case t of
+                Leaf n -> n
+                Node l r -> total l + total r
+        main = total (build 13)
+        """);
+  }
+
+  @Test
   void nullaryConstructorsAndDefaultBranch() throws Exception {
     agrees(
         """

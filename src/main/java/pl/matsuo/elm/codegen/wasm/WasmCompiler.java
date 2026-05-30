@@ -22,7 +22,8 @@ import pl.matsuo.elm.parser.Parser;
  * boolean operators ({@code && || not}, {@code True}/{@code False}). Integers are 64-bit ({@code
  * i64}), matching the interpreter, so a host reads results as {@code BigInt}.
  *
- * <p>It also has a small <b>heap</b>: a linear-memory bump allocator backs cons-lists (built with
+ * <p>It also has a <b>heap</b>: a linear-memory bump allocator (which grows memory on demand, so
+ * long lists and deep recursion don't trap on the first 64 KiB page) backs cons-lists (built with
  * list literals and {@code ::}, consumed by a {@code case} over {@code []} / {@code head :: tail}),
  * tuples, and <b>tagged custom types</b> — a value {@code Ctor a b} is a cell {@code {tag, a, b}}
  * whose tag is the constructor's index in its union, and a {@code case} over constructors loads the
@@ -253,7 +254,12 @@ public final class WasmCompiler {
       leb(code, addr);
     }
 
-    /** Emits {@code $hp += n} (the global heap pointer, an i32). */
+    /**
+     * Emits {@code $hp += n} (the global heap pointer, an i32) and then grows linear memory by one
+     * page if the new pointer has passed the current capacity. Each allocation is far smaller than a
+     * 64 KiB page, so a single {@code memory.grow 1} always restores {@code $hp <= capacity}; this is
+     * what lets heap-heavy, long-running programs (long lists, deep recursion) run without trapping.
+     */
     private void bumpHeap(int n) {
       code.write(0x23);
       leb(code, 0); // global.get $hp
@@ -262,6 +268,23 @@ public final class WasmCompiler {
       code.write(0x6A); // i32.add
       code.write(0x24);
       leb(code, 0); // global.set $hp
+      // if ($hp > memory.size * 65536) memory.grow(1)
+      code.write(0x23);
+      leb(code, 0); // global.get $hp
+      code.write(0x3F);
+      code.write(0x00); // memory.size (pages)
+      code.write(0x41);
+      sleb(code, 16); // i32.const 16
+      code.write(0x74); // i32.shl  -> capacity in bytes
+      code.write(0x4B); // i32.gt_u -> $hp > capacity ?
+      code.write(0x04);
+      code.write(0x40); // if (void)
+      code.write(0x41);
+      sleb(code, 1); // i32.const 1
+      code.write(0x40);
+      code.write(0x00); // memory.grow 1
+      code.write(0x1A); // drop the previous-size result
+      code.write(0x0B); // end
     }
 
     /** Stores the i64 produced by {@code value} at word offset {@code off} of cell {@code addrLocal}. */
@@ -615,10 +638,12 @@ public final class WasmCompiler {
     }
     section(out, 3, funcs);
 
-    // Memory section (id 5): one memory, min 1 page (64 KiB) — the heap for cons-cells and tuples.
+    // Memory section (id 5): one memory, min 1 page (64 KiB), no max — the heap for cons-cells,
+    // tuples and tagged values. The allocator grows it on demand (see bumpHeap), so the only ceiling
+    // is the host's, not a fixed page count.
     ByteArrayOutputStream memory = new ByteArrayOutputStream();
     leb(memory, 1); // one memory
-    memory.write(0x00); // limits: min only
+    memory.write(0x00); // limits: min only (growable, no maximum)
     leb(memory, 1); // min 1 page
     section(out, 5, memory);
 
