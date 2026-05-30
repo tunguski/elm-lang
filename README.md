@@ -36,6 +36,10 @@ java -jar target/elm.jar eval "List.foldl (+) 0 (List.range 1 100)"   # -> 5050
 java -jar target/elm.jar run Main.elm   # loads the optimizing Truffle (Graal JIT) runtime
 ```
 
+For a clean run (no GraalVM/`Unsafe` startup warnings), add
+`--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow`. The
+[`elm.sh`](elm.sh) wrapper already passes these.
+
 A true native binary (instant startup, no JVM) is available via GraalVM `native-image`:
 
 ```sh

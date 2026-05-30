@@ -44,4 +44,9 @@ case "$(uname -s 2>/dev/null || echo)" in
   MINGW* | MSYS* | CYGWIN*) SEP=";" ;;
 esac
 
-exec java -cp "target/classes${SEP}$(cat "$CP_FILE")" pl.matsuo.elm.Main "$@"
+# Silence GraalVM/Truffle's startup notices (native-access + sun.misc.Unsafe deprecation) so script
+# and server output isn't buried in JVM warnings. Real errors still go to stderr. Extra flags can be
+# appended via ELM_JAVA_OPTS.
+JAVA_OPTS="--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow ${ELM_JAVA_OPTS:-}"
+
+exec java $JAVA_OPTS -cp "target/classes${SEP}$(cat "$CP_FILE")" pl.matsuo.elm.Main "$@"
