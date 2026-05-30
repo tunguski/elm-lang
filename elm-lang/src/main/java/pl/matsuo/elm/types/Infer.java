@@ -166,6 +166,16 @@ public final class Infer {
         registerRecordAliasConstructor(ta, globals);
       }
     }
+    // A port declares a value of its annotated type (outgoing `a -> Cmd msg`, incoming
+    // `(a -> msg) -> Sub msg`). Generalize it so `msg` stays polymorphic, like any signature.
+    Map<String, Scheme> ports = new LinkedHashMap<>();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Port p) {
+        Scheme s = Types.generalize(Types.prune(astToTy(p.type(), new HashMap<>())), 0);
+        globals.put(p.name(), s);
+        ports.put(p.name(), s);
+      }
+    }
 
     // Infer top-level definitions in dependency order, one strongly-connected component (mutually
     // recursive group) at a time, generalizing each group before the next. This gives proper
@@ -204,6 +214,7 @@ public final class Infer {
         env = env.extend(name, s); // visible (generalized) to later groups
       }
     }
+    result.putAll(ports); // ports are values too; expose their declared types
     return result;
   }
 

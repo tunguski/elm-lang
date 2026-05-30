@@ -56,6 +56,15 @@
   }
   $rt['Sub.none']=$data('$SubNone',[]); $rt['Sub.batch']=function(l){ return $data('$SubBatch',[l]); };
   $rt['Sub.map']=function(f){ return function(s){ if(!s||s.$!=='$Sub') return s; return $sub('map:'+s._[0], function(d){ return s._[1](function(m){ d(f(m)); }); }); }; };
+  // ---- ports ----
+  // Each port has subscribers (JS callbacks for outgoing values) and handlers (push values from JS
+  // into incoming subscriptions). `$portOut`/`$portIn` build the Elm-side function for a `port`
+  // declaration; `app.ports[name].subscribe/send` (wired in $mount) is the JS side.
+  var $ports = {};
+  function $ensurePort(name){ return $ports[name] || ($ports[name] = {subs:[], handlers:[]}); }
+  window.$portOut = function(name){ $ensurePort(name); return function(v){ return $cmd(function(d){ $ensurePort(name).subs.forEach(function(f){ f(v); }); }); }; };
+  window.$portIn = function(name){ $ensurePort(name); return function(toMsg){ return $sub('port:'+name, function(d){ var p=$ensurePort(name); var h=function(v){ d(toMsg(v)); }; p.handlers.push(h); return function(){ var i=p.handlers.indexOf(h); if(i>=0) p.handlers.splice(i,1); }; }); }; };
+  function $portsApi(){ var api={}; Object.keys($ports).forEach(function(name){ api[name]={ subscribe:function(fn){ $ensurePort(name).subs.push(fn); }, unsubscribe:function(fn){ var s=$ensurePort(name).subs; var i=s.indexOf(fn); if(i>=0) s.splice(i,1); }, send:function(v){ $ensurePort(name).handlers.slice().forEach(function(h){ h(v); }); } }; }); return api; }
   // A Task is $Task[run] where run(onOk,onErr).
   function $task(run){ return $data('$Task',[run]); }
   $rt['Task.succeed']=function(v){ return $task(function(ok,err){ ok(v); }); };
@@ -388,7 +397,7 @@
       render(); syncSubs();
       if (cmd) runCmd(cmd, window.$dispatch);
     };
-    window.$app = { dispatch: function(m){ window.$dispatch(m); }, model: function(){ return model; } };
+    window.$app = { dispatch: function(m){ window.$dispatch(m); }, model: function(){ return model; }, ports: $portsApi() };
     render(); syncSubs();
     if (initCmd) runCmd(initCmd, window.$dispatch);
   };

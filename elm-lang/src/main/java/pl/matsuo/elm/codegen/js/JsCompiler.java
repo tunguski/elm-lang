@@ -69,6 +69,9 @@ public final class JsCompiler {
       if (d instanceof Decl.Value v) {
         topLevelNames.add(v.name());
       }
+      if (d instanceof Decl.Port p) {
+        topLevelNames.add(p.name()); // a port is referenced by name like any top-level value
+      }
       if (d instanceof Decl.TypeAlias ta && ta.type() instanceof Type.Record rec) {
         recordAliases.put(ta.name(), rec.fields().stream().map(Type.Record.Field::name).toList());
       }
@@ -105,6 +108,15 @@ public final class JsCompiler {
   }
 
   /** The global JS identifier for one of this module's top-level definitions. */
+  /** True if a port's type ultimately returns {@code Sub} (an incoming port), else outgoing. */
+  private static boolean portReturnsSub(Type type) {
+    Type t = type;
+    while (t instanceof Type.Arrow a) {
+      t = a.to();
+    }
+    return t instanceof Type.Con c && c.name().equals("Sub");
+  }
+
   private String topLevelId(String name) {
     return project == null ? "_$" + name : "_$" + moduleTag + "$" + name;
   }
@@ -386,6 +398,20 @@ public final class JsCompiler {
               .append(compileLambda(v.params(), v.body())).append(";\n");
           declSrcLines.add(v.pos().line());
         }
+      }
+    }
+    // Ports compile to kernel helpers: an outgoing port (`a -> Cmd msg`) becomes a function that
+    // builds a Cmd which notifies JS subscribers; an incoming port (`(a -> msg) -> Sub msg`) becomes
+    // a Sub that JS can `send` into. Both register the named port on the app's `ports` object.
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Port p) {
+        boolean incoming = portReturnsSub(p.type());
+        sb.append("var ")
+            .append(topLevelId(p.name()))
+            .append(incoming ? " = $portIn(" : " = $portOut(")
+            .append(jsString(p.name()))
+            .append(");\n");
+        declSrcLines.add(p.pos().line());
       }
     }
     java.util.Set<String> emitted = new java.util.HashSet<>();

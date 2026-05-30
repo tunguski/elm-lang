@@ -103,6 +103,37 @@ public final class Interpreter {
         env.defineTopLevel(v.name(), new Thunk(() -> node.execute(rootScope)));
       }
     }
+    // Ports: an outgoing port (`a -> Cmd msg`) is a function producing a Cmd that carries the sent
+    // value; an incoming port (`(a -> msg) -> Sub msg`) yields a Sub. Headlessly the runtime has no
+    // JS peer, so the Cmd is inert and the Sub never fires — but a port module still loads and runs.
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Port p) {
+        env.defineTopLevel(p.name(), portValue(p));
+      }
+    }
+  }
+
+  /** A 1-argument function value implementing a port: outgoing -> Cmd, incoming -> Sub. */
+  private static Object portValue(Decl.Port p) {
+    String name = p.name();
+    boolean incoming = returnsSub(p.type());
+    return new pl.matsuo.elm.runtime.Builtin(
+        name,
+        1,
+        args ->
+            incoming
+                ? new pl.matsuo.elm.runtime.ElmData("$SubNone", new Object[0])
+                : new pl.matsuo.elm.runtime.ElmData(
+                    "$Cmd_Port", new Object[] {name, args[0]}));
+  }
+
+  /** True if the port's annotated type ultimately returns a {@code Sub} (an incoming port). */
+  private static boolean returnsSub(pl.matsuo.elm.ast.Type type) {
+    pl.matsuo.elm.ast.Type t = type;
+    while (t instanceof pl.matsuo.elm.ast.Type.Arrow a) {
+      t = a.to();
+    }
+    return t instanceof pl.matsuo.elm.ast.Type.Con c && c.name().equals("Sub");
   }
 
   public RuntimeEnv env() {
