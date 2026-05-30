@@ -82,6 +82,10 @@ public final class Main implements Runnable {
                   switch (ex) {
                     case java.nio.file.NoSuchFileException e ->
                         "File not found: " + e.getFile();
+                    case java.io.UncheckedIOException e
+                            when e.getCause() instanceof java.nio.file.NoSuchFileException nf ->
+                        "File not found: " + nf.getFile();
+                    case java.io.UncheckedIOException e -> "I/O error: " + e.getCause().getMessage();
                     case ElmTypeError e -> "Type error: " + e.getMessage();
                     case pl.matsuo.elm.error.ElmRuntimeError e -> "Runtime error: " + e.getMessage();
                     case pl.matsuo.elm.error.ElmSyntaxError e -> "Syntax error: " + e.getMessage();
@@ -124,19 +128,34 @@ public final class Main implements Runnable {
     @Option(names = "--strict", hidden = true, description = "Deprecated: type-checking is the default.")
     boolean strict;
 
+    @Option(names = "--watch", description = "Re-run whenever the file changes (Ctrl-C to stop).")
+    boolean watch;
+
     @Override
-    public Integer call() throws IOException {
-      String source = Files.readString(file);
-      if (!noCheck && typeError(source) instanceof String msg) {
-        System.out.println("Type error: " + msg);
-        return 1;
+    public Integer call() throws IOException, InterruptedException {
+      if (watch) {
+        pl.matsuo.elm.util.FileWatcher.watch(List.of(file), 300, this::runOnce);
+        return 0;
       }
-      Object v =
-          backend.equals("bytecode")
-              ? BytecodeInterpreter.load(source).value(value)
-              : Interpreter.load(source).value(value);
-      System.out.println(render(v));
-      return 0;
+      return runOnce();
+    }
+
+    private int runOnce() {
+      try {
+        String source = Files.readString(file);
+        if (!noCheck && typeError(source) instanceof String msg) {
+          System.out.println("Type error: " + msg);
+          return 1;
+        }
+        Object v =
+            backend.equals("bytecode")
+                ? BytecodeInterpreter.load(source).value(value)
+                : Interpreter.load(source).value(value);
+        System.out.println(render(v));
+        return 0;
+      } catch (IOException e) {
+        throw new java.io.UncheckedIOException(e);
+      }
     }
   }
 
@@ -189,33 +208,48 @@ public final class Main implements Runnable {
     @Option(names = "--no-check", description = "Skip the type check before compiling.")
     boolean noCheck;
 
+    @Option(names = "--watch", description = "Recompile whenever an input file changes (Ctrl-C to stop).")
+    boolean watch;
+
     @Override
-    public Integer call() throws IOException {
-      List<String> sources = new ArrayList<>();
-      for (Path p : files) {
-        sources.add(Files.readString(p));
+    public Integer call() throws IOException, InterruptedException {
+      if (watch) {
+        pl.matsuo.elm.util.FileWatcher.watch(files, 300, this::makeOnce);
+        return 0;
       }
-      String[] arr = sources.toArray(new String[0]);
-      if (!noCheck && typeError(arr) instanceof String msg) {
-        System.out.println("Type error: " + msg);
-        return 1;
+      return makeOnce();
+    }
+
+    private int makeOnce() {
+      try {
+        List<String> sources = new ArrayList<>();
+        for (Path p : files) {
+          sources.add(Files.readString(p));
+        }
+        String[] arr = sources.toArray(new String[0]);
+        if (!noCheck && typeError(arr) instanceof String msg) {
+          System.out.println("Type error: " + msg);
+          return 1;
+        }
+        String artifact;
+        if (output.endsWith(".js")) {
+          String bundle = JsCompiler.appBundleProject(arr);
+          artifact = optimize ? JsCompiler.minify(bundle) : bundle;
+        } else {
+          String bundle = JsCompiler.appBundleProject(arr);
+          String js = optimize ? JsCompiler.minify(bundle) : bundle;
+          artifact =
+              "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"
+                  + "<body>\n<div id=\"app\"></div>\n<script>\n"
+                  + js
+                  + "\n</script>\n</body>\n</html>\n";
+        }
+        Files.writeString(Path.of(output), artifact);
+        System.out.println("Wrote " + output + " (" + artifact.length() + " bytes)");
+        return 0;
+      } catch (IOException e) {
+        throw new java.io.UncheckedIOException(e);
       }
-      String artifact;
-      if (output.endsWith(".js")) {
-        String bundle = JsCompiler.appBundleProject(arr);
-        artifact = optimize ? JsCompiler.minify(bundle) : bundle;
-      } else {
-        String bundle = JsCompiler.appBundleProject(arr);
-        String js = optimize ? JsCompiler.minify(bundle) : bundle;
-        artifact =
-            "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"
-                + "<body>\n<div id=\"app\"></div>\n<script>\n"
-                + js
-                + "\n</script>\n</body>\n</html>\n";
-      }
-      Files.writeString(Path.of(output), artifact);
-      System.out.println("Wrote " + output + " (" + artifact.length() + " bytes)");
-      return 0;
     }
   }
 
