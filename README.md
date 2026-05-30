@@ -159,7 +159,7 @@ interpreter, and writes the `Response`. `segments` gives the path parts for rout
 parameters via `case`), `param` looks up a query parameter, and a JSON body is decoded with the
 `Json.Decode` module. Because the handler is a pure `Request -> Response`, it is trivial to
 unit-test — `ServerRunnerTest` checks routing, path/query parameters and status by direct dispatch
-and also over a real socket. See [`server.elm`](src/main/resources/elm/demos/server.elm).
+and also over a real socket. See [`simple-server-showcase.elm`](src/main/resources/elm/demos/simple-server-showcase.elm).
 
 ## Packages & dependencies
 
