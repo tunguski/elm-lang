@@ -39,6 +39,34 @@ public final class Main {
       new pl.matsuo.elm.lsp.LspServer().serve(System.in, System.out);
       return;
     }
+    if (args[0].equals("format")) {
+      // format <file.elm>            -> print formatted source to stdout
+      // format <file.elm> --write    -> rewrite the file in place
+      // format <elm.json|dir> --project [--write]  -> format every project module
+      boolean write = flag(args, "--write");
+      if (flag(args, "--project") && args.length > 1) {
+        int formatted = 0;
+        for (Path p : pl.matsuo.elm.fmt.Formatter.projectFiles(Path.of(args[1]))) {
+          String out = pl.matsuo.elm.fmt.Formatter.format(Files.readString(p));
+          if (write) {
+            Files.writeString(p, out);
+          }
+          formatted++;
+        }
+        System.out.println((write ? "Formatted " : "Checked ") + formatted + " file(s)");
+      } else if (args.length > 1) {
+        String out = pl.matsuo.elm.fmt.Formatter.format(Files.readString(Path.of(args[1])));
+        if (write) {
+          Files.writeString(Path.of(args[1]), out);
+          System.out.println("Formatted " + args[1]);
+        } else {
+          System.out.print(out);
+        }
+      } else {
+        System.out.println("usage: format <file.elm> [--write] | format <elm.json|dir> --project [--write]");
+      }
+      return;
+    }
     if (args[0].equals("project")) {
       if (args.length < 2) {
         System.out.println("usage: project <elm.json|dir> [check|run [value]]");
@@ -181,6 +209,7 @@ public final class Main {
           bench [fibN]
           repl
           lsp                                  language server (LSP) over stdio
+          format <file.elm> [--write] | format <elm.json|dir> --project [--write]
           project <elm.json|dir> [check|run]   load source-directories and check/run
           site  <examplesDir> <Playground.elm> <outDir>
 
