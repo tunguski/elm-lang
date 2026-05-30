@@ -17,11 +17,30 @@ class MainCliTest {
     ByteArrayOutputStream captured = new ByteArrayOutputStream();
     System.setOut(new PrintStream(captured, true, StandardCharsets.UTF_8));
     try {
-      Main.main(args);
+      Main.run(args);
     } finally {
       System.setOut(original);
     }
     return captured.toString(StandardCharsets.UTF_8);
+  }
+
+  /** Result of a CLI invocation: exit code plus captured stdout/stderr. */
+  private record Result(int code, String out, String err) {}
+
+  private Result invoke(String... args) {
+    PrintStream origOut = System.out;
+    PrintStream origErr = System.err;
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
+    System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
+    try {
+      int code = Main.run(args);
+      return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
+    } finally {
+      System.setOut(origOut);
+      System.setErr(origErr);
+    }
   }
 
   private Path tempElm(String source) throws Exception {
@@ -90,6 +109,26 @@ class MainCliTest {
   @Test
   void helpIsShownWithNoArguments() throws Exception {
     assertTrue(run().contains("Commands:") || run().contains("Usage:"), run());
+  }
+
+  @Test
+  void formatCheckSucceedsOnFormattedFileAndFailsOnUnformatted() throws Exception {
+    // Already-formatted output is a fixed point of `format`, so re-checking it passes.
+    Path tidy = tempElm(pl.matsuo.elm.fmt.Formatter.format("module Main exposing (..)\nmain = 1\n"));
+    assertTrue(invoke("format", tidy.toString(), "--check").code() == 0);
+
+    Path messy = tempElm("module Main exposing (..)\nmain   =    1\n");
+    Result r = invoke("format", messy.toString(), "--check");
+    assertTrue(r.code() == 1, "exit code");
+    assertTrue(r.out().contains("is not formatted"), r.out());
+  }
+
+  @Test
+  void missingFileProducesCleanErrorNotStackTrace() {
+    Result r = invoke("run", "does-not-exist.elm");
+    assertTrue(r.code() == 1, "exit code");
+    assertTrue(r.err().contains("File not found"), r.err());
+    assertTrue(!r.err().contains("\tat "), "no Java stack trace: " + r.err());
   }
 
   @Test

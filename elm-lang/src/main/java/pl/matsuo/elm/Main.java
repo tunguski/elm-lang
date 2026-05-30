@@ -48,7 +48,29 @@ import pl.matsuo.elm.runtime.ElmData;
 public final class Main implements Runnable {
 
   public static void main(String[] args) {
-    new CommandLine(new Main()).execute(args);
+    System.exit(run(args));
+  }
+
+  /** Runs the CLI and returns the process exit code. Split out so tests can assert on it. */
+  static int run(String... args) {
+    return new CommandLine(new Main())
+        .setExecutionExceptionHandler(
+            (ex, cmd, parseResult) -> {
+              // Turn expected failures into clean one-line messages instead of stack traces.
+              String msg =
+                  switch (ex) {
+                    case java.nio.file.NoSuchFileException e ->
+                        "File not found: " + e.getFile();
+                    case ElmTypeError e -> "Type error: " + e.getMessage();
+                    case pl.matsuo.elm.error.ElmRuntimeError e -> "Runtime error: " + e.getMessage();
+                    case pl.matsuo.elm.error.ElmSyntaxError e -> "Syntax error: " + e.getMessage();
+                    case IOException e -> "I/O error: " + e.getMessage();
+                    default -> ex.getClass().getSimpleName() + ": " + ex.getMessage();
+                  };
+              cmd.getErr().println(cmd.getColorScheme().errorText(msg));
+              return 1;
+            })
+        .execute(args);
   }
 
   @Override
@@ -186,20 +208,43 @@ public final class Main implements Runnable {
     @Option(names = "--project", description = "Format every module in the project.")
     boolean project;
 
+    @Option(
+        names = "--check",
+        description = "Don't write; exit non-zero if any file isn't already formatted (for CI).")
+    boolean check;
+
     @Override
     public Integer call() throws IOException {
       if (project) {
         int n = 0;
+        int unformatted = 0;
         for (Path p : pl.matsuo.elm.fmt.Formatter.projectFiles(path)) {
-          String out = pl.matsuo.elm.fmt.Formatter.format(Files.readString(p));
-          if (write) {
+          String original = Files.readString(p);
+          String out = pl.matsuo.elm.fmt.Formatter.format(original);
+          if (check && !out.equals(original)) {
+            System.out.println(p + " is not formatted");
+            unformatted++;
+          } else if (write) {
             Files.writeString(p, out);
           }
           n++;
         }
+        if (check) {
+          System.out.println(
+              unformatted == 0
+                  ? "All " + n + " file(s) are formatted"
+                  : unformatted + " of " + n + " file(s) need formatting");
+          return unformatted == 0 ? 0 : 1;
+        }
         System.out.println((write ? "Formatted " : "Checked ") + n + " file(s)");
       } else {
-        String out = pl.matsuo.elm.fmt.Formatter.format(Files.readString(path));
+        String original = Files.readString(path);
+        String out = pl.matsuo.elm.fmt.Formatter.format(original);
+        if (check) {
+          boolean formatted = out.equals(original);
+          System.out.println(path + (formatted ? " is formatted" : " is not formatted"));
+          return formatted ? 0 : 1;
+        }
         if (write) {
           Files.writeString(path, out);
           System.out.println("Formatted " + path);
