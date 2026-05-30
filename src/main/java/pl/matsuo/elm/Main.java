@@ -237,10 +237,10 @@ public final class Main implements Runnable {
         String artifact;
         if (output.endsWith(".js")) {
           String bundle = JsCompiler.appBundleProject(arr);
-          artifact = optimize ? JsCompiler.minify(bundle) : bundle;
+          artifact = optimize ? JsCompiler.optimize(bundle) : bundle;
         } else {
           String bundle = JsCompiler.appBundleProject(arr);
-          String js = optimize ? JsCompiler.minify(bundle) : bundle;
+          String js = optimize ? JsCompiler.optimize(bundle) : bundle;
           artifact =
               "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"
                   + "<body>\n<div id=\"app\"></div>\n<script>\n"

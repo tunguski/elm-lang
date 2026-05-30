@@ -114,6 +114,18 @@ class JsBackendTest {
   }
 
   @Test
+  void optimizeDropsUnusedDefinitionsButKeepsResult() {
+    String src = "used n = n + 1\nunusedHelper n = n * 999\nmain = used 41\n";
+    String bundle = JsCompiler.moduleProgram(src);
+    String optimized = JsCompiler.optimize(bundle);
+    // The unreachable `unusedHelper` declaration is gone; `used` (reachable from main) stays.
+    org.junit.jupiter.api.Assertions.assertTrue(bundle.contains("_$unusedHelper"), "present before");
+    org.junit.jupiter.api.Assertions.assertFalse(optimized.contains("_$unusedHelper"), "dropped");
+    org.junit.jupiter.api.Assertions.assertTrue(optimized.contains("_$used"), "reachable kept");
+    assertEquals("42", runNode(optimized)); // still correct after tree-shaking
+  }
+
+  @Test
   void minifiedProgramIsSmallerAndStillRuns() {
     String full = JsCompiler.moduleProgram("main = List.sum (List.range 1 10)\n");
     String min = JsCompiler.minify(full);

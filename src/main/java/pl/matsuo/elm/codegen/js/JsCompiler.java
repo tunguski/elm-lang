@@ -312,6 +312,71 @@ public final class JsCompiler {
     return sb.toString();
   }
 
+  /**
+   * Dead-code elimination over a bundle's top-level Elm declarations: drops {@code var _$… = …;}
+   * lines that are unreachable from the program's entry. Reachability is textual over the generated
+   * {@code _$} identifiers — a <em>superset</em> of real use (an id mentioned only in a string still
+   * counts), so it is conservative and never drops a declaration that is actually used. The kernel
+   * runtime (referenced dynamically via {@code $g(...)}) is untouched.
+   */
+  public static String treeShake(String bundle) {
+    String[] lines = bundle.split("\n", -1);
+    java.util.regex.Pattern declPat = java.util.regex.Pattern.compile("^var (_\\$[A-Za-z0-9_$]+) = ");
+    java.util.regex.Pattern idPat = java.util.regex.Pattern.compile("_\\$[A-Za-z0-9_$]+");
+    Map<String, Integer> declLine = new HashMap<>();
+    for (int i = 0; i < lines.length; i++) {
+      var m = declPat.matcher(lines[i]);
+      if (m.find()) {
+        declLine.put(m.group(1), i);
+      }
+    }
+    // Seed reachable ids from every non-declaration line (the kernel and the mount/entry call).
+    Set<String> reachable = new HashSet<>();
+    java.util.Deque<String> work = new java.util.ArrayDeque<>();
+    for (int i = 0; i < lines.length; i++) {
+      var d = declPat.matcher(lines[i]);
+      if (d.find() && declLine.get(d.group(1)) == i) {
+        continue; // a declaration line — its RHS is followed only once it's reachable
+      }
+      var m = idPat.matcher(lines[i]);
+      while (m.find()) {
+        if (reachable.add(m.group())) {
+          work.add(m.group());
+        }
+      }
+    }
+    // Follow references through reachable declarations' right-hand sides (fixpoint).
+    while (!work.isEmpty()) {
+      Integer li = declLine.get(work.poll());
+      if (li == null) {
+        continue;
+      }
+      var m = idPat.matcher(lines[li]);
+      while (m.find()) {
+        if (reachable.add(m.group())) {
+          work.add(m.group());
+        }
+      }
+    }
+    StringBuilder sb = new StringBuilder(bundle.length());
+    for (int i = 0; i < lines.length; i++) {
+      var m = declPat.matcher(lines[i]);
+      if (m.find() && declLine.get(m.group(1)) == i) {
+        if (reachable.contains(m.group(1))) {
+          sb.append(lines[i]).append("\n");
+        }
+      } else {
+        sb.append(lines[i]).append(i == lines.length - 1 ? "" : "\n");
+      }
+    }
+    return sb.toString();
+  }
+
+  /** Tree-shake then minify — the {@code --optimize} pipeline for a JS bundle. */
+  public static String optimize(String bundle) {
+    return minify(treeShake(bundle));
+  }
+
   /** A full HTML page hosting {@link #appBundle}; {@code driver} (may be null) runs after mount. */
   public static String htmlPage(String source, String driver) {
     return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
