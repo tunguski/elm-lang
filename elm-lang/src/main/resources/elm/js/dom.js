@@ -252,6 +252,9 @@
   function bindTexture(gl,loc,t,unit){
     if(!t.$tex){
       var tx=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tx);
+      // Images have a top-left origin but GL texture coords a bottom-left one, so flip Y on upload
+      // (elm-explorations/webgl's default) — otherwise textures render vertically mirrored.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
       // Upload the loaded image; if it's missing or cross-origin-tainted (texImage2D throws),
       // fall back to a 2x2 checkerboard so the geometry still renders textured.
       try{ if(!t._[0]) throw 0; gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,t._[0]); }
