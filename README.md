@@ -92,8 +92,9 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
 | `init [dir]` | Scaffold `elm.json` + `src/`. |
+| `install <author/name> [--registry DIR]` | Add a package to `elm.json` and re-solve dependencies against a local registry. |
 | `bench [fibN]` | Benchmark the four backends on a recursive workload. |
-| `site <examplesDir> <Playground.elm> <outDir>` | Generate the static example gallery. |
+| `site <examplesDir> <Playground.elm> <outDir> [docsDir]` | Generate the static example gallery (optionally rendering Markdown docs). |
 
 The compiled TEA runtime also ships a **time-travel debugger**: append `?debug` to a page URL for a
 step-back/forward overlay; `window.$app` exposes `history()`, `goto(i)`, `live()`, `messages()` and
@@ -140,7 +141,7 @@ falls through to evaluation).
 | The Elm Architecture (`Browser.sandbox`/`element`/`document`), virtual-DOM | ✅ | with a time-travel debugger |
 | Effects: `Random`, `Time`, `Task`, `Http`, `File`, `Browser.Events`/`Dom` | ✅ | |
 | WebGL (`Math.Vector*`/`Matrix4`, shaders, textures) | ✅ | renders in a real `<canvas>` |
-| Third-party packages from the registry | ❌ | no package manager — see Known limitations |
+| Third-party packages from the registry | ⚠️ | `elm install` solves & pins deps from a local registry; sources not yet compiled — see Known limitations |
 | GLSL custom binary operators from packages (`\|.`, `</>`) | ⚠️ | lex & parse; run only if you define them |
 
 **Prelude**: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`, `Set`,
@@ -209,10 +210,18 @@ directly by the interpreter, type checker and JS kernel — there is **no packag
 usual direct/indirect dependencies) so the file is recognisable to real Elm tooling, but those
 version constraints are **not fetched or resolved**: they're a manifest, and `project`/`check`/
 `make` simply read its `source-directories` to find your modules. Anything outside the bundled set
-(a third-party package such as `elm/parser` or `elm-community/*`) is therefore **not available**;
-its custom infix operators lex and parse but won't run. This keeps the toolchain self-contained and
-offline at the cost of the real solver — adding one would mean implementing `elm install`, a
-constraint solver against the package registry, and on-disk package loading.
+(a third-party package such as `elm/parser` or `elm-community/*`) is therefore **not available** to
+the compiler yet; its custom infix operators lex and parse but won't run.
+
+There **is** a working dependency layer, though. `elm install <author/name>` adds a package to your
+`elm.json` and re-solves the dependency set: a real semantic-version model, Elm-style `LOWER <= v <
+UPPER` constraints, and a **backtracking constraint solver** that pins one compatible version of
+every package in the transitive closure (preferring the highest allowed, backing off on conflict).
+It resolves against an **on-disk registry** — a cache laid out as
+`<root>/<author>/<name>/<version>/elm.json` (default `$ELM_REGISTRY` or `~/.elm/registry`) — so it
+works offline and is the same shape a mirrored remote registry would take. What remains is the
+network layer (fetching/mirroring the public registry) and feeding installed package *sources* into
+the compiler and type checker; the solver and manifest handling are done.
 
 ## Performance (JIT benchmark)
 
@@ -280,9 +289,11 @@ publishes it as an artifact.
 
 ## Known limitations
 
-- **No package manager**: only the bundled standard library is available; third-party packages
-  aren't fetched or executed (their custom infix operators lex and parse, but the *definitions*
-  aren't loaded). See [Packages & dependencies](#packages--dependencies). This is the biggest gap.
+- **Package manager — partial**: `elm install` works with a real version-constraint solver against
+  an on-disk registry, but there is no network layer (the public registry isn't fetched/mirrored)
+  and installed package *sources* aren't yet fed into the compiler/type checker. So beyond the
+  bundled standard library, third-party package *definitions* still don't execute (their custom
+  infix operators lex and parse). See [Packages & dependencies](#packages--dependencies).
 - **WASM backend** scope: numbers/booleans, plus a linear-memory heap for cons-lists, tuples and
   tagged custom types (so recursive list/ADT functions compile and run). **Strings, records and
   first-class functions/closures** are not in WASM yet — they remain on the JS backend.

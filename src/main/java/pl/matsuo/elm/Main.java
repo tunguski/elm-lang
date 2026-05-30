@@ -24,7 +24,7 @@ import pl.matsuo.elm.runtime.ElmData;
 /**
  * Command-line entry point, built on <a href="https://picocli.info">picocli</a>: {@code elm} with
  * subcommands {@code run/js/make/eval/script/server/test/check/repl/lsp/format/project/bench/site/
- * init}. Use {@code --help} on any command for usage.
+ * init/install}. Use {@code --help} on any command for usage.
  */
 @Command(
     name = "elm",
@@ -68,6 +68,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Bench.class,
       Main.Site.class,
       Main.Init.class,
+      Main.Install.class,
       CommandLine.HelpCommand.class,
     })
 public final class Main implements Runnable {
@@ -629,6 +630,55 @@ public final class Main implements Runnable {
       Files.writeString(elmJson, ELM_JSON, StandardCharsets.UTF_8);
       System.out.println("Created " + elmJson + " and " + dir.resolve("src") + "/");
       return 0;
+    }
+  }
+
+  @Command(
+      name = "install",
+      description = "Add a package to elm.json and re-solve dependencies (against a local registry).",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm install elm/regex                 # add the newest compatible version",
+        "  elm install elm/regex --registry ./vendor",
+        "",
+        "The registry is an on-disk cache laid out as <root>/<author>/<name>/<version>/elm.json.",
+        "Defaults to $ELM_REGISTRY, else ~/.elm/registry. A package elm.json declares its own",
+        "dependencies as constraint strings (\"1.0.0 <= v < 2.0.0\"); the solver pins a compatible",
+        "version of every package in the transitive closure.",
+      })
+  static final class Install implements Callable<Integer> {
+    @Parameters(index = "0", description = "Package to install, as author/name (e.g. elm/regex).")
+    String pkg;
+
+    @Option(
+        names = "--registry",
+        description = "Package-cache directory (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
+    @Option(
+        names = {"-d", "--dir"},
+        description = "Project directory containing elm.json (default: current directory).")
+    Path dir = Path.of(".");
+
+    @Override
+    public Integer call() throws IOException {
+      Path registryRoot = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+      var reg = new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
+      try {
+        var result = pl.matsuo.elm.pkg.Installer.install(dir, pkg, reg);
+        if (result.alreadyPresent()) {
+          System.out.println(pkg + " is already a direct dependency (" + result.installed() + ").");
+          return 0;
+        }
+        System.out.println("Installed " + pkg + " " + result.installed() + ".");
+        System.out.println(
+            "Dependencies: " + result.direct().size() + " direct, "
+                + result.indirect().size() + " indirect.");
+        return 0;
+      } catch (pl.matsuo.elm.pkg.Solver.Unsolvable | IllegalStateException e) {
+        System.err.println("Install failed: " + e.getMessage());
+        return 1;
+      }
     }
   }
 
