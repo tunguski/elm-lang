@@ -4,7 +4,7 @@ module Parser exposing (parse, parseProject)
 mutually-recursive set of top-level declarations (a column-0 "layout-lite" chunker). -}
 
 import Lang exposing (Decl, Expr(..), Globals, Pattern(..))
-import Lexer exposing (Token(..), tokenize)
+import Lexer exposing (Token(..), cookLayout, tokenize)
 
 
 
@@ -12,8 +12,8 @@ import Lexer exposing (Token(..), tokenize)
 
 
 parse : List Token -> Result String Expr
-parse tokens =
-    parseExpr tokens
+parse rawTokens =
+    parseExpr (cookLayout rawTokens)
         |> Result.andThen
             (\r ->
                 if List.isEmpty (Tuple.second r) then
@@ -546,8 +546,8 @@ parseDecl source =
             Err _ ->
                 Ok []
 
-            Ok tokens ->
-                case tokens of
+            Ok rawTokens ->
+                case cookLayout rawTokens of
                     (TId name) :: rest ->
                         parseDeclParams name rest []
 

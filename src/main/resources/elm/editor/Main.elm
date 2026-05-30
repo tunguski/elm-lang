@@ -6,10 +6,11 @@ debugger (`Eval.debugSteps`). The interpreter itself lives in the Lang/Lexer/Par
 -}
 
 import Browser
-import Eval exposing (debugSteps, evalProject, lookup)
-import Html exposing (Html, button, div, h1, h2, h3, input, li, p, pre, span, text, textarea, ul)
+import Eval exposing (appInit, appUpdate, appView, debugSteps, evalProject, hasApp, lookup, renderValue)
+import Html exposing (Html, button, div, h1, h2, h3, input, li, node, p, pre, span, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
+import Lang exposing (Value(..))
 
 
 type alias Model =
@@ -19,21 +20,57 @@ type alias Model =
     , messages : String
     , step : Int
     , newName : String
+    , app : Result String Value
     }
+
+
+buttonsExample : String
+buttonsExample =
+    String.join "\n"
+        [ "module Main exposing (main)"
+        , ""
+        , "import Browser"
+        , "import Html exposing (Html, button, div, text)"
+        , "import Html.Events exposing (onClick)"
+        , ""
+        , "main = Browser.sandbox { init = init, update = update, view = view }"
+        , ""
+        , "init = 0"
+        , ""
+        , "update msg model ="
+        , "    case msg of"
+        , "        Increment ->"
+        , "            model + 1"
+        , ""
+        , "        Decrement ->"
+        , "            model - 1"
+        , ""
+        , "view model ="
+        , "    div []"
+        , "        [ button [ onClick Decrement ] [ text \"-\" ]"
+        , "        , div [] [ text (String.fromInt model) ]"
+        , "        , button [ onClick Increment ] [ text \"+\" ]"
+        , "        ]"
+        ]
 
 
 init : Model
 init =
-    { files =
-        [ ( "Counter.elm", "init = 0\n\nupdate msg model =\n    case msg of\n        Inc -> model + 1 ;\n        Dec -> model - 1 ;\n        _ -> model\n\nview model = \"count = \" ++ toString model" )
-        , ( "Main.elm", "main = greet \"world\"\n\ngreet name = \"Hello, \" ++ name ++ \"!\"" )
-        ]
-    , active = "Main.elm"
-    , entry = "main"
-    , messages = "Inc\nInc\nDec\nInc"
-    , step = 0
-    , newName = ""
-    }
+    refreshApp
+        { files = [ ( "Main.elm", buttonsExample ) ]
+        , active = "Main.elm"
+        , entry = "main"
+        , messages = "Increment\nIncrement\nDecrement"
+        , step = 0
+        , newName = ""
+        , app = Err "not initialised"
+        }
+
+
+{-| Re-initialises the live interpreted app from the current files (its model becomes `init`). -}
+refreshApp : Model -> Model
+refreshApp model =
+    { model | app = appInit model.files }
 
 
 type Msg
@@ -45,6 +82,7 @@ type Msg
     | SetNewName String
     | AddFile
     | RemoveFile String
+    | Interp Value
 
 
 update : Msg -> Model -> Model
@@ -54,7 +92,11 @@ update msg model =
             { model | active = name }
 
         Edit content ->
-            { model | files = setFile model.active content model.files }
+            refreshApp { model | files = setFile model.active content model.files }
+
+        Interp interpMsg ->
+            -- A message dispatched by the running interpreted app: step its model via `update`.
+            { model | app = model.app |> Result.andThen (\m -> appUpdate model.files interpMsg m) }
 
         SetEntry e ->
             { model | entry = e }
@@ -81,22 +123,23 @@ update msg model =
                 model
 
             else
-                { model | files = model.files ++ [ ( name, "" ) ], active = name, newName = "" }
+                refreshApp { model | files = model.files ++ [ ( name, "" ) ], active = name, newName = "" }
 
         RemoveFile name ->
             let
                 remaining =
                     List.filter (\f -> Tuple.first f /= name) model.files
             in
-            { model
-                | files = remaining
-                , active =
-                    if model.active == name then
-                        List.head remaining |> Maybe.map Tuple.first |> Maybe.withDefault ""
+            refreshApp
+                { model
+                    | files = remaining
+                    , active =
+                        if model.active == name then
+                            List.head remaining |> Maybe.map Tuple.first |> Maybe.withDefault ""
 
-                    else
-                        model.active
-            }
+                        else
+                            model.active
+                }
 
 
 setFile : String -> String -> List ( String, String ) -> List ( String, String )
@@ -156,11 +199,74 @@ view model =
                     , style "box-sizing" "border-box"
                     ]
                     []
+                , liveAppPane model
                 , resultPane model
                 ]
             ]
         , debuggerPane steps clampedStep currentStep
         ]
+
+
+{-| Renders the running interpreted app: its `view model` as live Html, with clicks dispatched back
+through its `update`. Shown only when the project defines init/update/view. -}
+liveAppPane : Model -> Html Msg
+liveAppPane model =
+    if not (hasApp model.files) then
+        text ""
+
+    else
+        div [ style "margin-top" "12px" ]
+            [ h3 [ style "margin" "0 0 6px 0" ] [ text "Running app" ]
+            , div
+                [ style "border" "1px solid #d0d7de"
+                , style "border-radius" "8px"
+                , style "padding" "14px"
+                , style "background" "#fff"
+                ]
+                [ case model.app of
+                    Err e ->
+                        pre [ style "color" "#a00", style "margin" "0" ] [ text ("Error: " ++ e) ]
+
+                    Ok appModel ->
+                        case appView model.files appModel of
+                            Ok html ->
+                                renderHtml html
+
+                            Err e ->
+                                pre [ style "color" "#a00", style "margin" "0" ] [ text ("view error: " ++ e) ]
+                ]
+            ]
+
+
+{-| Converts an interpreted Html `Value` tree into real `Html Msg`, wiring interpreted click
+handlers back to the editor as `Interp` messages. -}
+renderHtml : Value -> Html Msg
+renderHtml v =
+    case v of
+        VCtor "Html.text" [ VStr s ] ->
+            text s
+
+        VCtor "Html.text" [ other ] ->
+            text (renderValue other)
+
+        VCtor "Html.node" [ VStr tag, VList attrs, VList children ] ->
+            node tag (List.filterMap renderAttr attrs) (List.map renderHtml children)
+
+        _ ->
+            text (renderValue v)
+
+
+renderAttr : Value -> Maybe (Html.Attribute Msg)
+renderAttr v =
+    case v of
+        VCtor "Html.on" [ VStr "click", msg ] ->
+            Just (onClick (Interp msg))
+
+        VCtor "Html.style" [ VStr k, VStr val ] ->
+            Just (style k val)
+
+        _ ->
+            Nothing
 
 
 fileSidebar : Model -> Html Msg

@@ -1,6 +1,7 @@
 package pl.matsuo.elm.codegen.js;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -213,5 +214,61 @@ class JsBackendTest {
     assertEquals("5", editorEval("let abc1 = 5 in abc1")); // identifier with a digit -> isAlphaNum
     assertEquals("42", editorEval("(\\x y -> x * y) 6 7"));
     assertEquals("True", editorEval("1 < 2 && 2 < 3"));
+  }
+
+  /** Runs the editor's `Eval.renderProgram` on a single-file source, returning the serialized view. */
+  private String editorRender(String source) {
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = pl.matsuo.elm.util.Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    String escaped = source.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+    String program =
+        "globalThis.window = globalThis;\n"
+            + JsCompiler.declarationsScriptWithDomProject(modules)
+            + "\nprocess.stdout.write(_$Eval$renderProgram(\""
+            + escaped
+            + "\"));\n";
+    return runNode(program);
+  }
+
+  @Test
+  void editorRunsTheElmLangButtonsExample() {
+    // The elm-lang.org "buttons" example: a Browser.sandbox app with a layout-based `case` (no
+    // explicit branch separators), qualified String.fromInt, and Html via onClick/div/button/text.
+    // The editor's interpreter must parse and render its view (init model = 0).
+    String buttons =
+        String.join(
+            "\n",
+            "module Main exposing (main)",
+            "",
+            "import Browser",
+            "import Html exposing (Html, button, div, text)",
+            "import Html.Events exposing (onClick)",
+            "",
+            "main = Browser.sandbox { init = init, update = update, view = view }",
+            "",
+            "init = 0",
+            "",
+            "update msg model =",
+            "    case msg of",
+            "        Increment ->",
+            "            model + 1",
+            "",
+            "        Decrement ->",
+            "            model - 1",
+            "",
+            "view model =",
+            "    div []",
+            "        [ button [ onClick Decrement ] [ text \"-\" ]",
+            "        , div [] [ text (String.fromInt model) ]",
+            "        , button [ onClick Increment ] [ text \"+\" ]",
+            "        ]");
+    String html = editorRender(buttons);
+    // The view renders to nested nodes with the initial model (0) and click handlers wired.
+    assertTrue(html.contains("<button"), html);
+    assertTrue(html.contains(">-<") && html.contains(">+<"), html);
+    assertTrue(html.contains("<div>0</div>"), html);
+    assertTrue(html.contains("onclick=Decrement") && html.contains("onclick=Increment"), html);
   }
 }

@@ -14,7 +14,7 @@ type Value
     | VRecord (List ( String, Value ))
     | VClosure (List String) Expr (List ( String, Value ))
     | VRec String (List String) Expr (List ( String, Value ))
-    | VBuiltin String
+    | VBuiltin String (List Value)
 
 
 type Expr

@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -10,11 +10,28 @@ import Lexer exposing (tokenize)
 import Parser exposing (parse, parseProject)
 
 
-{-| Native one-argument builtins available to interpreted programs (resolved when a name is in
-neither the local scope nor the project's top-level definitions). -}
+{-| Native builtins available to interpreted programs (resolved when a name is in neither the local
+scope nor the project's top-level definitions). Includes Html element/attribute constructors so The
+Elm Architecture programs (Browser.sandbox apps) can be rendered live by the editor. -}
 builtins : List String
 builtins =
-    [ "toString", "negate", "not" ]
+    htmlTags ++ [ "text", "onClick", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox" ]
+
+
+{-| The Html element builtins (each takes a list of attributes then a list of children). -}
+htmlTags : List String
+htmlTags =
+    [ "div", "button", "p", "span", "h1", "h2", "h3", "h4", "ul", "ol", "li", "pre", "code", "input", "textarea", "label", "a", "section", "strong", "em", "br", "img", "table", "tr", "td", "th" ]
+
+
+{-| How many arguments a builtin consumes before it runs. -}
+arity : String -> Int
+arity name =
+    if List.member name [ "text", "onClick", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox" ] then
+        1
+
+    else
+        2
 
 
 evalExpr : Globals -> Env -> Expr -> Result String Value
@@ -45,7 +62,7 @@ evalExpr globals env expr =
 
                         Nothing ->
                             if List.member name builtins then
-                                Ok (VBuiltin name)
+                                Ok (VBuiltin name [])
 
                             else
                                 Err ("undefined variable: " ++ name)
@@ -119,21 +136,36 @@ evalExpr globals env expr =
             evalFields globals env fields []
 
         RecordGet target field ->
-            evalExpr globals env target
-                |> Result.andThen
-                    (\v ->
-                        case v of
-                            VRecord fs ->
-                                case lookup field fs of
-                                    Just x ->
-                                        Ok x
+            case target of
+                -- A qualified name like `String.fromInt` parses as RecordGet (Ctor "String")
+                -- "fromInt"; resolve it to the matching builtin when there is one.
+                Ctor moduleName ->
+                    let
+                        qualified =
+                            moduleName ++ "." ++ field
+                    in
+                    if List.member qualified builtins then
+                        Ok (VBuiltin qualified [])
 
-                                    Nothing ->
-                                        Err ("record has no field ." ++ field)
+                    else
+                        Err ("unknown qualified name: " ++ qualified)
 
-                            _ ->
-                                Err ("." ++ field ++ " needs a record")
-                    )
+                _ ->
+                    evalExpr globals env target
+                        |> Result.andThen
+                            (\v ->
+                                case v of
+                                    VRecord fs ->
+                                        case lookup field fs of
+                                            Just x ->
+                                                Ok x
+
+                                            Nothing ->
+                                                Err ("record has no field ." ++ field)
+
+                                    _ ->
+                                        Err ("." ++ field ++ " needs a record")
+                            )
 
         RecordUpdate name fields ->
             evalExpr globals env (Var name)
@@ -212,42 +244,68 @@ applyValue globals fn arg =
         VCtor name args ->
             Ok (VCtor name (args ++ [ arg ]))
 
-        VBuiltin name ->
-            applyBuiltin name arg
+        VBuiltin name args ->
+            let
+                collected =
+                    args ++ [ arg ]
+            in
+            if List.length collected >= arity name then
+                runBuiltin name collected
+
+            else
+                Ok (VBuiltin name collected)
 
         _ ->
             Err "cannot apply a non-function value"
 
 
-applyBuiltin : String -> Value -> Result String Value
-applyBuiltin name arg =
-    case name of
-        "toString" ->
-            case arg of
-                VStr s ->
-                    Ok (VStr s)
+{-| Runs a fully-applied builtin. Html element/attribute builtins produce a structured `Value` tree
+(VCtor "Html.node"/"Html.text"/"Html.on"/"Html.style") the editor renders to live Html. -}
+runBuiltin : String -> List Value -> Result String Value
+runBuiltin name args =
+    if List.member name htmlTags then
+        case args of
+            [ attrs, children ] ->
+                Ok (VCtor "Html.node" [ VStr name, attrs, children ])
 
-                _ ->
-                    Ok (VStr (renderValue arg))
+            _ ->
+                Err (name ++ " needs attributes and children")
 
-        "negate" ->
-            case arg of
-                VNum n ->
-                    Ok (VNum (negate n))
+    else
+        case ( name, args ) of
+            ( "text", [ v ] ) ->
+                Ok (VCtor "Html.text" [ v ])
 
-                _ ->
-                    Err "negate needs a number"
+            ( "onClick", [ msg ] ) ->
+                Ok (VCtor "Html.on" [ VStr "click", msg ])
 
-        "not" ->
-            case arg of
-                VBool b ->
-                    Ok (VBool (not b))
+            ( "style", [ k, v ] ) ->
+                Ok (VCtor "Html.style" [ k, v ])
 
-                _ ->
-                    Err "not needs a Bool"
+            ( "toString", [ VStr s ] ) ->
+                Ok (VStr s)
 
-        _ ->
-            Err ("unknown builtin: " ++ name)
+            ( "toString", [ v ] ) ->
+                Ok (VStr (renderValue v))
+
+            ( "negate", [ VNum n ] ) ->
+                Ok (VNum (negate n))
+
+            ( "not", [ VBool b ] ) ->
+                Ok (VBool (not b))
+
+            ( "String.fromInt", [ VNum n ] ) ->
+                Ok (VStr (String.fromInt (round n)))
+
+            ( "String.fromFloat", [ VNum n ] ) ->
+                Ok (VStr (String.fromFloat n))
+
+            ( "Browser.sandbox", [ config ] ) ->
+                -- The editor drives init/update/view directly; evaluating `main` just yields the config.
+                Ok config
+
+            _ ->
+                Err ("bad arguments to " ++ name)
 
 
 applyClosure : Globals -> List String -> Expr -> Env -> Value -> Result String Value
@@ -527,7 +585,7 @@ renderValue v =
         VRec _ _ _ _ ->
             "<function>"
 
-        VBuiltin name ->
+        VBuiltin name _ ->
             "<" ++ name ++ ">"
 
 
@@ -665,3 +723,96 @@ findDecl globals name =
 
         Nothing ->
             False
+
+
+
+-- LIVE APP (The Elm Architecture): drive a Browser.sandbox-style init/update/view interactively.
+
+
+{-| Whether the project defines the `init`, `update` and `view` of a runnable app. -}
+hasApp : List ( String, String ) -> Bool
+hasApp files =
+    case parseProject files of
+        Ok globals ->
+            findDecl globals "init" && findDecl globals "update" && findDecl globals "view"
+
+        Err _ ->
+            False
+
+
+{-| The app's initial model value. -}
+appInit : List ( String, String ) -> Result String Value
+appInit files =
+    parseProject files |> Result.andThen (\globals -> evalGlobal globals "init")
+
+
+{-| Runs `update msg model`, producing the next model value. -}
+appUpdate : List ( String, String ) -> Value -> Value -> Result String Value
+appUpdate files msg model =
+    parseProject files |> Result.andThen (\globals -> applyUpdate globals msg model)
+
+
+{-| Evaluates `view model` to the Html `Value` tree the editor renders to live Html. -}
+appView : List ( String, String ) -> Value -> Result String Value
+appView files model =
+    parseProject files
+        |> Result.andThen
+            (\globals ->
+                evalExpr globals [] (Var "view")
+                    |> Result.andThen (\f -> applyValue globals f model)
+            )
+
+
+{-| Headless render of a single-file app's initial view to an HTML string (used in tests and as a
+quick non-DOM preview): runs `init` then `view`, serialising the Html `Value` tree. -}
+renderProgram : String -> String
+renderProgram source =
+    let
+        files =
+            [ ( "Main.elm", source ) ]
+    in
+    case appInit files of
+        Err e ->
+            "init error: " ++ e
+
+        Ok model ->
+            case appView files model of
+                Ok html ->
+                    htmlToString html
+
+                Err e ->
+                    "view error: " ++ e
+
+
+htmlToString : Value -> String
+htmlToString v =
+    case v of
+        VCtor "Html.text" [ VStr s ] ->
+            s
+
+        VCtor "Html.text" [ other ] ->
+            renderValue other
+
+        VCtor "Html.node" [ VStr tag, VList attrs, VList children ] ->
+            "<" ++ tag ++ attrsToString attrs ++ ">" ++ String.concat (List.map htmlToString children) ++ "</" ++ tag ++ ">"
+
+        _ ->
+            renderValue v
+
+
+attrsToString : List Value -> String
+attrsToString attrs =
+    String.concat (List.map attrToString attrs)
+
+
+attrToString : Value -> String
+attrToString v =
+    case v of
+        VCtor "Html.on" [ VStr ev, msg ] ->
+            " on" ++ ev ++ "=" ++ renderValue msg
+
+        VCtor "Html.style" [ VStr k, VStr val ] ->
+            " style=" ++ k ++ ":" ++ val
+
+        _ ->
+            ""

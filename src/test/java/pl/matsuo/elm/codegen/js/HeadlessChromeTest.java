@@ -154,7 +154,7 @@ class HeadlessChromeTest {
   }
 
   @Test
-  void multiFileEditorRendersResultsAndDebugger() throws Exception {
+  void editorRendersTheButtonsAppResultAndDebugger() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
     for (int i = 0; i < modules.length; i++) {
@@ -166,11 +166,14 @@ class HeadlessChromeTest {
               StandardCharsets.UTF_8);
     }
     String dom = renderPage(JsCompiler.htmlPageProject(null, modules));
-    // Assert on rendered-only text (these strings are produced at runtime, not present in the
-    // inlined bundle source): the result of evaluating `main` across files, and stepped views.
-    assertTrue(dom.contains("Hello, world!"), "Result pane evaluated `main` across files");
-    assertTrue(dom.contains("count = 0"), "debugger rendered the initial view from init/view");
-    assertTrue(dom.contains("count = 2"), "debugger rendered a stepped view via update");
+    // The default editor content is the elm-lang.org "buttons" app. Assert on rendered-only text
+    // (produced at runtime, not present in the inlined bundle source):
+    // the live app's view (its minus button), the result of `main` (the Browser.sandbox config),
+    // and the debugger stepping `update` (two Increments -> model 2).
+    assertTrue(dom.contains(">-<"), "live app rendered the interpreted view (the minus button)");
+    assertTrue(dom.contains("init = 0"), "result pane evaluated `main` (Browser.sandbox config)");
+    assertTrue(dom.contains("model: 0"), "debugger rendered the initial model from init");
+    assertTrue(dom.contains("model: 2"), "debugger stepped the model via update");
   }
 
   @Test

@@ -1,6 +1,9 @@
-module Lexer exposing (Token(..), tokenize)
+module Lexer exposing (Token(..), tokenize, cookLayout)
 
-{-| The tokenizer for the interpreted language: turns source text into a flat list of tokens. -}
+{-| The tokenizer for the interpreted language: turns source text into a flat list of tokens. It
+keeps layout by emitting a `TLine indent` marker at the start of each non-blank line; `cookLayout`
+then turns indentation into the `;` branch separators the parser expects (so real Elm `case`
+expressions, which use layout rather than explicit separators, parse correctly). -}
 
 
 type Token
@@ -22,11 +25,97 @@ type Token
     | TLambda
     | TArrow
     | TEquals
+    | TLine Int
 
 
 tokenize : String -> Result String (List Token)
 tokenize src =
-    tokenizeHelp (String.toList src) []
+    tokenizeLines (String.lines src) []
+
+
+{-| Tokenizes line by line, prefixing each non-blank line's tokens with its indentation marker. -}
+tokenizeLines : List String -> List Token -> Result String (List Token)
+tokenizeLines lines acc =
+    case lines of
+        [] ->
+            Ok acc
+
+        line :: rest ->
+            if String.trim line == "" then
+                tokenizeLines rest acc
+
+            else
+                case tokenizeHelp (String.toList line) [] of
+                    Ok toks ->
+                        tokenizeLines rest (acc ++ (TLine (indentOf line) :: toks))
+
+                    Err e ->
+                        Err e
+
+
+indentOf : String -> Int
+indentOf line =
+    String.length line - String.length (String.trimLeft line)
+
+
+{-| Resolves layout: drops the `TLine` markers, inserting a `TSemi` between `case` branches (lines
+at the branch's indentation). Operates per top-level chunk, so the only column-0 line is the chunk
+header — branch indentation is always deeper, which keeps the rule simple and safe. -}
+cookLayout : List Token -> List Token
+cookLayout toks =
+    cook toks [] [] False
+
+
+cook : List Token -> List Token -> List Int -> Bool -> List Token
+cook toks out stack afterOf =
+    case toks of
+        [] ->
+            List.reverse out
+
+        (TLine col) :: rest ->
+            if afterOf then
+                cook rest out (col :: stack) False
+
+            else
+                let
+                    popped =
+                        dropWhileGreater col stack
+                in
+                case popped of
+                    h :: _ ->
+                        if h == col then
+                            case out of
+                                TSemi :: _ ->
+                                    cook rest out popped False
+
+                                _ ->
+                                    cook rest (TSemi :: out) popped False
+
+                        else
+                            cook rest out popped False
+
+                    [] ->
+                        cook rest out popped False
+
+        (TId "of") :: rest ->
+            cook rest (TId "of" :: out) stack True
+
+        t :: rest ->
+            cook rest (t :: out) stack afterOf
+
+
+dropWhileGreater : Int -> List Int -> List Int
+dropWhileGreater col stack =
+    case stack of
+        h :: rest ->
+            if h > col then
+                dropWhileGreater col rest
+
+            else
+                stack
+
+        [] ->
+            []
 
 
 tokenizeHelp : List Char -> List Token -> Result String (List Token)
