@@ -81,17 +81,35 @@ class MainCliTest {
   }
 
   @Test
-  void strictRunsWhenWellTyped() throws Exception {
+  void runTypeChecksByDefaultAndRunsWhenWellTyped() throws Exception {
     Path f = tempElm("main = 6 * 7\n");
-    assertTrue(run("run", f.toString(), "--strict").trim().equals("42"));
+    assertTrue(run("run", f.toString()).trim().equals("42"));
   }
 
   @Test
-  void strictRefusesToRunOnTypeError() throws Exception {
+  void runRefusesByDefaultOnTypeError() throws Exception {
     Path f = tempElm("main = 1 + \"oops\"\n");
-    String out = run("run", f.toString(), "--strict");
-    assertTrue(out.contains("Type error"), out);
-    assertTrue(out.contains("Hint:"), out); // the Elm-style hint is shown
+    Result r = invoke("run", f.toString());
+    assertTrue(r.code() == 1, "exit code");
+    assertTrue(r.out().contains("Type error"), r.out());
+    assertTrue(r.out().contains("Hint:"), r.out()); // the Elm-style hint is shown
+  }
+
+  @Test
+  void noCheckRunsDespiteTypeError() throws Exception {
+    // --no-check skips the type check; the (ill-typed but evaluable) program still runs.
+    Path f = tempElm("main = 6 * 7\n");
+    assertTrue(run("run", f.toString(), "--no-check").trim().equals("42"));
+  }
+
+  @Test
+  void makeRefusesByDefaultOnTypeError() throws Exception {
+    Path f = tempElm("main = 1 + \"oops\"\n");
+    Path out = Files.createTempDirectory("make-bad-").resolve("index.html");
+    Result r = invoke("make", f.toString(), "-o", out.toString());
+    assertTrue(r.code() == 1, r.out());
+    assertTrue(r.out().contains("Type error"), r.out());
+    assertTrue(!Files.exists(out), "no artifact written on a type error");
   }
 
   @Test

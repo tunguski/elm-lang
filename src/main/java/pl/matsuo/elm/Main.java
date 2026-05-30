@@ -104,9 +104,9 @@ public final class Main implements Runnable {
       description = "Evaluate a definition and print it (Html/programs as HTML).",
       footerHeading = "%nExamples:%n",
       footer = {
-        "  elm run Main.elm                  # render `main` (Html -> HTML, Program -> mounted)",
+        "  elm run Main.elm                  # type-checks, then renders `main`",
         "  elm run Main.elm --value answer   # evaluate a specific top-level value",
-        "  elm run Main.elm --strict         # type-check first; refuse to run on a type error",
+        "  elm run Main.elm --no-check       # skip the type check and just run",
       })
   static final class Run implements Callable<Integer> {
     @Parameters(index = "0", description = "The .elm file.")
@@ -118,19 +118,18 @@ public final class Main implements Runnable {
     @Option(names = "--value", description = "Top-level name to evaluate (default: main).")
     String value = "main";
 
-    @Option(names = "--strict", description = "Type-check first; refuse to run on a type error.")
+    @Option(names = "--no-check", description = "Skip the type check before running.")
+    boolean noCheck;
+
+    @Option(names = "--strict", hidden = true, description = "Deprecated: type-checking is the default.")
     boolean strict;
 
     @Override
     public Integer call() throws IOException {
       String source = Files.readString(file);
-      if (strict) {
-        try {
-          pl.matsuo.elm.types.TypeChecker.checkModule(source);
-        } catch (ElmTypeError e) {
-          System.out.println("Type error: " + e.getMessage());
-          return 1;
-        }
+      if (!noCheck && typeError(source) instanceof String msg) {
+        System.out.println("Type error: " + msg);
+        return 1;
       }
       Object v =
           backend.equals("bytecode")
@@ -170,8 +169,9 @@ public final class Main implements Runnable {
       description = "Compile a program to a deployable artifact (HTML page, or a .js bundle).",
       footerHeading = "%nExamples:%n",
       footer = {
-        "  elm make Main.elm                       # -> index.html (app inlined + mounted)",
+        "  elm make Main.elm                       # type-checks, then -> index.html",
         "  elm make Main.elm -o app.js --optimize  # -> minified JS bundle",
+        "  elm make Main.elm --no-check            # skip the type check",
       })
   static final class Make implements Callable<Integer> {
     @Parameters(arity = "1..*", description = "The .elm entry file (plus any sibling modules).")
@@ -186,6 +186,9 @@ public final class Main implements Runnable {
     @Option(names = "--optimize", description = "Minify the generated JavaScript.")
     boolean optimize;
 
+    @Option(names = "--no-check", description = "Skip the type check before compiling.")
+    boolean noCheck;
+
     @Override
     public Integer call() throws IOException {
       List<String> sources = new ArrayList<>();
@@ -193,6 +196,10 @@ public final class Main implements Runnable {
         sources.add(Files.readString(p));
       }
       String[] arr = sources.toArray(new String[0]);
+      if (!noCheck && typeError(arr) instanceof String msg) {
+        System.out.println("Type error: " + msg);
+        return 1;
+      }
       String artifact;
       if (output.endsWith(".js")) {
         String bundle = JsCompiler.appBundleProject(arr);
@@ -534,6 +541,27 @@ public final class Main implements Runnable {
       }
     }
     throw new java.nio.file.NoSuchFileException(file.toString());
+  }
+
+  /**
+   * Type-checks the given source(s) and returns the Elm-style error message, or {@code null} if it
+   * type-checks. A checker <em>limitation</em> (any non-{@link ElmTypeError}, e.g. an unsupported
+   * builtin or an inference edge case) is treated as non-fatal — it returns {@code null} so a valid
+   * program the checker can't fully analyze still runs/compiles. Only a real type error blocks.
+   */
+  static String typeError(String... sources) {
+    try {
+      if (sources.length > 1) {
+        pl.matsuo.elm.types.TypeChecker.checkProject(sources);
+      } else {
+        pl.matsuo.elm.types.TypeChecker.checkModule(sources[0]);
+      }
+      return null;
+    } catch (ElmTypeError e) {
+      return e.getMessage();
+    } catch (RuntimeException ignored) {
+      return null;
+    }
   }
 
   /** Renders a value: Browser programs and Html nodes become HTML, everything else uses Show. */

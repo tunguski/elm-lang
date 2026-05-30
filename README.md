@@ -99,9 +99,11 @@ single-module elm-lang.org examples type-check end to end** (`ModuleCheckTest`).
 **multi-module/project** checking — `TypeChecker.checkProject` (CLI `check a.elm b.elm …`) orders
 modules by their imports and resolves names, constructors and aliases across module boundaries.
 Error messages are Elm-style: a source excerpt, a caret under the offending sub-expression, the
-location and a hint. `run <file> --strict` type-checks before evaluating and refuses to run on a
-type error. The checker also detects **non-exhaustive and unreachable `case` branches** (Maranget's
-usefulness algorithm), reporting a witness of the missing input (e.g. `Missing a branch for: Blue`).
+location and a hint. `run` and `make` **type-check by default**, refusing to run/compile on a type
+error (pass `--no-check` to skip; a checker *limitation* on a program it can't fully analyze is
+non-fatal and falls through to evaluation). The checker also detects **non-exhaustive and
+unreachable `case` branches** (Maranget's usefulness algorithm), reporting a witness of the missing
+input (e.g. `Missing a branch for: Blue`).
 
 ## Language coverage
 
