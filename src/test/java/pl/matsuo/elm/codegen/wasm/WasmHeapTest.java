@@ -317,6 +317,64 @@ class WasmHeapTest {
   }
 
   @Test
+  void partialApplicationOfANamedFunction() throws Exception {
+    // `add 1` is a partial application (a closure); applying it later completes the call.
+    agrees(
+        """
+        add a b = a + b
+        inc = add 1
+        main = inc 41
+        """);
+  }
+
+  @Test
+  void closureCapturesALocal() throws Exception {
+    // The returned lambda captures the parameter x.
+    agrees(
+        """
+        adder x = \\y -> x + y
+        main = (adder 10) 5
+        """);
+  }
+
+  @Test
+  void closureCapturedThroughALet() throws Exception {
+    agrees(
+        """
+        makeAdder n = \\x -> n + x
+        main =
+            let
+                add5 = makeAdder 5
+            in
+            add5 100
+        """);
+  }
+
+  @Test
+  void higherOrderWithALambdaArgument() throws Exception {
+    agrees(
+        """
+        twiceApply f x = f (f x)
+        main = twiceApply (\\n -> n + 1) 5
+        """);
+  }
+
+  @Test
+  void curriedHelperCapturesAndAccumulates() throws Exception {
+    // applyTo holds an arg and applies a function to it; combined with a capturing lambda.
+    agrees(
+        """
+        applyTo x f = f x
+        main =
+            let
+                base = 100
+                bump = \\n -> n + base
+            in
+            applyTo 7 bump
+        """);
+  }
+
+  @Test
   void growsTheHeapAcrossManyPagesForALargeTree() throws Exception {
     // A depth-13 binary tree is ~16k cells (~6 pages, far past the initial 64 KiB), yet recursion
     // stays shallow (depth 13). It only runs without trapping if the allocator grows memory; the

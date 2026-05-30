@@ -3,8 +3,10 @@ package pl.matsuo.elm.codegen.wasm;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Pattern;
@@ -32,10 +34,14 @@ import pl.matsuo.elm.parser.Parser;
  * uniformly {@code i64} on the stack. This lets recursive list functions and custom-type matching
  * (e.g. {@code area (Rect 3 4)}) compile and run in wasm.
  *
- * <p><b>First-class top-level functions</b> work too: every function is placed in a funcref table,
- * a function used as a value compiles to its table index (carried as an i64), and applying a
- * function value held in a parameter dispatches via {@code call_indirect}. So higher-order code over
- * named functions ({@code apply f x = f x}; {@code main = apply inc 5}) runs in wasm.
+ * <p><b>First-class functions, closures and currying</b> work via a uniform closure value — a heap
+ * block {@code {funcIdx, arity, count, slot…}} — and a generic {@code $apply} runtime. Every
+ * function lives in a funcref table; a function used as a value (or a partial application) becomes an
+ * under-applied closure, and applying one accumulates arguments until {@code count == arity}, when
+ * {@code $apply} invokes it via {@code call_indirect} (dispatched on the arity). Lambdas are
+ * lambda-lifted: each becomes a top-level function whose leading parameters are its captured locals,
+ * and the lambda expression a closure capturing them. So higher-order code, partial application
+ * ({@code inc = add 1}) and closures ({@code adder x = \\y -> x + y}) all run in wasm.
  *
  * <p><b>Strings and records</b> are <b>type-directed</b>: the backend runs Hindley–Milner inference
  * over the module and consults each expression's type (see {@code Infer.nodeTypes}). A string is a
@@ -51,8 +57,10 @@ import pl.matsuo.elm.parser.Parser;
  * <p><b>Floats</b> are type-directed too: an {@code f64} is stored as its i64 bit pattern, so values
  * stay uniformly i64 on the stack and heap; literals and the arithmetic ({@code + - * /}),
  * comparisons, {@code negate} and the {@code toFloat}/{@code round}/{@code floor}/{@code
- * ceiling}/{@code truncate} conversions reinterpret to {@code f64} as needed. Still unsupported:
- * <b>closures</b> (capturing locals) and <b>currying / partial application</b>.
+ * ceiling}/{@code truncate} conversions reinterpret to {@code f64} as needed.
+ *
+ * <p>The main remaining gap is <b>row-polymorphic records</b> (record access still needs a known,
+ * closed record type) and most of the larger standard library.
  */
 public final class WasmCompiler {
 
@@ -124,7 +132,190 @@ public final class WasmCompiler {
     } catch (RuntimeException e) {
       nodeTypes = Map.of();
     }
-    return assemble(funcs, ctorTag, ctorArity, nodeTypes);
+    // Lambda-lift: every lambda becomes a top-level function (its captured locals lead its
+    // parameters), and the lambda expression a closure that captures those locals. This, together
+    // with the closure/$apply runtime, is what gives WASM closures and currying.
+    Set<String> globalNames = new HashSet<>(ctorArity.keySet());
+    for (Func f : funcs) {
+      globalNames.add(f.name());
+    }
+    Map<Expr.Lambda, Lifted> lifted = new java.util.IdentityHashMap<>();
+    funcs = liftLambdas(funcs, globalNames, lifted);
+    return assemble(funcs, ctorTag, ctorArity, nodeTypes, lifted);
+  }
+
+  /** A lambda lifted to a top-level function: the function's name, its total arity (captures + own
+   *  params) and the captured local names, in the order they lead the lifted parameter list. */
+  record Lifted(String name, int arity, List<String> captures) {}
+
+  /**
+   * Replaces lambdas with lifted top-level functions. Each lambda gets a fresh {@code $lamN}
+   * function whose parameters are its captured free variables followed by its own parameters; the
+   * lambda site records the mapping so the compiler can emit a closure capturing those locals.
+   * Nested lambdas are handled by processing the lifted functions' bodies in turn.
+   */
+  private static List<Func> liftLambdas(
+      List<Func> userFuncs, Set<String> globalNames, Map<Expr.Lambda, Lifted> out) {
+    List<Func> all = new ArrayList<>(userFuncs);
+    java.util.Deque<Func> work = new java.util.ArrayDeque<>(userFuncs);
+    int counter = 0;
+    while (!work.isEmpty()) {
+      Func f = work.poll();
+      List<Expr.Lambda> lambdas = new ArrayList<>();
+      collectTopLambdas(f.body(), lambdas);
+      for (Expr.Lambda lam : lambdas) {
+        List<String> params = new ArrayList<>();
+        for (Pattern p : lam.params()) {
+          if (p instanceof Pattern.Var pv) {
+            params.add(pv.name());
+          } else {
+            throw unsupported("non-variable lambda parameter");
+          }
+        }
+        Set<String> free = new java.util.LinkedHashSet<>();
+        addFree(lam.body(), new HashSet<>(params), free);
+        free.removeAll(globalNames);
+        List<String> captures = new ArrayList<>(free);
+        String name = "$lam" + (counter++);
+        List<String> liftedParams = new ArrayList<>(captures);
+        liftedParams.addAll(params);
+        Func lifted = new Func(name, liftedParams, lam.body());
+        all.add(lifted);
+        work.add(lifted);
+        out.put(lam, new Lifted(name, captures.size() + params.size(), captures));
+      }
+    }
+    return all;
+  }
+
+  /** Adds the lambdas in {@code e} that are not nested inside another lambda (those belong to the
+   *  inner lambda's lifted function and are handled when it is processed). */
+  private static void collectTopLambdas(Expr e, List<Expr.Lambda> out) {
+    switch (e) {
+      case Expr.Lambda lam -> out.add(lam); // do not descend; its body is the lifted function's
+      case Expr.App a -> {
+        collectTopLambdas(a.fn(), out);
+        collectTopLambdas(a.arg(), out);
+      }
+      case Expr.BinOp b -> {
+        collectTopLambdas(b.left(), out);
+        collectTopLambdas(b.right(), out);
+      }
+      case Expr.If i -> {
+        collectTopLambdas(i.cond(), out);
+        collectTopLambdas(i.thenBranch(), out);
+        collectTopLambdas(i.elseBranch(), out);
+      }
+      case Expr.Negate n -> collectTopLambdas(n.operand(), out);
+      case Expr.Let let -> {
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            collectTopLambdas(v.body(), out);
+          }
+        }
+        collectTopLambdas(let.body(), out);
+      }
+      case Expr.Case c -> {
+        collectTopLambdas(c.scrutinee(), out);
+        c.branches().forEach(br -> collectTopLambdas(br.body(), out));
+      }
+      case Expr.ListLit l -> l.items().forEach(x -> collectTopLambdas(x, out));
+      case Expr.Tuple t -> t.items().forEach(x -> collectTopLambdas(x, out));
+      case Expr.Record r -> r.fields().forEach(fld -> collectTopLambdas(fld.value(), out));
+      case Expr.RecordAccess a -> collectTopLambdas(a.target(), out);
+      case Expr.RecordUpdate u -> u.fields().forEach(fld -> collectTopLambdas(fld.value(), out));
+      default -> {}
+    }
+  }
+
+  /** Accumulates the free lowercase variable names of {@code e} given the currently-bound names. */
+  private static void addFree(Expr e, Set<String> bound, Set<String> out) {
+    switch (e) {
+      case Expr.Var v -> {
+        if (v.module() == null && !v.name().isEmpty() && Character.isLowerCase(v.name().charAt(0))
+            && !bound.contains(v.name())) {
+          out.add(v.name());
+        }
+      }
+      case Expr.App a -> {
+        addFree(a.fn(), bound, out);
+        addFree(a.arg(), bound, out);
+      }
+      case Expr.BinOp b -> {
+        addFree(b.left(), bound, out);
+        addFree(b.right(), bound, out);
+      }
+      case Expr.If i -> {
+        addFree(i.cond(), bound, out);
+        addFree(i.thenBranch(), bound, out);
+        addFree(i.elseBranch(), bound, out);
+      }
+      case Expr.Negate n -> addFree(n.operand(), bound, out);
+      case Expr.Lambda lam -> {
+        Set<String> inner = new HashSet<>(bound);
+        for (Pattern p : lam.params()) {
+          patternVars(p, inner);
+        }
+        addFree(lam.body(), inner, out);
+      }
+      case Expr.Let let -> {
+        Set<String> inner = new HashSet<>(bound);
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            inner.add(v.name());
+          }
+        }
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            Set<String> defScope = new HashSet<>(inner);
+            for (Pattern p : v.params()) {
+              patternVars(p, defScope);
+            }
+            addFree(v.body(), defScope, out);
+          }
+        }
+        addFree(let.body(), inner, out);
+      }
+      case Expr.Case c -> {
+        addFree(c.scrutinee(), bound, out);
+        for (Expr.Case.Branch br : c.branches()) {
+          Set<String> inner = new HashSet<>(bound);
+          patternVars(br.pattern(), inner);
+          addFree(br.body(), inner, out);
+        }
+      }
+      case Expr.ListLit l -> l.items().forEach(x -> addFree(x, bound, out));
+      case Expr.Tuple t -> t.items().forEach(x -> addFree(x, bound, out));
+      case Expr.Record r -> r.fields().forEach(fld -> addFree(fld.value(), bound, out));
+      case Expr.RecordAccess a -> addFree(a.target(), bound, out);
+      case Expr.RecordUpdate u -> {
+        if (!bound.contains(u.base())) {
+          out.add(u.base());
+        }
+        u.fields().forEach(fld -> addFree(fld.value(), bound, out));
+      }
+      default -> {}
+    }
+  }
+
+  /** Adds the names a pattern binds to {@code bound}. */
+  private static void patternVars(Pattern p, Set<String> bound) {
+    switch (p) {
+      case Pattern.Var v -> bound.add(v.name());
+      case Pattern.Alias a -> {
+        bound.add(a.name());
+        patternVars(a.pattern(), bound);
+      }
+      case Pattern.Ctor c -> c.args().forEach(x -> patternVars(x, bound));
+      case Pattern.Tuple t -> t.items().forEach(x -> patternVars(x, bound));
+      case Pattern.ListPat l -> l.items().forEach(x -> patternVars(x, bound));
+      case Pattern.Cons cs -> {
+        patternVars(cs.head(), bound);
+        patternVars(cs.tail(), bound);
+      }
+      case Pattern.RecordPat r -> bound.addAll(r.fields());
+      default -> {}
+    }
   }
 
   // --- per-function code generation --------------------------------------
@@ -136,6 +327,7 @@ public final class WasmCompiler {
     private final Map<String, Integer> ctorArity; // constructor name -> number of fields
     private final Map<Integer, Integer> arityType; // call arity -> wasm type index (for call_indirect)
     private final Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes; // inferred type per expression
+    private final Map<Expr.Lambda, Lifted> lifted; // lambda -> its lifted top-level function
     private int localCount; // all locals are i64; params occupy 0..numParams-1
     private final int numParams;
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
@@ -146,12 +338,14 @@ public final class WasmCompiler {
         Map<String, Integer> ctorTag,
         Map<String, Integer> ctorArity,
         Map<Integer, Integer> arityType,
-        Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes) {
+        Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes,
+        Map<Expr.Lambda, Lifted> lifted) {
       this.funcs = funcs;
       this.ctorTag = ctorTag;
       this.ctorArity = ctorArity;
       this.arityType = arityType;
       this.nodeTypes = nodeTypes;
+      this.lifted = lifted;
       this.numParams = params.size();
       for (int i = 0; i < params.size(); i++) {
         locals.put(params.get(i), i);
@@ -247,9 +441,8 @@ public final class WasmCompiler {
             code.write(0x10); // call (a zero-arg top-level value)
             leb(code, funcs.get(v.name())[0]);
           } else if (funcs.containsKey(v.name())) {
-            // A top-level function used as a first-class value: its table index, carried as i64.
-            code.write(0x42); // i64.const
-            sleb(code, funcs.get(v.name())[0]);
+            // A top-level function used as a first-class value: an un-applied closure over it.
+            makeClosure(funcs.get(v.name())[0], funcs.get(v.name())[1], List.of());
           } else {
             throw unsupported("variable " + v.name());
           }
@@ -263,6 +456,13 @@ public final class WasmCompiler {
         case Expr.RecordAccess a -> emitRecordAccess(a);
         case Expr.RecordUpdate u -> emitRecordUpdate(u);
         case Expr.StrLit s -> emitStringLit(s.value());
+        case Expr.Lambda lam -> {
+          Lifted l = lifted.get(lam);
+          if (l == null) {
+            throw unsupported("lambda (not lifted)");
+          }
+          emitClosure(l);
+        }
         default -> throw unsupported(e.getClass().getSimpleName());
       }
     }
@@ -818,33 +1018,91 @@ public final class WasmCompiler {
         emitCtor(ctor.name(), args);
         return;
       }
-      if (head instanceof Expr.Var v && funcs.containsKey(v.name()) && funcs.get(v.name())[1] == args.size()) {
-        for (Expr arg : args) {
-          intExpr(arg);
+      // A call to a known top-level function that is NOT shadowed by a local.
+      if (head instanceof Expr.Var v && funcs.containsKey(v.name()) && !locals.containsKey(v.name())) {
+        int arity = funcs.get(v.name())[1];
+        if (args.size() == arity) {
+          for (Expr arg : args) {
+            intExpr(arg);
+          }
+          code.write(0x10); // call (fast path: exact arity)
+          leb(code, funcs.get(v.name())[0]);
+          return;
         }
-        code.write(0x10); // call
+        if (args.size() < arity) {
+          // Partial application: a closure capturing the supplied args.
+          makeClosure(funcs.get(v.name())[0], arity, args);
+          return;
+        }
+        // Over-application: call the function, then apply the surplus args to its result.
+        for (int i = 0; i < arity; i++) {
+          intExpr(args.get(i));
+        }
+        code.write(0x10);
         leb(code, funcs.get(v.name())[0]);
+        for (int i = arity; i < args.size(); i++) {
+          intExpr(args.get(i));
+          code.write(0x10); // call $apply
+          leb(code, funcs.get("$apply")[0]);
+        }
         return;
       }
-      // Applying a first-class function value held in a local (a higher-order parameter): push the
-      // args, then the function value (its table index, as i64), and dispatch via call_indirect.
-      if (head instanceof Expr.Var v && locals.containsKey(v.name())) {
-        Integer typeIdx = arityType.get(args.size());
-        if (typeIdx == null) {
-          throw unsupported("indirect call of arity " + args.size());
-        }
-        for (Expr arg : args) {
-          intExpr(arg);
-        }
-        code.write(0x20); // local.get f (the i64 function value)
-        leb(code, locals.get(v.name()));
-        code.write(0xA7); // i32.wrap_i64 -> table index
-        code.write(0x11); // call_indirect
-        leb(code, typeIdx); // the (i64^n)->i64 type
-        leb(code, 0); // table 0
-        return;
+      // Otherwise the head is a value (a local closure, a lambda, an application result): evaluate
+      // it to a closure and apply each argument through the $apply runtime (currying).
+      intExpr(head);
+      for (Expr arg : args) {
+        intExpr(arg);
+        code.write(0x10); // call $apply
+        leb(code, funcs.get("$apply")[0]);
       }
-      throw unsupported("application");
+    }
+
+    /**
+     * Allocates a closure {@code {funcIdx, arity, count, slot…}} (one i64 word each) with {@code
+     * count} initially-applied arguments (captures for a lambda, or the leading args of a partial
+     * application); leaves its i64 pointer. Closures are always under-applied, so count &lt; arity.
+     */
+    private void makeClosure(int funcIdx, int arity, List<Expr> argExprs) {
+      int addr = freshLocal();
+      code.write(0x23);
+      leb(code, 0);
+      code.write(0xAD);
+      code.write(0x21);
+      leb(code, addr); // addr = $hp (i64)
+      bumpHeap((3 + argExprs.size()) * 8);
+      store(addr, 0, () -> { code.write(0x42); sleb(code, funcIdx); });
+      store(addr, 8, () -> { code.write(0x42); sleb(code, arity); });
+      store(addr, 16, () -> { code.write(0x42); sleb(code, argExprs.size()); });
+      for (int j = 0; j < argExprs.size(); j++) {
+        int jj = j;
+        store(addr, (3 + j) * 8, () -> intExpr(argExprs.get(jj)));
+      }
+      code.write(0x20);
+      leb(code, addr);
+    }
+
+    /** Emits the closure for a lifted lambda, capturing the named locals it closed over. */
+    private void emitClosure(Lifted l) {
+      int funcIdx = funcs.get(l.name())[0];
+      int addr = freshLocal();
+      code.write(0x23);
+      leb(code, 0);
+      code.write(0xAD);
+      code.write(0x21);
+      leb(code, addr);
+      bumpHeap((3 + l.captures().size()) * 8);
+      store(addr, 0, () -> { code.write(0x42); sleb(code, funcIdx); });
+      store(addr, 8, () -> { code.write(0x42); sleb(code, l.arity()); });
+      store(addr, 16, () -> { code.write(0x42); sleb(code, l.captures().size()); });
+      for (int j = 0; j < l.captures().size(); j++) {
+        Integer local = locals.get(l.captures().get(j));
+        if (local == null) {
+          throw unsupported("lambda capturing non-local '" + l.captures().get(j) + "'");
+        }
+        store(addr, (3 + j) * 8, () -> { code.write(0x20); leb(code, local); });
+      }
+      code.write(0x20);
+      leb(code, addr);
     }
 
     /** Emits code leaving an i32 (0/1) for a Bool-typed expression. */
@@ -936,6 +1194,88 @@ public final class WasmCompiler {
 
   private static List<Native> stringRuntime() {
     return List.of(new Native("$strEq", 2, strEqEntry()), new Native("$strConcat", 2, strConcatEntry()));
+  }
+
+  private static void nload64(ByteArrayOutputStream b, int off) {
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, off);
+  }
+
+  private static void nstore64(ByteArrayOutputStream b, int off) {
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, off);
+  }
+
+  /**
+   * {@code $apply(clo, arg) -> i64}: the closure runtime. A closure is a heap block {@code {funcIdx,
+   * arity, count, slot…}}. Applying copies it with one more slot; once {@code count} reaches {@code
+   * arity} the underlying function is invoked via {@code call_indirect} (dispatched on the arity over
+   * the arities that exist), otherwise the larger closure is returned. {@code arityTypes} maps each
+   * callable arity to its wasm function-type index.
+   */
+  private static byte[] applyEntry(java.util.SortedMap<Integer, Integer> arityTypes) {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // funcIdx/arity/count from the closure header.
+    lget(b, 0); b.write(0xA7); nload64(b, 0); lset(b, 2);
+    lget(b, 0); b.write(0xA7); nload64(b, 8); lset(b, 3);
+    lget(b, 0); b.write(0xA7); nload64(b, 16); lset(b, 4);
+    // newClo = $hp; bytes = (4 + (i32)count) * 8; $hp += bytes
+    b.write(0x23); leb(b, 0); lset(b, 5);
+    i32c(b, 4); lget(b, 4); b.write(0xA7); b.write(0x6A); i32c(b, 8); b.write(0x6C); lset(b, 7);
+    lget(b, 5); lget(b, 7); b.write(0x6A); b.write(0x24); leb(b, 0);
+    // grow memory if $hp passed capacity
+    b.write(0x23); leb(b, 0); i32c(b, 65535); b.write(0x6A); i32c(b, 16); b.write(0x76);
+    b.write(0x3F); b.write(0x00); b.write(0x6B); lset(b, 8);
+    lget(b, 8); i32c(b, 0); b.write(0x4A); b.write(0x04); b.write(0x40);
+    lget(b, 8); b.write(0x40); b.write(0x00); b.write(0x1A); b.write(0x0B);
+    // header: funcIdx, arity, count+1
+    lget(b, 5); lget(b, 2); nstore64(b, 0);
+    lget(b, 5); lget(b, 3); nstore64(b, 8);
+    lget(b, 5); lget(b, 4); b.write(0x42); sleb(b, 1); b.write(0x7C); nstore64(b, 16);
+    // copy slots 0..count-1
+    i32c(b, 0); lset(b, 6);
+    b.write(0x02); b.write(0x40); b.write(0x03); b.write(0x40);
+    lget(b, 6); lget(b, 4); b.write(0xA7); b.write(0x4F); b.write(0x0D); leb(b, 1);
+    lget(b, 5); i32c(b, 24); b.write(0x6A); lget(b, 6); i32c(b, 8); b.write(0x6C); b.write(0x6A); // dest
+    lget(b, 0); b.write(0xA7); i32c(b, 24); b.write(0x6A); lget(b, 6); i32c(b, 8); b.write(0x6C);
+    b.write(0x6A); nload64(b, 0); // value from clo
+    nstore64(b, 0);
+    lget(b, 6); i32c(b, 1); b.write(0x6A); lset(b, 6);
+    b.write(0x0C); leb(b, 0); b.write(0x0B); b.write(0x0B);
+    // newClo slot[count] = arg
+    lget(b, 5); i32c(b, 24); b.write(0x6A); lget(b, 4); b.write(0xA7); i32c(b, 8); b.write(0x6C); b.write(0x6A);
+    lget(b, 1); nstore64(b, 0);
+    // if count+1 == arity: invoke; else return newClo
+    lget(b, 4); b.write(0x42); sleb(b, 1); b.write(0x7C); lget(b, 3); b.write(0x51);
+    b.write(0x04); b.write(0x7E); // if (result i64)
+    emitDispatch(b, new ArrayList<>(arityTypes.entrySet()), 0);
+    b.write(0x05); // else
+    lget(b, 5); b.write(0xAD); // newClo as i64 pointer
+    b.write(0x0B); // end if
+    return entry(b, new int[][] {{3, I64}, {4, I32}});
+  }
+
+  /** Emits the arity-dispatch if/else chain inside {@code $apply}, invoking via call_indirect. */
+  private static void emitDispatch(
+      ByteArrayOutputStream b, List<Map.Entry<Integer, Integer>> arities, int idx) {
+    if (idx >= arities.size()) {
+      b.write(0x00); // unreachable: a complete closure always has a known arity
+      return;
+    }
+    int arity = arities.get(idx).getKey();
+    int typeIdx = arities.get(idx).getValue();
+    lget(b, 3); b.write(0x42); sleb(b, arity); b.write(0x51); // arity == a ?
+    b.write(0x04); b.write(0x7E); // if (result i64)
+    for (int k = 0; k < arity; k++) {
+      lget(b, 5); i32c(b, 24 + 8 * k); b.write(0x6A); nload64(b, 0); // slot k
+    }
+    lget(b, 2); b.write(0xA7); // funcIdx as table index
+    b.write(0x11); leb(b, typeIdx); leb(b, 0); // call_indirect
+    b.write(0x05); // else
+    emitDispatch(b, arities, idx + 1);
+    b.write(0x0B); // end if
   }
 
   private static void lget(ByteArrayOutputStream b, int i) {
@@ -1171,18 +1511,37 @@ public final class WasmCompiler {
 
   private static byte[] assemble(
       List<Func> funcList, Map<String, Integer> ctorTag, Map<String, Integer> ctorArity) {
-    return assemble(funcList, ctorTag, ctorArity, Map.of());
+    return assemble(funcList, ctorTag, ctorArity, Map.of(), Map.of());
   }
 
   private static byte[] assemble(
       List<Func> funcList,
       Map<String, Integer> ctorTag,
       Map<String, Integer> ctorArity,
-      Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes) {
-    // The string runtime ($strEq/$strConcat) is appended after the user functions, so a function's
-    // position is: user funcs 0..U-1, then the natives. Every function (user + native) shares the
-    // table, type, element and code sections.
-    List<Native> natives = stringRuntime();
+      Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes,
+      Map<Expr.Lambda, Lifted> lifted) {
+    // One wasm function type per distinct arity: (i64 x arity) -> i64. Computed over the user/lifted
+    // functions plus arity 2 (every native — $strEq, $strConcat, $apply — takes two i64s).
+    List<Integer> arities = new ArrayList<>();
+    Map<Integer, Integer> arityType = new HashMap<>();
+    for (Func f : funcList) {
+      arityType.computeIfAbsent(f.params().size(), a -> { arities.add(a); return arities.size() - 1; });
+    }
+    arityType.computeIfAbsent(2, a -> { arities.add(a); return arities.size() - 1; });
+
+    // The closure runtime ($apply) dispatches over the arities a closure may carry — i.e. the
+    // arities of the user/lifted functions (>= 1), each mapped to its function-type index.
+    java.util.SortedMap<Integer, Integer> dispatch = new java.util.TreeMap<>();
+    for (Func f : funcList) {
+      if (f.params().size() >= 1) {
+        dispatch.put(f.params().size(), arityType.get(f.params().size()));
+      }
+    }
+
+    // Natives are appended after the user/lifted functions: positions are user funcs 0..U-1, then
+    // the natives. Every function (user + native) shares the table, type, element and code sections.
+    List<Native> natives = new ArrayList<>(stringRuntime());
+    natives.add(new Native("$apply", 2, applyEntry(dispatch)));
     int userCount = funcList.size();
     int total = userCount + natives.size();
 
@@ -1193,15 +1552,6 @@ public final class WasmCompiler {
     }
     for (int i = 0; i < natives.size(); i++) {
       table.put(natives.get(i).name(), new int[] {userCount + i, natives.get(i).arity()});
-    }
-    // One wasm function type per distinct arity: (i64 x arity) -> i64.
-    List<Integer> arities = new ArrayList<>();
-    Map<Integer, Integer> arityType = new HashMap<>();
-    for (Func f : funcList) {
-      arityType.computeIfAbsent(f.params().size(), a -> { arities.add(a); return arities.size() - 1; });
-    }
-    for (Native n : natives) {
-      arityType.computeIfAbsent(n.arity(), a -> { arities.add(a); return arities.size() - 1; });
     }
 
     ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -1299,7 +1649,7 @@ public final class WasmCompiler {
     leb(code, total);
     for (Func f : funcList) {
       code.writeBytes(
-          new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType, nodeTypes)
+          new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType, nodeTypes, lifted)
               .compile(f.body()));
     }
     for (Native n : natives) {
