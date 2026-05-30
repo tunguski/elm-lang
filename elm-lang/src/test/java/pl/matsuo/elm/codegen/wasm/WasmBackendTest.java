@@ -1,0 +1,114 @@
+package pl.matsuo.elm.codegen.wasm;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import pl.matsuo.elm.ast.Expr;
+import pl.matsuo.elm.interp.Interpreter;
+import pl.matsuo.elm.interp.Show;
+import pl.matsuo.elm.parser.Parser;
+
+/**
+ * Tests the WebAssembly backend: each expression is compiled to a wasm binary, instantiated and run
+ * under Node, and the result must equal the Truffle interpreter's. Skipped if Node is unavailable.
+ */
+class WasmBackendTest {
+
+  private static final boolean NODE = nodeAvailable();
+
+  /** Compiles the expressions to one wasm module, runs every exported f0..fN, returns the results. */
+  private List<String> runWasm(List<String> expressions) throws Exception {
+    List<Expr> exprs = new ArrayList<>();
+    for (String e : expressions) {
+      exprs.add(Parser.parseExpression(e));
+    }
+    Path wasm = Files.createTempFile("elm-", ".wasm");
+    Files.write(wasm, WasmCompiler.module(exprs));
+    Path js = Files.createTempFile("elm-runwasm-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs');"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "const ex=r.instance.exports;let i=0,out=[];"
+            + "while(('f'+i) in ex){out.push(ex['f'+i]().toString());i++;}"
+            + "process.stdout.write(out.join('\\n'));}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p =
+        new ProcessBuilder("node", js.toString(), wasm.toString()).redirectErrorStream(false).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    if (!p.waitFor(30, TimeUnit.SECONDS)) {
+      p.destroyForcibly();
+      throw new IllegalStateException("node timed out");
+    }
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    return List.of(out.split("\n", -1));
+  }
+
+  /** Asserts the wasm result equals the interpreter's for a single expression. */
+  private void same(String expr) throws Exception {
+    assumeTrue(NODE, "Node not installed");
+    assertEquals(Show.plain(Interpreter.eval(expr)), runWasm(List.of(expr)).get(0), expr);
+  }
+
+  @Test
+  void arithmetic() throws Exception {
+    same("1 + 2 * 3");
+    same("(100 - 7) * 3");
+    same("7 // 2");
+    same("2 * 2 * 2 * 2 * 2");
+    same("-5 + 3");
+  }
+
+  @Test
+  void modAndAbs() throws Exception {
+    same("modBy 3 17");
+    same("modBy 7 100");
+    same("abs (3 - 8)");
+    same("abs 42");
+  }
+
+  @Test
+  void conditionalsAndBooleans() throws Exception {
+    same("if 3 < 5 then 10 else 20");
+    same("if 5 < 3 then 10 else 20");
+    same("if 2 < 1 && 3 > 0 then 1 else 99");
+    same("if 2 < 1 || 3 > 0 then 1 else 99");
+    same("if not (4 == 4) then 1 else 0");
+  }
+
+  @Test
+  void letAndLambda() throws Exception {
+    same("let x = 4 in x + x");
+    same("let a = 10 in let b = 20 in a * b");
+    same("(\\n -> n * n + 1) 6");
+  }
+
+  @Test
+  void largeValuesUseInt64() throws Exception {
+    // Exceeds 32 bits, so this only matches if the backend really uses i64 like the interpreter.
+    same("1000000 * 1000000");
+  }
+
+  private static boolean nodeAvailable() {
+    try {
+      Process p = new ProcessBuilder("node", "--version").start();
+      p.waitFor(10, TimeUnit.SECONDS);
+      return p.exitValue() == 0;
+    } catch (IOException | InterruptedException e) {
+      return false;
+    }
+  }
+}
