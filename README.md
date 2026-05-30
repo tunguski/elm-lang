@@ -67,10 +67,11 @@ invocation (e.g. `./elm.sh eval "List.range 1 5"`); it compiles the project firs
 `Main.class` is missing and caches the classpath for fast subsequent calls.
 
 CLI commands: `run <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]`,
-`js <file.elm> [--min] [--map]`, `eval "<expr>" [--backend ...]`,
-`check <file.elm> [more.elm …]` (type-check a module or project), `repl`, `lsp`
-(language server over stdio), `project <elm.json|dir> [check|run]`, `bench [fibN]`,
-`site <examplesDir> <Playground.elm> <outDir>`.
+`js <file.elm> [--min] [--map]`, `make <file.elm> [-o out.html|out.js] [--optimize]`
+(deployable artifact), `eval "<expr>" [--backend ...]`, `check <file.elm> [more.elm …]`
+(type-check a module or project), `format <file.elm> [--write|--check|--project]`, `repl`,
+`lsp` (language server over stdio), `project <elm.json|dir> [check|run]`, `init` (scaffold
+`elm.json` + `src/`), `bench [fibN]`, `site <examplesDir> <Playground.elm> <outDir>`.
 
 It also ships a **REPL** (`elm repl`), a **language server** (`elm lsp` — diagnostics
 + hover types, reusing the parser and HM checker), `elm.json` **project mode**, and JS
@@ -95,7 +96,8 @@ single-module elm-lang.org examples type-check end to end** (`ModuleCheckTest`).
 modules by their imports and resolves names, constructors and aliases across module boundaries.
 Error messages are Elm-style: a source excerpt, a caret under the offending sub-expression, the
 location and a hint. `run <file> --strict` type-checks before evaluating and refuses to run on a
-type error.
+type error. The checker also detects **non-exhaustive and unreachable `case` branches** (Maranget's
+usefulness algorithm), reporting a witness of the missing input (e.g. `Missing a branch for: Blue`).
 
 ## Language coverage
 
@@ -109,6 +111,20 @@ Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`,
 `Array`, `Debug`, plus
 `Html`/`Html.Attributes`/`Html.Events`, `Svg`/`Svg.Attributes`, `Browser`
 (`sandbox`/`element`/`document`), `Cmd`/`Sub`, `Random`, `Time`, `Task`, `Http`, `Json.Decode`.
+
+## Packages & dependencies
+
+The standard library is **built in**: every prelude module (`elm/core`, `elm/html`, `elm/browser`,
+`elm/json`, `elm/time`, `elm/url`, the WebGL/playground builtins the examples use …) is provided
+directly by the interpreter, type checker and JS kernel — there is **no package downloading and no
+`~/.elm` package cache**. `elm init` writes a conventional `elm.json` (an `application` with the
+usual direct/indirect dependencies) so the file is recognisable to real Elm tooling, but those
+version constraints are **not fetched or resolved**: they're a manifest, and `project`/`check`/
+`make` simply read its `source-directories` to find your modules. Anything outside the bundled set
+(a third-party package such as `elm/parser` or `elm-community/*`) is therefore **not available**;
+its custom infix operators lex and parse but won't run. This keeps the toolchain self-contained and
+offline at the cost of the real solver — adding one would mean implementing `elm install`, a
+constraint solver against the package registry, and on-disk package loading.
 
 ## Performance (JIT benchmark)
 
@@ -184,5 +200,7 @@ publishes it as an artifact.
 - The **WASM backend** covers the numeric/boolean `Int`/`Bool` fragment only — lists, strings,
   records and effects (which need a heap) are left to the JS backend.
 - The textured WebGL examples depend on cross-origin images and a real GPU; `first-person` waits on
-  asset/viewport state. Custom package infix operators (`|.`, `</>`, …) lex and parse but their
-  defining package isn't bundled for execution.
+  asset/viewport state.
+- **No package manager**: only the bundled standard library is available; third-party packages and
+  their custom infix operators (`|.`, `</>`, …) lex and parse but aren't fetched or executed. See
+  [Packages & dependencies](#packages--dependencies).
