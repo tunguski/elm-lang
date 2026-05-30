@@ -127,6 +127,7 @@ public final class SiteGenerator {
     String demo = tryLiveJs(source);
     if (demo != null) {
       method = Method.LIVE;
+      demo = localizeAssets(demo); // vendor remote images so WebGL textures aren't CORS-blocked
     } else {
       // Fallback: an interpreter-rendered snapshot of the initial view.
       String snapshot = trySnapshot(source);
@@ -148,6 +149,58 @@ public final class SiteGenerator {
     Files.writeString(
         outDir.resolve(ex.slug() + ".html"), wrapperPage(ex, method, source), StandardCharsets.UTF_8);
     return new Built(ex, method, note);
+  }
+
+  /**
+   * Downloads remote {@code .jpg/.png/.gif} images referenced by a demo into the gallery
+   * (same-origin {@code demos/assets/…}) and rewrites the URLs, so cross-origin WebGL textures
+   * (e.g. elm-lang.org's wood crate) actually load and aren't tainted/CORS-blocked. Best-effort: a
+   * URL that can't be fetched keeps its original (remote) reference.
+   */
+  private String localizeAssets(String html) {
+    java.util.regex.Matcher m =
+        java.util.regex.Pattern.compile("https?://[\\w./-]+\\.(?:jpg|jpeg|png|gif)")
+            .matcher(html);
+    java.util.Set<String> urls = new java.util.LinkedHashSet<>();
+    while (m.find()) {
+      urls.add(m.group());
+    }
+    for (String url : urls) {
+      String rel = "assets/" + url.replaceFirst("https?://[^/]+/", "");
+      Path dest = outDir.resolve("demos").resolve(rel);
+      if (download(url, dest)) {
+        html = html.replace(url, rel);
+      }
+    }
+    return html;
+  }
+
+  /** Downloads {@code url} to {@code dest} (cached if already present); returns success. */
+  private boolean download(String url, Path dest) {
+    try {
+      if (Files.exists(dest)) {
+        return true;
+      }
+      Files.createDirectories(dest.getParent());
+      java.net.http.HttpClient client =
+          java.net.http.HttpClient.newBuilder()
+              .connectTimeout(java.time.Duration.ofSeconds(10))
+              .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+              .build();
+      java.net.http.HttpResponse<byte[]> resp =
+          client.send(
+              java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                  .timeout(java.time.Duration.ofSeconds(20))
+                  .build(),
+              java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+      if (resp.statusCode() == 200) {
+        Files.write(dest, resp.body());
+        return true;
+      }
+    } catch (Exception ignored) {
+      // network unavailable / blocked — fall back to the original remote URL
+    }
+    return false;
   }
 
   private String tryLiveJs(String source) {

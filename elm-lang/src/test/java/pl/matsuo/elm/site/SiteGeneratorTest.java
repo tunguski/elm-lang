@@ -41,7 +41,8 @@ class SiteGeneratorTest {
     }
 
     try (Stream<Path> demos = Files.list(out.resolve("demos"))) {
-      assertEquals(SiteGenerator.EXAMPLES.size(), demos.count());
+      long htmlDemos = demos.filter(p -> p.toString().endsWith(".html")).count();
+      assertEquals(SiteGenerator.EXAMPLES.size(), htmlDemos); // (a demos/assets dir may also exist)
     }
   }
 

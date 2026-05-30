@@ -239,7 +239,7 @@
   $rt['WebGL.toHtml']=function(attrs){ return function(entities){ return glNode(attrs, entities, null); }; };
   $rt['WebGL.toHtmlWith']=function(opts){ return function(attrs){ return function(entities){ var clear=null; $listToArray(opts).forEach(function(o){ if(o&&o.$==='$Opt'&&o._[0]==='clear') clear=o._[1]; }); return glNode(attrs, entities, clear); }; }; };
   // WebGL.Texture: load an Image; the GL texture is uploaded lazily on first draw.
-  $rt['WebGL.Texture.load']=function(url){ return $task(function(ok,err){ var img=new Image(); img.crossOrigin='anonymous'; img.onload=function(){ ok($data('$Texture',[img])); }; img.onerror=function(){ ok($data('$Texture',[null])); /* cross-origin/CORS failure: succeed with a placeholder so the scene still renders */ }; img.src=url; }); };
+  $rt['WebGL.Texture.load']=function(url){ return $task(function(ok,err){ var img=new Image(); if(/^https?:/.test(url)) img.crossOrigin='anonymous'; /* only cross-origin URLs need CORS; same-origin assets load untainted */ img.onload=function(){ ok($data('$Texture',[img])); }; img.onerror=function(){ ok($data('$Texture',[null])); /* load failed: succeed with a placeholder so the scene still renders */ }; img.src=url; }); };
   $rt['WebGL.Texture.loadWith']=function(opts){ return $rt['WebGL.Texture.load']; };
   $rt['WebGL.Texture.size']=function(t){ var i=t._[0]; return $tuple([(i&&i.width)||256,(i&&i.height)||256]); };
   ['nearest','linear','nearestMipmapNearest','linearMipmapLinear','repeat','clampToEdge','mirroredRepeat'].forEach(function(n){ $rt['WebGL.Texture.'+n]=$data('$TexOpt',[n]); });
