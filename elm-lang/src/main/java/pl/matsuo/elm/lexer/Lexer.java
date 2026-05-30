@@ -17,8 +17,16 @@ import pl.matsuo.elm.error.Position;
  */
 public final class Lexer {
 
-  /** Characters that combine into operator tokens via maximal munch. */
+  /** Characters that can <em>start</em> an operator token. */
   private static final String OP_CHARS = "+-*/<>=!&|^%:~";
+
+  /**
+   * Characters that can <em>continue</em> an operator run (maximal munch). This adds {@code .} and
+   * {@code ?}, so package operators such as elm/parser's {@code |.}/{@code |=} and elm/url's {@code
+   * </>}/{@code <?>} lex as single operators. They are continuation-only: a leading {@code .} is
+   * still a record accessor / {@code ..} range, never the start of an operator.
+   */
+  private static final String OP_CONT_CHARS = OP_CHARS + ".?";
 
   private static final Map<String, TokenType> KEYWORDS =
       Map.ofEntries(
@@ -425,7 +433,7 @@ public final class Lexer {
 
   private void lexOperatorRun(Position start) {
     int begin = pos;
-    while (!atEnd() && OP_CHARS.indexOf(cur()) >= 0) {
+    while (!atEnd() && OP_CONT_CHARS.indexOf(cur()) >= 0) {
       advance();
     }
     String text = src.substring(begin, pos);

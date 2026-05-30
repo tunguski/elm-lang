@@ -92,6 +92,25 @@ class LexerTest {
   }
 
   @Test
+  void dotOperatorsLexAsSingleOperators() {
+    // elm/parser's |. and |= and elm/url's </> and <?> are single operator tokens.
+    List<Token> t = lex("a |. b |= c </> d <?> e");
+    assertEquals("|.", t.get(1).text());
+    assertEquals(TokenType.OPERATOR, t.get(1).type());
+    assertEquals("|=", t.get(3).text());
+    assertEquals("</>", t.get(5).text());
+    assertEquals("<?>", t.get(7).text());
+  }
+
+  @Test
+  void leadingDotIsStillAccessorNotOperator() {
+    // A leading '.' remains a record accessor / range, never the start of an operator.
+    assertEquals(List.of(TokenType.DOT, TokenType.LOWER), types(".name"));
+    // "r.x": record access -> LOWER DOT LOWER (the dot does not merge into an operator).
+    assertEquals(List.of(TokenType.LOWER, TokenType.DOT, TokenType.LOWER), types("r.x"));
+  }
+
+  @Test
   void parensBracketsBraces() {
     assertEquals(
         List.of(

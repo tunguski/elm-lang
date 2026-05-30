@@ -54,7 +54,21 @@ public final class Parser {
           Map.entry("//", new Fixity(7, Assoc.LEFT)),
           Map.entry("^", new Fixity(8, Assoc.RIGHT)),
           Map.entry("<<", new Fixity(9, Assoc.RIGHT)),
-          Map.entry(">>", new Fixity(9, Assoc.LEFT)));
+          Map.entry(">>", new Fixity(9, Assoc.LEFT)),
+          // Widely-used published-package operators, with their declared fixities, so programs
+          // using them parse without bundling the package (elm/parser, elm/url).
+          Map.entry("|=", new Fixity(5, Assoc.LEFT)), // elm/parser keeper
+          Map.entry("|.", new Fixity(6, Assoc.LEFT)), // elm/parser ignorer
+          Map.entry("</>", new Fixity(7, Assoc.RIGHT)), // elm/url slash
+          Map.entry("<?>", new Fixity(8, Assoc.LEFT))); // elm/url questionMark
+
+  /**
+   * Fixity for an operator not in {@link #FIXITY}. Elm operators are package-declared, so we can't
+   * know an undeclared one's precedence; we default to left-associative at the same precedence as
+   * {@code <|}/{@code |>} (the lowest), which gives sensible chaining for pipeline-style operators
+   * rather than failing to parse.
+   */
+  private static final Fixity DEFAULT_FIXITY = new Fixity(0, Assoc.LEFT);
 
   // --- token stream ------------------------------------------------------
 
@@ -379,10 +393,7 @@ public final class Parser {
     Expr left = parseOperand();
     while (continues() && check(TokenType.OPERATOR)) {
       String op = peek().text();
-      Fixity fx = FIXITY.get(op);
-      if (fx == null) {
-        throw error("Unknown operator '" + op + "'");
-      }
+      Fixity fx = FIXITY.getOrDefault(op, DEFAULT_FIXITY);
       if (fx.prec() < minPrec) {
         break;
       }

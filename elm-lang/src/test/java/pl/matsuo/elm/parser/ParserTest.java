@@ -39,6 +39,14 @@ class ParserTest {
   }
 
   @Test
+  void dotOperatorsParseWithDeclaredFixity() {
+    // elm/parser: |. (infixl 6) binds tighter than |= (infixl 5), both left-associative.
+    assertEquals("(|= (|= p (|. a b)) c)", expr("p |= a |. b |= c"));
+    // An undeclared operator falls back to the default (left-assoc, lowest precedence).
+    assertEquals("(<+> (<+> a b) c)", expr("a <+> b <+> c"));
+  }
+
+  @Test
   void applicationBindsTighterThanOperators() {
     assertEquals("(+ (f x) (g y))", expr("f x + g y"));
     assertEquals("((f a) b)", expr("f a b"));
