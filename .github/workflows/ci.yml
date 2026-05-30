@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elm-lang
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up GraalVM for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          cache: 'maven'
+
+      - name: Show toolchain
+        run: |
+          java -version
+          node --version
+
+      - name: Build and test
+        run: |
+          chmod +x ./mvnw
+          ./mvnw -B -ntp clean test
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report
+          path: elm-lang/target/bench-report.txt
+          if-no-files-found: ignore
