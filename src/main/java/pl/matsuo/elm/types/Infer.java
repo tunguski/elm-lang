@@ -294,8 +294,16 @@ public final class Infer {
         collectRefs(a.arg(), names, out);
       }
       case Expr.BinOp b -> {
+        if (names.contains(b.op())) {
+          out.add(b.op()); // a custom infix operator is a reference to its defining function
+        }
         collectRefs(b.left(), names, out);
         collectRefs(b.right(), names, out);
+      }
+      case Expr.OpFunc o -> {
+        if (names.contains(o.op())) {
+          out.add(o.op()); // (op) used as a value references its defining function
+        }
       }
       case Expr.Negate n -> collectRefs(n.operand(), names, out);
       case Expr.If i -> {
@@ -503,7 +511,10 @@ public final class Infer {
       case Expr.Shader ignored -> fresh();
       case Expr.Var v -> instantiate(resolve(env, v.module(), v.name()));
       case Expr.Ctor c -> instantiate(resolve(env, c.module(), c.name()));
-      case Expr.OpFunc o -> instantiate(operator(o.op()));
+      case Expr.OpFunc o -> {
+        Scheme s = Signatures.operator(o.op());
+        yield instantiate(s != null ? s : resolve(env, null, o.op()));
+      }
       case Expr.ListLit l -> {
         Ty elem = fresh();
         for (Expr item : l.items()) {
@@ -546,7 +557,10 @@ public final class Infer {
         yield result;
       }
       case Expr.BinOp b -> {
-        Ty op = instantiate(operator(b.op()));
+        // A built-in operator has a prelude signature; otherwise resolve a same-named value (a
+        // user/package-defined infix function, e.g. `(+++) a b = …`).
+        Scheme opScheme = Signatures.operator(b.op());
+        Ty op = instantiate(opScheme != null ? opScheme : resolve(env, null, b.op()));
         Ty result = fresh();
         Unify.unify(op, new Ty.Arrow(infer(env, b.left()), new Ty.Arrow(infer(env, b.right()), result)));
         yield result;

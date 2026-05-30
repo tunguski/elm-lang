@@ -315,6 +315,12 @@ public final class Parser {
       case KW_PORT -> parsePortDecl(pos);
       case LOWER -> parseValueOrAnnotation(pos);
       default -> {
+        // A user/package-defined infix operator definition: `(op) a b = …` or `(op) : Type`.
+        if (check(TokenType.LPAREN)
+            && peek(1).type() == TokenType.OPERATOR
+            && peek(2).type() == TokenType.RPAREN) {
+          yield parseOperatorDef(pos);
+        }
         if (allowDestructure) {
           Pattern pattern = parsePattern();
           expect(TokenType.EQUALS, "'='");
@@ -324,6 +330,22 @@ public final class Parser {
         throw error("Expected a declaration");
       }
     };
+  }
+
+  /** An operator definition `(op) a b = body` (or its annotation `(op) : Type`). */
+  private Object parseOperatorDef(Position pos) {
+    expect(TokenType.LPAREN, "'('");
+    String op = expect(TokenType.OPERATOR, "operator").text();
+    expect(TokenType.RPAREN, "')'");
+    if (match(TokenType.COLON)) {
+      return new Ann(op, parseType());
+    }
+    List<Pattern> params = new ArrayList<>();
+    while (!check(TokenType.EQUALS)) {
+      params.add(parsePatternAtom());
+    }
+    expect(TokenType.EQUALS, "'='");
+    return new Decl.Value(op, params, parseExpr(), Optional.empty(), pos);
   }
 
   private Object parseValueOrAnnotation(Position pos) {

@@ -168,6 +168,13 @@ class JsBackendTest {
   }
 
   @Test
+  void customInfixOperatorModule() {
+    // A user-defined infix operator, used infix and (as `(+++)`) as a higher-order value.
+    sameModule("(+++) a b = a + b * 2\nmain = 1 +++ 2\n"); // -> 5
+    sameModule("(+++) a b = a + b\nmain = List.foldl (+++) 0 [ 1, 2, 3, 4 ]\n"); // -> 10
+  }
+
+  @Test
   void caseAndListPatternsModule() {
     sameModule(
         """

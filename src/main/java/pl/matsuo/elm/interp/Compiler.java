@@ -40,7 +40,10 @@ public final class Compiler {
       case Expr.Unit ignored -> new Nodes.Const(ElmUnit.INSTANCE);
       case Expr.Var v -> new Nodes.Var(v.module(), v.name(), env, v.pos());
       case Expr.Ctor c -> new Nodes.Ctor(c.name(), env);
-      case Expr.OpFunc o -> new Nodes.OpFunc(o.op());
+      case Expr.OpFunc o ->
+          Operators.isBuiltin(o.op())
+              ? new Nodes.OpFunc(o.op())
+              : new Nodes.Var(null, o.op(), env, o.pos()); // (op) as a value -> its defining function
       case Expr.ListLit l -> new Nodes.ListLit(compileAll(l.items()));
       case Expr.Tuple t -> new Nodes.TupleLit(compileAll(t.items()));
       case Expr.Record r -> compileRecord(r);
@@ -48,7 +51,13 @@ public final class Compiler {
       case Expr.RecordAccess a -> new Nodes.Access(compile(a.target()), a.field());
       case Expr.Accessor a -> new Nodes.Accessor(a.field());
       case Expr.App app -> new Nodes.App(compile(app.fn()), compile(app.arg()));
-      case Expr.BinOp b -> new Nodes.BinOp(b.op(), compile(b.left()), compile(b.right()));
+      case Expr.BinOp b ->
+          Operators.isBuiltin(b.op())
+              ? new Nodes.BinOp(b.op(), compile(b.left()), compile(b.right()))
+              // A user/package-defined operator: `a op b` is the function `(op)` applied to a and b.
+              : new Nodes.App(
+                  new Nodes.App(new Nodes.Var(null, b.op(), env, b.pos()), compile(b.left())),
+                  compile(b.right()));
       case Expr.Negate n -> new Nodes.Negate(compile(n.operand()));
       case Expr.If iff ->
           new Nodes.If(compile(iff.cond()), compile(iff.thenBranch()), compile(iff.elseBranch()));

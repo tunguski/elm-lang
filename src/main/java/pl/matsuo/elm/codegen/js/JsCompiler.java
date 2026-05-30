@@ -118,7 +118,22 @@ public final class JsCompiler {
   }
 
   private String topLevelId(String name) {
-    return project == null ? "_$" + name : "_$" + moduleTag + "$" + name;
+    String id = jsIdent(name);
+    return project == null ? "_$" + id : "_$" + moduleTag + "$" + id;
+  }
+
+  /** Encodes a name to a valid JS identifier fragment, so operator names like {@code +++} are safe. */
+  private static String jsIdent(String name) {
+    StringBuilder sb = new StringBuilder(name.length());
+    for (int i = 0; i < name.length(); i++) {
+      char c = name.charAt(i);
+      if (Character.isLetterOrDigit(c) || c == '_' || c == '$') {
+        sb.append(c);
+      } else {
+        sb.append("$op").append((int) c);
+      }
+    }
+    return sb.toString();
   }
 
   // --- public API --------------------------------------------------------
@@ -635,7 +650,10 @@ public final class JsCompiler {
       case Expr.Unit ignored -> "$unit";
       case Expr.Var v -> compileVar(v);
       case Expr.Ctor c -> compileCtor(c.name());
-      case Expr.OpFunc o -> "(a=>b=>" + binJs(o.op(), "a", "b") + ")";
+      case Expr.OpFunc o ->
+          pl.matsuo.elm.interp.Operators.isBuiltin(o.op())
+              ? "(a=>b=>" + binJs(o.op(), "a", "b") + ")"
+              : compile(new Expr.Var(null, o.op(), o.pos())); // (op) as a value -> its function
       case Expr.ListLit l -> "$list([" + compileList(l.items()) + "])";
       case Expr.Tuple t -> "$tuple([" + compileList(t.items()) + "])";
       case Expr.Record r -> compileRecord(r);
@@ -643,7 +661,11 @@ public final class JsCompiler {
       case Expr.RecordAccess a -> "(" + compile(a.target()) + ")[" + jsString(a.field()) + "]";
       case Expr.Accessor a -> "(r=>r[" + jsString(a.field()) + "])";
       case Expr.App app -> "(" + compile(app.fn()) + ")(" + compile(app.arg()) + ")";
-      case Expr.BinOp b -> binJs(b.op(), compile(b.left()), compile(b.right()));
+      case Expr.BinOp b ->
+          pl.matsuo.elm.interp.Operators.isBuiltin(b.op())
+              ? binJs(b.op(), compile(b.left()), compile(b.right()))
+              // A user/package-defined operator: `a op b` is the function `(op)` applied to a and b.
+              : "(" + compile(new Expr.Var(null, b.op(), b.pos())) + ")(" + compile(b.left()) + ")(" + compile(b.right()) + ")";
       case Expr.Negate n -> "(-(" + compile(n.operand()) + "))";
       case Expr.If iff ->
           "(" + compile(iff.cond()) + " ? " + compile(iff.thenBranch()) + " : "

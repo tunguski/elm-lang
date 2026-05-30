@@ -38,6 +38,16 @@ public final class Operators {
     };
   }
 
+  /** Whether {@code op} is a built-in operator (else it's a user/package-defined infix function). */
+  public static boolean isBuiltin(String op) {
+    return switch (op) {
+      case "+", "-", "*", "^", "/", "//", "==", "/=", "<", ">", "<=", ">=", "&&", "||", "++", "::",
+              "|>", "<|", "<<", ">>" ->
+          true;
+      default -> false;
+    };
+  }
+
   /** Returns a callable value for an operator used as a function, e.g. {@code (+)}. */
   public static Builtin asFunction(String op) {
     return new Builtin("(" + op + ")", 2, args -> binary(op, args[0], args[1]));
