@@ -22,8 +22,9 @@ class ModuleCheckTest {
   void buttonsExampleTypeChecks() throws Exception {
     Map<String, String> types = TypeChecker.checkModule(example("buttons"));
     assertTrue(types.get("main").startsWith("Program"), types.get("main"));
-    // String.fromInt forces the model to Int (not a polymorphic number).
-    assertEquals("Msg -> Int -> Int", types.get("update"));
+    // With module-level let-generalization, `update` is its own SCC and generalizes to a
+    // polymorphic number; the Int specialization happens where `main` ties it to `view`.
+    assertEquals("Msg -> number -> number", types.get("update"));
   }
 
   @Test

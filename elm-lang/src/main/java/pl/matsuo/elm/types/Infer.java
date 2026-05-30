@@ -145,31 +145,158 @@ public final class Infer {
       }
     }
 
-    TypeEnv env = TypeEnv.root(globals);
-    int outer = level;
-    level++;
-    Map<String, Ty> placeholders = new LinkedHashMap<>();
-    TypeEnv rec = env;
+    // Infer top-level definitions in dependency order, one strongly-connected component (mutually
+    // recursive group) at a time, generalizing each group before the next. This gives proper
+    // module-level let-polymorphism: a helper like `render : ... -> Html msg` is generalized before
+    // its callers, so each caller instantiates it with a fresh `msg` instead of forcing one type.
+    Map<String, Decl.Value> values = new LinkedHashMap<>();
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v) {
-        Ty ph = fresh();
-        placeholders.put(v.name(), ph);
-        rec = rec.extend(v.name(), Scheme.mono(ph));
+        values.put(v.name(), v);
       }
     }
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Value v) {
-        Ty ph = placeholders.get(v.name());
+    TypeEnv env = TypeEnv.root(globals);
+    Map<String, Scheme> result = new LinkedHashMap<>();
+    for (List<String> group : sccOrder(values)) {
+      int outer = level;
+      level++;
+      Map<String, Ty> placeholders = new LinkedHashMap<>();
+      TypeEnv rec = env;
+      for (String name : group) {
+        Ty ph = fresh();
+        placeholders.put(name, ph);
+        rec = rec.extend(name, Scheme.mono(ph));
+      }
+      for (String name : group) {
+        Decl.Value v = values.get(name);
+        Ty ph = placeholders.get(name);
         v.annotation().ifPresent(ann -> Unify.unify(ph, astToTy(ann, new HashMap<>())));
-        Ty rhs = v.params().isEmpty() ? infer(rec, v.body()) : inferLambda(rec, v.params(), v.body());
+        Ty rhs =
+            v.params().isEmpty() ? infer(rec, v.body()) : inferLambda(rec, v.params(), v.body());
         Unify.unify(ph, rhs);
       }
+      level = outer;
+      for (String name : group) {
+        Scheme s = Types.generalize(Types.prune(placeholders.get(name)), outer);
+        result.put(name, s);
+        env = env.extend(name, s); // visible (generalized) to later groups
+      }
     }
-    level = outer;
-
-    Map<String, Scheme> result = new LinkedHashMap<>();
-    placeholders.forEach((name, ph) -> result.put(name, Types.generalize(Types.prune(ph), outer)));
     return result;
+  }
+
+  /**
+   * Orders the value definitions into mutually-recursive groups (Tarjan SCCs) such that a group is
+   * listed after every group it depends on. References are over-approximated (shadowing may add a
+   * spurious edge), which stays sound — it only ever groups too coarsely.
+   */
+  private static List<List<String>> sccOrder(Map<String, Decl.Value> values) {
+    Map<String, java.util.Set<String>> deps = new LinkedHashMap<>();
+    for (var e : values.entrySet()) {
+      java.util.Set<String> refs = new java.util.HashSet<>();
+      collectRefs(e.getValue().body(), values.keySet(), refs);
+      refs.remove(e.getKey());
+      deps.put(e.getKey(), refs);
+    }
+    // Tarjan's strongly-connected-components algorithm; emits SCCs in reverse-topological order,
+    // which is exactly dependency order (a node's dependencies come out before it).
+    Map<String, Integer> index = new HashMap<>();
+    Map<String, Integer> low = new HashMap<>();
+    java.util.Deque<String> stack = new java.util.ArrayDeque<>();
+    java.util.Set<String> onStack = new java.util.HashSet<>();
+    int[] counter = {0};
+    List<List<String>> out = new ArrayList<>();
+    for (String v : values.keySet()) {
+      if (!index.containsKey(v)) {
+        strongConnect(v, deps, index, low, stack, onStack, counter, out);
+      }
+    }
+    return out;
+  }
+
+  private static void strongConnect(
+      String v,
+      Map<String, java.util.Set<String>> deps,
+      Map<String, Integer> index,
+      Map<String, Integer> low,
+      java.util.Deque<String> stack,
+      java.util.Set<String> onStack,
+      int[] counter,
+      List<List<String>> out) {
+    index.put(v, counter[0]);
+    low.put(v, counter[0]);
+    counter[0]++;
+    stack.push(v);
+    onStack.add(v);
+    for (String w : deps.get(v)) {
+      if (!index.containsKey(w)) {
+        strongConnect(w, deps, index, low, stack, onStack, counter, out);
+        low.put(v, Math.min(low.get(v), low.get(w)));
+      } else if (onStack.contains(w)) {
+        low.put(v, Math.min(low.get(v), index.get(w)));
+      }
+    }
+    if (low.get(v).equals(index.get(v))) {
+      List<String> scc = new ArrayList<>();
+      String w;
+      do {
+        w = stack.pop();
+        onStack.remove(w);
+        scc.add(w);
+      } while (!w.equals(v));
+      out.add(scc);
+    }
+  }
+
+  /** Over-approximates the top-level value names referenced (qualified or not) within {@code e}. */
+  private static void collectRefs(Expr e, java.util.Set<String> names, java.util.Set<String> out) {
+    switch (e) {
+      case Expr.Var v -> {
+        if (names.contains(v.name())) {
+          out.add(v.name());
+        }
+      }
+      case Expr.App a -> {
+        collectRefs(a.fn(), names, out);
+        collectRefs(a.arg(), names, out);
+      }
+      case Expr.BinOp b -> {
+        collectRefs(b.left(), names, out);
+        collectRefs(b.right(), names, out);
+      }
+      case Expr.Negate n -> collectRefs(n.operand(), names, out);
+      case Expr.If i -> {
+        collectRefs(i.cond(), names, out);
+        collectRefs(i.thenBranch(), names, out);
+        collectRefs(i.elseBranch(), names, out);
+      }
+      case Expr.Lambda l -> collectRefs(l.body(), names, out);
+      case Expr.Let let -> {
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value dv) {
+            collectRefs(dv.body(), names, out);
+          } else if (d instanceof Decl.Destructure dd) {
+            collectRefs(dd.body(), names, out);
+          }
+        }
+        collectRefs(let.body(), names, out);
+      }
+      case Expr.Case c -> {
+        collectRefs(c.scrutinee(), names, out);
+        c.branches().forEach(br -> collectRefs(br.body(), names, out));
+      }
+      case Expr.ListLit l -> l.items().forEach(i -> collectRefs(i, names, out));
+      case Expr.Tuple t -> t.items().forEach(i -> collectRefs(i, names, out));
+      case Expr.Record r -> r.fields().forEach(f -> collectRefs(f.value(), names, out));
+      case Expr.RecordUpdate u -> {
+        if (names.contains(u.base())) {
+          out.add(u.base());
+        }
+        u.fields().forEach(f -> collectRefs(f.value(), names, out));
+      }
+      case Expr.RecordAccess a -> collectRefs(a.target(), names, out);
+      default -> {}
+    }
   }
 
   /**

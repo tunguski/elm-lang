@@ -2,6 +2,7 @@ package pl.matsuo.elm.types;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,25 @@ class ProjectCheckTest {
         main = Lib.area (Lib.Square 3.0)
         """;
     assertEquals("Float", TypeChecker.checkProject(LIB, main).get("main"));
+  }
+
+  @Test
+  void elmPlaygroundGameTypeChecks() throws Exception {
+    // The full ~1700-line evancz/elm-playground plus a game type-check end to end — this needs
+    // module-level let-generalization (SCC ordering) so shared helpers like `render` stay
+    // polymorphic across picture/animation/game.
+    String playground = resource("/Playground.elm");
+    String mario = resource("/examples/mario.elm");
+    Map<String, String> types = TypeChecker.checkProject(playground, mario);
+    assertTrue(types.get("main").startsWith("Program"), types.get("main"));
+  }
+
+  private static String resource(String path) {
+    try (var in = ProjectCheckTest.class.getResourceAsStream(path)) {
+      return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Test
