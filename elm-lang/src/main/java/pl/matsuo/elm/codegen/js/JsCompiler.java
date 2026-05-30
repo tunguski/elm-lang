@@ -374,9 +374,11 @@ public final class JsCompiler {
   public String declarations() {
     declSrcLines.clear();
     StringBuilder sb = new StringBuilder();
-    java.util.Map<String, Decl.Value> values = new java.util.LinkedHashMap<>();
+    java.util.Map<String, Decl.Value> values = new java.util.LinkedHashMap<>(); // parameterless
+    java.util.Map<String, Decl.Value> byName = new java.util.LinkedHashMap<>(); // all top-levels
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v) {
+        byName.put(v.name(), v);
         if (v.params().isEmpty()) {
           values.put(v.name(), v);
         } else {
@@ -388,7 +390,7 @@ public final class JsCompiler {
     }
     java.util.Set<String> emitted = new java.util.HashSet<>();
     for (String name : values.keySet()) {
-      emitValue(name, values, emitted, new java.util.HashSet<>(), sb);
+      emitValue(name, values, byName, emitted, new java.util.HashSet<>(), sb);
     }
     return sb.toString();
   }
@@ -396,21 +398,46 @@ public final class JsCompiler {
   private void emitValue(
       String name,
       java.util.Map<String, Decl.Value> values,
+      java.util.Map<String, Decl.Value> byName,
       java.util.Set<String> emitted,
       java.util.Set<String> visiting,
       StringBuilder sb) {
     if (emitted.contains(name) || !values.containsKey(name) || !visiting.add(name)) {
       return; // already emitted, not a value, or a cycle — emit in whatever order we reach it
     }
-    Decl.Value v = values.get(name);
-    java.util.Set<String> refs = new java.util.HashSet<>();
-    collectRefs(v.body(), values.keySet(), refs);
-    for (String dep : refs) {
-      emitValue(dep, values, emitted, visiting, sb);
+    // A value must be initialised after every value it depends on — including values reached
+    // transitively through the top-level functions it calls (those run eagerly when this value's
+    // initialiser does), so follow references through functions too.
+    java.util.Set<String> deps = new java.util.HashSet<>();
+    valueDeps(values.get(name).body(), byName, deps, new java.util.HashSet<>());
+    for (String dep : deps) {
+      emitValue(dep, values, byName, emitted, visiting, sb);
     }
     if (emitted.add(name)) {
-      sb.append("var ").append(topLevelId(name)).append(" = ").append(compile(v.body())).append(";\n");
-      declSrcLines.add(v.pos().line());
+      sb.append("var ").append(topLevelId(name)).append(" = ").append(compile(values.get(name).body()))
+          .append(";\n");
+      declSrcLines.add(values.get(name).pos().line());
+    }
+  }
+
+  /** Collects the parameterless-value names {@code body} depends on, following calls into functions. */
+  private void valueDeps(
+      Expr body,
+      java.util.Map<String, Decl.Value> byName,
+      java.util.Set<String> outValues,
+      java.util.Set<String> visitedFns) {
+    java.util.Set<String> refs = new java.util.HashSet<>();
+    collectRefs(body, byName.keySet(), refs);
+    for (String r : refs) {
+      Decl.Value rv = byName.get(r);
+      if (rv == null) {
+        continue;
+      }
+      if (rv.params().isEmpty()) {
+        outValues.add(r); // a value dependency
+      } else if (visitedFns.add(r)) {
+        valueDeps(rv.body(), byName, outValues, visitedFns); // a called function — follow its refs
+      }
     }
   }
 

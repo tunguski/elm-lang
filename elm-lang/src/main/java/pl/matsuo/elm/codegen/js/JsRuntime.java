@@ -470,9 +470,9 @@ public final class JsRuntime {
         $rt['WebGL.toHtml']=function(attrs){ return function(entities){ return glNode(attrs, entities, null); }; };
         $rt['WebGL.toHtmlWith']=function(opts){ return function(attrs){ return function(entities){ var clear=null; $listToArray(opts).forEach(function(o){ if(o&&o.$==='$Opt'&&o._[0]==='clear') clear=o._[1]; }); return glNode(attrs, entities, clear); }; }; };
         // WebGL.Texture: load an Image; the GL texture is uploaded lazily on first draw.
-        $rt['WebGL.Texture.load']=function(url){ return $task(function(ok,err){ var img=new Image(); img.crossOrigin='anonymous'; img.onload=function(){ ok($data('$Texture',[img])); }; img.onerror=function(){ err($data('$LoadError',[])); }; img.src=url; }); };
+        $rt['WebGL.Texture.load']=function(url){ return $task(function(ok,err){ var img=new Image(); img.crossOrigin='anonymous'; img.onload=function(){ ok($data('$Texture',[img])); }; img.onerror=function(){ ok($data('$Texture',[null])); /* cross-origin/CORS failure: succeed with a placeholder so the scene still renders */ }; img.src=url; }); };
         $rt['WebGL.Texture.loadWith']=function(opts){ return $rt['WebGL.Texture.load']; };
-        $rt['WebGL.Texture.size']=function(t){ var i=t._[0]; return $tuple([(i&&i.width)||0,(i&&i.height)||0]); };
+        $rt['WebGL.Texture.size']=function(t){ var i=t._[0]; return $tuple([(i&&i.width)||256,(i&&i.height)||256]); };
         ['nearest','linear','nearestMipmapNearest','linearMipmapLinear','repeat','clampToEdge','mirroredRepeat'].forEach(function(n){ $rt['WebGL.Texture.'+n]=$data('$TexOpt',[n]); });
 
         function glContext(c){ if(c.$ctx!==undefined) return c.$ctx; var gl=null; try{ gl=c.getContext('webgl',{premultipliedAlpha:false})||c.getContext('experimental-webgl'); }catch(e){} c.$ctx=gl; c.$progs={}; return gl; }
@@ -480,7 +480,21 @@ public final class JsRuntime {
         function glProgram(gl,c,vsrc,fsrc){ var key=vsrc+' '+fsrc; if(c.$progs[key]) return c.$progs[key]; var p=gl.createProgram(); gl.attachShader(p, glShader(gl,gl.VERTEX_SHADER,vsrc)); gl.attachShader(p, glShader(gl,gl.FRAGMENT_SHADER,fsrc)); gl.linkProgram(p); c.$progs[key]=p; return p; }
         function attrSize(v){ return Array.isArray(v)?v.length:1; }
         function setUniform(gl,loc,v,texUnit){ if(v instanceof Float32Array && v.length===16){ gl.uniformMatrix4fv(loc,false,v); } else if(Array.isArray(v)){ if(v.length===2)gl.uniform2fv(loc,new Float32Array(v)); else if(v.length===3)gl.uniform3fv(loc,new Float32Array(v)); else if(v.length===4)gl.uniform4fv(loc,new Float32Array(v)); } else if(typeof v==='number'){ gl.uniform1f(loc,v); } else if(v&&v.$==='$Texture'){ bindTexture(gl,loc,v,texUnit); } }
-        function bindTexture(gl,loc,t,unit){ if(!t.$tex){ var tx=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tx); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,t._[0]); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); t.$tex=tx; } gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t.$tex); gl.uniform1i(loc,unit); }
+        function bindTexture(gl,loc,t,unit){
+          if(!t.$tex){
+            var tx=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tx);
+            // Upload the loaded image; if it's missing or cross-origin-tainted (texImage2D throws),
+            // fall back to a 2x2 checkerboard so the geometry still renders textured.
+            try{ if(!t._[0]) throw 0; gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,t._[0]); }
+            catch(e){ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,2,2,0,gl.RGBA,gl.UNSIGNED_BYTE,
+              new Uint8Array([200,200,200,255, 120,120,120,255, 120,120,120,255, 200,200,200,255])); }
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+            t.$tex=tx;
+          }
+          gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t.$tex); gl.uniform1i(loc,unit);
+        }
         function drawEntity(gl,c,e){ var prog=glProgram(gl,c,e._[0]._[0],e._[1]._[0]); gl.useProgram(prog); var mesh=e._[2], verts=[], indices=null;
           if(mesh.$==='$Mesh'){ $listToArray(mesh._[0]).forEach(function(tri){ verts.push(tri.vs[0],tri.vs[1],tri.vs[2]); }); }
           else if(mesh.$==='$MeshIdx'){ verts=$listToArray(mesh._[0]); indices=[]; $listToArray(mesh._[1]).forEach(function(t){ indices.push(t.vs[0],t.vs[1],t.vs[2]); }); }
@@ -498,6 +512,12 @@ public final class JsRuntime {
             // `value`/`checked` are controlled by the model; set the live property (and only when it
             // changed) so we don't fight the cursor, rather than the inert default-value attribute.
             if (nm==='value'){ var s=String(val); if(el.value!==s) el.value=s; }
+            else if (nm==='xlink:href' || nm==='href'){
+              // SVG <image>/<use> hrefs must be set in the xlink namespace (and SVG2 `href`) to
+              // actually load — a plain setAttribute('xlink:href',...) is ignored by browsers.
+              el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', String(val));
+              el.setAttribute('href', String(val));
+            }
             else el.setAttribute(nm, String(val));
           }
           else if (t==='$Prop'){ if (typeof val==='boolean'){ el[nm]=val; if(val) el.setAttribute(nm,''); else el.removeAttribute(nm); } else { el[nm]=val; el.setAttribute(nm,String(val)); } }
