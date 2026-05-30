@@ -21,18 +21,16 @@ property-based testing over randomly generated expressions).
 
 ## Build & test
 
-The project lives in [`elm-lang/`](elm-lang/) and uses the Maven wrapper (Maven 3.9.9, GraalVM
-for JDK 25).
+The project is a single Maven module at the repository root and uses the Maven wrapper
+(Maven 3.9.9, GraalVM for JDK 25).
 
 ```sh
-cd elm-lang
 ./mvnw.cmd test        # Windows (PowerShell);  ./mvnw test on Unix
 ```
 
 ## Standalone executable
 
 ```sh
-cd elm-lang
 ./mvnw.cmd -DskipTests package          # builds target/elm.jar (runnable fat JAR)
 java -jar target/elm.jar eval "List.foldl (+) 0 (List.range 1 100)"   # -> 5050
 java -jar target/elm.jar run Main.elm   # loads the optimizing Truffle (Graal JIT) runtime
@@ -84,7 +82,7 @@ backends in the browser.
 
 ## Type inference
 
-A from-scratch **Hindley–Milner** type checker ([`pl.matsuo.elm.types`](elm-lang/src/main/java/pl/matsuo/elm/types/))
+A from-scratch **Hindley–Milner** type checker ([`pl.matsuo.elm.types`](src/main/java/pl/matsuo/elm/types/))
 infers types for expressions and whole modules, with Elm's constrained type variables
 (`number`/`comparable`/`appendable`), let-generalization, row-polymorphic records, custom types,
 record-alias constructors, type-alias expansion and annotation checking. So `1 + 1.5 : Float`,
@@ -118,21 +116,21 @@ Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`,
 
 `elm script <file.elm> [args…]` runs an Elm file as a command-line script on the JIT interpreter,
 inspired by [elm-posix](https://github.com/albertdahlin/elm-posix). The bundled
-[`Posix`](elm-lang/src/main/resources/elm/lib/Posix.elm) module gives a script's `main : Posix.Io`
+[`Posix`](src/main/resources/elm/lib/Posix.elm) module gives a script's `main : Posix.Io`
 a description of effects — `print`, `readLine`, `readFile`, `writeFile`, `getArgs`, `exit`, `done` —
 which the runner walks, performing the real I/O and returning the process exit code. Effects that
 produce a value take a continuation, so scripts are written in continuation-passing style. The
-[`wordcount.elm`](elm-lang/src/main/resources/elm/demos/wordcount.elm) example is a `wc`-style
+[`wordcount.elm`](src/main/resources/elm/demos/wordcount.elm) example is a `wc`-style
 line/word/char counter:
 
 ```sh
-./elm.sh script elm-lang/src/main/resources/elm/demos/wordcount.elm README.md
+./elm.sh script src/main/resources/elm/demos/wordcount.elm README.md
 ```
 
 ## HTTP server (server-side Elm)
 
 `elm server <file.elm> [--port N]` serves HTTP from an Elm application that exposes a pure handler,
-using the bundled [`Server`](elm-lang/src/main/resources/elm/lib/Server.elm) API:
+using the bundled [`Server`](src/main/resources/elm/lib/Server.elm) API:
 
 ```elm
 import Server exposing (..)
@@ -149,7 +147,7 @@ The runner (on the JDK's built-in HTTP server, no dependencies) builds a `Reques
 incoming request, applies `handle` on the JIT interpreter, and writes the `Response`. Because the
 handler is a pure `Request -> Response`, it is trivial to unit-test — `ServerRunnerTest` checks
 routing/status by direct dispatch and also over a real socket. The
-[`server.elm`](elm-lang/src/main/resources/elm/demos/server.elm) example routes `/`, `/ping`,
+[`server.elm`](src/main/resources/elm/demos/server.elm) example routes `/`, `/ping`,
 `/json` and `/echo`.
 
 ## Packages & dependencies
@@ -218,7 +216,6 @@ evancz/elm-playground source, and the WebGL examples render into a real `<canvas
 through both compiled backends in the browser, side by side. Build it locally with:
 
 ```sh
-cd elm-lang
 ./mvnw.cmd -DskipTests package
 java -jar target/elm.jar site src/test/resources/examples src/test/resources/Playground.elm target/site
 ```

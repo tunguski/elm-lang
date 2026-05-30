@@ -11,12 +11,10 @@
 #
 set -euo pipefail
 
-# Locate the Maven project (the dir containing pom.xml: this script's dir, or its elm-lang/ child).
+# Locate the Maven project (the dir containing pom.xml — this script's own directory).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/pom.xml" ]; then
   PROJ="$SCRIPT_DIR"
-elif [ -f "$SCRIPT_DIR/elm-lang/pom.xml" ]; then
-  PROJ="$SCRIPT_DIR/elm-lang"
 else
   echo "elm.sh: cannot find the Maven project (pom.xml)" >&2
   exit 1
