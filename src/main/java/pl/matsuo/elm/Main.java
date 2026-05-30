@@ -198,7 +198,7 @@ public final class Main implements Runnable {
         "  elm make Main.elm --no-check            # skip the type check",
       })
   static final class Make implements Callable<Integer> {
-    @Parameters(arity = "1..*", description = "The .elm entry file (plus any sibling modules).")
+    @Parameters(arity = "0..*", description = "The .elm entry file (plus any sibling modules); omit with --project.")
     List<Path> files;
 
     @Option(
@@ -216,10 +216,22 @@ public final class Main implements Runnable {
     @Option(names = "--watch", description = "Recompile whenever an input file changes (Ctrl-C to stop).")
     boolean watch;
 
+    @Option(
+        names = "--project",
+        description =
+            "An elm.json (or its directory): compile the project's local modules plus its installed "
+                + "dependencies' sources from the package cache, instead of explicit files.")
+    Path project;
+
+    @Option(
+        names = "--registry",
+        description = "Package cache for dependency sources (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
     @Override
     public Integer call() throws IOException, InterruptedException {
       if (watch) {
-        pl.matsuo.elm.util.FileWatcher.watch(files, 300, this::makeOnce);
+        pl.matsuo.elm.util.FileWatcher.watch(files == null ? List.of() : files, 300, this::makeOnce);
         return 0;
       }
       return makeOnce();
@@ -228,8 +240,17 @@ public final class Main implements Runnable {
     private int makeOnce() {
       try {
         List<String> sources = new ArrayList<>();
-        for (Path p : files) {
-          sources.add(Files.readString(p));
+        if (project != null) {
+          // Local modules + installed dependency package sources (so `import`ed packages compile in).
+          sources.addAll(
+              registry != null
+                  ? pl.matsuo.elm.project.ProjectLoader.loadSources(project, registry)
+                  : pl.matsuo.elm.project.ProjectLoader.loadSources(project));
+        }
+        if (files != null) {
+          for (Path p : files) {
+            sources.add(Files.readString(p));
+          }
         }
         String[] arr = sources.toArray(new String[0]);
         if (!noCheck && typeError(arr) instanceof String msg) {
@@ -672,32 +693,49 @@ public final class Main implements Runnable {
     @Option(
         names = "--from",
         description =
-            "Remote registry base URL to solve against and download sources from into the cache.")
+            "Remote registry base URL to solve against and download sources from into the cache "
+                + "(the simple static-file protocol: versions.txt, files.txt, per-version elm.json).")
     String from;
+
+    @Option(
+        names = "--elm",
+        arity = "0..1",
+        fallbackValue = "https://package.elm-lang.org",
+        description =
+            "Use a package.elm-lang.org-style registry (all-packages + endpoint.json + zipball). "
+                + "With no value, the public registry; pass a URL to point elsewhere.")
+    String elm;
 
     @Override
     public Integer call() throws IOException {
       Path registryRoot = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
-      // Solve against the remote registry when --from is given, else the local cache.
-      pl.matsuo.elm.pkg.Registry reg =
-          from != null
-              ? new pl.matsuo.elm.pkg.HttpRegistry(from)
-              : new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
+      // Solve against: the public-style Elm registry (--elm), the simple remote (--from), else cache.
+      pl.matsuo.elm.pkg.Registry reg;
+      if (elm != null) {
+        reg = new pl.matsuo.elm.pkg.ElmRegistry(elm);
+      } else if (from != null) {
+        reg = new pl.matsuo.elm.pkg.HttpRegistry(from);
+      } else {
+        reg = new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
+      }
       try {
         var result = pl.matsuo.elm.pkg.Installer.install(dir, pkg, reg);
         if (result.alreadyPresent()) {
           System.out.println(pkg + " is already a direct dependency (" + result.installed() + ").");
           return 0;
         }
-        if (from != null) {
+        if (elm != null || from != null) {
           // Download every resolved (non-bundled) package's sources into the cache so the project
           // loader and compiler can use them.
-          var fetcher = new pl.matsuo.elm.pkg.PackageFetcher(from);
           var all = new java.util.TreeMap<>(result.indirect());
           all.putAll(result.direct());
           for (var dep : all.entrySet()) {
             if (!pl.matsuo.elm.project.ProjectLoader.BUNDLED.contains(dep.getKey())) {
-              fetcher.fetch(dep.getKey(), dep.getValue(), registryRoot);
+              if (elm != null) {
+                new pl.matsuo.elm.pkg.ElmPackageFetcher(elm).fetch(dep.getKey(), dep.getValue(), registryRoot);
+              } else {
+                new pl.matsuo.elm.pkg.PackageFetcher(from).fetch(dep.getKey(), dep.getValue(), registryRoot);
+              }
             }
           }
         }

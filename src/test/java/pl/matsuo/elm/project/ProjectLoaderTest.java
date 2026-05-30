@@ -80,6 +80,21 @@ class ProjectLoaderTest {
   }
 
   @Test
+  void installedPackageCompilesIntoTheJsBundle(@TempDir Path root) throws IOException {
+    writeAcmeStrings(root.resolve("registry"));
+    Path app =
+        writeApp(
+            root,
+            "module Main exposing (main)\n\nimport Acme.Strings exposing (shout)\n\n"
+                + "import Html exposing (text)\n\nmain = text (shout \"hi\")\n");
+
+    String[] sources = ProjectLoader.loadSources(app, root.resolve("registry")).toArray(new String[0]);
+    // The JS backend compiles the project plus the installed package's module into one bundle.
+    String bundle = pl.matsuo.elm.codegen.js.JsCompiler.appBundleProject(sources);
+    assertTrue(bundle.contains("shout"), "the package's function is compiled into the bundle");
+  }
+
+  @Test
   void bundledPackagesAreNotDoubleLoaded(@TempDir Path root) throws IOException {
     Path core = root.resolve("registry").resolve("elm").resolve("core").resolve("1.0.5");
     Files.createDirectories(core.resolve("src"));

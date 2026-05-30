@@ -81,7 +81,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 |---|---|
 | `run <file.elm> [--value NAME] [--backend interp\|bytecode] [--watch] [--no-check]` | Evaluate a definition (default `main`) and print it; Html/programs render to HTML. Type-checks first. |
 | `eval "<expr>" [--backend interp\|bytecode]` | Evaluate a single expression. |
-| `make <file.elm…> [-o out.html\|out.js] [--optimize] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--optimize` tree-shakes + minifies. |
+| `make <file.elm…> [--project DIR] [-o out.html\|out.js] [--optimize] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--project` pulls in an `elm.json`'s local + installed-dependency sources; `--optimize` tree-shakes + minifies. |
 | `js <file.elm> [--min] [--map]` | Emit JavaScript (optionally minified, with an inline column-level source map). |
 | `check <file.elm> [more.elm…]` | Type-check a module or a multi-module project. |
 | `test <file.elm…>` | Run `Test` suites (bundled `Test`/`Expect`); reports pass/fail, non-zero exit on failure. |
@@ -95,7 +95,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
 | `init [dir]` | Scaffold `elm.json` + `src/`. |
-| `install <author/name> [--registry DIR] [--from URL]` | Add a package to `elm.json`, re-solve dependencies, and (with `--from`) download its sources into the cache so it compiles and runs. |
+| `install <author/name> [--registry DIR] [--from URL] [--elm [URL]]` | Add a package to `elm.json`, re-solve dependencies, and download its sources into the cache (`--elm` = the public package.elm-lang.org registry) so it compiles and runs. |
 | `bench [fibN]` | Benchmark the four backends on a recursive workload. |
 | `site <examplesDir> <Playground.elm> <outDir> [docsDir]` | Generate the static example gallery (optionally rendering Markdown docs). |
 
@@ -219,17 +219,20 @@ package manager** for everything outside the bundled set:
   transitive closure (highest allowed, backing off on conflict).
 - **Cache.** Packages live in an on-disk cache laid out as
   `<root>/<author>/<name>/<version>/{elm.json, src/…}` (default `$ELM_REGISTRY` or `~/.elm/registry`).
-- **Download.** With `--from <url>` the solver runs against a remote registry (a tiny static-file
-  protocol — `versions.txt`, per-version `elm.json`, `files.txt`) and the resolved packages' sources
-  are downloaded into the cache.
-- **Compilation.** `project`/`check`/`run` load the resolved dependencies' modules from the cache
-  alongside your local `source-directories`, so an installed package's modules are handed to the
-  **same type checker and interpreter** as your own code — `import`s of it resolve, type-check and
-  run. (Built-in packages are skipped to avoid double-defining the standard library.)
+- **Download.** Two remote protocols are supported. `--from <url>` uses a tiny static-file protocol
+  (`versions.txt`, per-version `elm.json`, `files.txt`); `--elm [url]` (default the **public**
+  `package.elm-lang.org`) speaks the real registry shape — `all-packages` for the version index,
+  `packages/<a>/<n>/<v>/elm.json` for constraints, and `endpoint.json` → a GitHub **zipball** that is
+  downloaded and unpacked (top-level dir stripped, zip-slip guarded) into the cache.
+- **Compilation.** `project`/`check`/`run` *and* the **JavaScript backend** (`make --project` /
+  `js`) load the resolved dependencies' modules from the cache alongside your local
+  `source-directories`, so an installed package's modules are handed to the **same type checker,
+  interpreter and JS compiler** as your own code — `import`s of it resolve, type-check, run and
+  compile into the bundle. (Built-in packages are skipped to avoid double-defining the standard
+  library.)
 
-What remains is integrating the **public** `package.elm-lang.org` registry (its GitHub-zipball
-download protocol differs from the simple static-file one above) and the JS/WASM backends loading
-package sources the way the interpreter and type checker now do.
+What remains is the WASM backend loading package sources (the others now do), and registry niceties
+like checksum verification and `elm.json` `test-dependencies`.
 
 ## Performance (JIT benchmark)
 
@@ -297,11 +300,11 @@ publishes it as an artifact.
 
 ## Known limitations
 
-- **Package manager — public registry**: `elm install` solves dependencies, downloads sources from
-  a remote registry (`--from`), and the interpreter + type checker compile and run installed
-  packages' modules. The remaining gaps are the **public `package.elm-lang.org`** protocol (it
-  serves GitHub zipballs, not the simple static-file layout used here) and the **JS/WASM backends**
-  loading package sources the way the interpreter/checker now do. See
+- **Package manager**: `elm install` solves dependencies and downloads sources from either a simple
+  static-file registry (`--from`) or the **public `package.elm-lang.org`** registry (`--elm`, via
+  `all-packages`/`endpoint.json`/zipball); the interpreter, type checker and **JavaScript backend**
+  then compile and run installed packages' modules. Remaining gaps: the **WASM backend** loading
+  package sources, and registry niceties (checksum verification, test-dependencies). See
   [Packages & dependencies](#packages--dependencies).
 - **WASM backend** scope: integers/booleans/**floats** (an `f64` stored as its i64 bit pattern, with
   arithmetic, comparison and `toFloat`/`round`/`floor`/`ceiling`/`truncate`), a growable
