@@ -467,32 +467,7 @@ public final class SiteGenerator {
     }
   }
 
-  private static final String BACKENDS_STYLE =
-      """
-      <style>
-      :root{--accent:#5fabdc;--ink:#293c4b}
-      *{box-sizing:border-box}
-      body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
-      .bar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid #eee}
-      .home{color:var(--accent);text-decoration:none;font-weight:600}
-      .badge{font-size:.72rem;padding:3px 10px;border-radius:999px;background:#e3f4e1;color:#246b1e}
-      main{max-width:820px;margin:0 auto;padding:24px}
-      p{max-width:65ch;line-height:1.5}
-      table{width:100%;border-collapse:collapse;margin-top:16px}
-      th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #eee;font-variant-numeric:tabular-nums}
-      th{font-size:.8rem;color:#667;text-transform:uppercase;letter-spacing:.04em}
-      code{background:#f3f5f7;padding:2px 6px;border-radius:5px}
-      .exp{color:#667}
-      .ok.good{color:#246b1e;font-weight:700}
-      .ok.bad{color:#9a1e1e;font-weight:700}
-      .perf{margin-top:32px}
-      .bar{display:flex;align-items:center;gap:10px;margin:6px 0}
-      .bar .lbl{width:170px;font-size:.85rem}
-      .bar .track{flex:1;background:#eef1f3;border-radius:5px;height:16px;overflow:hidden}
-      .bar .fill{display:block;height:100%;background:var(--accent)}
-      .bar .num{width:90px;text-align:right;font-size:.85rem;color:#667;font-variant-numeric:tabular-nums}
-      </style>
-      """;
+  private static final String BACKENDS_STYLE = style("/elm/css/backends.css");
 
   private void writeIndex(List<Built> built) throws IOException {
     StringBuilder cards = new StringBuilder();
@@ -565,56 +540,14 @@ public final class SiteGenerator {
 
   // --- styling -----------------------------------------------------------
 
-  private static final String INDEX_STYLE =
-      """
-      <style>
-      :root{--accent:#5fabdc;--ink:#293c4b;--bg:#fafafa}
-      *{box-sizing:border-box}
-      body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg)}
-      .hero{padding:48px 24px 24px;max-width:1000px;margin:0 auto}
-      .hero h1{font-size:2.6rem;margin:0 0 8px;color:var(--accent)}
-      .hero p{max-width:60ch;line-height:1.5}
-      .stats{font-size:.9rem;color:#667}
-      main{max-width:1000px;margin:0 auto;padding:0 24px 48px}
-      main h2{margin:32px 0 12px;border-bottom:2px solid #eee;padding-bottom:4px}
-      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
-      .card{display:flex;flex-direction:column;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden;
-        text-decoration:none;color:inherit;background:#fff;transition:box-shadow .15s,transform .15s}
-      .card:hover{box-shadow:0 6px 20px rgba(0,0,0,.12);transform:translateY(-2px)}
-      .thumb{height:150px;background:#fff;overflow:hidden;border-bottom:1px solid #eee;position:relative}
-      .thumb iframe{position:absolute;top:0;left:0;width:200%;height:300px;border:0;transform:scale(.5);transform-origin:top left;pointer-events:none}
-      .meta{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;gap:8px}
-      .badge{font-size:.7rem;padding:2px 8px;border-radius:999px;white-space:nowrap}
-      .badge.live{background:#e3f4e1;color:#246b1e}
-      .badge.snapshot{background:#fdf0d5;color:#8a5a00}
-      .badge.failed{background:#f6dada;color:#9a1e1e}
-      footer{max-width:1000px;margin:0 auto;padding:24px;color:#889;font-size:.85rem}
-      </style>
-      """;
+  private static final String INDEX_STYLE = style("/elm/css/index.css");
 
-  private static final String PAGE_STYLE =
-      """
-      <style>
-      :root{--accent:#5fabdc;--ink:#293c4b}
-      *{box-sizing:border-box}
-      body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
-      .bar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;
-        border-bottom:1px solid #eee;position:sticky;top:0;background:#fff}
-      .home{color:var(--accent);text-decoration:none;font-weight:600}
-      main{max-width:900px;margin:0 auto;padding:24px}
-      h1 small{font-size:.9rem;color:#889;font-weight:400}
-      .demo-head{display:flex;justify-content:flex-end;margin-bottom:6px}
-      .newtab{color:var(--accent);text-decoration:none;font-size:.85rem;font-weight:600}
-      .newtab:hover{text-decoration:underline}
-      .demo iframe{width:100%;min-height:420px;border:1px solid #e3e3e3;border-radius:10px;background:#fff}
-      .src pre{background:#0f1720;border-radius:10px;overflow:auto;line-height:1.5}
-      .src pre code{display:block;padding:16px;color:#e6edf3}
-      .badge{font-size:.72rem;padding:3px 10px;border-radius:999px}
-      .badge.live{background:#e3f4e1;color:#246b1e}
-      .badge.snapshot{background:#fdf0d5;color:#8a5a00}
-      .badge.failed{background:#f6dada;color:#9a1e1e}
-      </style>
-      """;
+  private static final String PAGE_STYLE = style("/elm/css/page.css");
+
+  /** Loads a bundled CSS resource and wraps it in a {@code <style>} block for inlining. */
+  private static String style(String resource) {
+    return "<style>\n" + pl.matsuo.elm.util.Resources.read(resource) + "</style>\n";
+  }
 
   private static String escape(String s) {
     StringBuilder b = new StringBuilder(s.length() + 16);
