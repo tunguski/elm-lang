@@ -369,8 +369,9 @@ public final class SiteGenerator {
                   .append(String.format(java.util.Locale.US, "%.2f ms", ms))
                   .append("</span></div>\n"));
       return "<section class=\"perf\"><h2>Performance — fib(24), best warm run</h2>"
-          + "<p>The same recursive workload timed on each backend (lower is faster). The JS engine's"
-          + " JIT and the Graal-compiled Truffle interpreter dominate; the bytecode VM is the simple"
+          + "<p>The same recursive workload (naive fib) timed on each backend (lower is faster):"
+          + " the WebAssembly and JavaScript backends compile to fast native/JIT code, the"
+          + " Graal-compiled Truffle interpreter follows, and the bytecode VM is the simple"
           + " baseline.</p>"
           + bars
           + "</section>";

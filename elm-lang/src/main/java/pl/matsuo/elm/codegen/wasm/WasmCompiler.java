@@ -30,6 +30,9 @@ public final class WasmCompiler {
 
   private WasmCompiler() {}
 
+  /** A compiled function: its name, parameter names (all i64) and body. */
+  private record Func(String name, List<String> params, Expr body) {}
+
   /** Compiles one expression into a module exporting {@code main : () -> i64}. */
   public static byte[] module(String expression) {
     return module(List.of(Parser.parseExpression(expression)));
@@ -37,30 +40,65 @@ public final class WasmCompiler {
 
   /** Compiles several expressions into a module exporting {@code f0..fN}, each {@code () -> i64}. */
   public static byte[] module(List<Expr> expressions) {
-    List<byte[]> bodies = new ArrayList<>();
-    for (Expr e : expressions) {
-      bodies.add(new FunctionGen().compile(e));
+    List<Func> funcs = new ArrayList<>();
+    for (int i = 0; i < expressions.size(); i++) {
+      funcs.add(new Func("f" + i, List.of(), expressions.get(i)));
     }
-    return assemble(bodies);
+    return assemble(funcs);
+  }
+
+  /**
+   * Compiles all numeric top-level functions of a module to a wasm module, exporting each by name
+   * (calls and recursion become wasm {@code call}s). This is what lets {@code fib} compile, so the
+   * WASM backend can join the recursive benchmark and differential tests.
+   */
+  public static byte[] moduleFromSource(String source) {
+    List<Func> funcs = new ArrayList<>();
+    for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(source).decls()) {
+      if (d instanceof Decl.Value v) {
+        List<String> params = new ArrayList<>();
+        for (Pattern p : v.params()) {
+          if (p instanceof Pattern.Var pv) {
+            params.add(pv.name());
+          } else {
+            throw unsupported("non-variable parameter pattern");
+          }
+        }
+        funcs.add(new Func(v.name(), params, v.body()));
+      }
+    }
+    return assemble(funcs);
   }
 
   // --- per-function code generation --------------------------------------
 
   private static final class FunctionGen {
     private final Map<String, Integer> locals = new HashMap<>(); // name -> local index
-    private int localCount = 0; // all locals are i64
+    private final Map<String, int[]> funcs; // function name -> {index, arity}
+    private int localCount; // all locals are i64; params occupy 0..numParams-1
+    private final int numParams;
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
+
+    FunctionGen(Map<String, int[]> funcs, List<String> params) {
+      this.funcs = funcs;
+      this.numParams = params.size();
+      for (int i = 0; i < params.size(); i++) {
+        locals.put(params.get(i), i);
+      }
+      this.localCount = params.size();
+    }
 
     /** Compiles an Int-typed expression into a complete code entry (locals + body + end). */
     byte[] compile(Expr e) {
       intExpr(e);
-      // Wrap: locals declaration (localCount i64) + body + end, then prefix size.
+      // Locals declaration covers only the non-parameter locals; params are implicit (0..n-1).
+      int extra = localCount - numParams;
       ByteArrayOutputStream body = new ByteArrayOutputStream();
-      if (localCount == 0) {
+      if (extra == 0) {
         body.write(0x00); // no local groups
       } else {
         body.write(0x01); // one group
-        leb(body, localCount);
+        leb(body, extra);
         body.write(I64);
       }
       byte[] c = code.toByteArray();
@@ -119,11 +157,15 @@ public final class WasmCompiler {
         }
         case Expr.Var v -> {
           Integer idx = locals.get(v.name());
-          if (idx == null) {
+          if (idx != null) {
+            code.write(0x20); // local.get
+            leb(code, idx);
+          } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 0) {
+            code.write(0x10); // call (a zero-arg top-level value)
+            leb(code, funcs.get(v.name())[0]);
+          } else {
             throw unsupported("variable " + v.name());
           }
-          code.write(0x20); // local.get
-          leb(code, idx);
         }
         case Expr.App app -> intApp(app);
         default -> throw unsupported(e.getClass().getSimpleName());
@@ -193,6 +235,21 @@ public final class WasmCompiler {
         code.write(0x81); // i64.rem_s
         return;
       }
+      // A fully-applied call to a known top-level function (incl. recursion).
+      List<Expr> args = new ArrayList<>();
+      Expr head = app;
+      while (head instanceof Expr.App a) {
+        args.add(0, a.arg());
+        head = a.fn();
+      }
+      if (head instanceof Expr.Var v && funcs.containsKey(v.name()) && funcs.get(v.name())[1] == args.size()) {
+        for (Expr arg : args) {
+          intExpr(arg);
+        }
+        code.write(0x10); // call
+        leb(code, funcs.get(v.name())[0]);
+        return;
+      }
       throw unsupported("application");
     }
 
@@ -251,45 +308,70 @@ public final class WasmCompiler {
 
   // --- module assembly ----------------------------------------------------
 
-  private static byte[] assemble(List<byte[]> codeEntries) {
+  private static byte[] assemble(List<Func> funcList) {
+    // Function table: name -> {index, arity}, so calls/recursion resolve to a call index.
+    Map<String, int[]> table = new HashMap<>();
+    for (int i = 0; i < funcList.size(); i++) {
+      table.put(funcList.get(i).name(), new int[] {i, funcList.get(i).params().size()});
+    }
+    // One wasm function type per distinct arity: (i64 x arity) -> i64.
+    List<Integer> arities = new ArrayList<>();
+    Map<Integer, Integer> arityType = new HashMap<>();
+    for (Func f : funcList) {
+      int a = f.params().size();
+      if (!arityType.containsKey(a)) {
+        arityType.put(a, arities.size());
+        arities.add(a);
+      }
+    }
+
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     out.writeBytes(new byte[] {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00}); // magic + version
 
-    // Type section: one type, () -> i64.
+    // Type section: one functype per distinct arity.
     ByteArrayOutputStream types = new ByteArrayOutputStream();
-    leb(types, 1);
-    types.write(0x60);
-    leb(types, 0); // no params
-    leb(types, 1);
-    types.write(I64); // one i64 result
+    leb(types, arities.size());
+    for (int a : arities) {
+      types.write(0x60);
+      leb(types, a);
+      for (int i = 0; i < a; i++) {
+        types.write(I64);
+      }
+      leb(types, 1);
+      types.write(I64);
+    }
     section(out, 1, types);
 
-    // Function section: each function uses type 0.
+    // Function section: each function's type index (by its arity).
     ByteArrayOutputStream funcs = new ByteArrayOutputStream();
-    leb(funcs, codeEntries.size());
-    for (int i = 0; i < codeEntries.size(); i++) {
-      leb(funcs, 0);
+    leb(funcs, funcList.size());
+    for (Func f : funcList) {
+      leb(funcs, arityType.get(f.params().size()));
     }
     section(out, 3, funcs);
 
-    // Export section: export each function as f0..fN (and f0 also as "main").
+    // Export section: each function by its name, plus f0..fN by position and "main".
     ByteArrayOutputStream exports = new ByteArrayOutputStream();
-    leb(exports, codeEntries.size() + 1);
-    name(exports, "main");
-    exports.write(0x00);
-    leb(exports, 0);
-    for (int i = 0; i < codeEntries.size(); i++) {
-      name(exports, "f" + i);
-      exports.write(0x00); // func export
-      leb(exports, i);
+    java.util.LinkedHashMap<String, Integer> exportNames = new java.util.LinkedHashMap<>();
+    for (int i = 0; i < funcList.size(); i++) {
+      exportNames.putIfAbsent(funcList.get(i).name(), i);
+      exportNames.putIfAbsent("f" + i, i);
     }
+    exportNames.putIfAbsent("main", table.containsKey("main") ? table.get("main")[0] : 0);
+    leb(exports, exportNames.size());
+    exportNames.forEach(
+        (name, idx) -> {
+          name(exports, name);
+          exports.write(0x00); // func export
+          leb(exports, idx);
+        });
     section(out, 7, exports);
 
     // Code section.
     ByteArrayOutputStream code = new ByteArrayOutputStream();
-    leb(code, codeEntries.size());
-    for (byte[] entry : codeEntries) {
-      code.writeBytes(entry);
+    leb(code, funcList.size());
+    for (Func f : funcList) {
+      code.writeBytes(new FunctionGen(table, f.params()).compile(f.body()));
     }
     section(out, 10, code);
     return out.toByteArray();

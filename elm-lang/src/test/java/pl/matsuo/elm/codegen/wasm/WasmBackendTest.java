@@ -102,6 +102,53 @@ class WasmBackendTest {
     same("1000000 * 1000000");
   }
 
+  /** Compiles a module and calls an exported function with i64 args, returning its result. */
+  private long runFunc(String source, String fn, long... args) throws Exception {
+    Path wasm = Files.createTempFile("elm-", ".wasm");
+    Files.write(wasm, WasmCompiler.moduleFromSource(source));
+    StringBuilder call = new StringBuilder("ex." + fn + "(");
+    for (int i = 0; i < args.length; i++) {
+      call.append(i > 0 ? "," : "").append(args[i]).append("n");
+    }
+    call.append(")");
+    Path js = Files.createTempFile("elm-runwasm-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs');"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "const ex=r.instance.exports;process.stdout.write(("
+            + call
+            + ").toString());}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p =
+        new ProcessBuilder("node", js.toString(), wasm.toString()).redirectErrorStream(false).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    p.waitFor(30, TimeUnit.SECONDS);
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    return Long.parseLong(out.trim());
+  }
+
+  @Test
+  void recursiveAndMutuallyRecursiveFunctions() throws Exception {
+    assumeTrue(NODE, "Node not installed");
+    String src =
+        """
+        fib n = if n < 2 then n else fib (n - 1) + fib (n - 2)
+        sumTo n acc = if n == 0 then acc else sumTo (n - 1) (acc + n)
+        isEven n = if n == 0 then 1 else isOdd (n - 1)
+        isOdd n = if n == 0 then 0 else isEven (n - 1)
+        """;
+    assertEquals(832040L, runFunc(src, "fib", 30)); // recursion, matches the interpreter
+    assertEquals(5050L, runFunc(src, "sumTo", 100, 0)); // two i64 params
+    assertEquals(1L, runFunc(src, "isEven", 10)); // mutual recursion
+    assertEquals(0L, runFunc(src, "isOdd", 10));
+  }
+
   private static boolean nodeAvailable() {
     try {
       Process p = new ProcessBuilder("node", "--version").start();

@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
 import pl.matsuo.elm.codegen.js.JsCompiler;
+import pl.matsuo.elm.codegen.wasm.WasmCompiler;
 import pl.matsuo.elm.interp.Apply;
 import pl.matsuo.elm.interp.Interpreter;
 
@@ -40,6 +41,7 @@ public final class Benchmark {
     double[] interp = time(() -> Apply.apply(interpFib, fibN), warmup, measured);
     double[] bytecode = time(() -> Apply.apply(bcFib, fibN), warmup, measured);
     double[] js = timeJs(fibN, warmup, measured); // null if Node is unavailable
+    double[] wasm = timeWasm(fibN, warmup, measured);
 
     StringBuilder sb = new StringBuilder();
     sb.append("Benchmark: fib(").append(fibN).append(") = ").append(interpResult)
@@ -49,6 +51,9 @@ public final class Benchmark {
     report(sb, "Bytecode VM", bytecode);
     if (js != null) {
       report(sb, "JavaScript (Node)", js);
+    }
+    if (wasm != null) {
+      report(sb, "WebAssembly (Node)", wasm);
     }
     sb.append(String.format(
         "%nWarm: Truffle interpreter is %.2fx the bytecode VM "
@@ -68,7 +73,47 @@ public final class Benchmark {
     if (js != null) {
       out.put("JavaScript (Node)", js[1]);
     }
+    double[] wasm = timeWasm(fibN, warmup, measured);
+    if (wasm != null) {
+      out.put("WebAssembly (Node)", wasm[1]);
+    }
     return out;
+  }
+
+  /** Warm timing of the WASM backend (compiled fib, run under Node), or null if unavailable. */
+  public static double[] timeWasm(long fibN, int warmup, int measured) {
+    try {
+      Path wasm = Files.createTempFile("elm-bench-", ".wasm");
+      Files.write(wasm, WasmCompiler.moduleFromSource(SOURCE));
+      Path js = Files.createTempFile("elm-bench-", ".js");
+      Files.writeString(
+          js,
+          "const fs=require('fs');"
+              + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+              + "const fib=r.instance.exports.fib,N=" + fibN + "n;"
+              + "let t=process.hrtime.bigint();fib(N);let cold=Number(process.hrtime.bigint()-t)/1e6;"
+              + "for(let i=1;i<" + warmup + ";i++)fib(N);"
+              + "let best=Infinity;for(let j=0;j<" + measured + ";j++){let s=process.hrtime.bigint();fib(N);"
+              + "let ms=Number(process.hrtime.bigint()-s)/1e6;if(ms<best)best=ms;}"
+              + "process.stdout.write(cold+' '+best);}).catch(e=>{process.exit(1);});",
+          StandardCharsets.UTF_8);
+      Process p =
+          new ProcessBuilder("node", js.toString(), wasm.toString()).redirectErrorStream(false).start();
+      String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+      if (!p.waitFor(120, TimeUnit.SECONDS)) {
+        p.destroyForcibly();
+        return null;
+      }
+      Files.deleteIfExists(wasm);
+      Files.deleteIfExists(js);
+      if (p.exitValue() != 0 || out.isEmpty()) {
+        return null;
+      }
+      String[] parts = out.split("\\s+");
+      return new double[] {Double.parseDouble(parts[0]), Double.parseDouble(parts[1])};
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   /** Warm timing of the JS backend (run under Node), or null if Node is not installed. */
