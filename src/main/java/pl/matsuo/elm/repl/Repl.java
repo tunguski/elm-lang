@@ -4,13 +4,19 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Reader;
+import java.util.ArrayList;
+import java.util.List;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
+import pl.matsuo.elm.types.TypeChecker;
 
 /**
- * A small read-eval-print loop: each line is evaluated as an Elm expression by the Truffle
- * interpreter and its value printed. Errors are reported without ending the session. {@code :quit}
- * (or end-of-input) exits.
+ * A read-eval-print loop for Elm. Each entry is either a <b>definition</b> ({@code name = expr} or
+ * {@code name args = expr}) — which is remembered and visible to later entries — or an
+ * <b>expression</b>, which is evaluated and printed. Multi-line input is supported: the loop keeps
+ * reading (showing a {@code |} continuation prompt) until brackets are balanced and the entry
+ * doesn't end on a continuation token. Commands: {@code :type <expr>} (alias {@code :t}) shows the
+ * inferred type, {@code :reset} forgets all definitions, {@code :help}, {@code :quit}/{@code :q}.
  */
 public final class Repl {
 
@@ -19,25 +25,148 @@ public final class Repl {
   /** Runs the loop against the given reader/writer (so it is testable without real stdin). */
   public static void loop(Reader in, PrintStream out) throws IOException {
     BufferedReader reader = in instanceof BufferedReader b ? b : new BufferedReader(in);
-    out.println("elm-lang REPL — type an expression, or :quit to exit");
-    String line;
+    List<String> defs = new ArrayList<>(); // accumulated `name … = …` definitions
+    out.println("elm-lang REPL — expressions, definitions (x = …), :type, :reset, :help, :quit");
     out.print("> ");
     out.flush();
+    StringBuilder buffer = new StringBuilder();
+    String line;
     while ((line = reader.readLine()) != null) {
-      String src = line.trim();
-      if (src.equals(":quit") || src.equals(":q")) {
-        break;
+      if (buffer.length() > 0) {
+        buffer.append("\n");
       }
-      if (!src.isEmpty()) {
-        try {
-          out.println(Show.plain(Interpreter.eval(src)));
-        } catch (RuntimeException e) {
-          out.println("Error: " + e.getMessage());
-        }
+      buffer.append(line);
+      String entry = buffer.toString();
+      if (!complete(entry)) {
+        out.print("| ");
+        out.flush();
+        continue;
+      }
+      buffer.setLength(0);
+      String trimmed = entry.trim();
+      if (trimmed.equals(":quit") || trimmed.equals(":q")) {
+        break;
+      } else if (trimmed.isEmpty()) {
+        // nothing
+      } else if (trimmed.equals(":help")) {
+        out.println("expressions are evaluated; `x = …` defines a binding; :type <expr>, :reset, :quit");
+      } else if (trimmed.equals(":reset")) {
+        defs.clear();
+        out.println("(forgot all definitions)");
+      } else if (trimmed.startsWith(":type ") || trimmed.startsWith(":t ")) {
+        String expr = trimmed.substring(trimmed.indexOf(' ') + 1);
+        out.println(typeOf(defs, expr));
+      } else if (isDefinition(trimmed)) {
+        defs.add(trimmed);
+        out.println(definedName(trimmed) + " : " + typeOfName(defs, definedName(trimmed)));
+      } else {
+        out.println(evalExpr(defs, trimmed));
       }
       out.print("> ");
       out.flush();
     }
     out.println();
+  }
+
+  /** Evaluates {@code expr} against the accumulated definitions, returning the shown value or error. */
+  private static String evalExpr(List<String> defs, String expr) {
+    try {
+      Object v = Interpreter.load(moduleWith(defs, "replResult = " + expr)).value("replResult");
+      return Show.plain(v);
+    } catch (RuntimeException e) {
+      return "Error: " + e.getMessage();
+    }
+  }
+
+  /** The inferred type of {@code expr} (with the accumulated definitions in scope). */
+  private static String typeOf(List<String> defs, String expr) {
+    try {
+      var types = TypeChecker.checkModule(moduleWith(defs, "replResult = " + expr));
+      return expr + " : " + types.getOrDefault("replResult", "?");
+    } catch (RuntimeException e) {
+      return "Type error: " + e.getMessage();
+    }
+  }
+
+  private static String typeOfName(List<String> defs, String name) {
+    try {
+      var types = TypeChecker.checkModule(moduleWith(defs, ""));
+      return types.getOrDefault(name, "?");
+    } catch (RuntimeException e) {
+      return "?";
+    }
+  }
+
+  private static String moduleWith(List<String> defs, String extra) {
+    StringBuilder sb = new StringBuilder();
+    for (String d : defs) {
+      sb.append(d).append("\n\n");
+    }
+    sb.append(extra).append("\n");
+    return sb.toString();
+  }
+
+  private static long count(java.util.List<String> tokens, String word) {
+    return tokens.stream().filter(word::equals).count();
+  }
+
+  /** A definition is a lowercase name with optional parameters, then a single `=` (not `==`). */
+  static boolean isDefinition(String entry) {
+    return entry.matches("(?s)[a-z][A-Za-z0-9_]*(\\s+[a-zA-Z0-9_]+)*\\s*=([^=].*|)");
+  }
+
+  private static String definedName(String entry) {
+    int i = 0;
+    while (i < entry.length() && (Character.isLetterOrDigit(entry.charAt(i)) || entry.charAt(i) == '_')) {
+      i++;
+    }
+    return entry.substring(0, i);
+  }
+
+  /** Whether a (possibly multi-line) entry is syntactically complete enough to evaluate. */
+  static boolean complete(String entry) {
+    int depth = 0;
+    boolean inString = false;
+    for (int i = 0; i < entry.length(); i++) {
+      char c = entry.charAt(i);
+      if (inString) {
+        if (c == '\\') {
+          i++;
+        } else if (c == '"') {
+          inString = false;
+        }
+      } else if (c == '"') {
+        inString = true;
+      } else if (c == '(' || c == '[' || c == '{') {
+        depth++;
+      } else if (c == ')' || c == ']' || c == '}') {
+        depth--;
+      }
+    }
+    if (depth > 0 || inString) {
+      return false;
+    }
+    String t = entry.stripTrailing();
+    if (t.isEmpty()) {
+      return true;
+    }
+    // An `if` awaits its `else`, and a `let` awaits its `in` — count whole-word keywords.
+    java.util.List<String> tokens = List.of(t.split("[^A-Za-z]+"));
+    if (count(tokens, "if") > count(tokens, "else") || count(tokens, "let") > count(tokens, "in")) {
+      return false;
+    }
+    // A trailing keyword (as a whole word) continues onto the next line.
+    String[] words = t.split("\\s+");
+    String lastWord = words[words.length - 1];
+    if (List.of("let", "if", "then", "else", "of", "in").contains(lastWord)) {
+      return false;
+    }
+    // A trailing operator (other than a completed comparison) continues too.
+    for (String op : new String[] {"=", "->", "\\", ",", "(", "[", "{", "+", "-", "*", "/", "++", "::", "|>", "<|", "&&", "||"}) {
+      if (t.endsWith(op) && !t.endsWith("==") && !t.endsWith(">=") && !t.endsWith("<=") && !t.endsWith("/=")) {
+        return false;
+      }
+    }
+    return true;
   }
 }

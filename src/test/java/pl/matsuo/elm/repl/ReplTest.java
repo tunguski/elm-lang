@@ -29,4 +29,38 @@ class ReplTest {
     assertTrue(out.contains("Error:"), out); // unbound name reported
     assertTrue(out.contains("42"), out); // session continued after the error
   }
+
+  @Test
+  void definitionsPersistAcrossEntries() throws Exception {
+    String out = session("double n = n * 2\nx = 21\ndouble x\n:quit\n");
+    assertTrue(out.contains("42"), out); // both `double` and `x` were remembered
+  }
+
+  @Test
+  void typeCommandShowsInferredType() throws Exception {
+    String out = session(":type List.map\n:type 1 + 2\n:quit\n");
+    assertTrue(out.contains("(a -> b) -> List a -> List b"), out);
+    assertTrue(out.contains(": number"), out);
+  }
+
+  @Test
+  void multiLineInputIsAccumulatedUntilComplete() throws Exception {
+    String out = session("if 1 < 2 then\n  100\nelse\n  200\n:quit\n");
+    assertTrue(out.contains("100"), out);
+  }
+
+  @Test
+  void resetForgetsDefinitions() throws Exception {
+    String out = session("y = 5\n:reset\ny\n:quit\n");
+    assertTrue(out.contains("Error:"), out); // `y` is unknown again after :reset
+  }
+
+  @Test
+  void completeDetectsBalanceAndContinuations() {
+    assertTrue(Repl.complete("1 + 2"));
+    assertTrue(Repl.complete("begin")); // ends in "in" but isn't the keyword
+    org.junit.jupiter.api.Assertions.assertFalse(Repl.complete("(1 +"));
+    org.junit.jupiter.api.Assertions.assertFalse(Repl.complete("if x then"));
+    org.junit.jupiter.api.Assertions.assertFalse(Repl.complete("x ="));
+  }
 }
