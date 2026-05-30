@@ -270,6 +270,23 @@ public final class JsCompiler {
   }
 
   /**
+   * A Node program that benchmarks a compiled single-argument function {@code fn} applied to {@code
+   * n}: it prints "{@code <coldMs> <bestWarmMs>}" measured with {@code process.hrtime}. Used by the
+   * cross-backend benchmark to time the JS backend on the same workload as the interpreter.
+   */
+  public static String benchProgram(String source, String fn, long n, int warmup, int measured) {
+    JsCompiler c = new JsCompiler(Parser.parseModule(source));
+    return JsRuntime.SOURCE
+        + "\n"
+        + c.declarations()
+        + "\nvar $f=_$" + fn + ";"
+        + "\nvar $t=process.hrtime.bigint();$f(" + n + ");var $cold=Number(process.hrtime.bigint()-$t)/1e6;"
+        + "\nfor(var i=1;i<" + warmup + ";i++)$f(" + n + ");"
+        + "\nvar $best=Infinity;for(var j=0;j<" + measured + ";j++){var $s=process.hrtime.bigint();$f(" + n + ");var $ms=Number(process.hrtime.bigint()-$s)/1e6;if($ms<$best)$best=$ms;}"
+        + "\nprocess.stdout.write($cold+' '+$best);\n";
+  }
+
+  /**
    * Browser-ready script: the kernel plus a global {@code $evalAll()} returning the {@code $show}
    * form of each expression. Used by the gallery's JS-vs-WASM page to evaluate snippets client-side.
    */

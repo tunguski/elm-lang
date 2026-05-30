@@ -18,5 +18,19 @@ class BenchmarkTest {
     assertTrue(report.contains("fib(30) = 832040"), report);
     assertTrue(report.contains("Truffle interpreter"), report);
     assertTrue(report.contains("Bytecode VM"), report);
+    // The JS backend is timed too when Node is available (it is on CI).
+    assertTrue(
+        report.contains("JavaScript (Node)") || !nodeAvailable(),
+        "JS row should appear when Node is installed:\n" + report);
+  }
+
+  private static boolean nodeAvailable() {
+    try {
+      Process p = new ProcessBuilder("node", "--version").start();
+      p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+      return p.exitValue() == 0;
+    } catch (Exception e) {
+      return false;
+    }
   }
 }

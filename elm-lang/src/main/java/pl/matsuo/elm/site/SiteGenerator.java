@@ -293,6 +293,7 @@ public final class SiteGenerator {
     }
     String wasmB64 = Base64.getEncoder().encodeToString(WasmCompiler.module(parsed));
     String jsEval = JsCompiler.expressionsEvalScript(BACKEND_SNIPPETS);
+    String perf = perfChart();
 
     String page =
         """
@@ -321,6 +322,7 @@ public final class SiteGenerator {
         %ROWS%
             </tbody>
           </table>
+          %PERF%
         </main>
         <script>%JSEVAL%</script>
         <script>
@@ -345,9 +347,36 @@ public final class SiteGenerator {
         """
             .replace("%STYLE%", BACKENDS_STYLE)
             .replace("%ROWS%", rows.toString())
+            .replace("%PERF%", perf)
             .replace("%JSEVAL%", jsEval)
             .replace("%WASM%", wasmB64);
     Files.writeString(outDir.resolve("backends.html"), page, StandardCharsets.UTF_8);
+  }
+
+  /** A small bar chart of warm fib timings per backend (best-effort; empty if it can't run). */
+  private static String perfChart() {
+    try {
+      var warm = pl.matsuo.elm.bench.Benchmark.warm(24, 6, 12);
+      double max = warm.values().stream().mapToDouble(Double::doubleValue).max().orElse(1);
+      StringBuilder bars = new StringBuilder();
+      warm.forEach(
+          (name, ms) ->
+              bars.append("<div class=\"bar\"><span class=\"lbl\">")
+                  .append(escape(name))
+                  .append("</span><span class=\"track\"><span class=\"fill\" style=\"width:")
+                  .append(String.format(java.util.Locale.US, "%.1f", Math.max(2, ms / max * 100)))
+                  .append("%\"></span></span><span class=\"num\">")
+                  .append(String.format(java.util.Locale.US, "%.2f ms", ms))
+                  .append("</span></div>\n"));
+      return "<section class=\"perf\"><h2>Performance — fib(24), best warm run</h2>"
+          + "<p>The same recursive workload timed on each backend (lower is faster). The JS engine's"
+          + " JIT and the Graal-compiled Truffle interpreter dominate; the bytecode VM is the simple"
+          + " baseline.</p>"
+          + bars
+          + "</section>";
+    } catch (Throwable t) {
+      return ""; // benchmarking is best-effort; never break site generation
+    }
   }
 
   private static final String BACKENDS_STYLE =
@@ -368,6 +397,12 @@ public final class SiteGenerator {
       .exp{color:#667}
       .ok.good{color:#246b1e;font-weight:700}
       .ok.bad{color:#9a1e1e;font-weight:700}
+      .perf{margin-top:32px}
+      .bar{display:flex;align-items:center;gap:10px;margin:6px 0}
+      .bar .lbl{width:170px;font-size:.85rem}
+      .bar .track{flex:1;background:#eef1f3;border-radius:5px;height:16px;overflow:hidden}
+      .bar .fill{display:block;height:100%;background:var(--accent)}
+      .bar .num{width:90px;text-align:right;font-size:.85rem;color:#667;font-variant-numeric:tabular-nums}
       </style>
       """;
 

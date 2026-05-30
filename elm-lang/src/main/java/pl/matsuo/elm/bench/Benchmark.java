@@ -1,7 +1,12 @@
 package pl.matsuo.elm.bench;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
+import pl.matsuo.elm.codegen.js.JsCompiler;
 import pl.matsuo.elm.interp.Apply;
 import pl.matsuo.elm.interp.Interpreter;
 
@@ -34,6 +39,7 @@ public final class Benchmark {
 
     double[] interp = time(() -> Apply.apply(interpFib, fibN), warmup, measured);
     double[] bytecode = time(() -> Apply.apply(bcFib, fibN), warmup, measured);
+    double[] js = timeJs(fibN, warmup, measured); // null if Node is unavailable
 
     StringBuilder sb = new StringBuilder();
     sb.append("Benchmark: fib(").append(fibN).append(") = ").append(interpResult)
@@ -41,11 +47,51 @@ public final class Benchmark {
     sb.append(String.format("%-22s %12s %12s%n", "backend", "cold ms", "warm ms (best)"));
     report(sb, "Truffle interpreter", interp);
     report(sb, "Bytecode VM", bytecode);
+    if (js != null) {
+      report(sb, "JavaScript (Node)", js);
+    }
     sb.append(String.format(
         "%nWarm: Truffle interpreter is %.2fx the bytecode VM "
             + "(its hot CallTargets are Graal-compiled on GraalVM).%n",
         bytecode[1] / interp[1]));
     return sb.toString();
+  }
+
+  /** Best warm time (ms) per backend, for charting. JS is included only if Node is available. */
+  public static java.util.LinkedHashMap<String, Double> warm(long fibN, int warmup, int measured) {
+    Object interpFib = Interpreter.load(SOURCE).value("fib");
+    Object bcFib = BytecodeInterpreter.load(SOURCE).value("fib");
+    java.util.LinkedHashMap<String, Double> out = new java.util.LinkedHashMap<>();
+    out.put("Truffle interpreter", time(() -> Apply.apply(interpFib, fibN), warmup, measured)[1]);
+    out.put("Bytecode VM", time(() -> Apply.apply(bcFib, fibN), warmup, measured)[1]);
+    double[] js = timeJs(fibN, warmup, measured);
+    if (js != null) {
+      out.put("JavaScript (Node)", js[1]);
+    }
+    return out;
+  }
+
+  /** Warm timing of the JS backend (run under Node), or null if Node is not installed. */
+  public static double[] timeJs(long fibN, int warmup, int measured) {
+    try {
+      Path file = Files.createTempFile("elm-bench-", ".js");
+      Files.writeString(
+          file, JsCompiler.benchProgram(SOURCE, "fib", fibN, warmup, measured), StandardCharsets.UTF_8);
+      Process p = new ProcessBuilder("node", file.toString()).redirectErrorStream(false).start();
+      String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+      if (!p.waitFor(120, TimeUnit.SECONDS)) {
+        p.destroyForcibly();
+        return null;
+      }
+      Files.deleteIfExists(file);
+      if (p.exitValue() != 0 || out.isEmpty()) {
+        return null;
+      }
+      String[] parts = out.split("\\s+");
+      return new double[] {Double.parseDouble(parts[0]), Double.parseDouble(parts[1])};
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   private static void report(StringBuilder sb, String name, double[] r) {
