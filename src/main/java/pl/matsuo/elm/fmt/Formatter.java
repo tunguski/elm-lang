@@ -1,11 +1,13 @@
 package pl.matsuo.elm.fmt;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Type;
+import pl.matsuo.elm.lexer.Lexer;
 import pl.matsuo.elm.parser.Parser;
 
 /**
@@ -13,7 +15,13 @@ import pl.matsuo.elm.parser.Parser;
  * layout — a {@code module … exposing (…)} header, alphabetically sorted imports, two blank lines
  * between top-level declarations, type annotations on their own line, and 4-space indentation
  * (expression bodies via {@link Pretty}). It approximates elm-format's rules and is idempotent and
- * semantics-preserving; it does not preserve comments (which the parser discards).
+ * semantics-preserving.
+ *
+ * <p>Comments are preserved at the top level: a comment is emitted (verbatim) before the first
+ * thing it precedes — above the module header, as the module doc comment after the header, or
+ * attached to the declaration that follows it (and any trailing comments at the end). Comments that
+ * sit <em>inside</em> a declaration's body or on the same line as code (trailing) are not preserved
+ * in place — the parser has no node to anchor them to.
  */
 public final class Formatter {
 
@@ -22,10 +30,30 @@ public final class Formatter {
   /** Formats Elm module source. */
   public static String format(String source) {
     Module m = Parser.parseModule(source);
+    List<Lexer.Comment> comments = new ArrayList<>(Lexer.comments(source));
+    comments.sort(Comparator.comparingInt(Lexer.Comment::line));
+    int[] idx = {0};
+
     StringBuilder sb = new StringBuilder();
+
+    // Comments above the module header (e.g. a license banner) stay at the very top.
+    for (Lexer.Comment c : take(comments, idx, m.pos().line())) {
+      sb.append(c.text()).append("\n");
+    }
 
     sb.append("module ").append(m.name()).append(" exposing (").append(exposing(m.exposing()))
         .append(")\n");
+
+    int firstBodyLine = firstBodyLine(m);
+
+    // The module doc comment (and anything between the header and the first import/declaration).
+    List<Lexer.Comment> header = take(comments, idx, firstBodyLine);
+    for (Lexer.Comment c : header) {
+      sb.append("\n").append(c.text());
+    }
+    if (!header.isEmpty()) {
+      sb.append("\n");
+    }
 
     List<Module.Import> imports = new ArrayList<>(m.imports());
     imports.sort((a, b) -> a.module().compareTo(b.module()));
@@ -42,9 +70,45 @@ public final class Formatter {
     }
 
     for (Decl d : m.decls()) {
-      sb.append("\n\n").append(declaration(d)).append("\n");
+      sb.append("\n\n");
+      // Comments preceding this declaration (a doc comment, or a section header).
+      for (Lexer.Comment c : take(comments, idx, d.pos().line())) {
+        sb.append(c.text()).append("\n");
+      }
+      sb.append(declaration(d)).append("\n");
+    }
+
+    // Any comments after the last declaration.
+    List<Lexer.Comment> trailing = take(comments, idx, Integer.MAX_VALUE);
+    if (!trailing.isEmpty()) {
+      sb.append("\n");
+      for (Lexer.Comment c : trailing) {
+        sb.append(c.text()).append("\n");
+      }
     }
     return sb.toString();
+  }
+
+  /** Consumes and returns the leading comments whose line is before {@code beforeLine}. */
+  private static List<Lexer.Comment> take(List<Lexer.Comment> comments, int[] idx, int beforeLine) {
+    List<Lexer.Comment> out = new ArrayList<>();
+    while (idx[0] < comments.size() && comments.get(idx[0]).line() < beforeLine) {
+      out.add(comments.get(idx[0]));
+      idx[0]++;
+    }
+    return out;
+  }
+
+  /** The source line of the first import or declaration (the end of the header region). */
+  private static int firstBodyLine(Module m) {
+    int min = Integer.MAX_VALUE;
+    for (Module.Import imp : m.imports()) {
+      min = Math.min(min, imp.pos().line());
+    }
+    for (Decl d : m.decls()) {
+      min = Math.min(min, d.pos().line());
+    }
+    return min;
   }
 
   /** All {@code .elm} files of a project (elm.json's source-directories), for {@code format --project}. */

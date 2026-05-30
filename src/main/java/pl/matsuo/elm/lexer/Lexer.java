@@ -51,6 +51,10 @@ public final class Lexer {
   private int col = 1;
   private boolean spaceBefore = false;
   private final List<Token> out = new ArrayList<>();
+  private final List<Comment> commentsOut = new ArrayList<>();
+
+  /** A source comment, captured verbatim (including its delimiters) for the formatter. */
+  public record Comment(String text, int line, int col, boolean block) {}
 
   private Lexer(String src) {
     this.src = src;
@@ -59,6 +63,13 @@ public final class Lexer {
   /** Tokenizes the whole source, ending with an {@code EOF} token. */
   public static List<Token> tokenize(String source) {
     return new Lexer(source).run();
+  }
+
+  /** Lexes the source and returns its comments (in source order) — used by the formatter. */
+  public static List<Comment> comments(String source) {
+    Lexer lexer = new Lexer(source);
+    lexer.run();
+    return lexer.commentsOut;
   }
 
   private List<Token> run() {
@@ -118,12 +129,18 @@ public final class Lexer {
         spaceBefore = true;
       } else if (c == '-' && peek(1) == '-') {
         // Line comment to end of line (newline left for the next iteration).
+        Position start = here();
+        int from = pos;
         while (!atEnd() && cur() != '\n') {
           advance();
         }
+        commentsOut.add(new Comment(src.substring(from, pos), start.line(), start.col(), false));
         spaceBefore = true;
       } else if (c == '{' && peek(1) == '-') {
+        Position start = here();
+        int from = pos;
         skipBlockComment();
+        commentsOut.add(new Comment(src.substring(from, pos), start.line(), start.col(), true));
         spaceBefore = true;
       } else {
         break;
