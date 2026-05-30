@@ -176,6 +176,7 @@ var $rt = {
   'Char.isUpper': function(c){ var s=String.fromCodePoint(c.c); return s!==s.toLowerCase() && s===s.toUpperCase(); },
   'Char.isLower': function(c){ var s=String.fromCodePoint(c.c); return s!==s.toUpperCase() && s===s.toLowerCase(); },
   'Char.isAlpha': function(c){ return /\p{L}/u.test(String.fromCodePoint(c.c)); },
+  'Char.isAlphaNum': function(c){ return /[\p{L}\p{N}]/u.test(String.fromCodePoint(c.c)); },
   'Maybe.withDefault': function(d){ return function(m){ return m.$==='Just'?m._[0]:d; }; },
   'Maybe.map': function(f){ return function(m){ return m.$==='Just'?$data('Just',[f(m._[0])]):m; }; },
   'Maybe.andThen': function(f){ return function(m){ return m.$==='Just'?f(m._[0]):m; }; },

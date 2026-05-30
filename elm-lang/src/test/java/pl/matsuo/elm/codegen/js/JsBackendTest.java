@@ -167,4 +167,30 @@ class JsBackendTest {
         main = describe [1, 2, 3]
         """);
   }
+
+  /** Runs the Elm-in-Elm editor's `eval` under Node, to catch interpreter/JS-kernel divergence. */
+  private String editorEval(String input) {
+    String editor = pl.matsuo.elm.util.Resources.read("/elm/demos/editor.elm");
+    // declarationsScript = kernel + compiled top-levels (no DOM/mount), so we can call _$eval.
+    String escaped = input.replace("\\", "\\\\").replace("\"", "\\\"");
+    // The DOM kernel attaches to `window`; under Node we alias it to the global object. `main =
+    // Browser.sandbox …` then builds an inert program value at load (it is never mounted here).
+    String program =
+        "globalThis.window = globalThis;\n"
+            + JsCompiler.declarationsScriptWithDom(editor)
+            + "\nprocess.stdout.write(_$eval(\""
+            + escaped
+            + "\"));\n";
+    return runNode(program);
+  }
+
+  @Test
+  void editorInterpreterRunsUnderNode() {
+    // The editor uses Char.isAlphaNum (identifier lexing) — a builtin that must exist in the JS
+    // kernel too, not only the interpreter. These would throw "Unbound" if the kernel lacked it.
+    assertEquals("6", editorEval("2 + 3 * (4 - 1) // 2"));
+    assertEquals("5", editorEval("let abc1 = 5 in abc1")); // identifier with a digit -> isAlphaNum
+    assertEquals("42", editorEval("(\\x y -> x * y) 6 7"));
+    assertEquals("True", editorEval("1 < 2 && 2 < 3"));
+  }
 }

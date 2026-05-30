@@ -155,6 +155,16 @@ public final class JsCompiler {
     return JsRuntime.SOURCE + "\n" + c.declarations();
   }
 
+  /**
+   * Kernel + DOM/TEA runtime + the module's declarations, with no entry point. Use this (rather than
+   * {@link #declarationsScript}) for a module whose top-level values reference the browser runtime
+   * (e.g. {@code main = Browser.sandbox …}); without the DOM kernel those eager initialisers throw.
+   */
+  public static String declarationsScriptWithDom(String source) {
+    JsCompiler c = new JsCompiler(Parser.parseModule(source));
+    return JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + c.declarations();
+  }
+
   /** A browser app bundle: kernel + DOM/TEA runtime + module + a mount call. */
   public static String appBundle(String source) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
