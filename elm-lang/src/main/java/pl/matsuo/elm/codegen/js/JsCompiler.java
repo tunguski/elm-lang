@@ -228,6 +228,23 @@ public final class JsCompiler {
     return scope;
   }
 
+  /**
+   * Conservative whitespace minification: drops blank lines, standalone {@code //} comment lines and
+   * per-line indentation. It never touches a line that contains code (so string contents such as
+   * {@code https://...} and trailing comments are preserved), trading maximal compression for safety.
+   */
+  public static String minify(String js) {
+    StringBuilder sb = new StringBuilder(js.length());
+    for (String line : js.split("\n", -1)) {
+      String t = line.trim();
+      if (t.isEmpty() || t.startsWith("//")) {
+        continue;
+      }
+      sb.append(t).append('\n');
+    }
+    return sb.toString();
+  }
+
   /** A full HTML page hosting {@link #appBundle}; {@code driver} (may be null) runs after mount. */
   public static String htmlPage(String source, String driver) {
     return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"

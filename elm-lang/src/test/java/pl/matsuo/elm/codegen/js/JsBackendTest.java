@@ -106,6 +106,15 @@ class JsBackendTest {
   }
 
   @Test
+  void minifiedProgramIsSmallerAndStillRuns() {
+    String full = JsCompiler.moduleProgram("main = List.sum (List.range 1 10)\n");
+    String min = JsCompiler.minify(full);
+    org.junit.jupiter.api.Assertions.assertTrue(min.length() < full.length(), "minified is smaller");
+    assertEquals("55", runNode(min)); // still evaluates correctly
+    assertEquals(runNode(full), runNode(min)); // identical result to the unminified program
+  }
+
+  @Test
   void factorialModule() {
     sameModule(
         """
