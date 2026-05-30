@@ -5,6 +5,8 @@ module Posix exposing
     , readFile
     , writeFile
     , getArgs
+    , getEnv
+    , listDir
     , exit
     , done
     )
@@ -31,6 +33,8 @@ type Io
     | ReadFile String (Result String String -> Io)
     | WriteFile String String Io
     | GetArgs (List String -> Io)
+    | GetEnv String (Maybe String -> Io)
+    | ListDir String (Result String (List String) -> Io)
     | Exit Int
     | Done
 
@@ -63,6 +67,18 @@ writeFile =
 getArgs : (List String -> Io) -> Io
 getArgs =
     GetArgs
+
+
+{-| Read an environment variable; the continuation gets `Just value` or `Nothing`. -}
+getEnv : String -> (Maybe String -> Io) -> Io
+getEnv =
+    GetEnv
+
+
+{-| List a directory's entries (names only); the continuation gets `Ok names` or `Err message`. -}
+listDir : String -> (Result String (List String) -> Io) -> Io
+listDir =
+    ListDir
 
 
 {-| Exit immediately with the given status code. -}

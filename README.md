@@ -123,8 +123,9 @@ Prelude: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`,
 `elm script <file.elm> [args…]` runs an Elm file as a command-line script on the JIT interpreter,
 inspired by [elm-posix](https://github.com/albertdahlin/elm-posix). The bundled
 [`Posix`](src/main/resources/elm/lib/Posix.elm) module gives a script's `main : Posix.Io`
-a description of effects — `print`, `readLine`, `readFile`, `writeFile`, `getArgs`, `exit`, `done` —
-which the runner walks, performing the real I/O and returning the process exit code. Effects that
+a description of effects — `print`, `readLine`, `readFile`, `writeFile`, `getArgs`, `getEnv`,
+`listDir`, `exit`, `done` — which the runner walks, performing the real I/O and returning the
+process exit code. Effects that
 produce a value take a continuation, so scripts are written in continuation-passing style. The
 [`wordcount.elm`](src/main/resources/elm/demos/wordcount.elm) example is a `wc`-style
 line/word/char counter:

@@ -94,4 +94,43 @@ class ScriptRunnerTest {
     assertEquals(3, r.code());
     assertEquals("one,two,three", r.out().strip());
   }
+
+  @Test
+  void getEnvReadsEnvironmentVariables() {
+    // A variable that effectively never exists -> the Nothing branch.
+    String src =
+        """
+        module Main exposing (main)
+        import Posix exposing (..)
+        main : Io
+        main =
+            getEnv "DEFINITELY_NOT_SET_XYZ_123" (\\v ->
+                case v of
+                    Just s -> print ("got: " ++ s) done
+                    Nothing -> print "unset" done)
+        """;
+    assertEquals("unset", runScript(src, List.of(), "").out().strip());
+  }
+
+  @Test
+  void listDirListsDirectoryEntries() throws Exception {
+    java.nio.file.Path dir = Files.createTempDirectory("ls-");
+    Files.writeString(dir.resolve("a.txt"), "");
+    Files.writeString(dir.resolve("b.txt"), "");
+    String src =
+        """
+        module Main exposing (main)
+        import Posix exposing (..)
+        main : Io
+        main =
+            listDir "%s" (\\result ->
+                case result of
+                    Ok names -> print (String.join "," names) done
+                    Err e -> print ("err: " ++ e) (exit 1))
+        """
+            .formatted(dir.toString().replace("\\", "\\\\"));
+    Run r = runScript(src, List.of(), "");
+    assertEquals(0, r.code());
+    assertEquals("a.txt,b.txt", r.out().strip());
+  }
 }

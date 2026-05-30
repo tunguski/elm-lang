@@ -63,6 +63,28 @@ public final class ScriptRunner {
           cur = Thunk.resolve(d.arg(2));
         }
         case "GetArgs" -> cur = Thunk.resolve(Apply.apply(d.arg(0), ElmList.fromJava(args)));
+        case "GetEnv" -> {
+          String v = System.getenv(str(d.arg(0)));
+          Object maybe =
+              v == null
+                  ? new ElmData("Nothing", new Object[0])
+                  : new ElmData("Just", new Object[] {v});
+          cur = Thunk.resolve(Apply.apply(d.arg(1), maybe));
+        }
+        case "ListDir" -> {
+          Object result;
+          try (var entries = Files.list(Path.of(str(d.arg(0))))) {
+            java.util.List<Object> names =
+                entries
+                    .map(p -> (Object) p.getFileName().toString())
+                    .sorted(java.util.Comparator.comparing(Object::toString))
+                    .toList();
+            result = ok(ElmList.fromJava(names));
+          } catch (IOException | RuntimeException e) {
+            result = err(e.getMessage() == null ? e.toString() : e.getMessage());
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
         case "Exit" -> {
           return (int) ((Number) Thunk.resolve(d.arg(0))).longValue();
         }
