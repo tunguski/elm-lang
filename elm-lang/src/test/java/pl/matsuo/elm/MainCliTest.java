@@ -124,6 +124,36 @@ class MainCliTest {
   }
 
   @Test
+  void makeProducesADeployableHtmlPage() throws Exception {
+    Path f =
+        tempElm(
+            """
+            import Browser
+            import Html exposing (div, text)
+            main = Browser.sandbox { init = 0, update = \\_ m -> m, view = \\m -> div [] [ text "hi" ] }
+            type Msg = Noop
+            """);
+    Path out = Files.createTempDirectory("make-").resolve("index.html");
+    Result r = invoke("make", f.toString(), "-o", out.toString());
+    assertTrue(r.code() == 0, r.err());
+    String html = Files.readString(out);
+    assertTrue(html.contains("<!doctype html>"), "is an HTML page");
+    assertTrue(html.contains("id=\"app\""), "has a mount point");
+    assertTrue(html.contains("$start"), "boots the Elm program");
+  }
+
+  @Test
+  void makeCanEmitAMinifiedJsBundle() throws Exception {
+    Path f = tempElm("main = 6 * 7\n");
+    Path out = Files.createTempDirectory("make-js-").resolve("app.js");
+    Result r = invoke("make", f.toString(), "-o", out.toString(), "--optimize");
+    assertTrue(r.code() == 0, r.err());
+    String js = Files.readString(out);
+    assertTrue(!js.contains("<script>"), "raw JS, not HTML");
+    assertTrue(js.contains("$start") || js.contains("_$main"), js.substring(0, Math.min(200, js.length())));
+  }
+
+  @Test
   void missingFileProducesCleanErrorNotStackTrace() {
     Result r = invoke("run", "does-not-exist.elm");
     assertTrue(r.code() == 1, "exit code");

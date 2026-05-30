@@ -23,8 +23,8 @@ import pl.matsuo.elm.runtime.ElmData;
 
 /**
  * Command-line entry point, built on <a href="https://picocli.info">picocli</a>: {@code elm} with
- * subcommands {@code run/js/eval/check/repl/lsp/format/project/bench/site/init}. Use {@code --help}
- * on any command for usage.
+ * subcommands {@code run/js/make/eval/check/repl/lsp/format/project/bench/site/init}. Use
+ * {@code --help} on any command for usage.
  */
 @Command(
     name = "elm",
@@ -34,6 +34,7 @@ import pl.matsuo.elm.runtime.ElmData;
     subcommands = {
       Main.Run.class,
       Main.Js.class,
+      Main.Make.class,
       Main.Eval.class,
       Main.Check.class,
       Main.Repl.class,
@@ -132,6 +133,48 @@ public final class Main implements Runnable {
         String js = JsCompiler.moduleProgram(source);
         System.out.println(min ? JsCompiler.minify(js) : js);
       }
+      return 0;
+    }
+  }
+
+  @Command(
+      name = "make",
+      description = "Compile a program to a deployable artifact (HTML page, or a .js bundle).")
+  static final class Make implements Callable<Integer> {
+    @Parameters(arity = "1..*", description = "The .elm entry file (plus any sibling modules).")
+    List<Path> files;
+
+    @Option(
+        names = {"-o", "--output"},
+        description = "Output file. A .js name emits the bundle; anything else an HTML page. "
+            + "(default: index.html)")
+    String output = "index.html";
+
+    @Option(names = "--optimize", description = "Minify the generated JavaScript.")
+    boolean optimize;
+
+    @Override
+    public Integer call() throws IOException {
+      List<String> sources = new ArrayList<>();
+      for (Path p : files) {
+        sources.add(Files.readString(p));
+      }
+      String[] arr = sources.toArray(new String[0]);
+      String artifact;
+      if (output.endsWith(".js")) {
+        String bundle = JsCompiler.appBundleProject(arr);
+        artifact = optimize ? JsCompiler.minify(bundle) : bundle;
+      } else {
+        String bundle = JsCompiler.appBundleProject(arr);
+        String js = optimize ? JsCompiler.minify(bundle) : bundle;
+        artifact =
+            "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"
+                + "<body>\n<div id=\"app\"></div>\n<script>\n"
+                + js
+                + "\n</script>\n</body>\n</html>\n";
+      }
+      Files.writeString(Path.of(output), artifact);
+      System.out.println("Wrote " + output + " (" + artifact.length() + " bytes)");
       return 0;
     }
   }
