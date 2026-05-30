@@ -153,6 +153,26 @@ class HeadlessChromeTest {
     assertTrue(dom.contains("<div>h</div>"), dom); // model updated and re-rendered (reverse "h")
   }
 
+  @Test
+  void timeTravelShowsHistoricalModelThenResumesLive() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Three increments produce snapshots [0,1,2,3]. goto(1) re-renders the model after the first
+    // step (1) without mutating state; live() returns to the latest (3).
+    String driver =
+        "window.$app.dispatch($data('Increment',[]));"
+            + "window.$app.dispatch($data('Increment',[]));"
+            + "window.$app.dispatch($data('Increment',[]));"
+            + "window.$app.goto(1);"
+            + "document.body.setAttribute('data-historical', document.querySelectorAll('div')[2].textContent);"
+            + "window.$app.live();"
+            + "document.body.setAttribute('data-live', document.querySelectorAll('div')[2].textContent);"
+            + "document.body.setAttribute('data-steps', String(window.$app.history().length - 1));";
+    String dom = renderInBrowser(example("buttons"), driver);
+    assertTrue(dom.contains("data-historical=\"1\""), dom); // time-travelled to snapshot 1 (count 1)
+    assertTrue(dom.contains("data-live=\"3\""), dom); // resumed at the latest model (count 3)
+    assertTrue(dom.contains("data-steps=\"3\""), dom); // three recorded steps
+  }
+
   // The examples below were a blank page in the browser because the JS runtime had no effect
   // kernel: building the initial Cmd/Sub threw "Unbound: ..." and nothing rendered.
 

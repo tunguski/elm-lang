@@ -370,8 +370,12 @@
     if (kind==='$Sandbox') model = def.init;
     else { var pair = def.init($unit); model = pair.vs[0]; initCmd = pair.vs[1]; }
     var current=null, dom=null, subs={};
+    // Time-travel: a snapshot of the model after each step (index 0 = initial). viewIndex===null is
+    // "live" (show the latest); a number pins the view to that historical model without mutating it.
+    var history=[model], viewIndex=null;
+    function shownModel(){ return viewIndex===null ? model : history[viewIndex]; }
     function viewVNode(){
-      var v = def.view(model);
+      var v = def.view(shownModel());
       if (kind==='$Document'){ v = $data('$Node',['div', $nil, v.body]); }
       return v;
     }
@@ -380,6 +384,7 @@
       if (dom==null){ dom = window.$toDom(v); root.appendChild(dom); }
       else { dom = $patch(root, dom, current, v); }
       current = v;
+      if (debug) updateDebug();
     }
     // Reconcile subscriptions: keep running ones whose key persists, start new, stop gone.
     function syncSubs(){
@@ -394,10 +399,38 @@
       var cmd=null;
       if (kind==='$Sandbox') model = def.update(msg)(model);
       else { var pair = def.update(msg)(model); model = pair.vs[0]; cmd = pair.vs[1]; }
+      history.push(model); viewIndex=null; // a new message returns to live mode
       render(); syncSubs();
       if (cmd) runCmd(cmd, window.$dispatch);
     };
-    window.$app = { dispatch: function(m){ window.$dispatch(m); }, model: function(){ return model; }, ports: $portsApi() };
+    // ---- debug / time-travel overlay (opt-in via ?debug or window.$elmDebug) ----
+    var debug = (typeof window!=='undefined') &&
+      (window.$elmDebug===true || (window.location && /[?&]debug\b/.test(window.location.search||'')));
+    var dbgEl=null, dbgLabel=null;
+    function goto(i){ viewIndex = Math.max(0, Math.min(history.length-1, i)); render(); }
+    function updateDebug(){
+      if(!dbgEl){
+        dbgEl=document.createElement('div');
+        dbgEl.setAttribute('style','position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#0f1720;color:#e6edf3;font:12px monospace;padding:6px 10px;display:flex;gap:8px;align-items:center');
+        function btn(t,f){ var b=document.createElement('button'); b.textContent=t; b.onclick=f; b.setAttribute('style','font:12px monospace'); return b; }
+        dbgEl.appendChild(btn('⏮',function(){goto(0);}));
+        dbgEl.appendChild(btn('◀',function(){goto((viewIndex===null?history.length-1:viewIndex)-1);}));
+        dbgEl.appendChild(btn('▶',function(){goto((viewIndex===null?history.length-1:viewIndex)+1);}));
+        dbgEl.appendChild(btn('live ⏵',function(){viewIndex=null;render();}));
+        dbgLabel=document.createElement('span'); dbgEl.appendChild(dbgLabel);
+        document.body.appendChild(dbgEl);
+      }
+      var idx = viewIndex===null ? history.length-1 : viewIndex;
+      dbgLabel.textContent = 'step '+idx+' / '+(history.length-1)+(viewIndex===null?'  (live)':'  (history)');
+    }
+    window.$app = {
+      dispatch: function(m){ window.$dispatch(m); },
+      model: function(){ return model; },
+      ports: $portsApi(),
+      history: function(){ return history; }, // model snapshots (index 0 = initial)
+      goto: function(i){ goto(i); },           // time-travel: show snapshot i
+      live: function(){ viewIndex=null; render(); }
+    };
     render(); syncSubs();
     if (initCmd) runCmd(initCmd, window.$dispatch);
   };

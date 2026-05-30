@@ -77,9 +77,11 @@ command-line script), `server <file.elm> [--port N]` (serve HTTP from an Elm han
 `project <elm.json|dir> [check|run]`, `init` (scaffold `elm.json` + `src/`), `bench [fibN]`,
 `site <examplesDir> <Playground.elm> <outDir>`.
 
-It also ships a **REPL** (`elm repl`), a **language server** (`elm lsp` — diagnostics
-+ hover types, reusing the parser and HM checker), `elm.json` **project mode**, and JS
-**source maps** (`js --map`). The gallery includes a [JS-vs-WASM
+It also ships a **REPL** (`elm repl`), a **language server** (`elm lsp` — diagnostics, hover,
+go-to-definition, completion, document symbols, find-references and rename), `elm.json` **project
+mode**, JS **source maps** (`js --map`, column-level), and a **time-travel debugger** for compiled
+TEA programs (append `?debug` to the page URL for a step-back/forward overlay; `window.$app` exposes
+`history()`/`goto(i)`/`live()`). The gallery includes a [JS-vs-WASM
 page](https://tunguski.github.io/elm-lang/backends.html) and an interactive
 [playground](https://tunguski.github.io/elm-lang/playground.html) running both compiled
 backends in the browser.
