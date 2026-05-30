@@ -203,10 +203,16 @@ public final class Infer {
       for (String name : group) {
         Decl.Value v = values.get(name);
         Ty ph = placeholders.get(name);
-        v.annotation().ifPresent(ann -> Unify.unify(ph, astToTy(ann, new HashMap<>())));
-        Ty rhs =
-            v.params().isEmpty() ? infer(rec, v.body()) : inferLambda(rec, v.params(), v.body());
-        Unify.unify(ph, rhs);
+        try {
+          // Unify the annotation (the expected type) before the body, so an annotation/body
+          // mismatch reads "expected <annotation> but got <body>". Locate it at the definition.
+          v.annotation().ifPresent(ann -> Unify.unify(astToTy(ann, new HashMap<>()), ph));
+          Ty rhs =
+              v.params().isEmpty() ? infer(rec, v.body()) : inferLambda(rec, v.params(), v.body());
+          Unify.unify(ph, rhs);
+        } catch (ElmTypeError e) {
+          throw e.at(v.pos(), hintFor(e));
+        }
       }
       level = outer;
       for (String name : group) {
@@ -748,6 +754,10 @@ public final class Infer {
     if (m.startsWith("Infinite type")) {
       return "A value cannot contain itself. This often means a function is applied to one too few or"
           + " too many arguments.";
+    }
+    if (m.startsWith("Record mismatch")) {
+      return "Two records must have the same set of fields. A `{ r | … }` annotation only requires the"
+          + " fields it names; check for a missing, extra or misspelled field.";
     }
     return null;
   }

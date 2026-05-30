@@ -119,8 +119,11 @@ in the style of Algorithm W. Highlights:
   types, record-alias constructors, type-alias expansion, and annotation checking.
 - **Exhaustiveness & redundancy** for `case` (Maranget's usefulness algorithm), reporting a witness
   of the missing input (e.g. `Missing a branch for: Blue`) and unreachable branches.
-- **Elm-style errors**: a source excerpt, a caret under the offending sub-expression, the location,
-  a hint, and **"Did you mean …?"** suggestions for misspelled names.
+- **Elm-style errors**: a located source excerpt with a caret under the offending sub-expression,
+  the mismatch phrased as **expected `X` but got `Y`**, a tailored hint (number↔String coercion,
+  `number`/`comparable`/`appendable` constraints, …), field-by-field **record mismatches** with a
+  **"Did you mean `field`?"** suggestion for a misspelled field, and **"Did you mean …?"** for
+  misspelled names. The LSP surfaces the same diagnostics in-editor.
 - **Multi-module/project** checking (`check a.elm b.elm …`) across module boundaries.
 - Catches `1 + "a"`, a non-`Bool` `if`, `\f -> f f`, unknown names, etc.
 

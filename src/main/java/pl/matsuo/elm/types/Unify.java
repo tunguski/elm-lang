@@ -166,21 +166,21 @@ public final class Unify {
 
     if (aClosed && bClosed) {
       if (!onlyA.isEmpty() || !onlyB.isEmpty()) {
-        throw mismatch(a, b);
+        throw recordMismatch(a, b, onlyA, onlyB);
       }
       return;
     }
     if (aClosed) {
       // b is open; it cannot require fields a (closed) lacks, and its tail is exactly a's remainder.
       if (!onlyB.isEmpty()) {
-        throw mismatch(a, b);
+        throw recordMismatch(a, b, onlyA, onlyB);
       }
       unify(b.tail(), new Ty.Record(onlyA, null));
       return;
     }
     if (bClosed) {
       if (!onlyA.isEmpty()) {
-        throw mismatch(a, b);
+        throw recordMismatch(a, b, onlyA, onlyB);
       }
       unify(a.tail(), new Ty.Record(onlyB, null));
       return;
@@ -190,7 +190,7 @@ public final class Unify {
       if (onlyA.isEmpty() && onlyB.isEmpty()) {
         return;
       }
-      throw mismatch(a, b);
+      throw recordMismatch(a, b, onlyA, onlyB);
     }
     // Route each record's surplus through a shared fresh row variable. When a side has no surplus,
     // bind its row variable straight to the shared one rather than to an empty record `{ | rest }`:
@@ -238,6 +238,30 @@ public final class Unify {
   }
 
   private static ElmTypeError mismatch(Ty a, Ty b) {
-    return new ElmTypeError("Type mismatch: " + Types.show(a) + " vs " + Types.show(b));
+    // By convention the first operand is the expected type and the second the one inference found.
+    return new ElmTypeError(
+        "Type mismatch: expected `" + Types.show(a) + "` but got `" + Types.show(b) + "`.");
+  }
+
+  /** A record-specific mismatch that names the differing fields (and suggests a likely typo). */
+  private static ElmTypeError recordMismatch(
+      Ty.Record a, Ty.Record b, Map<String, Ty> missing, Map<String, Ty> unexpected) {
+    StringBuilder sb = new StringBuilder("Record mismatch.");
+    if (!unexpected.isEmpty()) {
+      sb.append(" Unexpected field(s): ").append(String.join(", ", unexpected.keySet())).append(".");
+    }
+    if (!missing.isEmpty()) {
+      sb.append(" Missing field(s): ").append(String.join(", ", missing.keySet())).append(".");
+    }
+    sb.append(" Expected `").append(Types.show(a)).append("` but got `").append(Types.show(b)).append("`.");
+    // A common case: a single misspelled field. Point at the likely intended name.
+    if (unexpected.size() == 1 && !missing.isEmpty()) {
+      String typo = unexpected.keySet().iterator().next();
+      String suggestion = pl.matsuo.elm.util.Suggest.closest(typo, missing.keySet());
+      if (suggestion != null) {
+        sb.append(" Did you mean `").append(suggestion).append("`?");
+      }
+    }
+    return new ElmTypeError(sb.toString());
   }
 }
