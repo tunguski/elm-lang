@@ -108,6 +108,76 @@ class WasmHeapTest {
   }
 
   @Test
+  void matchesOnACustomTypeTag() throws Exception {
+    agrees(
+        """
+        type Shape = Circle Int | Rect Int Int | Unit
+        area s =
+            case s of
+                Circle r -> r * r * 3
+                Rect w h -> w * h
+                Unit -> 1
+        main = area (Rect 3 4)
+        """);
+  }
+
+  @Test
+  void recursesOverACustomTypeTree() throws Exception {
+    // A recursive ADT (binary tree) built and summed entirely in wasm.
+    agrees(
+        """
+        type Tree = Leaf Int | Node Tree Tree
+        total t =
+            case t of
+                Leaf n -> n
+                Node l r -> total l + total r
+        main = total (Node (Node (Leaf 1) (Leaf 2)) (Leaf 3))
+        """);
+  }
+
+  @Test
+  void nullaryConstructorsAndDefaultBranch() throws Exception {
+    agrees(
+        """
+        type Color = Red | Green | Blue
+        code c =
+            case c of
+                Red -> 1
+                _ -> 0
+        main = code Blue
+        """);
+  }
+
+  @Test
+  void randomCustomTypeMatchesAgreeWithInterpreter() throws Exception {
+    assumeTrue(NODE, "node not available");
+    java.util.Random rng = new java.util.Random(20260530L);
+    for (int trial = 0; trial < 20; trial++) {
+      int a = rng.nextInt(50);
+      int b = rng.nextInt(50);
+      String shape =
+          switch (trial % 3) {
+            case 0 -> "Circle " + a;
+            case 1 -> "Rect " + a + " " + b;
+            default -> "Empty";
+          };
+      String source =
+          """
+          type Shape = Circle Int | Rect Int Int | Empty
+          area s =
+              case s of
+                  Circle r -> r * r
+                  Rect w h -> w * h
+                  Empty -> 0
+          main = area (%s)
+          """
+              .formatted(shape);
+      String expected = Show.plain(Interpreter.load(source).value("main"));
+      assertEquals(expected, runMain(source), source);
+    }
+  }
+
+  @Test
   void randomListFoldsAgreeWithInterpreter() throws Exception {
     assumeTrue(NODE, "node not available");
     // Property: for random integer lists, a recursive sum/length/max in wasm equals the

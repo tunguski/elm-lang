@@ -23,11 +23,14 @@ import pl.matsuo.elm.parser.Parser;
  * i64}), matching the interpreter, so a host reads results as {@code BigInt}.
  *
  * <p>It also has a small <b>heap</b>: a linear-memory bump allocator backs cons-lists (built with
- * list literals and {@code ::}, consumed by a {@code case} over {@code []} / {@code head :: tail})
- * and tuples. A list value is an {@code i64} — {@code 0} for {@code []}, otherwise the address of a
- * two-word {@code {head, tail}} cell — so values stay uniformly {@code i64} on the stack. This lets
- * a recursive list function (e.g. summing {@code [1,2,3,4,5]}) compile and run in wasm. Strings and
- * general (tagged) custom types still need a richer representation and remain on the JS backend.
+ * list literals and {@code ::}, consumed by a {@code case} over {@code []} / {@code head :: tail}),
+ * tuples, and <b>tagged custom types</b> — a value {@code Ctor a b} is a cell {@code {tag, a, b}}
+ * whose tag is the constructor's index in its union, and a {@code case} over constructors loads the
+ * tag word and dispatches, binding fields by offset (constructor-argument patterns must be
+ * variable/wildcard — no nested matching). A heap value is an {@code i64} address, so values stay
+ * uniformly {@code i64} on the stack. This lets recursive list functions and custom-type matching
+ * (e.g. {@code area (Rect 3 4)}) compile and run in wasm. Strings and records still need a richer
+ * (encoded / type-directed) representation and remain on the JS backend.
  */
 public final class WasmCompiler {
 
@@ -50,7 +53,7 @@ public final class WasmCompiler {
     for (int i = 0; i < expressions.size(); i++) {
       funcs.add(new Func("f" + i, List.of(), expressions.get(i)));
     }
-    return assemble(funcs);
+    return assemble(funcs, Map.of(), Map.of());
   }
 
   /**
@@ -60,6 +63,19 @@ public final class WasmCompiler {
    */
   public static byte[] moduleFromSource(String source) {
     List<Func> funcs = new ArrayList<>();
+    // Custom-type constructors: each variant gets a tag (its index in the union) and an arity, so a
+    // value `Ctor a b` is a heap cell {tag, a, b} and a `case` dispatches on the loaded tag word.
+    Map<String, Integer> ctorTag = new HashMap<>();
+    Map<String, Integer> ctorArity = new HashMap<>();
+    for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(source).decls()) {
+      if (d instanceof Decl.Union u) {
+        for (int i = 0; i < u.variants().size(); i++) {
+          Decl.Union.Variant variant = u.variants().get(i);
+          ctorTag.put(variant.name(), i);
+          ctorArity.put(variant.name(), variant.args().size());
+        }
+      }
+    }
     for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(source).decls()) {
       if (d instanceof Decl.Value v) {
         List<String> params = new ArrayList<>();
@@ -73,7 +89,7 @@ public final class WasmCompiler {
         funcs.add(new Func(v.name(), params, v.body()));
       }
     }
-    return assemble(funcs);
+    return assemble(funcs, ctorTag, ctorArity);
   }
 
   // --- per-function code generation --------------------------------------
@@ -81,12 +97,20 @@ public final class WasmCompiler {
   private static final class FunctionGen {
     private final Map<String, Integer> locals = new HashMap<>(); // name -> local index
     private final Map<String, int[]> funcs; // function name -> {index, arity}
+    private final Map<String, Integer> ctorTag; // constructor name -> tag (index in its union)
+    private final Map<String, Integer> ctorArity; // constructor name -> number of fields
     private int localCount; // all locals are i64; params occupy 0..numParams-1
     private final int numParams;
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
 
-    FunctionGen(Map<String, int[]> funcs, List<String> params) {
+    FunctionGen(
+        Map<String, int[]> funcs,
+        List<String> params,
+        Map<String, Integer> ctorTag,
+        Map<String, Integer> ctorArity) {
       this.funcs = funcs;
+      this.ctorTag = ctorTag;
+      this.ctorArity = ctorArity;
       this.numParams = params.size();
       for (int i = 0; i < params.size(); i++) {
         locals.put(params.get(i), i);
@@ -176,6 +200,7 @@ public final class WasmCompiler {
         case Expr.App app -> intApp(app);
         case Expr.ListLit l -> emitList(l.items(), 0);
         case Expr.Tuple t -> emitTuple(t.items());
+        case Expr.Ctor c when ctorTag.containsKey(c.name()) -> emitCtor(c.name(), List.of());
         case Expr.Case c -> intCase(c);
         default -> throw unsupported(e.getClass().getSimpleName());
       }
@@ -260,8 +285,103 @@ public final class WasmCompiler {
       leb(code, off);
     }
 
-    /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
+    /** Allocates a custom-type value: a cell {tag, field0, field1, …}, leaving its address (i64). */
+    private void emitCtor(String name, List<Expr> args) {
+      if (args.size() != ctorArity.getOrDefault(name, -1)) {
+        throw unsupported("partially-applied constructor " + name);
+      }
+      int tag = ctorTag.get(name);
+      int addr = freshLocal();
+      code.write(0x23);
+      leb(code, 0);
+      code.write(0xAD);
+      code.write(0x21);
+      leb(code, addr);
+      bumpHeap(8 * (1 + args.size()));
+      store(
+          addr,
+          0,
+          () -> {
+            code.write(0x42); // i64.const tag
+            sleb(code, tag);
+          });
+      for (int j = 0; j < args.size(); j++) {
+        int arg = j;
+        store(addr, (1 + j) * 8, () -> intExpr(args.get(arg)));
+      }
+      code.write(0x20);
+      leb(code, addr);
+    }
+
+    /** Dispatches a {@code case} to the list or the custom-type compiler by its branch patterns. */
     private void intCase(Expr.Case c) {
+      boolean adt =
+          c.branches().stream()
+              .anyMatch(b -> b.pattern() instanceof Pattern.Ctor ct && ctorTag.containsKey(ct.name()));
+      if (adt) {
+        intAdtCase(c);
+      } else {
+        intListCase(c);
+      }
+    }
+
+    /**
+     * Compiles a {@code case} over a custom type: load the value's tag word once, then an if/else
+     * chain comparing it to each constructor's tag, binding fields (by word offset) in the match.
+     * Constructor arguments must be variable/wildcard patterns (no nested matching).
+     */
+    private void intAdtCase(Expr.Case c) {
+      int s = freshLocal();
+      intExpr(c.scrutinee());
+      code.write(0x21);
+      leb(code, s); // local.set scrutinee pointer
+      emitAdtBranches(c.branches(), 0, s);
+    }
+
+    private void emitAdtBranches(List<Expr.Case.Branch> branches, int idx, int s) {
+      if (idx >= branches.size()) {
+        code.write(0x00); // unreachable: a well-typed case is exhaustive
+        return;
+      }
+      Expr.Case.Branch br = branches.get(idx);
+      switch (br.pattern()) {
+        case Pattern.Var v -> {
+          int local = local(v.name());
+          code.write(0x20);
+          leb(code, s);
+          code.write(0x21);
+          leb(code, local); // bind the whole value
+          intExpr(br.body());
+        }
+        case Pattern.Wildcard ignored -> intExpr(br.body());
+        case Pattern.Ctor ctor -> {
+          load(s, 0); // tag word
+          code.write(0x42);
+          sleb(code, ctorTag.get(ctor.name())); // i64.const tag
+          code.write(0x51); // i64.eq
+          code.write(0x04);
+          code.write(I64); // if -> i64
+          for (int i = 0; i < ctor.args().size(); i++) {
+            if (ctor.args().get(i) instanceof Pattern.Var fv) {
+              int fl = local(fv.name());
+              load(s, (1 + i) * 8); // field i lives at word 1+i
+              code.write(0x21);
+              leb(code, fl);
+            } else if (!(ctor.args().get(i) instanceof Pattern.Wildcard)) {
+              throw unsupported("nested constructor pattern in WASM");
+            }
+          }
+          intExpr(br.body());
+          code.write(0x05); // else
+          emitAdtBranches(branches, idx + 1, s);
+          code.write(0x0B); // end
+        }
+        default -> throw unsupported("custom-type case pattern in WASM");
+      }
+    }
+
+    /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
+    private void intListCase(Expr.Case c) {
       Expr nilBody = null;
       Pattern consHead = null, consTail = null;
       Expr consBody = null;
@@ -374,12 +494,17 @@ public final class WasmCompiler {
         code.write(0x81); // i64.rem_s
         return;
       }
-      // A fully-applied call to a known top-level function (incl. recursion).
+      // A fully-applied call to a known top-level function (incl. recursion), or constructor.
       List<Expr> args = new ArrayList<>();
       Expr head = app;
       while (head instanceof Expr.App a) {
         args.add(0, a.arg());
         head = a.fn();
+      }
+      // A constructor application `Ctor a b` -> a tagged heap cell {tag, a, b}.
+      if (head instanceof Expr.Ctor ctor && ctorTag.containsKey(ctor.name())) {
+        emitCtor(ctor.name(), args);
+        return;
       }
       if (head instanceof Expr.Var v && funcs.containsKey(v.name()) && funcs.get(v.name())[1] == args.size()) {
         for (Expr arg : args) {
@@ -447,7 +572,8 @@ public final class WasmCompiler {
 
   // --- module assembly ----------------------------------------------------
 
-  private static byte[] assemble(List<Func> funcList) {
+  private static byte[] assemble(
+      List<Func> funcList, Map<String, Integer> ctorTag, Map<String, Integer> ctorArity) {
     // Function table: name -> {index, arity}, so calls/recursion resolve to a call index.
     Map<String, int[]> table = new HashMap<>();
     for (int i = 0; i < funcList.size(); i++) {
@@ -530,7 +656,7 @@ public final class WasmCompiler {
     ByteArrayOutputStream code = new ByteArrayOutputStream();
     leb(code, funcList.size());
     for (Func f : funcList) {
-      code.writeBytes(new FunctionGen(table, f.params()).compile(f.body()));
+      code.writeBytes(new FunctionGen(table, f.params(), ctorTag, ctorArity).compile(f.body()));
     }
     section(out, 10, code);
     return out.toByteArray();
