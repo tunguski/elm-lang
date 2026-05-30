@@ -124,6 +124,39 @@
 
     <profiles>
         <!--
+          Code coverage:  ./mvnw -Pcoverage test
+          Runs the suite under the JaCoCo agent and writes target/site/jacoco/ (HTML + jacoco.xml).
+          Kept in a profile so a plain `mvn test` is unaffected (the agent is opt-in).
+        -->
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>0.8.13</version>
+                        <executions>
+                            <execution>
+                                <id>prepare-agent</id>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>report</id>
+                                <phase>test</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
           Native binary via GraalVM native-image:  ./mvnw -Pnative package
           Produces target/elm(.exe). Requires the platform C toolchain on PATH
           (on Windows: MSVC / "x64 Native Tools" from Visual Studio Build Tools).
