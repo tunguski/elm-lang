@@ -35,6 +35,10 @@ public final class Main {
       pl.matsuo.elm.repl.Repl.loop(new java.io.InputStreamReader(System.in), System.out);
       return;
     }
+    if (args[0].equals("lsp")) {
+      new pl.matsuo.elm.lsp.LspServer().serve(System.in, System.out);
+      return;
+    }
     if (args[0].equals("project")) {
       if (args.length < 2) {
         System.out.println("usage: project <elm.json|dir> [check|run [value]]");
@@ -172,6 +176,7 @@ public final class Main {
           check <file.elm> [more.elm ...]      type-check a module or multi-module project
           bench [fibN]
           repl
+          lsp                                  language server (LSP) over stdio
           project <elm.json|dir> [check|run]   load source-directories and check/run
           site  <examplesDir> <Playground.elm> <outDir>
 
