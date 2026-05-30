@@ -60,4 +60,26 @@ class MainCliTest {
     assertTrue(js.contains("var _$main"), js);
     assertTrue(js.contains("$show"), js);
   }
+
+  @Test
+  void strictRunsWhenWellTyped() throws Exception {
+    Path f = tempElm("main = 6 * 7\n");
+    assertTrue(run("run", f.toString(), "--strict").trim().equals("42"));
+  }
+
+  @Test
+  void strictRefusesToRunOnTypeError() throws Exception {
+    Path f = tempElm("main = 1 + \"oops\"\n");
+    String out = run("run", f.toString(), "--strict");
+    assertTrue(out.contains("Type error"), out);
+    assertTrue(out.contains("Hint:"), out); // the Elm-style hint is shown
+  }
+
+  @Test
+  void checkAcceptsAMultiModuleProject() throws Exception {
+    Path lib = tempElm("module Lib exposing (..)\ndouble n = n * 2\n");
+    Path main = tempElm("module Main exposing (..)\nimport Lib exposing (..)\nmain = double 21\n");
+    String out = run("check", lib.toString(), main.toString());
+    assertTrue(out.contains("main :"), out);
+  }
 }

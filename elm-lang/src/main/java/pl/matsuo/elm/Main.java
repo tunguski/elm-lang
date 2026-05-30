@@ -51,6 +51,15 @@ public final class Main {
     switch (command) {
       case "run" -> {
         String source = Files.readString(Path.of(args[1]));
+        // --strict: type-check before evaluating and refuse to run on a type error.
+        if (flag(args, "--strict")) {
+          try {
+            pl.matsuo.elm.types.TypeChecker.checkModule(source);
+          } catch (pl.matsuo.elm.error.ElmTypeError e) {
+            System.out.println("Type error: " + e.getMessage());
+            return;
+          }
+        }
         Object value =
             backend.equals("bytecode")
                 ? BytecodeInterpreter.load(source).value(valueName)
@@ -116,18 +125,29 @@ public final class Main {
     return fallback;
   }
 
+  private static boolean flag(String[] args, String name) {
+    for (String a : args) {
+      if (a.equals(name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private static void usage() {
     System.out.println(
         """
         elm-lang - an Elm interpreter/compiler (JIT interpreter, bytecode VM, JS)
 
         Usage:
-          run   <file.elm> [--backend interp|bytecode] [--value NAME]
+          run   <file.elm> [--backend interp|bytecode] [--value NAME] [--strict]
           js    <file.elm>
           eval  "<expression>" [--backend interp|bytecode]
-          check <file.elm>
+          check <file.elm> [more.elm ...]      type-check a module or multi-module project
           bench [fibN]
           site  <examplesDir> <Playground.elm> <outDir>
+
+        --strict type-checks before running and refuses to evaluate on a type error.
         """);
   }
 }
