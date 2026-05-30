@@ -136,6 +136,40 @@ class WasmHeapTest {
   }
 
   @Test
+  void appliesAFunctionPassedAsAValue() throws Exception {
+    // A top-level function used as a value (its table index) and invoked via call_indirect.
+    agrees(
+        """
+        inc n = n + 1
+        apply f x = f x
+        main = apply inc 5
+        """);
+  }
+
+  @Test
+  void higherOrderTwiceComposesAFunctionValue() throws Exception {
+    agrees(
+        """
+        double n = n * 2
+        twice f x = f (f x)
+        main = twice double 7
+        """);
+  }
+
+  @Test
+  void choosesBetweenFunctionValuesThenCallsIndirectly() throws Exception {
+    // The function value is selected at runtime, exercising the indirect dispatch over the table.
+    agrees(
+        """
+        inc n = n + 1
+        dec n = n - 1
+        pick b = if b == 1 then inc else dec
+        run g x = g x
+        main = run (pick 1) 41 + run (pick 0) 10
+        """);
+  }
+
+  @Test
   void growsTheHeapAcrossManyPagesForALargeTree() throws Exception {
     // A depth-13 binary tree is ~16k cells (~6 pages, far past the initial 64 KiB), yet recursion
     // stays shallow (depth 13). It only runs without trapping if the allocator grows memory; the

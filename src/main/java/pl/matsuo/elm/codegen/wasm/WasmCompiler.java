@@ -30,8 +30,15 @@ import pl.matsuo.elm.parser.Parser;
  * tag word and dispatches, binding fields by offset (constructor-argument patterns must be
  * variable/wildcard — no nested matching). A heap value is an {@code i64} address, so values stay
  * uniformly {@code i64} on the stack. This lets recursive list functions and custom-type matching
- * (e.g. {@code area (Rect 3 4)}) compile and run in wasm. Strings and records still need a richer
- * (encoded / type-directed) representation and remain on the JS backend.
+ * (e.g. {@code area (Rect 3 4)}) compile and run in wasm.
+ *
+ * <p><b>First-class top-level functions</b> work too: every function is placed in a funcref table,
+ * a function used as a value compiles to its table index (carried as an i64), and applying a
+ * function value held in a parameter dispatches via {@code call_indirect}. So higher-order code over
+ * named functions ({@code apply f x = f x}; {@code main = apply inc 5}) runs in wasm. What is still
+ * unsupported is <b>closures</b> (capturing locals) and <b>currying / partial application</b>, plus
+ * strings and records, which need a richer (encoded / type-directed) representation; those remain on
+ * the JS backend.
  */
 public final class WasmCompiler {
 
@@ -100,6 +107,7 @@ public final class WasmCompiler {
     private final Map<String, int[]> funcs; // function name -> {index, arity}
     private final Map<String, Integer> ctorTag; // constructor name -> tag (index in its union)
     private final Map<String, Integer> ctorArity; // constructor name -> number of fields
+    private final Map<Integer, Integer> arityType; // call arity -> wasm type index (for call_indirect)
     private int localCount; // all locals are i64; params occupy 0..numParams-1
     private final int numParams;
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
@@ -108,10 +116,12 @@ public final class WasmCompiler {
         Map<String, int[]> funcs,
         List<String> params,
         Map<String, Integer> ctorTag,
-        Map<String, Integer> ctorArity) {
+        Map<String, Integer> ctorArity,
+        Map<Integer, Integer> arityType) {
       this.funcs = funcs;
       this.ctorTag = ctorTag;
       this.ctorArity = ctorArity;
+      this.arityType = arityType;
       this.numParams = params.size();
       for (int i = 0; i < params.size(); i++) {
         locals.put(params.get(i), i);
@@ -194,6 +204,10 @@ public final class WasmCompiler {
           } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 0) {
             code.write(0x10); // call (a zero-arg top-level value)
             leb(code, funcs.get(v.name())[0]);
+          } else if (funcs.containsKey(v.name())) {
+            // A top-level function used as a first-class value: its table index, carried as i64.
+            code.write(0x42); // i64.const
+            sleb(code, funcs.get(v.name())[0]);
           } else {
             throw unsupported("variable " + v.name());
           }
@@ -537,6 +551,24 @@ public final class WasmCompiler {
         leb(code, funcs.get(v.name())[0]);
         return;
       }
+      // Applying a first-class function value held in a local (a higher-order parameter): push the
+      // args, then the function value (its table index, as i64), and dispatch via call_indirect.
+      if (head instanceof Expr.Var v && locals.containsKey(v.name())) {
+        Integer typeIdx = arityType.get(args.size());
+        if (typeIdx == null) {
+          throw unsupported("indirect call of arity " + args.size());
+        }
+        for (Expr arg : args) {
+          intExpr(arg);
+        }
+        code.write(0x20); // local.get f (the i64 function value)
+        leb(code, locals.get(v.name()));
+        code.write(0xA7); // i32.wrap_i64 -> table index
+        code.write(0x11); // call_indirect
+        leb(code, typeIdx); // the (i64^n)->i64 type
+        leb(code, 0); // table 0
+        return;
+      }
       throw unsupported("application");
     }
 
@@ -638,6 +670,15 @@ public final class WasmCompiler {
     }
     section(out, 3, funcs);
 
+    // Table section (id 4): one funcref table holding every function, so a function value (carried
+    // as its index) can be invoked with call_indirect. Sized exactly to the function count.
+    ByteArrayOutputStream tableSec = new ByteArrayOutputStream();
+    leb(tableSec, 1); // one table
+    tableSec.write(0x70); // funcref
+    tableSec.write(0x00); // limits: min only
+    leb(tableSec, funcList.size()); // min = number of functions
+    section(out, 4, tableSec);
+
     // Memory section (id 5): one memory, min 1 page (64 KiB), no max — the heap for cons-cells,
     // tuples and tagged values. The allocator grows it on demand (see bumpHeap), so the only ceiling
     // is the host's, not a fixed page count.
@@ -677,11 +718,26 @@ public final class WasmCompiler {
     leb(exports, 0); // memory index 0
     section(out, 7, exports);
 
+    // Element section (id 9): one active segment filling the table with funcref i -> function i, so
+    // that a function's index is also its table slot (what a first-class function value carries).
+    ByteArrayOutputStream elem = new ByteArrayOutputStream();
+    leb(elem, 1); // one segment
+    leb(elem, 0); // flags: active, table 0, funcidx vector
+    elem.write(0x41);
+    sleb(elem, 0); // i32.const 0 (offset)
+    elem.write(0x0B); // end
+    leb(elem, funcList.size());
+    for (int i = 0; i < funcList.size(); i++) {
+      leb(elem, i);
+    }
+    section(out, 9, elem);
+
     // Code section.
     ByteArrayOutputStream code = new ByteArrayOutputStream();
     leb(code, funcList.size());
     for (Func f : funcList) {
-      code.writeBytes(new FunctionGen(table, f.params(), ctorTag, ctorArity).compile(f.body()));
+      code.writeBytes(
+          new FunctionGen(table, f.params(), ctorTag, ctorArity, arityType).compile(f.body()));
     }
     section(out, 10, code);
     return out.toByteArray();
