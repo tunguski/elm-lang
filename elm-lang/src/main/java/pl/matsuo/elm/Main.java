@@ -69,10 +69,20 @@ public final class Main {
         System.out.println(Show.plain(value));
       }
       case "check" -> {
-        String source = Files.readString(Path.of(args[1]));
+        // One file -> single-module check; several files -> a multi-module project check (the
+        // module defining `main` is the entry, e.g. `check Playground.elm Picture.elm`).
+        java.util.List<String> files = new java.util.ArrayList<>();
+        for (int i = 1; i < args.length; i++) {
+          if (args[i].endsWith(".elm")) {
+            files.add(Files.readString(Path.of(args[i])));
+          }
+        }
         try {
-          pl.matsuo.elm.types.TypeChecker.checkModule(source)
-              .forEach((name, type) -> System.out.println(name + " : " + type));
+          var types =
+              files.size() > 1
+                  ? pl.matsuo.elm.types.TypeChecker.checkProject(files.toArray(new String[0]))
+                  : pl.matsuo.elm.types.TypeChecker.checkModule(files.get(0));
+          types.forEach((name, type) -> System.out.println(name + " : " + type));
         } catch (pl.matsuo.elm.error.ElmTypeError e) {
           System.out.println("Type error: " + e.getMessage());
         }

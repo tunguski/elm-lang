@@ -24,6 +24,12 @@ public final class Infer {
   private final Map<String, AliasDef> aliases = new HashMap<>();
   private final Map<String, String> moduleAliases = new HashMap<>();
   private final Map<Expr, Ty> numericLiterals = new IdentityHashMap<>();
+  /** Constructors (union variants and record-alias constructors) the last module declared. */
+  private final Map<String, Scheme> declaredCtors = new HashMap<>();
+  /** Type aliases the last module declared (so a project checker can re-expose them). */
+  private final Map<String, AliasDef> declaredAliases = new HashMap<>();
+  /** Aliases from already-checked modules, seeded into each module's scope by a project check. */
+  private final Map<String, AliasDef> importedAliases = new HashMap<>();
 
   private record AliasDef(List<String> params, Type body) {}
 
@@ -102,9 +108,14 @@ public final class Infer {
                 List.of(
                     new Type.Record.Field("scene", scene),
                     new Type.Record.Field("viewport", vp)))));
+    aliases.putAll(importedAliases); // record aliases from other modules in a project check
+    declaredCtors.clear();
+    declaredAliases.clear();
     for (Decl d : module.decls()) {
       if (d instanceof Decl.TypeAlias ta) {
-        aliases.put(ta.name(), new AliasDef(ta.params(), ta.type()));
+        AliasDef def = new AliasDef(ta.params(), ta.type());
+        aliases.put(ta.name(), def);
+        declaredAliases.put(ta.name(), def);
       }
     }
     // Mirror the runtime's import resolution so exposed names resolve during inference.
@@ -161,6 +172,67 @@ public final class Infer {
     return result;
   }
 
+  /**
+   * Type-checks a multi-module project. Modules are ordered so that imported modules are checked
+   * first; each module's exported values, constructors and aliases are then made visible (qualified
+   * as {@code Module.name}) to the modules that import it. Returns the inferred top-level types of
+   * the entry module (the one that defines {@code main}, else the last given).
+   */
+  public Map<String, Scheme> inferProject(List<Module> modules, Map<String, Scheme> base) {
+    List<Module> ordered = orderByImports(modules);
+    Map<String, Scheme> globals = new HashMap<>(base);
+    importedAliases.clear();
+    Map<String, Scheme> entryTypes = Map.of();
+    String entryName = null;
+    for (Module m : ordered) {
+      boolean hasMain =
+          m.decls().stream().anyMatch(d -> d instanceof Decl.Value v && v.name().equals("main"));
+      Map<String, Scheme> values = inferModule(m, globals);
+      String prefix = m.name() + ".";
+      values.forEach((n, s) -> globals.put(prefix + n, s));
+      declaredCtors.forEach((n, s) -> globals.put(prefix + n, s));
+      importedAliases.putAll(declaredAliases);
+      if (hasMain || entryName == null) {
+        entryTypes = values;
+        entryName = m.name();
+      }
+    }
+    return entryTypes;
+  }
+
+  /** Orders modules so an imported module precedes its importer (best-effort; cycles keep order). */
+  private static List<Module> orderByImports(List<Module> modules) {
+    Map<String, Module> byName = new LinkedHashMap<>();
+    for (Module m : modules) {
+      byName.put(m.name(), m);
+    }
+    List<Module> out = new ArrayList<>();
+    java.util.Set<String> done = new java.util.HashSet<>();
+    boolean progress = true;
+    while (out.size() < modules.size() && progress) {
+      progress = false;
+      for (Module m : modules) {
+        if (done.contains(m.name())) {
+          continue;
+        }
+        boolean ready =
+            m.imports().stream()
+                .allMatch(imp -> !byName.containsKey(imp.module()) || done.contains(imp.module()));
+        if (ready) {
+          out.add(m);
+          done.add(m.name());
+          progress = true;
+        }
+      }
+    }
+    for (Module m : modules) { // any left over (import cycle) — append in original order
+      if (!done.contains(m.name())) {
+        out.add(m);
+      }
+    }
+    return out;
+  }
+
   private void registerUnion(Decl.Union u, Map<String, Scheme> globals) {
     Map<String, Ty> params = new LinkedHashMap<>();
     for (String p : u.params()) {
@@ -174,7 +246,9 @@ public final class Infer {
       for (int i = args.size() - 1; i >= 0; i--) {
         ctor = new Ty.Arrow(astToTy(args.get(i), reuse(params)), ctor);
       }
-      globals.put(variant.name(), new Scheme(vars, ctor));
+      Scheme scheme = new Scheme(vars, ctor);
+      globals.put(variant.name(), scheme);
+      declaredCtors.put(variant.name(), scheme);
     }
   }
 
@@ -190,7 +264,9 @@ public final class Infer {
     for (int i = fields.size() - 1; i >= 0; i--) {
       ctor = new Ty.Arrow(astToTy(fields.get(i).type(), reuse(params)), ctor);
     }
-    globals.put(ta.name(), new Scheme(params.values().stream().map(t -> (Ty.Var) t).toList(), ctor));
+    Scheme scheme = new Scheme(params.values().stream().map(t -> (Ty.Var) t).toList(), ctor);
+    globals.put(ta.name(), scheme);
+    declaredCtors.put(ta.name(), scheme);
   }
 
   /** A param map that reuses the same variable objects (so a scheme's vars stay shared). */

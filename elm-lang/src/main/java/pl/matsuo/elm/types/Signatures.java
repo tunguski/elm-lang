@@ -299,6 +299,8 @@ public final class Signatures {
     g("Browser.Events.onMouseDown", "Decoder msg -> Sub msg");
     g("Browser.Events.onMouseUp", "Decoder msg -> Sub msg");
     g("Browser.Events.onVisibilityChange", "(Visibility -> msg) -> Sub msg");
+    g("Browser.Events.Visible", "Visibility");
+    g("Browser.Events.Hidden", "Visibility");
 
     // Browser.Dom.Viewport is a record alias (see Infer's builtin aliases); the inline record keeps
     // the SchemeParser-built type identical to the alias-expanded annotation.

@@ -1,6 +1,8 @@
 package pl.matsuo.elm.types;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
@@ -36,6 +38,27 @@ public final class TypeChecker {
       return result;
     } catch (ElmTypeError err) {
       throw locate(source, err);
+    }
+  }
+
+  /**
+   * Type-checks a multi-module project (e.g. an example plus the {@code Playground} source it
+   * imports). The entry module is the one defining {@code main} (else the last). Returns the entry
+   * module's inferred top-level types.
+   */
+  public static Map<String, String> checkProject(String... sources) {
+    List<Module> modules = new ArrayList<>();
+    for (String s : sources) {
+      modules.add(Parser.parseModule(s));
+    }
+    try {
+      Map<String, Scheme> schemes = new Infer().inferProject(modules, Signatures.globals());
+      Map<String, String> result = new LinkedHashMap<>();
+      schemes.forEach((name, scheme) -> result.put(name, Types.show(scheme.body())));
+      return result;
+    } catch (ElmTypeError err) {
+      // Line numbers are per-module; attach against the entry (last) source as a best effort.
+      throw locate(sources[sources.length - 1], err);
     }
   }
 
