@@ -63,6 +63,21 @@ class WasmGcTest {
   }
 
   @Test
+  void floatArithmetic() throws Exception {
+    agrees("main = 1.5 + 2.25\n"); // 3.75
+    agrees("main = 7.0 / 2.0\n"); // 3.5
+    agrees("main = 3.0 * 3.0 - 1.0\n"); // 8
+    agrees("main = 0.0 - 4.5\n"); // -4.5
+  }
+
+  @Test
+  void floatFunctionsConditionalsAndLet() throws Exception {
+    agrees("area r = 3.14 * r * r\nmain = area 2.0\n"); // 12.56
+    agrees("main = if 1.5 < 2.5 then 10.0 else 0.0\n"); // 10
+    agrees("main = let x = 1.5 in x + x\n"); // 3
+  }
+
+  @Test
   void sumsAConsListBuiltOnTheGcHeap() throws Exception {
     agrees(
         """

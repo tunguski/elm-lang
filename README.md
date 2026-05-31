@@ -20,8 +20,9 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    lambdas lambda-lifted), with **tail calls** compiled to `return_call` so recursive loops run at
    any depth, so recursive list/ADT, float, string, record, higher-order and curried code compile
    and run anywhere `WebAssembly` does. A second, **WasmGC** code path (`WasmGc`)
-   compiles the Int/`List Int` subset to host-garbage-collected `struct` references — cons-lists with
-   no linear memory and no manual reclamation, collected by the engine.
+   compiles the Int/`Float`/`List Int` subset to host-garbage-collected `struct` references — cons-lists
+   with no linear memory and no manual reclamation, collected by the engine (`Float` is a native
+   `f64`).
 
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions, and a non-trivial records/lists/closures
@@ -354,9 +355,11 @@ publishes it as an artifact.
   and a small **standard library** (`List.map`/`foldl`/`foldr`/`filter`/`range`/`reverse`/…,
   `Maybe`/`Result` helpers) written in the same subset and prepended when used. The growable heap has
   a sound **arena reclamation** — a scalar-returning call that consumes a heap argument frees what it
-  allocated (purity makes this safe), keeping "reduce a structure, in a loop" programs bounded; a
-  general GC (WasmGC) is future work. The other gap is the rest of the larger standard library (most
-  `String`/`Dict`/`Array` operations).
+  allocated (purity makes this safe), keeping "reduce a structure, in a loop" programs bounded. The
+  alternative **WasmGC** backend instead hands lists to the engine's collector and now covers
+  `Int`/`Bool`/`Float`/`List Int`; carrying the full value model (records, custom types, strings,
+  closures) onto WasmGC is future work. The other gap is the rest of the larger standard library
+  (most `String`/`Dict`/`Array` operations).
 - **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
   the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,
   keyboard, turtle, mario) type-checks end to end — exercising module-level let-generalization (SCC

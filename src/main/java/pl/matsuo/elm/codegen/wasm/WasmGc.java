@@ -24,16 +24,19 @@ import pl.matsuo.elm.types.Types;
  * A cons-list is a GC struct {@code {head : i64, tail : (ref null $cons)}}, so building and
  * discarding lists is reclaimed by the engine's collector with no manual memory management.
  *
- * <p>The supported subset is monomorphic {@code Int}/{@code Bool} and {@code List Int}: integer
- * arithmetic and comparisons, {@code if}, {@code let}, top-level functions and recursion, list
- * literals and {@code ::}, and a {@code case} over {@code []} / {@code head :: tail}. Each function's
- * parameter and result wasm types come from Hindley–Milner inference (so an {@code Int} is an
- * {@code i64} and a {@code List Int} a struct reference). Records, closures, strings and other
- * element types remain on the linear-memory backend — extending this one to them is future work.
+ * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float} and {@code List Int}:
+ * integer and floating-point arithmetic and comparisons ({@code Float} is an {@code f64}, with
+ * {@code /} and {@code f64} compares), {@code if}, {@code let}, top-level functions and recursion,
+ * list literals and {@code ::}, and a {@code case} over {@code []} / {@code head :: tail}. Each
+ * function's parameter and result wasm types come from Hindley–Milner inference (so an {@code Int}
+ * is an {@code i64}, a {@code Float} an {@code f64}, and a {@code List Int} a struct reference).
+ * Records, custom types, closures, strings and other list element types remain on the linear-memory
+ * backend — extending this one to them is future work.
  */
 public final class WasmGc {
 
   private static final int I64 = 0x7E;
+  private static final int F64 = 0x7C;
   // The cons struct is type index 0; a list value has type (ref null 0): bytes 0x63 0x00.
   private static final int[] LISTREF = {0x63, 0x00};
 
@@ -45,6 +48,7 @@ public final class WasmGc {
   /** A wasm value type in the supported subset. */
   private enum W {
     INT, // i64
+    FLOAT, // f64
     LIST // (ref null $cons)
   }
 
@@ -97,6 +101,9 @@ public final class WasmGc {
     if (p instanceof Ty.Con c && c.name().equals("List")) {
       return W.LIST;
     }
+    if (p instanceof Ty.Con c && c.name().equals("Float")) {
+      return W.FLOAT;
+    }
     if (p instanceof Ty.Con c && (c.name().equals("Int") || c.name().equals("Bool"))) {
       return W.INT;
     }
@@ -105,7 +112,8 @@ public final class WasmGc {
     if (p instanceof Ty.Var) {
       return W.INT;
     }
-    throw unsupported("type " + Types.show(p) + " (WasmGC backend handles Int/Bool and List Int)");
+    throw unsupported(
+        "type " + Types.show(p) + " (WasmGC backend handles Int/Bool/Float and List Int)");
   }
 
   static ElmRuntimeError unsupported(String what) {
@@ -170,11 +178,17 @@ public final class WasmGc {
           code.write(0x42);
           sleb(code, lit.value());
         }
+        case Expr.FloatLit lit -> emitF64(lit.value());
         case Expr.Negate n -> {
-          code.write(0x42);
-          sleb(code, 0);
-          gen(n.operand());
-          code.write(0x7D); // i64.sub
+          if (isFloat(n)) {
+            gen(n.operand());
+            code.write(0x9A); // f64.neg
+          } else {
+            code.write(0x42);
+            sleb(code, 0);
+            gen(n.operand());
+            code.write(0x7D); // i64.sub
+          }
         }
         case Expr.BinOp b -> binOp(b);
         case Expr.If iff -> {
@@ -230,15 +244,32 @@ public final class WasmGc {
         return;
       }
       switch (b.op()) {
-        case "+", "-", "*", "//" -> {
+        case "+", "-", "*" -> {
           gen(b.left());
           gen(b.right());
-          code.write(switch (b.op()) {
-            case "+" -> 0x7C;
-            case "-" -> 0x7D;
-            case "*" -> 0x7E;
-            default -> 0x7F; // i64.div_s
-          });
+          if (isFloat(b)) {
+            code.write(switch (b.op()) {
+              case "+" -> 0xA0; // f64.add
+              case "-" -> 0xA1; // f64.sub
+              default -> 0xA2; // f64.mul
+            });
+          } else {
+            code.write(switch (b.op()) {
+              case "+" -> 0x7C;
+              case "-" -> 0x7D;
+              default -> 0x7E;
+            });
+          }
+        }
+        case "//" -> {
+          gen(b.left());
+          gen(b.right());
+          code.write(0x7F); // i64.div_s
+        }
+        case "/" -> {
+          gen(b.left());
+          gen(b.right());
+          code.write(0xA3); // f64.div
         }
         case "<", ">", "<=", ">=", "==", "/=", "&&", "||" -> {
           // A comparison/boolean in value position: i32 result widened to i64 (0/1).
@@ -268,14 +299,25 @@ public final class WasmGc {
           case "<", ">", "<=", ">=", "==", "/=" -> {
             gen(b.left());
             gen(b.right());
-            code.write(switch (b.op()) {
-              case "<" -> 0x53;
-              case ">" -> 0x55;
-              case "<=" -> 0x57;
-              case ">=" -> 0x59;
-              case "==" -> 0x51;
-              default -> 0x52;
-            });
+            if (isFloat(b.left())) {
+              code.write(switch (b.op()) {
+                case "<" -> 0x63; // f64.lt
+                case ">" -> 0x64; // f64.gt
+                case "<=" -> 0x65; // f64.le
+                case ">=" -> 0x66; // f64.ge
+                case "==" -> 0x61; // f64.eq
+                default -> 0x62; // f64.ne
+              });
+            } else {
+              code.write(switch (b.op()) {
+                case "<" -> 0x53;
+                case ">" -> 0x55;
+                case "<=" -> 0x57;
+                case ">=" -> 0x59;
+                case "==" -> 0x51;
+                default -> 0x52;
+              });
+            }
             return;
           }
           default -> {}
@@ -426,11 +468,27 @@ public final class WasmGc {
       }
       return t;
     }
+
+    /** Whether the expression's inferred type is {@code Float} (so it uses f64 ops). */
+    private boolean isFloat(Expr e) {
+      return wOf(nodeType(e)) == W.FLOAT;
+    }
+
+    /** Emits {@code f64.const} followed by the 8-byte little-endian IEEE-754 encoding. */
+    private void emitF64(double value) {
+      code.write(0x44);
+      long bits = Double.doubleToLongBits(value);
+      for (int i = 0; i < 8; i++) {
+        code.write((int) ((bits >>> (8 * i)) & 0xFF));
+      }
+    }
   }
 
   private static void writeType(ByteArrayOutputStream out, W w) {
     if (w == W.INT) {
       out.write(I64);
+    } else if (w == W.FLOAT) {
+      out.write(F64);
     } else {
       out.write(LISTREF[0]);
       out.write(LISTREF[1]);
