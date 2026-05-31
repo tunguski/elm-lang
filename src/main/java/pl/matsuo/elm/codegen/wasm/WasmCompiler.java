@@ -135,6 +135,27 @@ public final class WasmCompiler {
           hx :: tx -> case ys of
               [] -> []
               hy :: ty -> f hx hy :: listMap2 f tx ty
+      maxOf a b = if a > b then a else b
+      minOf a b = if a < b then a else b
+      listMaximum xs = case xs of
+          [] -> Nothing
+          h :: t -> Just (listFoldl maxOf h t)
+      listMinimum xs = case xs of
+          [] -> Nothing
+          h :: t -> Just (listFoldl minOf h t)
+      listMember x xs = listFoldl (\\y acc -> acc || x == y) False xs
+      listInsert x xs = case xs of
+          [] -> x :: []
+          h :: t -> if x <= h then x :: h :: t else h :: listInsert x t
+      listSort xs = listFoldr listInsert [] xs
+      listSortInsert key x xs = case xs of
+          [] -> x :: []
+          h :: t -> if key x <= key h then x :: h :: t else h :: listSortInsert key x t
+      listSortBy key xs = listFoldr (listSortInsert key) [] xs
+      listIndexedHelp f i xs = case xs of
+          [] -> []
+          h :: t -> f i h :: listIndexedHelp f (i + 1) t
+      listIndexedMap f xs = listIndexedHelp f 0 xs
       maybeWithDefault d m = case m of
           Just x -> x
           Nothing -> d
@@ -176,6 +197,12 @@ public final class WasmCompiler {
           Map.entry("List.all", "listAll"),
           Map.entry("List.any", "listAny"),
           Map.entry("List.map2", "listMap2"),
+          Map.entry("List.maximum", "listMaximum"),
+          Map.entry("List.minimum", "listMinimum"),
+          Map.entry("List.member", "listMember"),
+          Map.entry("List.sort", "listSort"),
+          Map.entry("List.sortBy", "listSortBy"),
+          Map.entry("List.indexedMap", "listIndexedMap"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
           Map.entry("Maybe.map", "maybeMap"),
           Map.entry("Maybe.andThen", "maybeAndThen"),

@@ -132,6 +132,20 @@ class WasmHeapTest {
   }
 
   @Test
+  void sortingSearchingAndIndexing() throws Exception {
+    // Comparison-based prelude additions: maximum/minimum/member/sort/sortBy/indexedMap.
+    agrees("main = Maybe.withDefault 0 (List.maximum [ 3, 9, 2, 7 ])\n"); // 9
+    agrees("main = Maybe.withDefault 0 (List.minimum [ 3, 9, 2, 7 ])\n"); // 2
+    agrees("main = Maybe.withDefault (-1) (List.maximum [])\n"); // -1 (Nothing)
+    agrees("main = if List.member 5 [ 1, 5, 9 ] then 1 else 0\n"); // 1
+    agrees("main = if List.member 4 [ 1, 5, 9 ] then 1 else 0\n"); // 0
+    agrees("main = Maybe.withDefault 0 (List.maximum (List.sort [ 5, 1, 4, 2, 3 ]))\n"); // 5
+    agrees("main = List.sum (List.take 2 (List.sort [ 5, 1, 4, 2, 3 ]))\n"); // 1 + 2 = 3
+    agrees("main = List.sum (List.take 2 (List.sortBy (\\n -> 0 - n) [ 5, 1, 4, 2, 3 ]))\n"); // 5 + 4 = 9
+    agrees("main = List.sum (List.indexedMap (\\i x -> i * x) [ 10, 20, 30 ])\n"); // 0 + 20 + 60 = 80
+  }
+
+  @Test
   void multiExportModuleDecodesEveryKind() throws Exception {
     assumeTrue(NODE, "node not available");
     // Mirrors the JS-vs-WASM gallery page: one module exporting f0..fN of mixed result types, each

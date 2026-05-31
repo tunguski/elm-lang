@@ -366,8 +366,9 @@ publishes it as an artifact.
   **row-polymorphic** — fields are looked up by name at runtime), first-class functions, **closures
   and currying** (a uniform closure value + a generic `$apply` runtime, with lambdas lambda-lifted),
   and a **standard library** (`List.map`/`foldl`/`foldr`/`filter`/`range`/`reverse`/`append`/`concat`/
-  `concatMap`/`take`/`drop`/`repeat`/`product`/`all`/`any`/`map2`/`isEmpty`, `Maybe.map`/`andThen`/
-  `withDefault`, `Result.map`/`withDefault`) written in the same subset and prepended when used. The growable heap has
+  `concatMap`/`take`/`drop`/`repeat`/`product`/`all`/`any`/`map2`/`isEmpty`/`maximum`/`minimum`/
+  `member`/`sort`/`sortBy`/`indexedMap`, `Maybe.map`/`andThen`/`withDefault`, `Result.map`/
+  `withDefault`) written in the same subset and prepended when used. The growable heap has
   a sound **arena reclamation** — a scalar-returning call that consumes a heap argument frees what it
   allocated (purity makes this safe), keeping "reduce a structure, in a loop" programs bounded. The
   alternative **WasmGC** backend instead hands lists, tuples and records to the engine's collector and
