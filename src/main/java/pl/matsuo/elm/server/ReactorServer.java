@@ -40,6 +40,10 @@ public final class ReactorServer {
         exchange -> {
           try {
             String path = exchange.getRequestURI().getPath();
+            if (path.equals("/_events")) {
+              serveEvents(exchange, generation);
+              return;
+            }
             byte[] body;
             String contentType = "text/html; charset=utf-8";
             if (path.equals("/_reload")) {
@@ -69,8 +73,45 @@ public final class ReactorServer {
             exchange.close();
           }
         });
+    // A pool (not the default single caller-thread) so a held-open SSE connection never starves
+    // other requests. Daemon threads so the JVM can still exit.
+    server.setExecutor(
+        java.util.concurrent.Executors.newCachedThreadPool(
+            r -> {
+              Thread t = new Thread(r, "reactor");
+              t.setDaemon(true);
+              return t;
+            }));
     server.start();
     return server;
+  }
+
+  /** Server-Sent Events: holds the connection open and pushes a {@code reload} event whenever the
+   * generation bumps, so the browser reloads instantly instead of polling. */
+  private static void serveEvents(com.sun.net.httpserver.HttpExchange exchange, AtomicLong generation)
+      throws java.io.IOException {
+    exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+    exchange.getResponseHeaders().add("Cache-Control", "no-cache");
+    exchange.sendResponseHeaders(200, 0); // chunked: an open-ended stream
+    OutputStream os = exchange.getResponseBody();
+    try {
+      long last = generation.get();
+      os.write(": connected\n\n".getBytes(StandardCharsets.UTF_8));
+      os.flush();
+      while (true) {
+        long g = generation.get();
+        if (g != last) {
+          last = g;
+          os.write(("data: " + g + "\n\n").getBytes(StandardCharsets.UTF_8));
+          os.flush(); // a write failure (client gone) breaks the loop
+        }
+        Thread.sleep(300);
+      }
+    } catch (Exception e) {
+      // client disconnected or the server is shutting down
+    } finally {
+      exchange.close();
+    }
   }
 
   /** The directory listing page: a link per {@code .elm} module. */
@@ -147,11 +188,15 @@ public final class ReactorServer {
         + "</body>";
   }
 
-  /** Polls {@code /_reload}; when the generation differs from the page's, reloads. */
+  /** Reloads the page when the source changes. Primary: a Server-Sent-Events push from
+   * {@code /_events} (instant, no chattiness). Fallback: polling {@code /_reload} where EventSource
+   * is unavailable. A page generation of {@code -1} (the index) never auto-reloads. */
   private static final String RELOAD_SCRIPT =
-      "<script>(function(){var g='%GEN%';setInterval(function(){"
-          + "fetch('/_reload').then(function(r){return r.text();}).then(function(t){"
-          + "if(g!=='-1'&&t!==g){location.reload();}}).catch(function(){});},700);})();</script>";
+      "<script>(function(){var g='%GEN%';if(g==='-1')return;"
+          + "if(window.EventSource){var es=new EventSource('/_events');"
+          + "es.onmessage=function(){location.reload();};es.onerror=function(){};}"
+          + "else{setInterval(function(){fetch('/_reload').then(function(r){return r.text();})"
+          + ".then(function(t){if(t!==g){location.reload();}}).catch(function(){});},700);}})();</script>";
 
   /** Watches {@code dir} for {@code .elm} changes on a daemon thread, bumping {@code generation}. */
   private static void startWatcher(Path dir, AtomicLong generation) {

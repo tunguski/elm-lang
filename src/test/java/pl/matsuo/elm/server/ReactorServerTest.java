@@ -73,6 +73,45 @@ class ReactorServerTest {
   }
 
   @Test
+  void pushesAReloadEventOverServerSentEvents(@TempDir Path dir) throws Exception {
+    Files.writeString(dir.resolve("Main.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"a\"\n",
+        StandardCharsets.UTF_8);
+    server = ReactorServer.start(dir, 0);
+    int portNo = server.getAddress().getPort();
+    try (java.net.Socket sock = new java.net.Socket("127.0.0.1", portNo)) {
+      sock.setSoTimeout(5000);
+      sock.getOutputStream().write("GET /_events HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+          .getBytes(StandardCharsets.UTF_8));
+      sock.getOutputStream().flush();
+      var in = new java.io.BufferedReader(
+          new java.io.InputStreamReader(sock.getInputStream(), StandardCharsets.UTF_8));
+      // Read past the headers and the initial ": connected" comment.
+      String line;
+      boolean connected = false;
+      while ((line = in.readLine()) != null && !connected) {
+        if (line.startsWith(": connected")) {
+          connected = true;
+        }
+      }
+      assertTrue(connected, "received the SSE stream's initial comment");
+      // Change the source -> the watcher bumps the generation -> a data event is pushed.
+      Thread.sleep(50);
+      Files.writeString(dir.resolve("Main.elm"),
+          "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"b\"\n",
+          StandardCharsets.UTF_8);
+      boolean gotData = false;
+      while ((line = in.readLine()) != null) {
+        if (line.startsWith("data:")) {
+          gotData = true;
+          break;
+        }
+      }
+      assertTrue(gotData, "a reload event was pushed after the source changed");
+    }
+  }
+
+  @Test
   void showsACompileErrorPage(@TempDir Path dir) throws Exception {
     Files.writeString(dir.resolve("Bad.elm"), "module Bad exposing (main)\nmain = (1 +\n",
         StandardCharsets.UTF_8);
