@@ -569,6 +569,9 @@ public final class Main implements Runnable {
     @Option(names = "--json", description = "Emit the structured docs.json API instead of Markdown.")
     boolean json;
 
+    @Option(names = "--html", description = "Emit a self-contained, searchable HTML documentation page.")
+    boolean html;
+
     @Option(names = "--pkg", description = "Fetch a published package's docs.json from the registry, e.g. elm/json.")
     String pkg;
 
@@ -606,10 +609,14 @@ public final class Main implements Runnable {
         return 2;
       }
       String source = Files.readString(file);
-      System.out.print(
-          json
-              ? pl.matsuo.elm.doc.ApiDocs.of(source).toJson()
-              : pl.matsuo.elm.doc.DocGenerator.markdown(source) + "\n");
+      if (html) {
+        System.out.print(pl.matsuo.elm.doc.DocGenerator.html(source));
+      } else {
+        System.out.print(
+            json
+                ? pl.matsuo.elm.doc.ApiDocs.of(source).toJson()
+                : pl.matsuo.elm.doc.DocGenerator.markdown(source) + "\n");
+      }
       return 0;
     }
   }

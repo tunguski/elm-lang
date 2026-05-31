@@ -18,6 +18,74 @@ public final class DocGenerator {
 
   private DocGenerator() {}
 
+  /** Renders the module's public API as a self-contained, searchable HTML page (from {@link ApiDocs},
+   * i.e. the same structured form behind {@code docs.json}). */
+  public static String html(String source) {
+    ApiDocs api = ApiDocs.of(source);
+    StringBuilder h = new StringBuilder();
+    h.append("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">")
+        .append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+        .append("<title>").append(esc(api.moduleName())).append(" - docs</title>\n")
+        .append("<style>")
+        .append("body{font-family:system-ui,sans-serif;max-width:780px;margin:40px auto;padding:0 16px;color:#1f2933;line-height:1.5}")
+        .append("h1{border-bottom:2px solid #e4e7eb;padding-bottom:8px}")
+        .append("code{background:#f5f7fa;padding:1px 5px;border-radius:4px;font-size:.95em}")
+        .append(".entry{margin:18px 0;padding-top:8px;border-top:1px solid #f0f0f0}")
+        .append(".sig{font-size:1.05em}.sig .nm{color:#3a7bd5;font-weight:600}")
+        .append(".doc{color:#52606d;white-space:pre-wrap}")
+        .append("#q{width:100%;padding:8px;font-size:1em;border:1px solid #cbd2d9;border-radius:6px;margin:12px 0}")
+        .append("a{color:#3a7bd5;text-decoration:none}.toc{columns:2;font-size:.95em}")
+        .append("</style></head><body>\n");
+    h.append("<h1>").append(esc(api.moduleName())).append("</h1>\n");
+    if (!api.moduleComment().isEmpty()) {
+      h.append("<p class=\"doc\">").append(esc(api.moduleComment())).append("</p>\n");
+    }
+    h.append("<input id=\"q\" placeholder=\"Filter by name…\" autofocus>\n");
+    // Table of contents.
+    h.append("<div class=\"toc\">");
+    api.unions().keySet().forEach(n -> tocLink(h, n));
+    api.aliases().keySet().forEach(n -> tocLink(h, n));
+    api.values().keySet().forEach(n -> tocLink(h, n));
+    h.append("</div>\n");
+    api.unions().values().forEach(u -> {
+      String head = "type " + u.name() + (u.params().isEmpty() ? "" : " " + String.join(" ", u.params()));
+      String ctors = "Constructors: " + String.join(", ", u.tags().keySet());
+      entry(h, u.name(), head, u.comment().isEmpty() ? ctors : ctors + "\n\n" + u.comment());
+    });
+    api.aliases().values().forEach(a -> {
+      String head = "type alias " + a.name()
+          + (a.params().isEmpty() ? "" : " " + String.join(" ", a.params())) + " = " + a.type();
+      entry(h, a.name(), head, a.comment());
+    });
+    api.values().values().forEach(v ->
+        entry(h, v.name(), v.name() + (v.type().isEmpty() ? "" : " : " + v.type()), v.comment()));
+    // Live filter: hide entries (and their TOC links) whose name doesn't contain the query.
+    h.append("<script>var q=document.getElementById('q');q.addEventListener('input',function(){")
+        .append("var t=q.value.toLowerCase();")
+        .append("document.querySelectorAll('[data-name]').forEach(function(e){")
+        .append("e.style.display=e.getAttribute('data-name').indexOf(t)>=0?'':'none';});});</script>\n");
+    return h.append("</body></html>\n").toString();
+  }
+
+  private static void tocLink(StringBuilder h, String name) {
+    h.append("<a data-name=\"").append(esc(name.toLowerCase())).append("\" href=\"#")
+        .append(esc(name)).append("\"><code>").append(esc(name)).append("</code></a><br>");
+  }
+
+  private static void entry(StringBuilder h, String name, String signature, String doc) {
+    h.append("<div class=\"entry\" data-name=\"").append(esc(name.toLowerCase())).append("\">")
+        .append("<div class=\"sig\" id=\"").append(esc(name)).append("\"><code>")
+        .append(esc(signature)).append("</code></div>");
+    if (!doc.isEmpty()) {
+      h.append("<div class=\"doc\">").append(esc(doc)).append("</div>");
+    }
+    h.append("</div>\n");
+  }
+
+  private static String esc(String s) {
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+  }
+
   /** Renders the module's documentation as Markdown. */
   public static String markdown(String source) {
     Module module = Parser.parseModule(source);

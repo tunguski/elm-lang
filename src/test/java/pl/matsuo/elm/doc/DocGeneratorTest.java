@@ -61,6 +61,32 @@ class DocGeneratorTest {
   }
 
   @Test
+  void htmlRendersASearchableApiPage() {
+    String src =
+        """
+        module Math exposing (double, Op)
+
+        {-| Small math helpers. -}
+
+
+        {-| A binary operation. -}
+        type Op = Add | Mul
+
+        {-| Doubles a number. -}
+        double n =
+            n * 2
+        """;
+    String html = DocGenerator.html(src);
+    assertTrue(html.startsWith("<!doctype html>"), html);
+    assertTrue(html.contains("<title>Math - docs</title>"), html);
+    assertTrue(html.contains("Small math helpers."), "module comment");
+    assertTrue(html.contains("double") && html.contains("number -&gt; number"), html); // value + type (escaped)
+    assertTrue(html.contains("type Op") && html.contains("Add, Mul"), html); // union + constructors
+    assertTrue(html.contains("id=\"q\""), "has a search box"); // live name filter
+    assertTrue(html.contains("data-name=\"double\""), "entries are filterable by name");
+  }
+
+  @Test
   void docsJsonIsAModuleArrayCarryingDocComments() {
     String src =
         """
