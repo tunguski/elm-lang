@@ -420,6 +420,24 @@ public final class LspServer {
     return new ArrayList<>(names);
   }
 
+  /** The module's own top-level value/type/constructor names (for sorting them ahead of the stdlib). */
+  private java.util.Set<String> localNames(String source) {
+    java.util.Set<String> names = new java.util.HashSet<>();
+    try {
+      for (Decl d : Parser.parseModule(source).decls()) {
+        switch (d) {
+          case Decl.Value v -> names.add(v.name());
+          case Decl.TypeAlias ta -> names.add(ta.name());
+          case Decl.Union u -> u.variants().forEach(variant -> names.add(variant.name()));
+          default -> {}
+        }
+      }
+    } catch (RuntimeException ignored) {
+      // no document-local names while it doesn't parse
+    }
+    return names;
+  }
+
   /** The type of {@code name} as rendered text: a module-local inferred type, else a stdlib
    *  signature. Used for completion detail, signature help and inlay hints. */
   public Optional<String> typeOf(String source, String name) {
@@ -1044,6 +1062,7 @@ public final class LspServer {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         String uri = (String) td.get("uri");
         String src = docs.getOrDefault(uri, "");
+        java.util.Set<String> local = localNames(src);
         List<Object> items = new ArrayList<>();
         for (String name : complete(src)) {
           Map<String, Object> item = new LinkedHashMap<>();
@@ -1051,6 +1070,8 @@ public final class LspServer {
           // Uppercase first letter -> a constructor/type (kind 4/7); else a function (kind 3).
           item.put("kind", !name.isEmpty() && Character.isUpperCase(name.charAt(0)) ? 4L : 3L);
           typeOf(src, name).ifPresent(t -> item.put("detail", name + " : " + t));
+          // Sort the module's own names ahead of the stdlib.
+          item.put("sortText", (local.contains(name) ? "0" : "1") + name);
           items.add(item);
         }
         reply(out, id, items);
@@ -1068,6 +1089,23 @@ public final class LspServer {
           symbols.add(sym);
         }
         reply(out, id, symbols);
+      }
+      case "textDocument/documentHighlight" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        String uri = (String) td.get("uri");
+        int line = ((Number) pos.get("line")).intValue();
+        int ch = ((Number) pos.get("character")).intValue();
+        String src = docs.getOrDefault(uri, "");
+        String word = wordAt(src, line, ch);
+        List<Object> highlights = new ArrayList<>();
+        for (int[] loc : references(src, line, ch)) {
+          Map<String, Object> h = new LinkedHashMap<>();
+          h.put("range", range(loc[0], loc[1], loc[1] + word.length()));
+          h.put("kind", 1L); // Text
+          highlights.add(h);
+        }
+        reply(out, id, highlights);
       }
       case "textDocument/references" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
@@ -1225,6 +1263,7 @@ public final class LspServer {
     caps.put("definitionProvider", true);
     caps.put("completionProvider", new LinkedHashMap<>()); // no trigger characters
     caps.put("referencesProvider", true);
+    caps.put("documentHighlightProvider", true);
     caps.put("documentSymbolProvider", true);
     caps.put("renameProvider", true);
     caps.put("codeActionProvider", true);

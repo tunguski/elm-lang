@@ -237,6 +237,15 @@ class LspServerTest {
     assertTrue(response.contains("renameProvider"), response);
     assertTrue(response.contains("semanticTokensProvider"), response);
     assertTrue(response.contains("documentFormattingProvider"), response);
+    assertTrue(response.contains("documentHighlightProvider"), response);
+  }
+
+  @Test
+  void documentHighlightFindsEveryOccurrenceInTheDocument() {
+    // `references` (same-document occurrences) backs documentHighlight: `inc` appears 3 times.
+    String src = "module M exposing (main)\ninc n = n + 1\nmain = inc (inc 1)\n";
+    var occ = server.references(src, 1, 0); // cursor on `inc`'s definition
+    assertEquals(3, occ.size(), occ.toString());
   }
 
   @Test
