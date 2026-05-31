@@ -131,10 +131,12 @@ with the shape constructors, colours and transforms rendered to SVG) — enough 
 TEA / SVG / `picture` / `animation` example from the elm-lang.org gallery parses and renders. It also
 runs **effects live**: `Random.generate` (sampled from a seed the editor advances — so **numbers**
 rolls a die and **cards** draws on click), `Time.every` subscriptions (wired to a real tick — so
-the **clock** ticks), and `elm-playground`'s interactive **`game`** (a keyboard + animation-frame
+the **clock** ticks), `elm-playground`'s interactive **`game`** (a keyboard + animation-frame
 loop, so **turtle**/**keyboard**/**mario** move with the arrow keys; tuple-pattern parameters like
-`view computer (x, y) = …` are desugared so they parse). Examples that need WebGL, HTTP or
-`File`/`Json.Decode` effect runtimes parse but fall outside this teaching-subset interpreter.
+`view computer (x, y) = …` are desugared so they parse), and **`Http.get`** (the editor issues a real
+request and feeds the response back, so the **book** example loads live via `Http.expectString`).
+Examples that need WebGL or `File`/`Json.Decode` effect runtimes parse but fall outside this
+teaching-subset interpreter.
 
 ## Type inference
 

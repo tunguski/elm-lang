@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep, httpCmd, httpResult)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -25,6 +25,7 @@ builtins =
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
+        ++ [ "Http.get", "Http.expectString" ]
         ++ playgroundNames
 
 
@@ -68,7 +69,7 @@ arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
-    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation" ] then
+    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString" ] then
         1
 
     else if List.member name [ "toX", "toY", "degrees" ] then
@@ -531,6 +532,18 @@ runBuiltin globals name args =
 
             ( "Random.generate", [ toMsg, gen ] ) ->
                 Ok (VCtor "Cmd.random" [ toMsg, gen ])
+
+            ( "Http.expectString", [ toMsg ] ) ->
+                Ok (VCtor "Http.expect" [ toMsg ])
+
+            ( "Http.get", [ VRecord fields ] ) ->
+                -- A GET command the editor issues for real, feeding the response back via `expect`.
+                case ( lookup "url" fields, lookup "expect" fields ) of
+                    ( Just (VStr url), Just (VCtor "Http.expect" [ toMsg ]) ) ->
+                        Ok (VCtor "Cmd.http" [ VStr url, toMsg ])
+
+                    _ ->
+                        Err "Http.get needs { url : String, expect : … }"
 
             _ ->
                 Err ("bad arguments to " ++ name)
@@ -1151,6 +1164,34 @@ randomCmd files seed cmd =
 
         _ ->
             Nothing
+
+
+{-| If the command is an `Http.get`, the (url, toMsg) the editor needs to issue a real request and
+build the response message. -}
+httpCmd : Value -> Maybe ( String, Value )
+httpCmd cmd =
+    case cmd of
+        VCtor "Cmd.http" [ VStr url, toMsg ] ->
+            Just ( url, toMsg )
+
+        _ ->
+            Nothing
+
+
+{-| Builds the message to dispatch when an HTTP request finishes: applies the `expect`'s constructor
+to `Ok body` (or `Err`), giving the interpreted `Result Http.Error String` the app expects. -}
+httpResult : List ( String, String ) -> Value -> Maybe String -> Result String Value
+httpResult files toMsg body =
+    let
+        result =
+            case body of
+                Just text ->
+                    VCtor "Ok" [ VStr text ]
+
+                Nothing ->
+                    VCtor "Err" [ VCtor "NetworkError" [] ]
+    in
+    applyMsgIn files toMsg result
 
 
 {-| Samples a generator with a linear-congruential step of the seed, returning (value, next seed). -}

@@ -458,6 +458,25 @@ class JsBackendTest {
   }
 
   @Test
+  void editorIssuesAndResolvesAnHttpGet() {
+    // The book example's init returns an Http.get command; the editor extracts (url, toMsg), and
+    // feeding a response body through httpResult + update renders the fetched text. (No real network
+    // — the body is supplied directly, exercising the full response path.)
+    String out =
+        editorScript(
+            read("/examples/book.elm"),
+            "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0]; var cmd=init._[0].vs[1];"
+                + "var h=_$Eval$httpCmd(cmd);" // Just (url, toMsg)
+                + "var url=h._[0].vs[0], toMsg=h._[0].vs[1];"
+                + "var mr=_$Eval$httpResult(files)(toMsg)($maybe('Hello, book!'));" // Ok msg
+                + "var up=_$Eval$appUpdateCmd(files)(mr._[0])(model);"
+                + "var view=_$Eval$appView(files)(up._[0].vs[0]);"
+                + "process.stdout.write(url+'||'+_$Eval$htmlToString(view._[0]));");
+    assertTrue(out.startsWith("https://"), out); // the request URL was extracted
+    assertTrue(out.contains("Hello, book!"), out); // the response body rendered in the view
+  }
+
+  @Test
   void editorExtractsTimeEverySubscription() {
     // The clock subscribes via `Time.every 1000 Tick`; the editor reads (interval, toMsg) to wire a
     // live tick.

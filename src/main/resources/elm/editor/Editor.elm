@@ -14,7 +14,7 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 
 import Browser
 import Browser.Events
-import Eval exposing (appInit, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, gameInitMem, gameStep, gameView, hasApp, lookup, mainValue, randomCmd, renderValue)
+import Eval exposing (appInit, appInitCmd, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue)
 import Json.Decode as Decode
 import Set exposing (Set)
 import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
@@ -48,6 +48,7 @@ type Msg
     | KeyDown String
     | KeyUp String
     | Frame Float
+    | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
     | NoOp
 
@@ -143,41 +144,73 @@ refreshApp model =
     }
 
 
-{-| Runs one interpreted message through `update`, then resolves any `Random.generate` command it
-produces by sampling with the editor's seed and dispatching the generated message (so `Roll`-style
-buttons actually randomise). `fuel` bounds the command-chasing in case an app loops. -}
-stepApp : Int -> Model -> Value -> Model
+{-| Runs one interpreted message through `update`, then handles the command it produces:
+`Random.generate` is sampled with the editor's seed and the generated message dispatched (so
+`Roll`-style buttons randomise); `Http.get` issues a real request whose response is fed back. `fuel`
+bounds the command-chasing in case an app loops. -}
+stepApp : Int -> Model -> Value -> ( Model, Cmd Msg )
 stepApp fuel model interpMsg =
     case model.app of
         Ok m ->
             case appUpdateCmd (selectedFile model) interpMsg m of
                 Ok ( m2, cmd ) ->
-                    case randomCmd (selectedFile model) model.seed cmd of
-                        Just ( genMsg, seed2 ) ->
-                            if fuel <= 0 then
-                                { model | app = Ok m2, seed = seed2 }
-
-                            else
-                                stepApp (fuel - 1) { model | app = Ok m2, seed = seed2 } genMsg
-
-                        Nothing ->
-                            { model | app = Ok m2 }
+                    runCmd fuel { model | app = Ok m2 } cmd
 
                 Err e ->
-                    { model | app = Err e }
+                    ( { model | app = Err e }, Cmd.none )
 
         Err _ ->
-            model
+            ( model, Cmd.none )
+
+
+{-| Handles an interpreted command: a `Random.generate` is resolved synchronously and its message
+re-dispatched; an `Http.get` becomes a real request (its response comes back as `HttpResult`);
+anything else is inert. -}
+runCmd : Int -> Model -> Value -> ( Model, Cmd Msg )
+runCmd fuel model cmd =
+    case randomCmd (selectedFile model) model.seed cmd of
+        Just ( genMsg, seed2 ) ->
+            if fuel <= 0 then
+                ( { model | seed = seed2 }, Cmd.none )
+
+            else
+                stepApp (fuel - 1) { model | seed = seed2 } genMsg
+
+        Nothing ->
+            case httpCmd cmd of
+                Just ( url, toMsg ) ->
+                    ( model
+                    , Http.get { url = url, expect = Http.expectString (HttpResult toMsg) }
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+
+{-| Refreshes the running app/game from the selected file and issues its `init` command (so a
+`Browser.element` that fetches on startup — like the book example — actually loads). -}
+refreshAndRun : Model -> ( Model, Cmd Msg )
+refreshAndRun model =
+    let
+        m =
+            refreshApp model
+    in
+    case appInitCmd (selectedFile m) of
+        Ok ( _, cmd ) ->
+            runCmd 100 m cmd
+
+        Err _ ->
+            ( m, Cmd.none )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SelectFile name ->
-            ( refreshApp { model | selected = name }, Cmd.none )
+            refreshAndRun { model | selected = name }
 
         EditSource content ->
-            ( refreshApp { model | files = setFile model.selected content model.files }, Cmd.none )
+            refreshAndRun { model | files = setFile model.selected content model.files }
 
         SetNewName n ->
             ( { model | newName = n }, Cmd.none )
@@ -195,14 +228,14 @@ update msg model =
                 ( model, Cmd.none )
 
             else
-                ( refreshApp { model | files = model.files ++ [ ( name, "main = text \"new file\"" ) ], selected = name, newName = "" }, Cmd.none )
+                refreshAndRun { model | files = model.files ++ [ ( name, "main = text \"new file\"" ) ], selected = name, newName = "" }
 
         RemoveFile name ->
             let
                 remaining =
                     List.filter (\f -> Tuple.first f /= name) model.files
             in
-            ( refreshApp
+            refreshAndRun
                 { model
                     | files = remaining
                     , selected =
@@ -212,11 +245,9 @@ update msg model =
                         else
                             model.selected
                 }
-            , Cmd.none
-            )
 
         Interp interpMsg ->
-            ( stepApp 100 model interpMsg, Cmd.none )
+            stepApp 100 model interpMsg
 
         Tick t ->
             -- A Time.every tick: feed the subscription's message (toMsg (millisToPosix t)) to update.
@@ -226,13 +257,22 @@ update msg model =
                         Just ( _, toMsg ) ->
                             case applyMsgIn (selectedFile model) toMsg (VNum (toFloat t)) of
                                 Ok interpMsg ->
-                                    ( stepApp 100 model interpMsg, Cmd.none )
+                                    stepApp 100 model interpMsg
 
                                 Err _ ->
                                     ( model, Cmd.none )
 
                         Nothing ->
                             ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        HttpResult toMsg result ->
+            -- A real HTTP request finished: build the interpreted message and feed it to `update`.
+            case httpResult (selectedFile model) toMsg (Result.toMaybe result) of
+                Ok interpMsg ->
+                    stepApp 100 model interpMsg
 
                 Err _ ->
                     ( model, Cmd.none )
