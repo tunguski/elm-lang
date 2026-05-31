@@ -28,6 +28,27 @@ public final class Benchmark {
       sumTo n acc = if n == 0 then acc else sumTo (n - 1) (acc + n)
       """;
 
+  // Extra workloads stress different costs than fib's pure call overhead. Both use only user-defined
+  // recursion + cons-lists / closed records (no stdlib), so all five backends — including WasmGC,
+  // which has no prelude — can compile them.
+  private static final String LIST_SOURCE =
+      """
+      range lo hi = if lo > hi then [] else lo :: range (lo + 1) hi
+      sum xs = case xs of
+          [] -> 0
+          h :: t -> h + sum t
+      total n = sum (range 1 n)
+      """;
+  private static final String RECORD_SOURCE =
+      """
+      bump p = { p | x = p.x + 1, y = p.y + 2 }
+      loop n p = if n == 0 then p.x + p.y else loop (n - 1) (bump p)
+      run n = loop n { x = 0, y = 0 }
+      """;
+
+  /** A named benchmark: a module, the entry function (an {@code Int -> Int}) and its argument. */
+  private record Workload(String name, String source, String entry, long arg) {}
+
   /** Runs the benchmark and returns a formatted report. */
   public static String run(long fibN, int warmup, int measured) {
     Object interpFib = Interpreter.load(SOURCE).value("fib");
@@ -41,9 +62,9 @@ public final class Benchmark {
 
     double[] interp = time(() -> Apply.apply(interpFib, fibN), warmup, measured);
     double[] bytecode = time(() -> Apply.apply(bcFib, fibN), warmup, measured);
-    double[] js = timeJs(fibN, warmup, measured); // null if Node is unavailable
-    double[] wasm = timeWasm(fibN, warmup, measured);
-    double[] wasmGc = timeWasmGc(fibN, warmup, measured);
+    double[] js = timeJs(SOURCE, "fib", fibN, warmup, measured); // null if Node is unavailable
+    double[] wasm = timeWasm(SOURCE, "fib", fibN, warmup, measured);
+    double[] wasmGc = timeWasmGc(SOURCE, "fib", fibN, warmup, measured);
 
     StringBuilder sb = new StringBuilder();
     sb.append("Benchmark: fib(").append(fibN).append(") = ").append(interpResult)
@@ -64,7 +85,42 @@ public final class Benchmark {
         "%nWarm: Truffle interpreter is %.2fx the bytecode VM "
             + "(its hot CallTargets are Graal-compiled on GraalVM).%n",
         bytecode[1] / interp[1]));
+
+    // Additional workloads (warm ms per backend) — list allocation/fold and record update, which
+    // stress allocation and data-structure handling rather than fib's pure call overhead.
+    // Modest depths: the bytecode VM keeps each call on the Java stack (no TCO), so these stay well
+    // under its limit while still exercising allocation and data-structure handling.
+    sb.append(runWorkload(new Workload("list fold: sum (range 1 100)", LIST_SOURCE, "total", 100), warmup, measured));
+    sb.append(runWorkload(new Workload("record update x150", RECORD_SOURCE, "run", 150), warmup, measured));
     return sb.toString();
+  }
+
+  /** Times one workload on every backend that can compile it, as a small "warm ms" table (a backend
+   * whose module fails to compile, or Node being absent, shows {@code n/a}). */
+  private static String runWorkload(Workload w, int warmup, int measured) {
+    Object interpFn = Interpreter.load(w.source()).value(w.entry());
+    Object bcFn = BytecodeInterpreter.load(w.source()).value(w.entry());
+    double interp = time(() -> Apply.apply(interpFn, w.arg()), warmup, measured)[1];
+    double bytecode = time(() -> Apply.apply(bcFn, w.arg()), warmup, measured)[1];
+    double[] js = timeJs(w.source(), w.entry(), w.arg(), warmup, measured);
+    double[] wasm = timeWasm(w.source(), w.entry(), w.arg(), warmup, measured);
+    double[] gc = timeWasmGc(w.source(), w.entry(), w.arg(), warmup, measured);
+    StringBuilder sb = new StringBuilder();
+    sb.append(String.format("%nWorkload: %s  (warm ms)%n", w.name()));
+    sb.append(String.format("  %-22s %10.2f%n", "Truffle interpreter", interp));
+    sb.append(String.format("  %-22s %10.2f%n", "Bytecode VM", bytecode));
+    workloadRow(sb, "JavaScript (Node)", js);
+    workloadRow(sb, "WebAssembly (Node)", wasm);
+    workloadRow(sb, "WasmGC (Node)", gc);
+    return sb.toString();
+  }
+
+  private static void workloadRow(StringBuilder sb, String name, double[] r) {
+    if (r != null) {
+      sb.append(String.format("  %-22s %10.2f%n", name, r[1]));
+    } else {
+      sb.append(String.format("  %-22s %10s%n", name, "n/a"));
+    }
   }
 
   /** Best warm time (ms) per backend, for charting. JS is included only if Node is available. */
@@ -74,29 +130,37 @@ public final class Benchmark {
     java.util.LinkedHashMap<String, Double> out = new java.util.LinkedHashMap<>();
     out.put("Truffle interpreter", time(() -> Apply.apply(interpFib, fibN), warmup, measured)[1]);
     out.put("Bytecode VM", time(() -> Apply.apply(bcFib, fibN), warmup, measured)[1]);
-    double[] js = timeJs(fibN, warmup, measured);
+    double[] js = timeJs(SOURCE, "fib", fibN, warmup, measured);
     if (js != null) {
       out.put("JavaScript (Node)", js[1]);
     }
-    double[] wasm = timeWasm(fibN, warmup, measured);
+    double[] wasm = timeWasm(SOURCE, "fib", fibN, warmup, measured);
     if (wasm != null) {
       out.put("WebAssembly (Node)", wasm[1]);
     }
-    double[] wasmGc = timeWasmGc(fibN, warmup, measured);
+    double[] wasmGc = timeWasmGc(SOURCE, "fib", fibN, warmup, measured);
     if (wasmGc != null) {
       out.put("WasmGC (Node)", wasmGc[1]);
     }
     return out;
   }
 
-  /** Warm timing of the WasmGC backend (host-GC structs, run under Node), or null if unavailable. */
-  public static double[] timeWasmGc(long fibN, int warmup, int measured) {
-    return timeWasmModule(WasmGc.module(SOURCE), "fib", fibN, warmup, measured);
+  /** Warm timing of the WasmGC backend, or null if Node is unavailable or the module can't compile. */
+  public static double[] timeWasmGc(String src, String fn, long n, int warmup, int measured) {
+    try {
+      return timeWasmModule(WasmGc.module(src), fn, n, warmup, measured);
+    } catch (RuntimeException e) {
+      return null; // the workload uses a construct WasmGC doesn't support
+    }
   }
 
-  /** Warm timing of the WASM backend (compiled fib, run under Node), or null if unavailable. */
-  public static double[] timeWasm(long fibN, int warmup, int measured) {
-    return timeWasmModule(WasmCompiler.moduleFromSource(SOURCE), "fib", fibN, warmup, measured);
+  /** Warm timing of the linear-memory WASM backend, or null if unavailable / uncompilable. */
+  public static double[] timeWasm(String src, String fn, long n, int warmup, int measured) {
+    try {
+      return timeWasmModule(WasmCompiler.moduleFromSource(src), fn, n, warmup, measured);
+    } catch (RuntimeException e) {
+      return null;
+    }
   }
 
   /** Instantiates a wasm module under Node, times {@code func(fibN)} cold then warm (best of
@@ -137,11 +201,11 @@ public final class Benchmark {
   }
 
   /** Warm timing of the JS backend (run under Node), or null if Node is not installed. */
-  public static double[] timeJs(long fibN, int warmup, int measured) {
+  public static double[] timeJs(String src, String fn, long n, int warmup, int measured) {
     try {
       Path file = Files.createTempFile("elm-bench-", ".js");
       Files.writeString(
-          file, JsCompiler.benchProgram(SOURCE, "fib", fibN, warmup, measured), StandardCharsets.UTF_8);
+          file, JsCompiler.benchProgram(src, fn, n, warmup, measured), StandardCharsets.UTF_8);
       Process p = new ProcessBuilder("node", file.toString()).redirectErrorStream(false).start();
       String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
       if (!p.waitFor(120, TimeUnit.SECONDS)) {

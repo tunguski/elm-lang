@@ -110,7 +110,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
 | `init [dir]` | Scaffold `elm.json` + `src/`. |
 | `install <author/name> [--registry DIR] [--from URL] [--elm [URL]]` | Add a package to `elm.json`, re-solve dependencies, and download its sources into the cache (`--elm` = the public package.elm-lang.org registry) so it compiles and runs. |
-| `bench [fibN]` | Benchmark the four backends on a recursive workload. |
+| `bench [fibN]` | Benchmark all **five** backends (interpreter, bytecode VM, JS, linear-memory WASM, WasmGC) on `fib`, plus list-fold and record-update workloads (a backend that can't compile a workload shows `n/a`). |
 | `site <examplesDir> <Playground.elm> <outDir> [docsDir]` | Generate the static example gallery (optionally rendering Markdown docs). |
 
 The compiled TEA runtime also ships a **time-travel debugger**: append `?debug` to a page URL for a

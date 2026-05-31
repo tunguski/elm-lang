@@ -25,6 +25,9 @@ class BenchmarkTest {
                 && report.contains("WasmGC (Node)"))
             || !nodeAvailable(),
         "JS, WASM and WasmGC rows should appear when Node is installed:\n" + report);
+    // The extra workloads (list fold, record update) are reported too.
+    assertTrue(report.contains("Workload: list fold"), report);
+    assertTrue(report.contains("Workload: record update"), report);
   }
 
   private static boolean nodeAvailable() {
