@@ -15,9 +15,49 @@ class TestRunnerTest {
     String suite = Resources.read("/elm/demos/example-test.elm");
     TestRunner.Result r = TestRunner.run(List.of(suite));
     assertEquals(0, r.exitCode(), r.report());
-    assertEquals(7, r.passed(), r.report()); // 3 arithmetic + 3 list + 1 comparison
+    assertEquals(9, r.passed(), r.report()); // 3 arithmetic + 3 list + 1 comparison + 2 fuzz
     assertEquals(0, r.failed(), r.report());
     assertTrue(r.report().contains("example › arithmetic › addition"), r.report());
+    assertTrue(r.report().contains("(100 passed)"), r.report()); // fuzz ran many inputs
+  }
+
+  @Test
+  void fuzzTestReportsTheFailingInput() {
+    // A false property: not every Int is positive. The runner must find a counterexample within its
+    // sample budget, fail, and report the offending value via the `Given …` context.
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (fuzz)
+        suite = fuzz Fuzz.int "all ints are positive" (\\n -> Expect.greaterThan 0 n)
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(0, r.passed(), r.report());
+    assertEquals(1, r.failed(), r.report());
+    assertEquals(1, r.exitCode());
+    assertTrue(r.report().contains("Given "), r.report()); // shows the counterexample
+  }
+
+  @Test
+  void richerExpectMatchers() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (Test, describe, test)
+        suite =
+            describe "expect"
+                [ test "within" (\\_ -> Expect.within 0.001 0.3 (0.1 + 0.2))
+                , test "ok" (\\_ -> Expect.ok (Ok 5))
+                , test "err" (\\_ -> Expect.err (Err "boom"))
+                , test "all" (\\_ -> Expect.all [ Expect.atLeast 0, Expect.atMost 10 ] 5)
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(4, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
   }
 
   @Test

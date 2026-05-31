@@ -32,12 +32,17 @@ public final class TestRunner {
 
   private static final String TEST_LIB = Resources.read("/elm/lib/Test.elm");
   private static final String EXPECT_LIB = Resources.read("/elm/lib/Expect.elm");
+  private static final String FUZZ_LIB = Resources.read("/elm/lib/Fuzz.elm");
+
+  /** How many random inputs a `fuzz` test is replayed over. */
+  private static final int FUZZ_RUNS = 100;
 
   /** Runs every top-level {@code Test} value found in {@code userSources}. */
   public static Result run(List<String> userSources) {
     List<String> all = new ArrayList<>(userSources);
     all.add(TEST_LIB);
     all.add(EXPECT_LIB);
+    all.add(FUZZ_LIB);
     Project project = Project.load(all.toArray(new String[0]));
 
     StringBuilder report = new StringBuilder();
@@ -70,7 +75,7 @@ public final class TestRunner {
   }
 
   private static boolean isTest(ElmData d) {
-    return d.ctor().equals("UnitTest") || d.ctor().equals("Labeled");
+    return d.ctor().equals("UnitTest") || d.ctor().equals("Labeled") || d.ctor().equals("FuzzTest");
   }
 
   private static void walk(String prefix, ElmData t, StringBuilder report, int[] counts) {
@@ -92,29 +97,65 @@ public final class TestRunner {
         try {
           expectation = Thunk.resolve(Apply.apply(Thunk.resolve(t.arg(1)), ElmUnit.INSTANCE));
         } catch (RuntimeException e) {
-          counts[1]++;
-          report.append("✗ ").append(prefix).append(desc).append("\n    error: ").append(e.getMessage()).append("\n");
+          fail(prefix, desc, "error: " + e.getMessage(), report, counts);
           return;
         }
-        if (expectation instanceof ElmData ed && ed.ctor().equals("Pass")) {
-          counts[0]++;
-          report.append("✓ ").append(prefix).append(desc).append("\n");
-        } else {
-          counts[1]++;
-          String reason =
-              expectation instanceof ElmData ed && ed.args().length > 0
-                  ? String.valueOf(Thunk.resolve(ed.arg(0)))
-                  : "failed";
-          report
-              .append("✗ ")
-              .append(prefix)
-              .append(desc)
-              .append("\n    ")
-              .append(reason.replace("\n", "\n    "))
-              .append("\n");
+        record(prefix, desc, expectation, report, counts);
+      }
+      case "FuzzTest" -> {
+        String desc = String.valueOf(Thunk.resolve(t.arg(0)));
+        Object body = Thunk.resolve(t.arg(1)); // Int -> Expectation
+        // Replay the property over many deterministic seeds; report the first failing input.
+        java.util.Random seeds = new java.util.Random(0x5eed);
+        for (int i = 0; i < FUZZ_RUNS; i++) {
+          long seed = seeds.nextInt(); // a 32-bit Elm Int the Fuzzer scrambles
+          Object expectation;
+          try {
+            expectation = Thunk.resolve(Apply.apply(body, seed));
+          } catch (RuntimeException e) {
+            fail(prefix, desc, "error: " + e.getMessage(), report, counts);
+            return;
+          }
+          if (!(expectation instanceof ElmData ed && ed.ctor().equals("Pass"))) {
+            String reason =
+                expectation instanceof ElmData ed && ed.args().length > 0
+                    ? String.valueOf(Thunk.resolve(ed.arg(0)))
+                    : "failed";
+            fail(prefix, desc + " (fuzz)", reason, report, counts);
+            return;
+          }
         }
+        counts[0]++;
+        report.append("✓ ").append(prefix).append(desc).append(" (").append(FUZZ_RUNS).append(" passed)\n");
       }
       default -> {}
     }
+  }
+
+  /** Records a resolved {@code Expectation} (Pass / Fail message) as a pass or a located failure. */
+  private static void record(
+      String prefix, String desc, Object expectation, StringBuilder report, int[] counts) {
+    if (expectation instanceof ElmData ed && ed.ctor().equals("Pass")) {
+      counts[0]++;
+      report.append("✓ ").append(prefix).append(desc).append("\n");
+    } else {
+      String reason =
+          expectation instanceof ElmData ed && ed.args().length > 0
+              ? String.valueOf(Thunk.resolve(ed.arg(0)))
+              : "failed";
+      fail(prefix, desc, reason, report, counts);
+    }
+  }
+
+  private static void fail(
+      String prefix, String desc, String reason, StringBuilder report, int[] counts) {
+    counts[1]++;
+    report
+        .append("✗ ")
+        .append(prefix)
+        .append(desc)
+        .append("\n    ")
+        .append(reason.replace("\n", "\n    "))
+        .append("\n");
   }
 }

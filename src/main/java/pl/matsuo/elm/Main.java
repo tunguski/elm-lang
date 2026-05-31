@@ -401,8 +401,10 @@ public final class Main implements Runnable {
       footer = {
         "  elm test tests/MathTests.elm",
         "",
-        "Expose `suite : Test` built with `test`/`describe` and `Expect.*` (e.g.",
+        "Expose `suite : Test` built with `test`/`describe`/`fuzz` and `Expect.*` (e.g.",
         "  suite = describe \"math\" [ test \"adds\" (\\_ -> Expect.equal 4 (2 + 2)) ]).",
+        "Property tests draw random inputs from `Fuzz` and report a counterexample:",
+        "  fuzz Fuzz.int \"self-inverts\" (\\n -> Expect.equal n (negate (negate n))).",
       })
   static final class TestCmd implements Callable<Integer> {
     @Parameters(arity = "1..*", description = "Test .elm files.")

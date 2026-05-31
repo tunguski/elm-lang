@@ -196,7 +196,7 @@ class MainCliTest {
   void testCommandRunsTheBundledSuite() {
     Result r = invoke("test", "example-test"); // resolves the bundled demo by name
     assertTrue(r.code() == 0, r.out());
-    assertTrue(r.out().contains("7 passed"), r.out());
+    assertTrue(r.out().contains("9 passed"), r.out());
   }
 
   @Test

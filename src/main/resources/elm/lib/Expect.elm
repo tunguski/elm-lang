@@ -10,6 +10,11 @@ module Expect exposing
     , atLeast
     , isTrue
     , isFalse
+    , within
+    , all
+    , ok
+    , err
+    , onFail
     )
 
 {-| Expectations for the bundled test framework (a small subset of elm-explorations/test's `Expect`).
@@ -113,3 +118,65 @@ isFalse actual =
 
     else
         Pass
+
+
+{-| Passes if two Floats are within an absolute `tolerance` of each other (for comparing results of
+floating-point arithmetic, which is rarely exactly equal). -}
+within : Float -> Float -> Float -> Expectation
+within tolerance expected actual =
+    if abs (expected - actual) <= tolerance then
+        Pass
+
+    else
+        Fail (Debug.toString actual ++ " is not within " ++ Debug.toString tolerance ++ " of " ++ Debug.toString expected)
+
+
+{-| Runs several checks against the same subject, failing with the first that fails. Handy for
+asserting many properties of one value: `Expect.all [ Expect.lessThan 10, Expect.greaterThan 0 ] n`. -}
+all : List (subject -> Expectation) -> subject -> Expectation
+all checks subject =
+    List.foldl
+        (\check acc ->
+            case acc of
+                Pass ->
+                    check subject
+
+                Fail _ ->
+                    acc
+        )
+        Pass
+        checks
+
+
+{-| Passes if the `Result` is `Ok`. -}
+ok : Result e a -> Expectation
+ok result =
+    case result of
+        Ok _ ->
+            Pass
+
+        Err e ->
+            Fail ("expected Ok but got Err " ++ Debug.toString e)
+
+
+{-| Passes if the `Result` is `Err`. -}
+err : Result e a -> Expectation
+err result =
+    case result of
+        Err _ ->
+            Pass
+
+        Ok a ->
+            Fail ("expected Err but got Ok " ++ Debug.toString a)
+
+
+{-| Prepends context to an expectation's failure message (used by `Test.fuzz` to report the input);
+a passing expectation is returned unchanged. -}
+onFail : String -> Expectation -> Expectation
+onFail context expectation =
+    case expectation of
+        Pass ->
+            Pass
+
+        Fail message ->
+            Fail (context ++ message)

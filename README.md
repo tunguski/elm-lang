@@ -91,7 +91,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `make <file.elm…> [--project DIR] [-o out.html\|out.js] [--optimize] [--cache DIR] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--project` pulls in an `elm.json`'s local + installed-dependency sources; `--cache` reuses per-module compiled output (recompiling only changed modules); `--optimize` tree-shakes + minifies. |
 | `js <file.elm> [--min] [--map]` | Emit JavaScript (optionally minified, with an inline column-level source map). |
 | `check <file.elm> [more.elm…]` | Type-check a module or a multi-module project. |
-| `test <file.elm…>` | Run `Test` suites (bundled `Test`/`Expect`); reports pass/fail, non-zero exit on failure. |
+| `test <file.elm…>` | Run `Test` suites (bundled `Test`/`Expect`/`Fuzz`): unit and **property (`fuzz`)** tests; reports pass/fail with the failing fuzz input, non-zero exit on failure. |
 | `format <file.elm> [--write \| --check \| --project]` | Format (elm-format style); `--check` gates CI. |
 | `lint <file.elm…>` | Report leftover `Debug.*` and unused definitions (non-zero exit on findings). |
 | `docs <file.elm> [--json]` | Generate API docs from doc comments + inferred types (Markdown, or structured `docs.json`). |

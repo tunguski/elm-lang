@@ -3,7 +3,8 @@ module Tests exposing (suite)
 {-| An example test suite, run with `elm test example-test`. -}
 
 import Expect
-import Test exposing (Test, describe, test)
+import Fuzz
+import Test exposing (Test, describe, fuzz, test)
 
 
 suite : Test
@@ -20,4 +21,8 @@ suite =
             , test "is non-empty" (\_ -> Expect.isFalse (List.isEmpty [ 1 ]))
             ]
         , test "comparison" (\_ -> Expect.lessThan 10 (3 + 4))
+        , describe "properties"
+            [ fuzz Fuzz.int "double negation is identity" (\n -> Expect.equal n (negate (negate n)))
+            , fuzz (Fuzz.intRange 0 100) "abs is non-negative" (\n -> Expect.atLeast 0 (abs n))
+            ]
         ]
