@@ -66,6 +66,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Format.class,
       Main.Project.class,
       Main.Bench.class,
+      Main.Wasm.class,
       Main.Site.class,
       Main.Init.class,
       Main.Install.class,
@@ -288,6 +289,52 @@ public final class Main implements Runnable {
       } catch (IOException e) {
         throw new java.io.UncheckedIOException(e);
       }
+    }
+  }
+
+  @Command(
+      name = "wasm",
+      description = "Compile a project to a WebAssembly binary (linear-memory backend; multi-module).",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm wasm Main.elm Util.elm -o app.wasm   # compile a multi-module program",
+        "  elm wasm --project .                     # compile an elm.json project (deps included)"
+      })
+  static final class Wasm implements Callable<Integer> {
+    @Parameters(arity = "0..*", description = "The .elm entry file plus any other modules it imports; omit with --project.")
+    List<Path> files;
+
+    @Option(names = {"-o", "--output"}, description = "Output .wasm path (default out.wasm).")
+    String output = "out.wasm";
+
+    @Option(names = "--project", description = "An elm.json project dir (pulls in local + installed-dependency sources).")
+    Path project;
+
+    @Option(names = "--registry", description = "Package cache for dependency sources (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
+    @Override
+    public Integer call() throws IOException {
+      List<String> sources = new ArrayList<>();
+      if (project != null) {
+        sources.addAll(
+            registry != null
+                ? pl.matsuo.elm.project.ProjectLoader.loadSources(project, registry)
+                : pl.matsuo.elm.project.ProjectLoader.loadSources(project));
+      }
+      if (files != null) {
+        for (Path p : files) {
+          sources.add(Files.readString(p));
+        }
+      }
+      if (sources.isEmpty()) {
+        System.err.println("Provide a .elm file (plus any imported modules), or --project.");
+        return 2;
+      }
+      byte[] wasm = pl.matsuo.elm.codegen.wasm.WasmCompiler.moduleFromSources(sources);
+      Files.write(Path.of(output), wasm);
+      System.out.println("Wrote " + output + " (" + wasm.length + " bytes)");
+      return 0;
     }
   }
 

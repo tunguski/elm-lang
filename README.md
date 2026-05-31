@@ -94,6 +94,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `eval "<expr>" [--backend interp\|bytecode]` | Evaluate a single expression. |
 | `make <file.elm…> [--project DIR] [-o out.html\|out.js] [--optimize] [--cache DIR] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--project` pulls in an `elm.json`'s local + installed-dependency sources; `--cache` reuses per-module compiled output (recompiling only changed modules); `--optimize` tree-shakes + minifies. |
 | `js <file.elm> [--min] [--map]` | Emit JavaScript (optionally minified, with an inline column-level source map). |
+| `wasm <file.elm…> [-o out.wasm] [--project DIR]` | Compile a project's numeric/list/record/string functions to a WebAssembly binary (linear-memory backend; merges the entry module with its imported/local/package modules). |
 | `check <file.elm> [more.elm…]` | Type-check a module or a multi-module project. |
 | `test <file.elm…> [--fuzz N] [--seed S] [--filter TEXT] [--coverage] [--report FMT]` | Run `Test` suites (bundled `Test`/`Expect`/`Fuzz`): unit and **property (`fuzz`)** tests; reports pass/fail/skipped with timing and the failing fuzz input, non-zero exit on failure. `--fuzz` sets inputs per property, `--seed` makes them reproducible, `--filter` runs only matching tests, `--coverage` reports which test-file functions ran, `--report` chooses the output (`console`/`tap`/`junit`/`json`) for CI. |
 | `format <file.elm> [--write \| --check \| --project]` | Format (elm-format style); `--check` gates CI. |
@@ -370,9 +371,8 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
   (only a prelude of `List`/`Maybe`/`Result` helpers compiles — most `String`, `Dict`, `Set`,
   `Array` and `Regex` operations are absent on this backend; the interpreter, bytecode VM and **JS
   backend** all have full `Dict`/`Set`/`Array`), or returning compound values to the host as anything but
-  an opaque heap pointer. It **does** compile **multi-module projects** (`moduleFromSources` merges a
-  module with its local/package dependency modules), though this isn't yet wired to a `make --backend
-  wasm` CLI path. `++`/`==` require operands statically typed (no fully
+  an opaque heap pointer. It **does** compile **multi-module projects** (the `elm wasm` command merges a
+  module with its local/package dependency modules into one binary). `++`/`==` require operands statically typed (no fully
   polymorphic `==`). Loading installed **package sources** is not wired up for this backend.
 - **WasmGC backend** — does **not** yet support: **closures / higher-order functions** (so
   `List.map`, `foldl`, lambdas don't compile here — they run on the linear-memory backend or JS);

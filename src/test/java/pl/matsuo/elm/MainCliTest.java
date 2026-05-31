@@ -208,6 +208,18 @@ class MainCliTest {
   }
 
   @Test
+  void wasmCommandCompilesAMultiModuleProjectToABinary() throws Exception {
+    Path util = tempElm("module Util exposing (square)\nsquare n = n * n\n");
+    Path main = tempElm("module Main exposing (main)\nimport Util exposing (square)\nmain = square 7\n");
+    Path out = Files.createTempFile("cli-", ".wasm");
+    Result r = invoke("wasm", main.toString(), util.toString(), "-o", out.toString());
+    assertTrue(r.code() == 0, r.out() + r.err());
+    byte[] bytes = Files.readAllBytes(out);
+    assertTrue(bytes.length > 8, "wrote a non-trivial wasm binary");
+    assertTrue(bytes[0] == 0x00 && bytes[1] == 0x61 && bytes[2] == 0x73 && bytes[3] == 0x6D, "wasm magic \\0asm");
+  }
+
+  @Test
   void checkAcceptsAMultiModuleProject() throws Exception {
     Path lib = tempElm("module Lib exposing (..)\ndouble n = n * 2\n");
     Path main = tempElm("module Main exposing (..)\nimport Lib exposing (..)\nmain = double 21\n");
