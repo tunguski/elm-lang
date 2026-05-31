@@ -60,6 +60,27 @@ class JsBackendTest {
   }
 
   @Test
+  void dictOnTheJsBackend() {
+    // Dict now exists in the JS kernel; results (sorted) must match the interpreter.
+    same("Dict.toList (Dict.fromList [ ( 3, \"c\" ), ( 1, \"a\" ), ( 2, \"b\" ) ])");
+    same("Dict.get 2 (Dict.fromList [ ( 1, \"a\" ), ( 2, \"b\" ) ])");
+    same("Dict.size (Dict.insert 9 \"z\" (Dict.fromList [ ( 1, \"a\" ) ]))");
+    same("Dict.keys (Dict.remove 1 (Dict.fromList [ ( 1, \"a\" ), ( 2, \"b\" ) ]))");
+    same("Dict.values (Dict.map (\\k v -> v + 1) (Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]))");
+    same("Dict.toList (Dict.union (Dict.fromList [ ( 1, \"a\" ) ]) (Dict.fromList [ ( 1, \"x\" ), ( 2, \"b\" ) ]))");
+    same("Dict.fromList [ ( 2, \"b\" ), ( 1, \"a\" ) ]"); // shows sorted via $show
+  }
+
+  @Test
+  void setOnTheJsBackend() {
+    same("Set.toList (Set.fromList [ 3, 1, 2, 1, 3 ])");
+    same("Set.member 2 (Set.fromList [ 1, 2, 3 ])");
+    same("Set.size (Set.union (Set.fromList [ 1, 2 ]) (Set.fromList [ 2, 3 ]))");
+    same("Set.toList (Set.diff (Set.fromList [ 1, 2, 3 ]) (Set.fromList [ 2 ]))");
+    same("Set.fromList [ 3, 1, 2 ]"); // shows sorted
+  }
+
+  @Test
   void comparisonsAndBooleans() {
     same("3 < 5 && 2 == 2");
     same("\"abc\" < \"abd\"");

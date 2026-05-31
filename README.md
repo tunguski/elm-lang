@@ -368,8 +368,9 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
 
 - **WASM (linear-memory) backend** — does **not** support: effects/TEA, the full standard library
   (only a prelude of `List`/`Maybe`/`Result` helpers compiles — most `String`, `Dict`, `Set`,
-  `Array` and `Regex` operations are absent), or returning compound values to the host as anything
-  but an opaque heap pointer. `++`/`==` require operands statically typed (no fully
+  `Array` and `Regex` operations are absent on this backend; the interpreter, bytecode VM and **JS
+  backend** do have `Dict`/`Set`/`Array`), or returning compound values to the host as anything but
+  an opaque heap pointer. `++`/`==` require operands statically typed (no fully
   polymorphic `==`). Loading installed **package sources** is not wired up for this backend.
 - **WasmGC backend** — does **not** yet support: **closures / higher-order functions** (so
   `List.map`, `foldl`, lambdas don't compile here — they run on the linear-memory backend or JS);

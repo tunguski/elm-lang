@@ -14,6 +14,14 @@ function $listToArray(v){ var a=[]; while(v.$==='::'){a.push(v.a); v=v.b;} retur
 function $eq(x, y){
   if (typeof x === 'number' || typeof x === 'boolean' || typeof x === 'string') return x === y;
   if (x.$ === 'Char') return y.$==='Char' && x.c === y.c;
+  if (x.$ === 'Dict' || x.$ === 'Set'){
+    if (x.$ !== y.$ || x.a.length !== y.a.length) return false;
+    for (var di=0; di<x.a.length; di++){
+      if (x.$ === 'Dict'){ if(!$eq(x.a[di][0],y.a[di][0]) || !$eq(x.a[di][1],y.a[di][1])) return false; }
+      else if(!$eq(x.a[di],y.a[di])) return false;
+    }
+    return true;
+  }
   if (x.$ === '#'){ for (var i=0;i<x.vs.length;i++) if(!$eq(x.vs[i],y.vs[i])) return false; return true; }
   if (x.$ === '::' || x.$ === '[]'){
     while (x.$==='::' && y.$==='::'){ if(!$eq(x.a,y.a)) return false; x=x.b; y=y.b; }
@@ -65,14 +73,58 @@ function $show(v, q){
   if (t === '()') return '()';
   if (t === '::' || t === '[]'){ var a=$listToArray(v).map(function(x){return $show(x,true);}); return '['+a.join(',')+']'; }
   if (t === '#'){ return '('+v.vs.map(function(x){return $show(x,true);}).join(',')+')'; }
+  if (t === 'Dict'){ return 'Dict.fromList ['+v.a.map(function(e){return '('+$show(e[0],true)+','+$show(e[1],true)+')';}).join(',')+']'; }
+  if (t === 'Set'){ return 'Set.fromList ['+v.a.map(function(e){return $show(e,true);}).join(',')+']'; }
   if (t !== undefined){ if (v._.length===0) return t; return t+' '+v._.map($showArg).join(' '); }
   var ks=Object.keys(v);
   return '{ '+ks.map(function(k){return k+' = '+$show(v[k],true);}).join(', ')+' }';
 }
 
+// ---- Dict / Set (sorted entry arrays; toList/keys are key-sorted, matching the interpreter) ----
+function $dictFind(a, k){ var lo=0, hi=a.length-1; while(lo<=hi){ var m=(lo+hi)>>1, c=$cmp(a[m][0],k); if(c<0)lo=m+1; else if(c>0)hi=m-1; else return m; } return -(lo+1); }
+function $dictInsert(d, k, v){ var a=d.a.slice(), i=$dictFind(a,k); if(i>=0)a[i]=[k,v]; else a.splice(-i-1,0,[k,v]); return {$:'Dict',a:a}; }
+function $setFind(a, x){ var lo=0, hi=a.length-1; while(lo<=hi){ var m=(lo+hi)>>1, c=$cmp(a[m],x); if(c<0)lo=m+1; else if(c>0)hi=m-1; else return m; } return -(lo+1); }
+function $setInsert(s, x){ var a=s.a.slice(), i=$setFind(a,x); if(i<0)a.splice(-i-1,0,x); return {$:'Set',a:a}; }
+
 // ---- prelude (canonical Module.name -> curried function) ----
 function $maybe(v){ return v===undefined?$data('Nothing',[]):$data('Just',[v]); }
 var $rt = {
+  'Dict.empty': {$:'Dict',a:[]},
+  'Dict.singleton': function(k){ return function(v){ return {$:'Dict',a:[[k,v]]}; }; },
+  'Dict.insert': function(k){ return function(v){ return function(d){ return $dictInsert(d,k,v); }; }; },
+  'Dict.get': function(k){ return function(d){ var i=$dictFind(d.a,k); return i>=0?$data('Just',[d.a[i][1]]):$data('Nothing',[]); }; },
+  'Dict.remove': function(k){ return function(d){ var i=$dictFind(d.a,k); if(i<0)return d; var a=d.a.slice(); a.splice(i,1); return {$:'Dict',a:a}; }; },
+  'Dict.member': function(k){ return function(d){ return $dictFind(d.a,k)>=0; }; },
+  'Dict.size': function(d){ return d.a.length; },
+  'Dict.isEmpty': function(d){ return d.a.length===0; },
+  'Dict.keys': function(d){ return $list(d.a.map(function(e){return e[0];})); },
+  'Dict.values': function(d){ return $list(d.a.map(function(e){return e[1];})); },
+  'Dict.toList': function(d){ return $list(d.a.map(function(e){return $tuple([e[0],e[1]]);})); },
+  'Dict.fromList': function(xs){ var d={$:'Dict',a:[]}; $listToArray(xs).forEach(function(t){ d=$dictInsert(d,t.vs[0],t.vs[1]); }); return d; },
+  'Dict.foldl': function(f){ return function(acc){ return function(d){ d.a.forEach(function(e){ acc=f(e[0])(e[1])(acc); }); return acc; }; }; },
+  'Dict.foldr': function(f){ return function(acc){ return function(d){ for(var i=d.a.length-1;i>=0;i--) acc=f(d.a[i][0])(d.a[i][1])(acc); return acc; }; }; },
+  'Dict.map': function(f){ return function(d){ return {$:'Dict',a:d.a.map(function(e){return [e[0],f(e[0])(e[1])];})}; }; },
+  'Dict.filter': function(f){ return function(d){ return {$:'Dict',a:d.a.filter(function(e){return f(e[0])(e[1]);})}; }; },
+  'Dict.union': function(a){ return function(b){ var d=b; a.a.forEach(function(e){ d=$dictInsert(d,e[0],e[1]); }); return d; }; },
+  'Dict.intersect': function(a){ return function(b){ return {$:'Dict',a:a.a.filter(function(e){return $dictFind(b.a,e[0])>=0;})}; }; },
+  'Dict.diff': function(a){ return function(b){ return {$:'Dict',a:a.a.filter(function(e){return $dictFind(b.a,e[0])<0;})}; }; },
+  'Dict.update': function(k){ return function(f){ return function(d){ var i=$dictFind(d.a,k); var cur=i>=0?$data('Just',[d.a[i][1]]):$data('Nothing',[]); var r=f(cur); if(r.$==='Just'){ return $dictInsert(d,k,r._[0]); } if(i<0)return d; var a=d.a.slice(); a.splice(i,1); return {$:'Dict',a:a}; }; }; },
+  'Set.empty': {$:'Set',a:[]},
+  'Set.singleton': function(x){ return {$:'Set',a:[x]}; },
+  'Set.insert': function(x){ return function(s){ return $setInsert(s,x); }; },
+  'Set.remove': function(x){ return function(s){ var i=$setFind(s.a,x); if(i<0)return s; var a=s.a.slice(); a.splice(i,1); return {$:'Set',a:a}; }; },
+  'Set.member': function(x){ return function(s){ return $setFind(s.a,x)>=0; }; },
+  'Set.size': function(s){ return s.a.length; },
+  'Set.isEmpty': function(s){ return s.a.length===0; },
+  'Set.toList': function(s){ return $list(s.a.slice()); },
+  'Set.fromList': function(xs){ var s={$:'Set',a:[]}; $listToArray(xs).forEach(function(x){ s=$setInsert(s,x); }); return s; },
+  'Set.foldl': function(f){ return function(acc){ return function(s){ s.a.forEach(function(x){ acc=f(x)(acc); }); return acc; }; }; },
+  'Set.foldr': function(f){ return function(acc){ return function(s){ for(var i=s.a.length-1;i>=0;i--) acc=f(s.a[i])(acc); return acc; }; }; },
+  'Set.map': function(f){ return function(s){ var r={$:'Set',a:[]}; s.a.forEach(function(x){ r=$setInsert(r,f(x)); }); return r; }; },
+  'Set.filter': function(f){ return function(s){ return {$:'Set',a:s.a.filter(function(x){return f(x);})}; }; },
+  'Set.union': function(a){ return function(b){ var s=a; b.a.forEach(function(x){ s=$setInsert(s,x); }); return s; }; },
+  'Set.intersect': function(a){ return function(b){ return {$:'Set',a:a.a.filter(function(x){return $setFind(b.a,x)>=0;})}; }; },
+  'Set.diff': function(a){ return function(b){ return {$:'Set',a:a.a.filter(function(x){return $setFind(b.a,x)<0;})}; }; },
   'Basics.identity': function(x){ return x; },
   'Basics.always': function(a){ return function(b){ return a; }; },
   'Basics.not': function(b){ return !b; },
