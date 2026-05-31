@@ -30,7 +30,43 @@ type Token
 
 tokenize : String -> Result String (List Token)
 tokenize src =
-    tokenizeLines (String.lines src) []
+    tokenizeLines (String.lines (inlineShaders src)) []
+
+
+{-| Collapses each multi-line GLSL shader literal `[glsl| … |]` into a single-line string literal so
+the line-based tokenizer can handle it (the interpreter models a shader as its source string). The
+body's newlines become spaces and embedded quotes are dropped — enough for the interpreter to
+evaluate WebGL programs and report a scene preview (the JS backend does the actual GPU rendering). -}
+inlineShaders : String -> String
+inlineShaders src =
+    case String.indexes "[glsl|" src of
+        [] ->
+            src
+
+        start :: _ ->
+            let
+                before =
+                    String.left start src
+
+                afterOpen =
+                    String.dropLeft (start + 6) src
+            in
+            case String.indexes "|]" afterOpen of
+                [] ->
+                    src
+
+                close :: _ ->
+                    let
+                        body =
+                            String.left close afterOpen
+
+                        rest =
+                            String.dropLeft (close + 2) afterOpen
+
+                        flat =
+                            String.replace "\"" "" (String.replace "\n" " " (String.replace "\u{000D}" " " body))
+                    in
+                    before ++ "\"" ++ flat ++ "\"" ++ inlineShaders rest
 
 
 {-| Tokenizes line by line, prefixing each non-blank line's tokens with its indentation marker. -}

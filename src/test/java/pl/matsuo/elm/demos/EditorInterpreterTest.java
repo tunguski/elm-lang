@@ -240,6 +240,29 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void parsesGlslShaderLiteralsAndEvaluatesWebgl() {
+    // A multi-line GLSL literal is collapsed to a string so the program parses; WebGL.toHtml
+    // evaluates to a preview node reporting the scene's entity count.
+    ElmList project =
+        files(
+            "Scene.elm",
+            "vert =\n"
+                + "    [glsl|\n"
+                + "        attribute vec3 position;\n"
+                + "        void main () { gl_Position = vec4(position, 1.0); }\n"
+                + "    |]\n"
+                + "frag =\n"
+                + "    [glsl| void main () { gl_FragColor = vec4(1.0); } |]\n"
+                + "mesh = WebGL.triangles []\n"
+                + "scene = WebGL.toHtml [] [ WebGL.entity vert frag mesh {}, WebGL.entity vert frag mesh {} ]");
+    String html = evalProject(project, "scene");
+    assertTrue(html.contains("WebGL scene"), html);
+    assertTrue(html.contains("2 entities"), html);
+    // The shader literal itself evaluates to its (flattened) source string.
+    assertTrue(evalProject(project, "frag").contains("gl_FragColor"), "shader body preserved");
+  }
+
+  @Test
   void compilesToJavaScriptForTheBrowser() {
     // The editor is a multi-module Browser.sandbox program; the JS backend must bundle all modules.
     String page = JsCompiler.htmlPageProject(null, moduleSources());

@@ -33,7 +33,20 @@ builtins =
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
         ++ [ "field", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "succeed", "list", "andThen", "oneOf", "nullable" ]
         ++ [ "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object", "Encode.list", "Encode.encode" ]
+        ++ webglNames
         ++ playgroundNames
+
+
+{-| elm-explorations/webgl + linear-algebra builtins. The editor interpreter evaluates these to
+opaque values (and `WebGL.toHtml` to a canvas preview that reports the scene's entity count) so WebGL
+programs run without errors; the JS backend does the real GPU rendering in the browser. -}
+webglNames : List String
+webglNames =
+    [ "WebGL.toHtml", "WebGL.toHtmlWith", "WebGL.entity", "WebGL.entityWith" ]
+        ++ [ "WebGL.triangles", "WebGL.indexedTriangles", "WebGL.lines", "WebGL.lineStrip", "WebGL.lineLoop", "WebGL.points", "WebGL.triangleStrip", "WebGL.triangleFan" ]
+        ++ [ "WebGL.clearColor", "WebGL.depth", "WebGL.alpha", "WebGL.antialias", "WebGL.Texture.load", "WebGL.Texture.size" ]
+        ++ [ "vec2", "vec3", "vec4" ]
+        ++ [ "Mat4.makePerspective", "Mat4.makeLookAt", "Mat4.makeRotate", "Mat4.makeTranslate", "Mat4.makeScale", "Mat4.mul", "Mat4.mulAffine", "Mat4.transform", "Mat4.inverse", "Mat4.transpose", "Mat4.makeOrtho2D" ]
 
 
 {-| evancz/elm-playground builtins: shape constructors, transforms, colours and the `picture`/
@@ -81,6 +94,18 @@ arity name =
 
     else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
         3
+
+    else if List.member name [ "WebGL.triangles", "WebGL.lines", "WebGL.lineStrip", "WebGL.lineLoop", "WebGL.points", "WebGL.triangleStrip", "WebGL.triangleFan", "WebGL.depth", "WebGL.alpha", "WebGL.Texture.load", "WebGL.Texture.size", "Mat4.makeTranslate", "Mat4.makeScale", "Mat4.inverse", "Mat4.transpose" ] then
+        1
+
+    else if List.member name [ "WebGL.toHtmlWith", "vec3", "Mat4.makeLookAt" ] then
+        3
+
+    else if List.member name [ "WebGL.entity", "vec4", "WebGL.clearColor", "Mat4.makePerspective", "Mat4.makeOrtho2D" ] then
+        4
+
+    else if name == "WebGL.entityWith" then
+        5
 
     else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable", "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object" ] then
         1
@@ -409,6 +434,26 @@ runBuiltin globals name args =
 
     else if List.member name playgroundNames then
         runPlayground globals name args
+
+    else if name == "WebGL.toHtml" then
+        case args of
+            [ attrs, entities ] ->
+                Ok (webglPreview attrs entities)
+
+            _ ->
+                Err "WebGL.toHtml needs attributes and entities"
+
+    else if name == "WebGL.toHtmlWith" then
+        case args of
+            [ _, attrs, entities ] ->
+                Ok (webglPreview attrs entities)
+
+            _ ->
+                Err "WebGL.toHtmlWith needs options, attributes and entities"
+
+    else if List.member name webglNames then
+        -- Meshes, entities, vectors, matrices and textures: opaque values the preview just counts.
+        Ok (VCtor name args)
 
     else if List.member name htmlTags then
         case args of
@@ -864,6 +909,36 @@ runBuiltin globals name args =
 
             _ ->
                 Err ("bad arguments to " ++ name)
+
+
+{-| The editor's preview for a `WebGL.toHtml` scene: a labelled box reporting the entity count
+(the small interpreter can't run GPU shaders; the JS backend renders WebGL for real). -}
+webglPreview : Value -> Value -> Value
+webglPreview attrs entities =
+    let
+        n =
+            case entities of
+                VList es ->
+                    List.length es
+
+                _ ->
+                    0
+
+        label =
+            "WebGL scene — "
+                ++ String.fromInt n
+                ++ (if n == 1 then
+                        " entity"
+
+                    else
+                        " entities"
+                   )
+    in
+    VCtor "Html.node"
+        [ VStr "div"
+        , attrs
+        , VList [ VCtor "Html.text" [ VStr label ] ]
+        ]
 
 
 asNum : Value -> Maybe Float
