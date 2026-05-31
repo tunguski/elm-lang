@@ -18,9 +18,10 @@ import pl.matsuo.elm.types.TypeChecker;
  * <b>expression</b>, which is evaluated and printed. Multi-line input is supported: the loop keeps
  * reading (showing a {@code |} continuation prompt) until brackets are balanced and the entry
  * doesn't end on a continuation token. Commands: {@code :type <expr>} (alias {@code :t}) shows the
- * inferred type, {@code :load <file.elm>} (alias {@code :l}) brings a module's definitions into
- * scope, {@code :history} lists the session's entries, {@code :reset} forgets all definitions,
- * {@code :help}, {@code :quit}/{@code :q}.
+ * inferred type, {@code :info <name>} (aliases {@code :i}/{@code :doc}) shows a name's type (a
+ * session binding or any builtin) and its source if defined this session, {@code :load <file.elm>}
+ * (alias {@code :l}) brings a module's definitions into scope, {@code :history} lists the session's
+ * entries, {@code :reset} forgets all definitions, {@code :help}, {@code :quit}/{@code :q}.
  */
 public final class Repl {
 
@@ -58,8 +59,8 @@ public final class Repl {
         // nothing
       } else if (trimmed.equals(":help")) {
         out.println(
-            "expressions are evaluated; `x = …` defines a binding; :type <expr>, :load <file.elm>,"
-                + " :history, :reset, :quit");
+            "expressions are evaluated; `x = …` defines a binding; :type <expr>, :info <name>,"
+                + " :load <file.elm>, :history, :reset, :quit");
       } else if (trimmed.equals(":reset")) {
         defs.clear();
         out.println("(forgot all definitions)");
@@ -79,6 +80,8 @@ public final class Repl {
       } else if (trimmed.startsWith(":type ") || trimmed.startsWith(":t ")) {
         String expr = trimmed.substring(trimmed.indexOf(' ') + 1);
         out.println(typeOf(defs, expr));
+      } else if (trimmed.startsWith(":info ") || trimmed.startsWith(":i ") || trimmed.startsWith(":doc ")) {
+        out.println(infoOf(defs, trimmed.substring(trimmed.indexOf(' ') + 1).trim()));
       } else if (isDefinition(trimmed)) {
         defs.add(trimmed);
         out.println(definedName(trimmed) + " : " + typeOfName(defs, definedName(trimmed)));
@@ -99,6 +102,19 @@ public final class Repl {
     } catch (RuntimeException e) {
       return "Error: " + e.getMessage();
     }
+  }
+
+  /** {@code :info}/{@code :doc <name>}: the inferred type of {@code name} (works for a session
+   * definition or any builtin), followed by the definition's source when it was defined this session. */
+  private static String infoOf(List<String> defs, String name) {
+    StringBuilder sb = new StringBuilder(typeOf(defs, name));
+    for (String d : defs) {
+      if (isDefinition(d) && definedName(d).equals(name)) {
+        sb.append("\n").append(d);
+        break;
+      }
+    }
+    return sb.toString();
   }
 
   /** The inferred type of {@code expr} (with the accumulated definitions in scope). */

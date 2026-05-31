@@ -44,6 +44,15 @@ class ReplTest {
   }
 
   @Test
+  void infoShowsTypeOfBuiltinsAndSessionDefinitions() throws Exception {
+    // :info on a builtin shows its type; on a session definition it also echoes the source.
+    String out = session(":info String.length\ndouble n = n * 2\n:info double\n:quit\n");
+    assertTrue(out.contains("String.length : String -> Int"), out);
+    assertTrue(out.contains("double : number -> number"), out);
+    assertTrue(out.contains("double n = n * 2"), out); // the definition's source is shown
+  }
+
+  @Test
   void multiLineInputIsAccumulatedUntilComplete() throws Exception {
     String out = session("if 1 < 2 then\n  100\nelse\n  200\n:quit\n");
     assertTrue(out.contains("100"), out);
