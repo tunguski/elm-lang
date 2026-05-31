@@ -387,6 +387,34 @@ class LspServerTest {
     assertTrue(rs.stream().noneMatch(r -> r.title().startsWith("Inline")), rs.toString());
   }
 
+  // --- non-exhaustive case warnings -------------------------------------
+
+  @Test
+  void warnsAboutANonExhaustiveCase() {
+    String src =
+        "type Color = Red | Green | Blue\n"
+            + "name c =\n    case c of\n        Red -> \"r\"\n        Green -> \"g\"\n";
+    var ds = server.diagnose(src);
+    assertTrue(
+        ds.stream().anyMatch(d -> d.severity() == 2 && d.message().contains("Non-exhaustive")
+            && d.message().contains("Blue")),
+        ds.toString());
+  }
+
+  @Test
+  void doesNotWarnAboutAnExhaustiveOrCatchAllCase() {
+    String exhaustive =
+        "type Color = Red | Green\nname c =\n    case c of\n        Red -> \"r\"\n        Green -> \"g\"\n";
+    assertTrue(
+        server.diagnose(exhaustive).stream().noneMatch(d -> d.message().contains("Non-exhaustive")),
+        "all constructors covered");
+    String catchAll =
+        "type Color = Red | Green | Blue\nname c =\n    case c of\n        Red -> \"r\"\n        _ -> \"other\"\n";
+    assertTrue(
+        server.diagnose(catchAll).stream().noneMatch(d -> d.message().contains("Non-exhaustive")),
+        "wildcard branch makes it exhaustive");
+  }
+
   // --- call hierarchy ----------------------------------------------------
 
   @Test

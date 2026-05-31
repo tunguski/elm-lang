@@ -46,7 +46,9 @@ Published on `didOpen` and after each `didChange`. Each diagnostic carries `sour
 - **Error** (`severity: 1`) — parse errors and type errors. Multiple independent errors are reported
   together rather than stopping at the first.
 - **Warning** (`severity: 2`) — unused imports, unused exposed/imported names, unused private
-  top-level definitions, and unused function parameters and `let` bindings.
+  top-level definitions, unused function parameters and `let` bindings, and a **non-exhaustive
+  `case`** (a custom type / `Bool`/`Maybe`/`Result`/`Order` match missing constructors and lacking a
+  catch-all) — which the "Add missing case branches" quick-fix then resolves.
 
 ### Code actions
 

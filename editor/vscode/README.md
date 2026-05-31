@@ -5,8 +5,8 @@ toolchain. It launches `java -jar elm.jar lsp` over stdio and surfaces everythin
 implements:
 
 - **Diagnostics** — parse and type errors (Hindley–Milner), including **multi-error** reports, plus
-  **warnings** (unused imports, private definitions, parameters and `let` bindings), on open and as
-  you type.
+  **warnings** (unused imports, private definitions, parameters and `let` bindings, **non-exhaustive
+  `case`**), on open and as you type.
 - **Hover** — the inferred type of the definition under the cursor.
 - **Go to definition / Find references / Rename** — workspace-wide (every `.elm` file under the
   workspace root is indexed).
