@@ -198,6 +198,29 @@ class LspServerTest {
   }
 
   @Test
+  void warnsAboutAnUnusedPrivateDefinition() {
+    var diags = server.diagnose("module M exposing (main)\nhelper = 1\nmain = 2\n");
+    assertTrue(
+        diags.stream().anyMatch(d -> d.severity() == 2 && d.message().contains("helper")),
+        diags.toString());
+  }
+
+  @Test
+  void doesNotWarnAboutAUsedPrivateDefinition() {
+    var diags = server.diagnose("module M exposing (main)\nhelper = 1\nmain = helper\n");
+    assertTrue(diags.stream().noneMatch(d -> d.message().contains("helper")), diags.toString());
+  }
+
+  @Test
+  void warnsAboutAnUnusedParameterAndLetBinding() {
+    var params = server.diagnose("module M exposing (..)\nf x y =\n    x\n");
+    assertTrue(params.stream().anyMatch(d -> d.message().contains("Unused parameter: `y`")), params.toString());
+    var lets =
+        server.diagnose("module M exposing (..)\nmain =\n    let\n        a = 1\n        b = 2\n    in\n    a\n");
+    assertTrue(lets.stream().anyMatch(d -> d.message().contains("Unused `let` binding: `b`")), lets.toString());
+  }
+
+  @Test
   void initializeAdvertisesCapabilitiesOverJsonRpc() throws Exception {
     String body =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";

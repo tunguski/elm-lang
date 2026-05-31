@@ -84,7 +84,141 @@ public final class LspServer {
       // best-effort: a checker limitation shouldn't crash the server
     }
     out.addAll(unusedImportWarnings(source, module));
+    out.addAll(unusedBindingWarnings(module));
     return out;
+  }
+
+  /**
+   * Warns about bindings nothing uses: a private (non-exposed) top-level definition referenced
+   * nowhere, an unused function parameter, and an unused {@code let} binding. Conservative — a name
+   * used anywhere in its scope (even via shadowing) counts, and names starting with {@code _} are
+   * ignored, so this never wrongly flags a live binding.
+   */
+  List<Diagnostic> unusedBindingWarnings(Module module) {
+    List<Diagnostic> out = new ArrayList<>();
+    java.util.Set<String> exposed =
+        module.exposing().open() ? null : new java.util.HashSet<>(module.exposing().names());
+    java.util.Set<String> allRefs = new java.util.HashSet<>();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v) {
+        refs(v.body(), allRefs);
+      } else if (d instanceof Decl.Port p) {
+        allRefs.add(p.name()); // a port is "used" by the runtime
+      }
+    }
+    for (Decl d : module.decls()) {
+      if (!(d instanceof Decl.Value v)) {
+        continue;
+      }
+      // `main` is the entry point — never flag it as unused or warn on its parameters — but still
+      // check its body's `let` bindings.
+      if (!v.name().equals("main")) {
+        if (exposed != null && !exposed.contains(v.name()) && !allRefs.contains(v.name())) {
+          out.add(warn(v.pos(), "Unused definition: `" + v.name() + "` is never used."));
+        }
+        java.util.Set<String> bodyRefs = new java.util.HashSet<>();
+        refs(v.body(), bodyRefs);
+        for (Pattern p : v.params()) {
+          if (p instanceof Pattern.Var pv && !pv.name().startsWith("_") && !bodyRefs.contains(pv.name())) {
+            out.add(warn(v.pos(), "Unused parameter: `" + pv.name() + "` in `" + v.name() + "`."));
+          }
+        }
+      }
+      walkLets(v.body(), out);
+    }
+    return out;
+  }
+
+  /** At each {@code let}, flags a binding whose name is used in neither the body nor any sibling
+   * binding (the let's scope); then recurses into every sub-expression. */
+  private void walkLets(Expr e, List<Diagnostic> out) {
+    if (e instanceof Expr.Let let) {
+      java.util.Set<String> scope = new java.util.HashSet<>();
+      refs(let.body(), scope);
+      for (Decl d : let.defs()) {
+        if (d instanceof Decl.Value v) {
+          refs(v.body(), scope);
+        } else if (d instanceof Decl.Destructure de) {
+          refs(de.body(), scope);
+        }
+      }
+      for (Decl d : let.defs()) {
+        if (d instanceof Decl.Value v && !v.name().startsWith("_") && !scope.contains(v.name())) {
+          out.add(warn(v.pos(), "Unused `let` binding: `" + v.name() + "`."));
+        }
+      }
+    }
+    for (Expr child : children(e)) {
+      walkLets(child, out);
+    }
+  }
+
+  /** Collects the unqualified names {@code e} references (values, custom operators, record-update
+   * bases), recursively. Over-approximates, which keeps the unused checks free of false positives. */
+  private static void refs(Expr e, java.util.Set<String> out) {
+    switch (e) {
+      case Expr.Var v -> {
+        if (v.module() == null) {
+          out.add(v.name());
+        }
+      }
+      case Expr.OpFunc o -> out.add(o.op());
+      case Expr.BinOp b -> out.add(b.op());
+      case Expr.RecordUpdate u -> out.add(u.base());
+      default -> {}
+    }
+    for (Expr child : children(e)) {
+      refs(child, out);
+    }
+  }
+
+  /** The immediate sub-expressions of {@code e}. */
+  private static List<Expr> children(Expr e) {
+    List<Expr> cs = new ArrayList<>();
+    switch (e) {
+      case Expr.App a -> {
+        cs.add(a.fn());
+        cs.add(a.arg());
+      }
+      case Expr.BinOp b -> {
+        cs.add(b.left());
+        cs.add(b.right());
+      }
+      case Expr.Negate n -> cs.add(n.operand());
+      case Expr.If i -> {
+        cs.add(i.cond());
+        cs.add(i.thenBranch());
+        cs.add(i.elseBranch());
+      }
+      case Expr.Lambda l -> cs.add(l.body());
+      case Expr.Let let -> {
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            cs.add(v.body());
+          } else if (d instanceof Decl.Destructure de) {
+            cs.add(de.body());
+          }
+        }
+        cs.add(let.body());
+      }
+      case Expr.Case c -> {
+        cs.add(c.scrutinee());
+        c.branches().forEach(br -> cs.add(br.body()));
+      }
+      case Expr.ListLit l -> cs.addAll(l.items());
+      case Expr.Tuple t -> cs.addAll(t.items());
+      case Expr.Record r -> r.fields().forEach(f -> cs.add(f.value()));
+      case Expr.RecordUpdate u -> u.fields().forEach(f -> cs.add(f.value()));
+      case Expr.RecordAccess a -> cs.add(a.target());
+      default -> {}
+    }
+    return cs;
+  }
+
+  private static Diagnostic warn(pl.matsuo.elm.error.Position p, String message) {
+    int line = Math.max(0, p.line() - 1);
+    int col = Math.max(0, p.col() - 1);
+    return new Diagnostic(line, col, col + 1, message, 2);
   }
 
   /**
