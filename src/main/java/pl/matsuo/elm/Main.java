@@ -159,7 +159,7 @@ public final class Main implements Runnable {
             backend.equals("bytecode")
                 ? BytecodeInterpreter.load(source).value(value)
                 : Interpreter.load(source).value(value);
-        System.out.println(render(v));
+        System.out.println(render(v, true)); // live: a Browser program's init effects actually run
         return 0;
       } catch (IOException e) {
         throw new java.io.UncheckedIOException(e);
@@ -689,7 +689,7 @@ public final class Main implements Runnable {
               ? pl.matsuo.elm.project.ProjectLoader.loadSources(path, registry)
               : pl.matsuo.elm.project.ProjectLoader.loadSources(path);
       if (mode.equals("run")) {
-        System.out.println(render(pl.matsuo.elm.interp.Project.load(sources.toArray(new String[0])).main()));
+        System.out.println(render(pl.matsuo.elm.interp.Project.load(sources.toArray(new String[0])).main(), true));
       } else {
         try {
           pl.matsuo.elm.types.TypeChecker.checkProject(sources.toArray(new String[0]))
@@ -925,10 +925,19 @@ public final class Main implements Runnable {
 
   /** Renders a value: Browser programs and Html nodes become HTML, everything else uses Show. */
   static String render(Object value) {
+    return render(value, false);
+  }
+
+  /**
+   * Renders a value. When {@code live}, a Browser program's initial commands run with real effects
+   * (an {@code Http.get} actually fetches; {@code Random} is non-deterministic) — for {@code run} and
+   * {@code project run}, so effectful programs work outside the browser.
+   */
+  static String render(Object value, boolean live) {
     if (value instanceof ElmData d) {
       switch (d.ctor()) {
         case "$Sandbox", "$Element", "$Document" -> {
-          return Tea.start(value).html();
+          return (live ? Tea.startLive(value) : Tea.start(value)).html();
         }
         case "$Node", "$Text" -> {
           return HtmlRender.render(value);

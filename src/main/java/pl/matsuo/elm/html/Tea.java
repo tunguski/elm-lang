@@ -27,6 +27,7 @@ public final class Tea {
   private long seed = 0x2545F4914F6CDD1DL; // deterministic random state
   private Map<String, String> httpResponses = Map.of();
   private List<Object> selectableFiles = new ArrayList<>();
+  private boolean allowNetwork = false; // when true, an uncanned Http.get performs a real request
 
   private Tea(String kind, ElmRecord def, Object model) {
     this.kind = kind;
@@ -40,19 +41,41 @@ public final class Tea {
 
   /** Starts a program, supplying canned HTTP responses keyed by URL (consulted by Http.get). */
   public static Tea start(Object program, Map<String, String> httpResponses) {
+    return start(program, httpResponses, false);
+  }
+
+  /**
+   * Starts a program with <b>real effects</b> enabled: an {@code Http.get} with no canned response
+   * performs an actual network request, and {@code Random} is seeded non-deterministically. Used by
+   * {@code elm run}/{@code project run} so effectful programs work outside the browser; tests use
+   * the offline {@link #start(Object)} to stay deterministic.
+   */
+  public static Tea startLive(Object program) {
+    return start(program, Map.of(), true);
+  }
+
+  /** Starts a program, supplying canned HTTP responses and choosing whether real network is allowed. */
+  public static Tea start(Object program, Map<String, String> httpResponses, boolean allowNetwork) {
     if (!(program instanceof ElmData d) || !(d.arg(0) instanceof ElmRecord def)) {
       throw new ElmRuntimeError("Not a Browser program: " + program);
     }
+    Tea tea;
+    Object pendingCmd = null;
     if (d.ctor().equals("$Sandbox")) {
-      Tea tea = new Tea("sandbox", def, def.get("init"));
-      tea.httpResponses = httpResponses;
-      return tea;
+      tea = new Tea("sandbox", def, def.get("init"));
+    } else {
+      ElmTuple t = (ElmTuple) Apply.apply(def.get("init"), ElmUnit.INSTANCE);
+      tea = new Tea(d.ctor().equals("$Document") ? "document" : "element", def, t.get(0));
+      pendingCmd = t.get(1);
     }
-    Object pair = Apply.apply(def.get("init"), ElmUnit.INSTANCE);
-    ElmTuple t = (ElmTuple) pair;
-    Tea tea = new Tea(d.ctor().equals("$Document") ? "document" : "element", def, t.get(0));
     tea.httpResponses = httpResponses;
-    tea.runCmd(t.get(1));
+    tea.allowNetwork = allowNetwork;
+    if (allowNetwork) {
+      tea.seed = System.nanoTime() * 2862933555777941757L + 3037000493L;
+    }
+    if (pendingCmd != null) {
+      tea.runCmd(pendingCmd);
+    }
     return tea;
   }
 
@@ -159,9 +182,17 @@ public final class Tea {
     Object toMsg = expect.arg(0);
     String body = httpResponses.get(url);
     if (body == null) {
-      // No canned response: deliver a network error (matched by `Err _`).
-      send(Apply.apply(toMsg, err(new ElmData("NetworkError", new Object[0]))));
-      return;
+      if (allowNetwork) {
+        // Perform a real request (elm run / project run); a non-200 or failure becomes an Http.Error.
+        body = fetch(url, toMsg);
+        if (body == null) {
+          return; // fetch() already delivered the error message
+        }
+      } else {
+        // Offline (tests): deliver a network error (matched by `Err _`).
+        send(Apply.apply(toMsg, err(new ElmData("NetworkError", new Object[0]))));
+        return;
+      }
     }
     switch (expect.ctor()) {
       case "$Expect_String" -> send(Apply.apply(toMsg, ok(body)));
@@ -180,6 +211,28 @@ public final class Tea {
         }
       }
       default -> {}
+    }
+  }
+
+  /**
+   * Performs a real HTTP GET. Returns the body on 200, or delivers the matching {@code Http.Error}
+   * message ({@code BadStatus}/{@code NetworkError}) and returns null.
+   */
+  private String fetch(String url, Object toMsg) {
+    try {
+      var client = java.net.http.HttpClient.newBuilder()
+          .connectTimeout(java.time.Duration.ofSeconds(10)).build();
+      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+          .timeout(java.time.Duration.ofSeconds(15)).GET().build();
+      var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() == 200) {
+        return response.body();
+      }
+      send(Apply.apply(toMsg, err(new ElmData("BadStatus", new Object[] {(long) response.statusCode()}))));
+      return null;
+    } catch (Exception e) {
+      send(Apply.apply(toMsg, err(new ElmData("NetworkError", new Object[0]))));
+      return null;
     }
   }
 

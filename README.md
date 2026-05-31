@@ -168,6 +168,11 @@ falls through to evaluation).
 (`sandbox`/`element`/`document`), `Cmd`/`Sub`, `Random`, `Time`, `Task`, `Http`, `Json.Decode`/
 `Json.Encode`, `Url`, `WebGL`/`WebGL.Texture`/`Math.*`.
 
+**Effects outside the browser**: `elm run`/`project run` execute a `Browser` program's initial
+commands for real — an `Http.get` performs an actual `java.net.http` request and `Random` is seeded
+non-deterministically — so an effectful program renders its fetched result headlessly. (Tests use an
+offline driver, so they stay deterministic and never touch the network.)
+
 ## Scripting (POSIX-style)
 
 `elm script <file.elm> [args…]` runs an Elm file as a command-line script on the JIT interpreter,
