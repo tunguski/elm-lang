@@ -69,6 +69,8 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Site.class,
       Main.Init.class,
       Main.Install.class,
+      Main.Diff.class,
+      Main.Bump.class,
       CommandLine.HelpCommand.class,
     })
 public final class Main implements Runnable {
@@ -427,14 +429,77 @@ public final class Main implements Runnable {
     }
   }
 
-  @Command(name = "docs", description = "Generate Markdown API docs from a module's exposed declarations.")
+  @Command(name = "docs", description = "Generate API docs from a module's exposed declarations (Markdown, or docs.json with --json).")
   static final class Docs implements Callable<Integer> {
     @Parameters(index = "0", description = "The .elm file.")
     Path file;
 
+    @Option(names = "--json", description = "Emit the structured docs.json API instead of Markdown.")
+    boolean json;
+
     @Override
     public Integer call() throws IOException {
-      System.out.println(pl.matsuo.elm.doc.DocGenerator.markdown(Files.readString(file)));
+      String source = Files.readString(file);
+      System.out.print(
+          json
+              ? pl.matsuo.elm.doc.ApiDocs.of(source).toJson()
+              : pl.matsuo.elm.doc.DocGenerator.markdown(source) + "\n");
+      return 0;
+    }
+  }
+
+  @Command(
+      name = "diff",
+      description = "Compare two versions of a module's public API and report the semver magnitude.",
+      footerHeading = "%nExample:%n",
+      footer = {"  elm diff old/Main.elm new/Main.elm   # -> MAJOR/MINOR/PATCH and the changes"})
+  static final class Diff implements Callable<Integer> {
+    @Parameters(index = "0", description = "The old (baseline) .elm file.")
+    Path oldFile;
+
+    @Parameters(index = "1", description = "The new .elm file.")
+    Path newFile;
+
+    @Override
+    public Integer call() throws IOException {
+      var diff =
+          pl.matsuo.elm.pkg.ApiDiff.compare(
+              pl.matsuo.elm.doc.ApiDocs.of(Files.readString(oldFile)),
+              pl.matsuo.elm.doc.ApiDocs.of(Files.readString(newFile)));
+      System.out.println(diff.magnitude() + " change");
+      if (diff.changes().isEmpty()) {
+        System.out.println("  (no public API changes)");
+      } else {
+        diff.changes().forEach(c -> System.out.println("  " + c));
+      }
+      return 0;
+    }
+  }
+
+  @Command(
+      name = "bump",
+      description = "Propose the next version from the API change since a baseline module.",
+      footerHeading = "%nExample:%n",
+      footer = {"  elm bump old/Main.elm new/Main.elm 1.2.0   # -> magnitude + the next version"})
+  static final class Bump implements Callable<Integer> {
+    @Parameters(index = "0", description = "The old (baseline) .elm file.")
+    Path oldFile;
+
+    @Parameters(index = "1", description = "The new .elm file.")
+    Path newFile;
+
+    @Parameters(index = "2", arity = "0..1", description = "Current version (default 1.0.0).")
+    String current = "1.0.0";
+
+    @Override
+    public Integer call() throws IOException {
+      var diff =
+          pl.matsuo.elm.pkg.ApiDiff.compare(
+              pl.matsuo.elm.doc.ApiDocs.of(Files.readString(oldFile)),
+              pl.matsuo.elm.doc.ApiDocs.of(Files.readString(newFile)));
+      var next =
+          pl.matsuo.elm.pkg.ApiDiff.bump(pl.matsuo.elm.pkg.Version.parse(current), diff.magnitude());
+      System.out.println(diff.magnitude() + " change: " + current + " -> " + next);
       return 0;
     }
   }

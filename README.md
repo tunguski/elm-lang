@@ -91,7 +91,9 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `test <file.elm…>` | Run `Test` suites (bundled `Test`/`Expect`); reports pass/fail, non-zero exit on failure. |
 | `format <file.elm> [--write \| --check \| --project]` | Format (elm-format style); `--check` gates CI. |
 | `lint <file.elm…>` | Report leftover `Debug.*` and unused definitions (non-zero exit on findings). |
-| `docs <file.elm>` | Generate Markdown API docs from doc comments + inferred types. |
+| `docs <file.elm> [--json]` | Generate API docs from doc comments + inferred types (Markdown, or structured `docs.json`). |
+| `diff <old.elm> <new.elm>` | Compare two versions of a module's public API → the semver magnitude (MAJOR/MINOR/PATCH) and the changes. |
+| `bump <old.elm> <new.elm> [version]` | Propose the next version from the API change since a baseline. |
 | `coverage <file.elm> [--value NAME]` | Run a definition and report which top-level definitions executed. |
 | `repl` | Interactive REPL: expressions, persistent `x = …` definitions, `:type`, multi-line input. |
 | `lsp` | Language server over stdio (diagnostics, hover, completion, document symbols, code actions, semantic-token highlighting, and **workspace-wide** go-to-definition, find-references and rename across modules). |
@@ -238,6 +240,10 @@ package manager** for everything outside the bundled set:
   interpreter and JS compiler** as your own code — `import`s of it resolve, type-check, run and
   compile into the bundle. (Built-in packages are skipped to avoid double-defining the standard
   library.)
+- **Publishing.** `docs --json` emits a `docs.json` of a module's public API (exposed values with
+  inferred types, custom types, aliases); `diff` compares two API versions into a semver magnitude
+  (a removed/changed entry is MAJOR, an addition MINOR, nothing PATCH); `bump` proposes the next
+  version from that magnitude — Elm's API-driven semver, enforced from the code.
 
 What remains is the WASM backend loading package sources (the others now do), and registry niceties
 like checksum verification and `elm.json` `test-dependencies`.
