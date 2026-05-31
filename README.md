@@ -134,8 +134,9 @@ rolls a die and **cards** draws on click), `Time.every` subscriptions (wired to 
 the **clock** ticks), `elm-playground`'s interactive **`game`** (a keyboard + animation-frame
 loop, so **turtle**/**keyboard**/**mario** move with the arrow keys; tuple-pattern parameters like
 `view computer (x, y) = …` are desugared so they parse), and **`Http.get`** (the editor issues a real
-request and feeds the response back, so the **book** example loads live via `Http.expectString`).
-Examples that need WebGL or `File`/`Json.Decode` effect runtimes parse but fall outside this
+request and feeds the response back, so the **book** loads live via `Http.expectString` and **quotes**
+via `Http.expectJson` — a small `Json.Decode` of `field`/`string`/`int`/`map2..map4` runs against the
+parsed body). Examples that need WebGL or `File` effect runtimes parse but fall outside this
 teaching-subset interpreter.
 
 ## Type inference

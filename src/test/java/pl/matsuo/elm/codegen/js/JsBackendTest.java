@@ -477,6 +477,27 @@ class JsBackendTest {
   }
 
   @Test
+  void editorDecodesAnHttpJsonResponse() {
+    // The quotes example fetches JSON and decodes it with map4/field/string/int. Feeding a JSON body
+    // through the expect's decoder renders the decoded quote (full path, no network).
+    String body =
+        "{\\\"quote\\\":\\\"Be the change\\\",\\\"source\\\":\\\"Speech\\\",\\\"author\\\":\\\"Gandhi\\\",\\\"year\\\":1947}";
+    String out =
+        editorScript(
+            read("/examples/quotes.elm"),
+            "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0]; var cmd=init._[0].vs[1];"
+                + "var h=_$Eval$httpCmd(cmd); var expect=h._[0].vs[1];"
+                + "var mr=_$Eval$httpResult(files)(expect)($maybe(\""
+                + body
+                + "\"));"
+                + "var up=_$Eval$appUpdateCmd(files)(mr._[0])(model);"
+                + "var view=_$Eval$appView(files)(up._[0].vs[0]);"
+                + "process.stdout.write(_$Eval$htmlToString(view._[0]));");
+    assertTrue(out.contains("Be the change"), out); // decoded quote text
+    assertTrue(out.contains("Gandhi") && out.contains("1947"), out); // author + year (Int) decoded
+  }
+
+  @Test
   void editorExtractsTimeEverySubscription() {
     // The clock subscribes via `Time.every 1000 Tick`; the editor reads (interval, toMsg) to wire a
     // live tick.

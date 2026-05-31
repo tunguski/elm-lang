@@ -25,7 +25,8 @@ builtins =
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
-        ++ [ "Http.get", "Http.expectString" ]
+        ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
+        ++ [ "field", "map2", "map3", "map4", "succeed" ]
         ++ playgroundNames
 
 
@@ -44,7 +45,7 @@ playgroundNames =
 children). Inline SVG renders directly in the browser, so `svg`/`circle`/… serialize like any node. -}
 htmlTags : List String
 htmlTags =
-    [ "div", "button", "p", "span", "h1", "h2", "h3", "h4", "ul", "ol", "li", "pre", "code", "input", "textarea", "label", "a", "section", "strong", "em", "br", "img", "table", "tr", "td", "th" ]
+    [ "div", "button", "p", "span", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "pre", "code", "input", "textarea", "label", "a", "section", "strong", "em", "br", "img", "table", "tr", "td", "th", "blockquote", "cite", "hr", "nav", "header", "footer" ]
         ++ [ "svg", "circle", "rect", "line", "ellipse", "polygon", "polyline", "path", "g", "text_", "defs", "stop", "linearGradient", "radialGradient" ]
 
 
@@ -69,17 +70,20 @@ arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
-    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString" ] then
+    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed" ] then
         1
 
     else if List.member name [ "toX", "toY", "degrees" ] then
         1
 
-    else if List.member name [ "oval", "rectangle", "move", "rgb", "game", "image" ] then
+    else if List.member name [ "oval", "rectangle", "move", "rgb", "game", "image", "map2" ] then
         3
 
-    else if List.member name [ "wave", "zigzag" ] then
+    else if List.member name [ "wave", "zigzag", "map3" ] then
         4
+
+    else if name == "map4" then
+        5
 
     else if List.member name htmlStringAttrs || List.member name htmlBoolAttrs then
         1
@@ -120,6 +124,12 @@ evalExpr globals env expr =
 
                             else if name == "e" then
                                 Ok (VNum e)
+
+                            else if List.member name [ "string", "int", "float", "bool" ] then
+                                -- Json.Decode primitive decoders (exposed unqualified by the quotes
+                                -- example); locals/globals are checked first, so a same-named binding
+                                -- still shadows them.
+                                Ok (VCtor ("Dec." ++ name) [])
 
                             else
                                 case playgroundColor name of
@@ -536,14 +546,32 @@ runBuiltin globals name args =
             ( "Http.expectString", [ toMsg ] ) ->
                 Ok (VCtor "Http.expect" [ toMsg ])
 
+            ( "Http.expectJson", [ toMsg, decoder ] ) ->
+                Ok (VCtor "Http.expectJson" [ toMsg, decoder ])
+
             ( "Http.get", [ VRecord fields ] ) ->
                 -- A GET command the editor issues for real, feeding the response back via `expect`.
                 case ( lookup "url" fields, lookup "expect" fields ) of
-                    ( Just (VStr url), Just (VCtor "Http.expect" [ toMsg ]) ) ->
-                        Ok (VCtor "Cmd.http" [ VStr url, toMsg ])
+                    ( Just (VStr url), Just expect ) ->
+                        Ok (VCtor "Cmd.http" [ VStr url, expect ])
 
                     _ ->
                         Err "Http.get needs { url : String, expect : … }"
+
+            ( "field", [ VStr name2, decoder ] ) ->
+                Ok (VCtor "Dec.field" [ VStr name2, decoder ])
+
+            ( "succeed", [ v ] ) ->
+                Ok (VCtor "Dec.succeed" [ v ])
+
+            ( "map2", [ f, a, b ] ) ->
+                Ok (VCtor "Dec.map" [ f, a, b ])
+
+            ( "map3", [ f, a, b, c ] ) ->
+                Ok (VCtor "Dec.map" [ f, a, b, c ])
+
+            ( "map4", [ f, a, b, c, d ] ) ->
+                Ok (VCtor "Dec.map" [ f, a, b, c, d ])
 
             _ ->
                 Err ("bad arguments to " ++ name)
@@ -1166,32 +1194,314 @@ randomCmd files seed cmd =
             Nothing
 
 
-{-| If the command is an `Http.get`, the (url, toMsg) the editor needs to issue a real request and
-build the response message. -}
+{-| If the command is an `Http.get`, the (url, expect) the editor needs to issue a real request and
+build the response message. The `expect` carries the message constructor (and, for JSON, a decoder). -}
 httpCmd : Value -> Maybe ( String, Value )
 httpCmd cmd =
     case cmd of
-        VCtor "Cmd.http" [ VStr url, toMsg ] ->
-            Just ( url, toMsg )
+        VCtor "Cmd.http" [ VStr url, expect ] ->
+            Just ( url, expect )
 
         _ ->
             Nothing
 
 
-{-| Builds the message to dispatch when an HTTP request finishes: applies the `expect`'s constructor
-to `Ok body` (or `Err`), giving the interpreted `Result Http.Error String` the app expects. -}
+{-| Builds the message to dispatch when an HTTP request finishes. For `expectString` it is
+`toMsg (Ok body)`; for `expectJson` the body is parsed and run through the decoder, giving
+`toMsg (Ok value)` (or an `Err` on a network/decode failure). -}
 httpResult : List ( String, String ) -> Value -> Maybe String -> Result String Value
-httpResult files toMsg body =
-    let
-        result =
+httpResult files expect body =
+    parseProject files |> Result.andThen (\globals -> httpResultIn globals expect body)
+
+
+httpResultIn : Globals -> Value -> Maybe String -> Result String Value
+httpResultIn globals expect body =
+    case expect of
+        VCtor "Http.expect" [ toMsg ] ->
+            applyValue globals toMsg (okOrErr body)
+
+        VCtor "Http.expectJson" [ toMsg, decoder ] ->
             case body of
                 Just text ->
-                    VCtor "Ok" [ VStr text ]
+                    case parseJson text |> Result.andThen (\json -> runDecoder globals decoder json) of
+                        Ok v ->
+                            applyValue globals toMsg (VCtor "Ok" [ v ])
+
+                        Err _ ->
+                            applyValue globals toMsg (VCtor "Err" [ VCtor "BadBody" [] ])
 
                 Nothing ->
-                    VCtor "Err" [ VCtor "NetworkError" [] ]
-    in
-    applyMsgIn files toMsg result
+                    applyValue globals toMsg (VCtor "Err" [ VCtor "NetworkError" [] ])
+
+        _ ->
+            Err "unknown Http expect"
+
+
+okOrErr : Maybe String -> Value
+okOrErr body =
+    case body of
+        Just text ->
+            VCtor "Ok" [ VStr text ]
+
+        Nothing ->
+            VCtor "Err" [ VCtor "NetworkError" [] ]
+
+
+{-| Runs an interpreted decoder (a `Dec.*` value) against a parsed JSON `Value`. -}
+runDecoder : Globals -> Value -> Value -> Result String Value
+runDecoder globals decoder json =
+    case decoder of
+        VCtor "Dec.string" [] ->
+            case json of
+                VStr s ->
+                    Ok (VStr s)
+
+                _ ->
+                    Err "expected a string"
+
+        VCtor "Dec.int" [] ->
+            case json of
+                VNum n ->
+                    Ok (VNum n)
+
+                _ ->
+                    Err "expected an int"
+
+        VCtor "Dec.float" [] ->
+            case json of
+                VNum n ->
+                    Ok (VNum n)
+
+                _ ->
+                    Err "expected a float"
+
+        VCtor "Dec.bool" [] ->
+            case json of
+                VBool b ->
+                    Ok (VBool b)
+
+                _ ->
+                    Err "expected a bool"
+
+        VCtor "Dec.field" [ VStr name, dec ] ->
+            case json of
+                VRecord fs ->
+                    case lookup name fs of
+                        Just v ->
+                            runDecoder globals dec v
+
+                        Nothing ->
+                            Err ("no field: " ++ name)
+
+                _ ->
+                    Err "expected an object"
+
+        VCtor "Dec.succeed" [ v ] ->
+            Ok v
+
+        VCtor "Dec.map" (f :: decs) ->
+            decodeAll globals decs json [] |> Result.andThen (\vals -> applyAll globals f vals)
+
+        _ ->
+            Err "unsupported decoder"
+
+
+decodeAll : Globals -> List Value -> Value -> List Value -> Result String (List Value)
+decodeAll globals decs json acc =
+    case decs of
+        [] ->
+            Ok (List.reverse acc)
+
+        d :: rest ->
+            runDecoder globals d json |> Result.andThen (\v -> decodeAll globals rest json (v :: acc))
+
+
+applyAll : Globals -> Value -> List Value -> Result String Value
+applyAll globals f vals =
+    case vals of
+        [] ->
+            Ok f
+
+        v :: rest ->
+            applyValue globals f v |> Result.andThen (\f2 -> applyAll globals f2 rest)
+
+
+{-| A small JSON parser producing an interpreted `Value` (object→VRecord, array→VList, …). -}
+parseJson : String -> Result String Value
+parseJson s =
+    jsonValue (skipWs (String.toList s)) |> Result.map Tuple.first
+
+
+jsonValue : List Char -> Result String ( Value, List Char )
+jsonValue chars =
+    case chars of
+        '"' :: rest ->
+            jsonString rest ""
+
+        '{' :: rest ->
+            jsonObject (skipWs rest) []
+
+        '[' :: rest ->
+            jsonArray (skipWs rest) []
+
+        't' :: 'r' :: 'u' :: 'e' :: rest ->
+            Ok ( VBool True, rest )
+
+        'f' :: 'a' :: 'l' :: 's' :: 'e' :: rest ->
+            Ok ( VBool False, rest )
+
+        'n' :: 'u' :: 'l' :: 'l' :: rest ->
+            Ok ( VCtor "Null" [], rest )
+
+        c :: _ ->
+            if c == '-' || Char.isDigit c then
+                jsonNumber chars ""
+
+            else
+                Err "unexpected character in JSON"
+
+        [] ->
+            Err "unexpected end of JSON"
+
+
+jsonString : List Char -> String -> Result String ( Value, List Char )
+jsonString chars acc =
+    case chars of
+        '"' :: rest ->
+            Ok ( VStr acc, rest )
+
+        '\\' :: c :: rest ->
+            jsonString rest (acc ++ escape c)
+
+        c :: rest ->
+            jsonString rest (acc ++ String.fromChar c)
+
+        [] ->
+            Err "unterminated JSON string"
+
+
+escape : Char -> String
+escape c =
+    case c of
+        'n' ->
+            "\n"
+
+        't' ->
+            "\t"
+
+        'r' ->
+            "\u{000D}"
+
+        _ ->
+            String.fromChar c
+
+
+jsonNumber : List Char -> String -> Result String ( Value, List Char )
+jsonNumber chars acc =
+    case chars of
+        c :: rest ->
+            if Char.isDigit c || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E' then
+                jsonNumber rest (acc ++ String.fromChar c)
+
+            else
+                finishNumber acc chars
+
+        [] ->
+            finishNumber acc []
+
+
+finishNumber : String -> List Char -> Result String ( Value, List Char )
+finishNumber acc rest =
+    case String.toFloat acc of
+        Just n ->
+            Ok ( VNum n, rest )
+
+        Nothing ->
+            Err ("bad JSON number: " ++ acc)
+
+
+jsonObject : List Char -> List ( String, Value ) -> Result String ( Value, List Char )
+jsonObject chars acc =
+    case chars of
+        '}' :: rest ->
+            Ok ( VRecord (List.reverse acc), rest )
+
+        '"' :: rest ->
+            jsonString rest ""
+                |> Result.andThen
+                    (\( key, afterKey ) ->
+                        case skipWs afterKey of
+                            ':' :: afterColon ->
+                                jsonValue (skipWs afterColon)
+                                    |> Result.andThen
+                                        (\( v, afterVal ) ->
+                                            let
+                                                pair =
+                                                    ( valueToKey key, v )
+                                            in
+                                            case skipWs afterVal of
+                                                ',' :: more ->
+                                                    jsonObject (skipWs more) (pair :: acc)
+
+                                                '}' :: more ->
+                                                    Ok ( VRecord (List.reverse (pair :: acc)), more )
+
+                                                _ ->
+                                                    Err "expected ',' or '}' in object"
+                                        )
+
+                            _ ->
+                                Err "expected ':' in object"
+                    )
+
+        _ ->
+            Err "expected a key or '}' in object"
+
+
+valueToKey : Value -> String
+valueToKey v =
+    case v of
+        VStr s ->
+            s
+
+        _ ->
+            ""
+
+
+jsonArray : List Char -> List Value -> Result String ( Value, List Char )
+jsonArray chars acc =
+    case chars of
+        ']' :: rest ->
+            Ok ( VList (List.reverse acc), rest )
+
+        _ ->
+            jsonValue chars
+                |> Result.andThen
+                    (\( v, afterVal ) ->
+                        case skipWs afterVal of
+                            ',' :: more ->
+                                jsonArray (skipWs more) (v :: acc)
+
+                            ']' :: more ->
+                                Ok ( VList (List.reverse (v :: acc)), more )
+
+                            _ ->
+                                Err "expected ',' or ']' in array"
+                    )
+
+
+skipWs : List Char -> List Char
+skipWs chars =
+    case chars of
+        c :: rest ->
+            if c == ' ' || c == '\n' || c == '\t' || c == '\u{000D}' then
+                skipWs rest
+
+            else
+                chars
+
+        [] ->
+            []
 
 
 {-| Samples a generator with a linear-congruential step of the seed, returning (value, next seed). -}
