@@ -72,6 +72,21 @@ class JsBackendTest {
   }
 
   @Test
+  void arrayOnTheJsBackend() {
+    same("Array.toList (Array.fromList [ 1, 2, 3 ])");
+    same("Array.get 1 (Array.fromList [ 1, 2, 3 ])");
+    same("Array.get 9 (Array.fromList [ 1 ])"); // Nothing
+    same("Array.length (Array.push 4 (Array.fromList [ 1, 2, 3 ]))");
+    same("Array.toList (Array.map (\\x -> x * 2) (Array.fromList [ 1, 2, 3 ]))");
+    same("Array.foldl (\\x acc -> acc + x) 0 (Array.fromList [ 1, 2, 3, 4 ])");
+    same("Array.toList (Array.set 0 9 (Array.fromList [ 1, 2, 3 ]))");
+    same("Array.toList (Array.slice 1 3 (Array.fromList [ 0, 1, 2, 3, 4 ]))");
+    same("Array.toList (Array.slice 1 -1 (Array.fromList [ 0, 1, 2, 3, 4 ]))"); // negative end
+    same("Array.toList (Array.initialize 3 (\\i -> i * i))");
+    same("Array.fromList [ 1, 2, 3 ]"); // shows as Array.fromList [...]
+  }
+
+  @Test
   void setOnTheJsBackend() {
     same("Set.toList (Set.fromList [ 3, 1, 2, 1, 3 ])");
     same("Set.member 2 (Set.fromList [ 1, 2, 3 ])");

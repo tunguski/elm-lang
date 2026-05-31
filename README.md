@@ -369,7 +369,7 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
 - **WASM (linear-memory) backend** — does **not** support: effects/TEA, the full standard library
   (only a prelude of `List`/`Maybe`/`Result` helpers compiles — most `String`, `Dict`, `Set`,
   `Array` and `Regex` operations are absent on this backend; the interpreter, bytecode VM and **JS
-  backend** do have `Dict`/`Set`/`Array`), or returning compound values to the host as anything but
+  backend** all have full `Dict`/`Set`/`Array`), or returning compound values to the host as anything but
   an opaque heap pointer. It **does** compile **multi-module projects** (`moduleFromSources` merges a
   module with its local/package dependency modules), though this isn't yet wired to a `make --backend
   wasm` CLI path. `++`/`==` require operands statically typed (no fully

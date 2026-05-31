@@ -14,7 +14,7 @@ function $listToArray(v){ var a=[]; while(v.$==='::'){a.push(v.a); v=v.b;} retur
 function $eq(x, y){
   if (typeof x === 'number' || typeof x === 'boolean' || typeof x === 'string') return x === y;
   if (x.$ === 'Char') return y.$==='Char' && x.c === y.c;
-  if (x.$ === 'Dict' || x.$ === 'Set'){
+  if (x.$ === 'Dict' || x.$ === 'Set' || x.$ === 'Array'){
     if (x.$ !== y.$ || x.a.length !== y.a.length) return false;
     for (var di=0; di<x.a.length; di++){
       if (x.$ === 'Dict'){ if(!$eq(x.a[di][0],y.a[di][0]) || !$eq(x.a[di][1],y.a[di][1])) return false; }
@@ -75,6 +75,7 @@ function $show(v, q){
   if (t === '#'){ return '('+v.vs.map(function(x){return $show(x,true);}).join(',')+')'; }
   if (t === 'Dict'){ return 'Dict.fromList ['+v.a.map(function(e){return '('+$show(e[0],true)+','+$show(e[1],true)+')';}).join(',')+']'; }
   if (t === 'Set'){ return 'Set.fromList ['+v.a.map(function(e){return $show(e,true);}).join(',')+']'; }
+  if (t === 'Array'){ return 'Array.fromList ['+v.a.map(function(e){return $show(e,true);}).join(',')+']'; }
   if (t !== undefined){ if (v._.length===0) return t; return t+' '+v._.map($showArg).join(' '); }
   var ks=Object.keys(v);
   return '{ '+ks.map(function(k){return k+' = '+$show(v[k],true);}).join(', ')+' }';
@@ -125,6 +126,22 @@ var $rt = {
   'Set.union': function(a){ return function(b){ var s=a; b.a.forEach(function(x){ s=$setInsert(s,x); }); return s; }; },
   'Set.intersect': function(a){ return function(b){ return {$:'Set',a:a.a.filter(function(x){return $setFind(b.a,x)>=0;})}; }; },
   'Set.diff': function(a){ return function(b){ return {$:'Set',a:a.a.filter(function(x){return $setFind(b.a,x)<0;})}; }; },
+  'Array.empty': {$:'Array',a:[]},
+  'Array.isEmpty': function(arr){ return arr.a.length===0; },
+  'Array.length': function(arr){ return arr.a.length; },
+  'Array.repeat': function(n){ return function(x){ var a=[]; for(var i=0;i<n;i++)a.push(x); return {$:'Array',a:a}; }; },
+  'Array.initialize': function(n){ return function(f){ var a=[]; for(var i=0;i<n;i++)a.push(f(i)); return {$:'Array',a:a}; }; },
+  'Array.fromList': function(xs){ return {$:'Array',a:$listToArray(xs)}; },
+  'Array.toList': function(arr){ return $list(arr.a.slice()); },
+  'Array.push': function(x){ return function(arr){ return {$:'Array',a:arr.a.concat([x])}; }; },
+  'Array.get': function(i){ return function(arr){ return (i>=0&&i<arr.a.length)?$data('Just',[arr.a[i]]):$data('Nothing',[]); }; },
+  'Array.set': function(i){ return function(x){ return function(arr){ if(i<0||i>=arr.a.length)return arr; var a=arr.a.slice(); a[i]=x; return {$:'Array',a:a}; }; }; },
+  'Array.append': function(a){ return function(b){ return {$:'Array',a:a.a.concat(b.a)}; }; },
+  'Array.map': function(f){ return function(arr){ return {$:'Array',a:arr.a.map(function(x){return f(x);})}; }; },
+  'Array.indexedMap': function(f){ return function(arr){ return {$:'Array',a:arr.a.map(function(x,i){return f(i)(x);})}; }; },
+  'Array.foldl': function(f){ return function(acc){ return function(arr){ arr.a.forEach(function(x){ acc=f(x)(acc); }); return acc; }; }; },
+  'Array.foldr': function(f){ return function(acc){ return function(arr){ for(var i=arr.a.length-1;i>=0;i--) acc=f(arr.a[i])(acc); return acc; }; }; },
+  'Array.slice': function(from){ return function(to){ return function(arr){ var n=arr.a.length; var s=from<0?Math.max(n+from,0):Math.min(from,n); var e=to<0?Math.max(n+to,0):Math.min(to,n); return {$:'Array',a:e>s?arr.a.slice(s,e):[]}; }; }; },
   'Basics.identity': function(x){ return x; },
   'Basics.always': function(a){ return function(b){ return a; }; },
   'Basics.not': function(b){ return !b; },
