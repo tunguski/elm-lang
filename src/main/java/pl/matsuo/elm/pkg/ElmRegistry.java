@@ -40,6 +40,20 @@ public final class ElmRegistry implements Registry {
     return index().getOrDefault(pkg, List.of());
   }
 
+  /**
+   * The published API documentation ({@code docs.json}) of a package version, as the registry serves
+   * it: {@code GET <base>/packages/<author>/<name>/<version>/docs.json}. Returns null if missing.
+   */
+  public String docsJson(String pkg, Version version) {
+    return get(base + "/packages/" + pkg + "/" + version + "/docs.json");
+  }
+
+  /** The latest published version of a package, or null if it has none / is unknown. */
+  public Version latest(String pkg) {
+    List<Version> vs = versions(pkg);
+    return vs.isEmpty() ? null : vs.get(vs.size() - 1);
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   public Map<String, Constraint> dependencies(String pkg, Version version) {

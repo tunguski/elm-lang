@@ -64,6 +64,8 @@ class ElmRegistryTest {
             body = "{ \"type\": \"package\", \"dependencies\": {} }".getBytes(StandardCharsets.UTF_8);
           } else if (path.equals("/packages/acme/strings/1.0.0/endpoint.json")) {
             body = ("{ \"url\": \"" + base + "/zip\", \"hash\": \"abc\" }").getBytes(StandardCharsets.UTF_8);
+          } else if (path.equals("/packages/acme/strings/1.0.0/docs.json")) {
+            body = "[{\"name\":\"Acme.Strings\",\"comment\":\"\",\"values\":[{\"name\":\"shout\",\"comment\":\"\",\"type\":\"String -> String\"}]}]".getBytes(StandardCharsets.UTF_8);
           } else if (path.equals("/zip")) {
             body = zip;
           } else {
@@ -88,6 +90,16 @@ class ElmRegistryTest {
     assertEquals(List.of(Version.parse("1.0.0")), reg.versions("acme/strings"));
     assertTrue(reg.dependencies("acme/strings", Version.parse("1.0.0")).isEmpty());
     assertTrue(reg.versions("acme/unknown").isEmpty());
+  }
+
+  @Test
+  void fetchesPublishedDocsJsonAndLatestVersion() throws IOException {
+    serve();
+    ElmRegistry reg = new ElmRegistry(base);
+    assertEquals(Version.parse("1.0.0"), reg.latest("acme/strings"));
+    String docs = reg.docsJson("acme/strings", Version.parse("1.0.0"));
+    assertTrue(docs.contains("Acme.Strings") && docs.contains("shout"), docs);
+    assertEquals(null, reg.docsJson("acme/strings", Version.parse("9.9.9"))); // missing -> null
   }
 
   @Test

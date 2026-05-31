@@ -498,16 +498,50 @@ public final class Main implements Runnable {
     }
   }
 
-  @Command(name = "docs", description = "Generate API docs from a module's exposed declarations (Markdown, or docs.json with --json).")
+  @Command(name = "docs", description = "Generate API docs from a local module (Markdown, or docs.json with --json), or fetch a published package's docs.json from the registry with --pkg.")
   static final class Docs implements Callable<Integer> {
-    @Parameters(index = "0", description = "The .elm file.")
+    @Parameters(index = "0", arity = "0..1", description = "The .elm file (omit when using --pkg).")
     Path file;
 
     @Option(names = "--json", description = "Emit the structured docs.json API instead of Markdown.")
     boolean json;
 
+    @Option(names = "--pkg", description = "Fetch a published package's docs.json from the registry, e.g. elm/json.")
+    String pkg;
+
+    @Option(names = "--pkg-version", description = "The package version to fetch (default: the latest published).")
+    String pkgVersion;
+
+    @Option(
+        names = "--elm",
+        arity = "0..1",
+        fallbackValue = "https://package.elm-lang.org",
+        description = "Registry base for --pkg (default: the public package.elm-lang.org).")
+    String elm;
+
     @Override
     public Integer call() throws IOException {
+      if (pkg != null) {
+        pl.matsuo.elm.pkg.ElmRegistry reg =
+            new pl.matsuo.elm.pkg.ElmRegistry(elm != null ? elm : "https://package.elm-lang.org");
+        pl.matsuo.elm.pkg.Version version =
+            pkgVersion != null ? pl.matsuo.elm.pkg.Version.parse(pkgVersion) : reg.latest(pkg);
+        if (version == null) {
+          System.err.println("No published versions found for " + pkg);
+          return 1;
+        }
+        String docs = reg.docsJson(pkg, version);
+        if (docs == null) {
+          System.err.println("No docs.json for " + pkg + " " + version);
+          return 1;
+        }
+        System.out.print(docs.endsWith("\n") ? docs : docs + "\n");
+        return 0;
+      }
+      if (file == null) {
+        System.err.println("Provide a .elm file, or --pkg author/name to fetch from the registry.");
+        return 2;
+      }
       String source = Files.readString(file);
       System.out.print(
           json
