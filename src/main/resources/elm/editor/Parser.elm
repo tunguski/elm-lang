@@ -678,7 +678,7 @@ parseDecl source =
             Ok rawTokens ->
                 case cookLayout rawTokens of
                     (TId name) :: rest ->
-                        parseDeclParams name rest []
+                        parseDeclParams name rest [] []
 
                     _ ->
                         Ok []
@@ -729,15 +729,39 @@ recordFields source =
             []
 
 
-parseDeclParams : String -> List Token -> List String -> Result String Globals
-parseDeclParams name tokens params =
+parseDeclParams : String -> List Token -> List String -> List ( String, Pattern ) -> Result String Globals
+parseDeclParams name tokens params wrappers =
     case tokens of
         (TId p) :: rest ->
-            parseDeclParams name rest (params ++ [ p ])
+            parseDeclParams name rest (params ++ [ p ]) wrappers
+
+        TLParen :: _ ->
+            -- A destructuring parameter (a tuple pattern like `(x, y)`): bind a fresh name and
+            -- `case` on it in the body, so `f (x, y) = …` works without changing the value model.
+            case parsePatternAtom tokens of
+                Ok ( pat, after ) ->
+                    let
+                        fresh =
+                            "$arg" ++ String.fromInt (List.length params)
+                    in
+                    parseDeclParams name after (params ++ [ fresh ]) (wrappers ++ [ ( fresh, pat ) ])
+
+                Err e ->
+                    Err e
 
         TEquals :: rest ->
-            parse rest |> Result.map (\body -> [ ( name, { name = name, params = params, body = body } ) ])
+            parse rest
+                |> Result.map
+                    (\body ->
+                        [ ( name, { name = name, params = params, body = wrapDestructures wrappers body } ) ]
+                    )
 
         _ ->
             -- not a value/function definition (e.g. an annotation `name : Type`): ignore
             Ok []
+
+
+{-| Wraps a body in a `case` per destructuring parameter, binding its pattern against the fresh name. -}
+wrapDestructures : List ( String, Pattern ) -> Expr -> Expr
+wrapDestructures wrappers body =
+    List.foldr (\( fresh, pat ) acc -> Case (Var fresh) [ ( pat, acc ) ]) body wrappers

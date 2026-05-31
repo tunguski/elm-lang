@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -34,9 +34,9 @@ builtins =
 argument types (`circle color radius` vs `circle attrs children`). -}
 playgroundNames : List String
 playgroundNames =
-    [ "picture", "animation", "oval", "rectangle", "square", "triangle", "pentagon", "hexagon", "octagon", "words" ]
+    [ "picture", "animation", "game", "oval", "rectangle", "square", "triangle", "pentagon", "hexagon", "octagon", "words", "image" ]
         ++ [ "move", "moveUp", "moveDown", "moveLeft", "moveRight", "moveX", "moveY", "rotate", "scale", "fade" ]
-        ++ [ "rgb", "spin", "wave", "zigzag" ]
+        ++ [ "rgb", "spin", "wave", "zigzag", "toX", "toY", "degrees" ]
 
 
 {-| The Html (and inline SVG) element builtins (each takes a list of attributes then a list of
@@ -71,7 +71,10 @@ arity name =
     else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation" ] then
         1
 
-    else if List.member name [ "oval", "rectangle", "move", "rgb" ] then
+    else if List.member name [ "toX", "toY", "degrees" ] then
+        1
+
+    else if List.member name [ "oval", "rectangle", "move", "rgb", "game", "image" ] then
         3
 
     else if List.member name [ "wave", "zigzag" ] then
@@ -1231,6 +1234,15 @@ renderProgram source =
     else
         -- A static program: render `main` (a Html value or a plain value) directly.
         case mainValue files of
+            Ok (VCtor "Playground.game" [ _, _, mem ]) ->
+                -- A `game`: draw its initial frame (no keys, time 0).
+                case gameView files [] 0 mem of
+                    Ok html ->
+                        htmlToString html
+
+                    Err e ->
+                        "game error: " ++ e
+
             Ok v ->
                 htmlToString v
 
@@ -1374,6 +1386,23 @@ runPlayground globals name args =
                                 Err "animation view must return a list of shapes"
                     )
 
+        ( "game", [ view, update, mem ] ) ->
+            -- Preserve the parts so the editor can drive the game (keyboard/frames); a static
+            -- render (tests / renderProgram) draws the initial frame via gameInitialView.
+            Ok (VCtor "Playground.game" [ view, update, mem ])
+
+        ( "image", [ VNum w, VNum h, VStr url ] ) ->
+            Ok (mkShape (VCtor "PImage" [ VNum w, VNum h, VStr url ]))
+
+        ( "degrees", [ VNum d ] ) ->
+            Ok (VNum (d * pi / 180))
+
+        ( "toX", [ kb ] ) ->
+            Ok (VNum (boolField "right" kb - boolField "left" kb))
+
+        ( "toY", [ kb ] ) ->
+            Ok (VNum (boolField "up" kb - boolField "down" kb))
+
         ( "rectangle", [ color, VNum w, VNum h ] ) ->
             Ok (mkShape (VCtor "PRect" [ color, VNum w, VNum h ]))
 
@@ -1516,8 +1545,113 @@ renderForm form =
         VCtor "PWords" [ VStr color, VStr s ] ->
             VCtor "Html.node" [ VStr "text_", VList [ attrS "x" "0", attrS "y" "0", attrS "text-anchor" "middle", attrS "fill" color ], VList [ VCtor "Html.text" [ VStr s ] ] ]
 
+        VCtor "PImage" [ VNum w, VNum h, VStr url ] ->
+            VCtor "Html.node" [ VStr "image", VList [ attrS "x" (ff (negate (w / 2))), attrS "y" (ff (negate (h / 2))), attrS "width" (ff w), attrS "height" (ff h), attrS "href" url ], VList [] ]
+
         _ ->
             VCtor "Html.text" [ VStr "" ]
+
+
+-- elm-playground `game`: a Computer-driven loop the editor renders and steps.
+
+
+{-| A boolean keyboard field as 0.0/1.0 (used by `toX`/`toY`). -}
+boolField : String -> Value -> Float
+boolField name kb =
+    case kb of
+        VRecord fields ->
+            case lookup name fields of
+                Just (VBool True) ->
+                    1
+
+                _ ->
+                    0
+
+        _ ->
+            0
+
+
+{-| The `Computer` a game's `view`/`update` receive: mouse, keyboard, screen and time. The keyboard
+flags are derived from the set of currently-pressed key names; time is milliseconds. -}
+computerValue : List String -> Float -> Value
+computerValue keys time =
+    let
+        down k =
+            VBool (List.member k keys)
+
+        on names =
+            VBool (List.any (\k -> List.member k keys) names)
+    in
+    VRecord
+        [ ( "mouse", VRecord [ ( "x", VNum 0 ), ( "y", VNum 0 ), ( "down", VBool False ) ] )
+        , ( "keyboard"
+          , VRecord
+                [ ( "up", on [ "ArrowUp", "w", "W" ] )
+                , ( "down", on [ "ArrowDown", "s", "S" ] )
+                , ( "left", on [ "ArrowLeft", "a", "A" ] )
+                , ( "right", on [ "ArrowRight", "d", "D" ] )
+                , ( "space", down " " )
+                , ( "enter", down "Enter" )
+                , ( "shift", down "Shift" )
+                , ( "keys", VList (List.map VStr keys) )
+                ]
+          )
+        , ( "screen"
+          , VRecord
+                [ ( "width", VNum 640 ), ( "height", VNum 480 ), ( "top", VNum 240 ), ( "bottom", VNum -240 ), ( "left", VNum -320 ), ( "right", VNum 320 ) ]
+          )
+        , ( "time", VNum time )
+        ]
+
+
+{-| Extracts a game's (view, update, memory) from the project's `main`, if it is a `game`. -}
+gameOf : List ( String, String ) -> Maybe ( Value, Value, Value )
+gameOf files =
+    case mainValue files of
+        Ok (VCtor "Playground.game" [ view, update, mem ]) ->
+            Just ( view, update, mem )
+
+        _ ->
+            Nothing
+
+
+{-| A game's initial memory (the third argument to `game`), if the project is a game. -}
+gameInitMem : List ( String, String ) -> Maybe Value
+gameInitMem files =
+    gameOf files |> Maybe.map (\( _, _, mem ) -> mem)
+
+
+{-| Renders a game's `view computer memory` to an SVG value, for the given keys and time. -}
+gameView : List ( String, String ) -> List String -> Float -> Value -> Result String Value
+gameView files keys time mem =
+    case ( parseProject files, gameOf files ) of
+        ( Ok globals, Just ( view, _, _ ) ) ->
+            applyValue globals view (computerValue keys time)
+                |> Result.andThen (\f -> applyValue globals f mem)
+                |> Result.andThen
+                    (\shapes ->
+                        case shapes of
+                            VList ss ->
+                                Ok (pictureSvg ss)
+
+                            _ ->
+                                Err "game view must return a list of shapes"
+                    )
+
+        _ ->
+            Err "not a game"
+
+
+{-| Steps a game's `update computer memory`, for the given keys and time, to the next memory. -}
+gameStep : List ( String, String ) -> List String -> Float -> Value -> Result String Value
+gameStep files keys time mem =
+    case ( parseProject files, gameOf files ) of
+        ( Ok globals, Just ( _, update, _ ) ) ->
+            applyValue globals update (computerValue keys time)
+                |> Result.andThen (\f -> applyValue globals f mem)
+
+        _ ->
+            Err "not a game"
 
 
 ngonPath : Float -> Float -> String

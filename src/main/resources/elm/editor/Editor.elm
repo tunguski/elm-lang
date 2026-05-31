@@ -13,7 +13,10 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 -}
 
 import Browser
-import Eval exposing (appInit, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, hasApp, lookup, mainValue, randomCmd, renderValue)
+import Browser.Events
+import Eval exposing (appInit, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, gameInitMem, gameStep, gameView, hasApp, lookup, mainValue, randomCmd, renderValue)
+import Json.Decode as Decode
+import Set exposing (Set)
 import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
@@ -28,6 +31,9 @@ type alias Model =
     , app : Result String Value
     , newName : String
     , seed : Int
+    , gameMem : Maybe Value
+    , gameKeys : Set String
+    , gameTime : Float
     }
 
 
@@ -39,6 +45,9 @@ type Msg
     | RemoveFile String
     | Interp Value
     | Tick Int
+    | KeyDown String
+    | KeyUp String
+    | Frame Float
     | Loaded String (Result Http.Error String)
     | NoOp
 
@@ -62,20 +71,29 @@ program urls =
         }
 
 
-{-| Wires a live tick when the selected app subscribes via `Time.every` (e.g. the clock). -}
+{-| Wires live effects: a `game`'s keyboard + animation-frame loop, or a `Time.every` tick. -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    case model.app of
-        Ok m ->
-            case appSubscription (selectedFile model) m of
-                Just ( interval, _ ) ->
-                    Time.every (toFloat interval) (\posix -> Tick (Time.posixToMillis posix))
+    case model.gameMem of
+        Just _ ->
+            Sub.batch
+                [ Browser.Events.onKeyDown (Decode.map KeyDown (Decode.field "key" Decode.string))
+                , Browser.Events.onKeyUp (Decode.map KeyUp (Decode.field "key" Decode.string))
+                , Browser.Events.onAnimationFrameDelta Frame
+                ]
 
-                Nothing ->
+        Nothing ->
+            case model.app of
+                Ok m ->
+                    case appSubscription (selectedFile model) m of
+                        Just ( interval, _ ) ->
+                            Time.every (toFloat interval) (\posix -> Tick (Time.posixToMillis posix))
+
+                        Nothing ->
+                            Sub.none
+
+                Err _ ->
                     Sub.none
-
-        Err _ ->
-            Sub.none
 
 
 fetchAll : List String -> Cmd Msg
@@ -91,6 +109,9 @@ initModel =
         , app = Err ""
         , newName = ""
         , seed = 1
+        , gameMem = Nothing
+        , gameKeys = Set.empty
+        , gameTime = 0
         }
 
 
@@ -116,6 +137,9 @@ refreshApp model =
 
             else
                 Err ""
+        , gameMem = gameInitMem (selectedFile model)
+        , gameKeys = Set.empty
+        , gameTime = 0
     }
 
 
@@ -211,6 +235,30 @@ update msg model =
                             ( model, Cmd.none )
 
                 Err _ ->
+                    ( model, Cmd.none )
+
+        KeyDown key ->
+            ( { model | gameKeys = Set.insert key model.gameKeys }, Cmd.none )
+
+        KeyUp key ->
+            ( { model | gameKeys = Set.remove key model.gameKeys }, Cmd.none )
+
+        Frame dt ->
+            -- Advance the game one animation frame: `update computer memory` with the held keys.
+            case model.gameMem of
+                Just mem ->
+                    let
+                        time =
+                            model.gameTime + dt
+                    in
+                    case gameStep (selectedFile model) (Set.toList model.gameKeys) time mem of
+                        Ok mem2 ->
+                            ( { model | gameMem = Just mem2, gameTime = time }, Cmd.none )
+
+                        Err _ ->
+                            ( { model | gameTime = time }, Cmd.none )
+
+                Nothing ->
                     ( model, Cmd.none )
 
         Loaded url result ->
@@ -431,13 +479,29 @@ mainPane model =
             [ text "Result" ]
         , div
             [ style "border" "1px solid #d0d7de", style "border-radius" "10px", style "padding" "16px", style "background" "#fff", style "box-shadow" "0 4px 14px rgba(0,0,0,0.06)" ]
-            [ if hasApp (selectedFile model) then
-                liveApp model
+            [ case model.gameMem of
+                Just mem ->
+                    gamePane model mem
 
-              else
-                staticMain (selectedFile model)
+                Nothing ->
+                    if hasApp (selectedFile model) then
+                        liveApp model
+
+                    else
+                        staticMain (selectedFile model)
             ]
         ]
+
+
+{-| Renders a running `game`'s current frame (its `view computer memory`). -}
+gamePane : Model -> Value -> Html Msg
+gamePane model mem =
+    case gameView (selectedFile model) (Set.toList model.gameKeys) model.gameTime mem of
+        Ok html ->
+            renderHtml (selectedFile model) html
+
+        Err e ->
+            errorBox e
 
 
 liveApp : Model -> Html Msg

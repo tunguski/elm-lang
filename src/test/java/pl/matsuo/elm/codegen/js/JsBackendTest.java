@@ -436,6 +436,28 @@ class JsBackendTest {
   }
 
   @Test
+  void editorRendersElmPlaygroundGames() {
+    // turtle/keyboard/mario use the interactive `game` API; their initial frame renders to SVG.
+    assertTrue(editorRender(read("/examples/turtle.elm")).contains("<svg"), "turtle");
+    assertTrue(editorRender(read("/examples/keyboard.elm")).contains("<rect"), "keyboard square");
+  }
+
+  @Test
+  void editorGameStepsOnKeyboardInput() {
+    // Drives the `keyboard` game: with the right arrow held, one update step moves the square's x
+    // from 0 toward +1 (toX keyboard = 1), and the rendered square follows.
+    String out =
+        editorScript(
+            read("/examples/keyboard.elm"),
+            "var mem=_$Eval$gameInitMem(files)._[0];"
+                + "var keys=$cons('ArrowRight',$nil);"
+                + "var mem2=_$Eval$gameStep(files)(keys)(0)(mem)._[0];"
+                + "process.stdout.write(_$Eval$renderValue(mem2));");
+    // memory is the tuple (x, y); x should now be positive.
+    assertTrue(out.startsWith("(1") || out.startsWith("( 1"), out);
+  }
+
+  @Test
   void editorExtractsTimeEverySubscription() {
     // The clock subscribes via `Time.every 1000 Tick`; the editor reads (interval, toMsg) to wire a
     // live tick.

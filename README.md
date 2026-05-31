@@ -130,10 +130,11 @@ math (`cos`/`sin`/`pi`/`toFloat`/…), and a built-in **`elm-playground`** (`pic
 with the shape constructors, colours and transforms rendered to SVG) — enough that every pure-Html /
 TEA / SVG / `picture` / `animation` example from the elm-lang.org gallery parses and renders. It also
 runs **effects live**: `Random.generate` (sampled from a seed the editor advances — so **numbers**
-rolls a die and **cards** draws on click) and `Time.every` subscriptions (wired to a real tick — so
-the **clock** ticks). Examples that need full effect/interaction runtimes — WebGL, HTTP, `File`/
-`Json.Decode`, and `elm-playground`'s interactive `game` — parse but fall outside this teaching-subset
-interpreter.
+rolls a die and **cards** draws on click), `Time.every` subscriptions (wired to a real tick — so
+the **clock** ticks), and `elm-playground`'s interactive **`game`** (a keyboard + animation-frame
+loop, so **turtle**/**keyboard**/**mario** move with the arrow keys; tuple-pattern parameters like
+`view computer (x, y) = …` are desugared so they parse). Examples that need WebGL, HTTP or
+`File`/`Json.Decode` effect runtimes parse but fall outside this teaching-subset interpreter.
 
 ## Type inference
 
