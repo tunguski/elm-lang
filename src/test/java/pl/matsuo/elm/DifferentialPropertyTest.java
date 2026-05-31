@@ -42,14 +42,16 @@ class DifferentialPropertyTest {
         return Integer.toString(rng.nextInt(20)); // small non-negative literal
       }
       if (gcSafe) {
-        // The fragment all five backends share, including WasmGC: arithmetic, `if`, value `let`.
-        return switch (rng.nextInt(5)) {
+        // The fragment all five backends share, including WasmGC: arithmetic, `if`, value `let`, and
+        // an immediately-applied capture-free lambda (higher-order: ref.func + call_ref on WasmGC).
+        return switch (rng.nextInt(6)) {
           case 0 -> "(" + expr(depth - 1) + " + " + expr(depth - 1) + ")";
           case 1 -> "(" + expr(depth - 1) + " * " + expr(depth - 1) + ")";
           case 2 -> "(" + expr(depth - 1) + " - " + expr(depth - 1) + ")";
           case 3 ->
               "(if " + expr(depth - 1) + " < " + expr(depth - 1) + " then "
                   + expr(depth - 1) + " else " + expr(depth - 1) + ")";
+          case 4 -> "((\\n -> (n + " + expr(depth - 1) + ")) " + expr(depth - 1) + ")";
           default -> "(let x = " + expr(depth - 1) + " in (x + x))";
         };
       }

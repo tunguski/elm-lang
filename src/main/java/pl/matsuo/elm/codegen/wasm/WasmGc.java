@@ -54,27 +54,20 @@ import pl.matsuo.elm.types.Types;
  * extending this one to them, and finishing the {@code String} API (code-point-aware length, more
  * ops), is future work.
  *
- * <h2>Closures / first-class functions (future work)</h2>
+ * <h2>First-class functions</h2>
  *
- * Node's V8 supports the function-references proposal ({@code call_ref}, typed {@code (ref $functype)},
- * {@code ref.func}), so the engine is not the blocker — the design is:
+ * A function type {@code a -> b} is a reference to its unary functype (one rec group holds structs
+ * <em>and</em> functypes, so {@code wOf(Ty.Arrow)} resolves during the pre-pass). A <b>unary
+ * top-level function</b> used as a value compiles to {@code ref.func}; a <b>capture-free lambda</b>
+ * (one whose free variables are all top-level names) is lambda-lifted to a top-level function and
+ * likewise referenced by {@code ref.func}; applying such a value emits {@code call_ref} on its
+ * functype. This makes higher-order code work — function parameters, lambdas as arguments, and
+ * user-defined {@code map}/{@code filter}/etc. over GC lists.
  *
- * <ul>
- *   <li>A function value is a GC struct {@code { funcref : (ref $ft), captures… }} where {@code $ft}
- *       is the closure-calling functype {@code (env, args…) -> result}; a top-level function passed by
- *       name needs no captures (just {@code ref.func}).
- *   <li>Each lambda is lambda-lifted to a top-level function taking its captured environment followed
- *       by its own parameters; the {@code Lambda} expression builds the closure struct.
- *   <li>Applying a function value emits {@code struct.get} of the funcref then {@code call_ref $ft};
- *       currying wraps an under-applied call as a new closure.
- * </ul>
- *
- * The one real obstacle is <b>type-index assignment</b>: struct indices are fixed in the pre-pass
- * (the {@code Tuples} registry) but functype indices are currently assigned later in {@code assemble()}.
- * {@code wOf(Ty.Arrow)} needs a stable functype index during the pre-pass, so the functype registry
- * must move into {@code Tuples} (indices after the structs) and {@code assemble()} must read from it.
- * That refactor — not the wasm encoding — is the bulk of the work, which is why higher-order code on
- * this backend currently reports "unsupported" rather than risk a fragile half-implementation.
+ * <p>Still unsupported (they need closure <em>structs</em> — {@code { funcref, captures… }} with a
+ * per-lambda subtype, and the closure-calling convention {@code (env, arg) -> result}): <b>lambdas
+ * that capture a local variable</b>, and <b>currying / multi-argument function values</b> (passing
+ * or partially applying a function of arity &gt; 1). These report a clear "unsupported" error.
  */
 public final class WasmGc {
 
@@ -1212,13 +1205,15 @@ public final class WasmGc {
         leb(code, funcs.get(v.name())[0]);
         return;
       }
-      // Applying a function VALUE: a local (e.g. a parameter) of function type, called via call_ref.
-      // The argument is pushed first, then the funcref, then call_ref on its functype.
-      if (head instanceof Expr.Var v
-          && locals.containsKey(v.name())
-          && localTypes.get(v.name()) instanceof Ref r
-          && tuples.isFuncType(r.typeIndex())
-          && args.size() == 1) {
+      // Applying a function VALUE to one argument — a function-typed local (a parameter), or an
+      // immediately-applied capture-free lambda, or anything else that evaluates to a funcref. Push
+      // the argument, push the funcref, then call_ref on its functype. (A top-level function name is
+      // handled above; applying it to fewer than its arity is currying, not yet supported.)
+      if (args.size() == 1
+          && !(head instanceof Expr.Var hv && funcs.containsKey(hv.name()))
+          && nodeTypes.containsKey(head)
+          && wOf(nodeType(head), tuples) instanceof Ref r
+          && tuples.isFuncType(r.typeIndex())) {
         gen(args.get(0));
         gen(head);
         code.write(0x14); // call_ref

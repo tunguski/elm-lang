@@ -24,7 +24,9 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    memory and no manual reclamation — covering `Int`/`Bool`/`Float`, `String`, lists of any element,
    tuples, closed records, nullary and **argument-carrying custom types** (including recursive ones)
    and **polymorphic** custom types (monomorphised to their use), including the built-in
-   `Maybe`/`Result`. Closures remain on the linear-memory path.
+   `Maybe`/`Result`, plus **first-class functions** (unary top-level functions and capture-free
+   lambdas via `ref.func`/`call_ref` — higher-order `map`/`filter` over GC lists). Capturing
+   lambdas and currying still need the linear-memory path.
 
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions — extended to a fifth path, the **WasmGC**
@@ -374,12 +376,14 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
   an opaque heap pointer. It **does** compile **multi-module projects** (the `elm wasm` command merges a
   module with its local/package dependency modules into one binary). `++`/`==` require operands statically typed (no fully
   polymorphic `==`). Loading installed **package sources** is not wired up for this backend.
-- **WasmGC backend** — does **not** yet support: **closures / higher-order functions** (so
-  `List.map`, `foldl`, lambdas don't compile here — they run on the linear-memory backend or JS);
-  **row-polymorphic / open records** (only closed records with a fixed field set); a single
-  polymorphic union used at **two different representations** in one module (it is monomorphised to
-  one; the second use is rejected); a **code-point-aware `String`** (length is byte/ASCII-correct
-  only) and most of the `String`/`Dict`/`Array` API.
+- **WasmGC backend** — supports **first-class functions** for unary top-level functions and
+  **capture-free** lambdas (`ref.func`/`call_ref`; higher-order `map`/`filter` over GC lists work),
+  but does **not** yet support **lambdas that capture a local** or **currying / multi-argument
+  function values** (both need closure structs). It also lacks: **row-polymorphic / open records**
+  (only closed records with a fixed field set); a single polymorphic union used at **two different
+  representations** in one module (it is monomorphised to one; the second use is rejected); a
+  **code-point-aware `String`** (length is byte/ASCII-correct only) and most of the `String`/`Dict`/
+  `Array` API.
 - **Packages / registry** — `elm install` resolves and downloads from a static-file registry
   (`--from`) or the public `package.elm-lang.org` (`--elm`), and the interpreter/type-checker/JS
   backend compile installed modules; but there is **no checksum verification**, **no
