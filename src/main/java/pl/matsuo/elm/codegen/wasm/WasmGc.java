@@ -65,10 +65,27 @@ import pl.matsuo.elm.types.Types;
  * functype. This makes higher-order code work — function parameters, lambdas as arguments, and
  * user-defined {@code map}/{@code filter}/etc. over GC lists.
  *
- * <p>Still unsupported (they need closure <em>structs</em> — {@code { funcref, captures… }} with a
- * per-lambda subtype, and the closure-calling convention {@code (env, arg) -> result}): <b>lambdas
- * that capture a local variable</b>, and <b>currying / multi-argument function values</b> (passing
- * or partially applying a function of arity &gt; 1). These report a clear "unsupported" error.
+ * <p>Still unsupported, reported as a clear "unsupported" error: <b>lambdas that capture a local
+ * variable</b>, and <b>currying / multi-argument function values</b> (passing or partially applying
+ * a function of arity &gt; 1). Both need <b>closure structs</b>, which requires replacing the
+ * bare-funcref representation above (a parameter of type {@code a -> b} must accept both a capturing
+ * and a non-capturing function as one wasm type). The migration:
+ *
+ * <ol>
+ *   <li>Per arrow signature, a base struct {@code $clos = (struct { fn : (ref $cc) })} and a calling
+ *       convention {@code $cc = (ref $clos, wOf(a)) -> wOf(b)} (both in the shared rec group, so they
+ *       reference each other); {@code wOf(Ty.Arrow)} returns {@code (ref $clos)}.
+ *   <li>A top-level function {@code f} used as a value becomes {@code struct.new $clos (ref.func
+ *       f$wrap)} where the generated {@code f$wrap(env, x) = f x} ignores the env.
+ *   <li>A lambda becomes a <em>subtype</em> {@code (struct $clos { fn, cap0, … })} holding its
+ *       captured locals; the lifted body {@code ref.cast}s the env to that subtype to read them.
+ *   <li>Applying {@code f x}: push {@code f} (the env), the arg, then {@code struct.get f.fn}, and
+ *       {@code call_ref $cc}; an under-applied call builds a closure capturing the supplied args.
+ * </ol>
+ *
+ * The wasm encoding is the easy part; the rework is invasive (it touches {@code wOf}, lambda
+ * lifting, application and the type-section emitter) and is best done as a focused change so the
+ * already-working unary/capture-free path above stays green.
  */
 public final class WasmGc {
 
