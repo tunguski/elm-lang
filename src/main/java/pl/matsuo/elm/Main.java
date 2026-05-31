@@ -153,7 +153,7 @@ public final class Main implements Runnable {
       try {
         String source = Files.readString(file);
         if (!noCheck && typeError(source) instanceof String msg) {
-          System.out.println("Type error: " + msg);
+          System.out.println(pl.matsuo.elm.util.Ansi.error("Type error:", msg));
           return 1;
         }
         Object v =
@@ -265,7 +265,7 @@ public final class Main implements Runnable {
         }
         String[] arr = sources.toArray(new String[0]);
         if (!noCheck && typeError(arr) instanceof String msg) {
-          System.out.println("Type error: " + msg);
+          System.out.println(pl.matsuo.elm.util.Ansi.error("Type error:", msg));
           return 1;
         }
         String bundle =
@@ -713,7 +713,7 @@ public final class Main implements Runnable {
         types.forEach((name, type) -> System.out.println(name + " : " + type));
         return 0;
       } catch (ElmTypeError e) {
-        System.out.println("Type error: " + e.getMessage());
+        System.out.println(pl.matsuo.elm.util.Ansi.error("Type error:", e.getMessage()));
         return 1;
       }
     }
@@ -830,7 +830,7 @@ public final class Main implements Runnable {
           pl.matsuo.elm.types.TypeChecker.checkProject(sources.toArray(new String[0]))
               .forEach((name, type) -> System.out.println(name + " : " + type));
         } catch (ElmTypeError e) {
-          System.out.println("Type error: " + e.getMessage());
+          System.out.println(pl.matsuo.elm.util.Ansi.error("Type error:", e.getMessage()));
           return 1;
         }
       }
