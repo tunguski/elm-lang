@@ -85,9 +85,45 @@ public final class Parser {
   private final Map<String, Fixity> fixities;
 
   private Parser(List<Token> tokens) {
+    this(tokens, Map.of());
+  }
+
+  /** {@code seed} carries fixities declared in *other* modules of the same project (op -> {prec,
+   * assoc} where assoc is 0=left, 1=right, 2=non), so cross-module custom operators parse with their
+   * declared precedence. The module's own {@code infix} declarations are layered on top. */
+  private Parser(List<Token> tokens, Map<String, int[]> seed) {
     this.tokens = tokens;
     this.fixities = new java.util.HashMap<>(FIXITY);
+    seed.forEach(
+        (op, pa) ->
+            fixities.put(
+                op, new Fixity(pa[0], pa[1] == 1 ? Assoc.RIGHT : pa[1] == 2 ? Assoc.NON : Assoc.LEFT)));
     scanInfixDeclarations();
+  }
+
+  /** Scans a source for its {@code infix} declarations, returning op -> {precedence, assoc} (assoc
+   * 0=left, 1=right, 2=non). Used to gather a project's operator fixities before parsing each module. */
+  public static Map<String, int[]> scanFixities(String source) {
+    List<Token> toks = Lexer.tokenize(source);
+    Map<String, int[]> out = new java.util.HashMap<>();
+    for (int i = 0; i + 5 < toks.size(); i++) {
+      if (toks.get(i).type() == TokenType.LOWER
+          && toks.get(i).text().equals("infix")
+          && toks.get(i + 1).type() == TokenType.LOWER
+          && toks.get(i + 2).type() == TokenType.INT
+          && toks.get(i + 3).type() == TokenType.LPAREN
+          && toks.get(i + 4).type() == TokenType.OPERATOR
+          && toks.get(i + 5).type() == TokenType.RPAREN) {
+        int assoc =
+            switch (toks.get(i + 1).text()) {
+              case "right" -> 1;
+              case "non" -> 2;
+              default -> 0;
+            };
+        out.put(toks.get(i + 4).text(), new int[] {((Long) toks.get(i + 2).value()).intValue(), assoc});
+      }
+    }
+    return out;
   }
 
   /** Pre-scans the token stream for {@code infix <assoc> <prec> (<op>)} declarations and records
@@ -118,6 +154,12 @@ public final class Parser {
 
   public static Module parseModule(String source) {
     return new Parser(Lexer.tokenize(source)).parseModuleInternal();
+  }
+
+  /** Parses a module given the fixities declared elsewhere in the project (see {@link #scanFixities}),
+   * so an operator defined in one module parses with its declared precedence in another. */
+  public static Module parseModule(String source, Map<String, int[]> projectFixities) {
+    return new Parser(Lexer.tokenize(source), projectFixities).parseModuleInternal();
   }
 
   /** Parses a single expression (used by tests and the REPL). */

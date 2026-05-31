@@ -34,8 +34,14 @@ public final class Project {
 
   private Project(List<String> sources, java.util.Set<String> tracked) {
     this.tracked = tracked;
+    // Gather every module's `infix` operator declarations first, so a custom operator defined in one
+    // module parses with its declared precedence wherever it's used across the project.
+    Map<String, int[]> projectFixities = new HashMap<>();
     for (String source : sources) {
-      Module module = Parser.parseModule(source);
+      projectFixities.putAll(Parser.scanFixities(source));
+    }
+    for (String source : sources) {
+      Module module = Parser.parseModule(source, projectFixities);
       modules.put(module.name(), module);
     }
 

@@ -49,6 +49,23 @@ class CustomOperatorTest {
   }
 
   @Test
+  void crossModuleOperatorUsesItsDeclaredPrecedence() {
+    // (^^) is declared infix 6 in module Ops and (~~) infix 7; used in module Main they must bind by
+    // those declarations (1 ^^ (2 ~~ 3) = 7), even though Main never declares them itself.
+    String ops =
+        "module Ops exposing (..)\n"
+            + "add a b = a + b\n"
+            + "mul a b = a * b\n"
+            + "infix left 6 (^^) = add\n"
+            + "infix left 7 (~~) = mul\n";
+    String main =
+        "module Main exposing (..)\n"
+            + "import Ops exposing (..)\n"
+            + "main = 1 ^^ 2 ~~ 3\n";
+    assertEquals("7", Show.plain(Project.load(ops, main).value("Main", "main")));
+  }
+
+  @Test
   void customOperatorRunsInTheBytecodeVm() {
     assertEquals(
         "5",
