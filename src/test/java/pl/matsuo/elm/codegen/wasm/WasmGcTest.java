@@ -123,6 +123,24 @@ class WasmGcTest {
   }
 
   @Test
+  void recordsConstructAccessAndUpdate() throws Exception {
+    // Records compile to GC structs (fields in sorted-name order); literal, access and update.
+    agrees("main = .x { x = 3, y = 4 }\n"); // 3
+    agrees("p = { x = 3, y = 4 }\nmain = p.x + p.y\n"); // 7
+    agrees("p = { x = 3, y = 4 }\nq = { p | x = 10 }\nmain = q.x + q.y\n"); // 14
+  }
+
+  @Test
+  void recordsThroughLetAndConditionals() throws Exception {
+    // Concrete (closed) records flow through `let`, `if` and nested access. (Row-polymorphic record
+    // parameters have no fixed struct layout, so they stay on the linear-memory backend.)
+    agrees("main = let p = { x = 5, y = 6 } in p.x + p.y\n"); // 11
+    agrees("main = if True then .x { x = 7, y = 0 } else 0\n"); // 7
+    agrees("p = { x = 1, y = 2 }\nq = { p | x = p.x + 9 }\nmain = q.x + q.y\n"); // 12
+    agrees("main = let r = { pos = { x = 1, y = 2 }, n = 3 } in r.pos.x + r.n\n"); // nested record: 1 + 3 = 4
+  }
+
+  @Test
   void sumsAConsListBuiltOnTheGcHeap() throws Exception {
     agrees(
         """

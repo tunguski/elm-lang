@@ -25,16 +25,19 @@ import pl.matsuo.elm.types.Types;
  * discarding lists is reclaimed by the engine's collector with no manual memory management.
  *
  * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float}, {@code List Int},
- * <b>tuples</b> and <b>nullary custom types</b>: integer and floating-point arithmetic and
- * comparisons ({@code Float} is an {@code f64}, with {@code /} and {@code f64} compares), {@code if},
- * {@code let} (including {@code let (a, b) = …}), top-level functions and recursion, list literals
- * and {@code ::}, tuple construction with {@code Tuple.first}/{@code Tuple.second} and tuple-pattern
- * {@code case}, and a {@code case} over {@code []} / {@code head :: tail} or a nullary union. Each
- * function's parameter and result wasm types come from Hindley–Milner inference: an {@code Int} (and
- * a nullary custom type, as its variant tag) is an {@code i64}, a {@code Float} an {@code f64}, a
- * {@code List Int} the cons struct, and each tuple shape its own GC struct. Records, <b>argument-
- * carrying</b> custom types, closures and strings remain on the linear-memory backend — extending
- * this one to them (which needs boxing or struct subtyping) is future work.
+ * <b>tuples</b>, <b>closed records</b> and <b>nullary custom types</b>: integer and floating-point
+ * arithmetic and comparisons ({@code Float} is an {@code f64}, with {@code /} and {@code f64}
+ * compares), {@code if}, {@code let} (including {@code let (a, b) = …}), top-level functions and
+ * recursion, list literals and {@code ::}, tuple construction with {@code Tuple.first}/{@code
+ * Tuple.second} and tuple-pattern {@code case}, record literals / {@code .field} access / {@code
+ * { r | f = v }} update, and a {@code case} over {@code []} / {@code head :: tail} or a nullary
+ * union. Each function's parameter and result wasm types come from Hindley–Milner inference: an
+ * {@code Int} (and a nullary custom type, as its variant tag) is an {@code i64}, a {@code Float} an
+ * {@code f64}, a {@code List Int} the cons struct, and each tuple/record shape its own GC struct
+ * (record fields laid out in sorted-name order). <b>Row-polymorphic</b> (open) record parameters
+ * have no fixed struct layout, and argument-carrying custom types, closures and strings remain on
+ * the linear-memory backend — extending this one to them (boxing / struct subtyping, and host-opaque
+ * GC arrays for strings) is future work.
  */
 public final class WasmGc {
 
@@ -138,13 +141,23 @@ public final class WasmGc {
     if (p instanceof Ty.Tuple tup) {
       return new Ref(tuples.indexOf(tup));
     }
+    if (p instanceof Ty.Record rec && rec.tail() == null) {
+      return new Ref(tuples.recordIndexOf(rec));
+    }
     // An unresolved type variable — a `number` (defaults to Int) or a polymorphic element — is
     // represented as an i64 in this monomorphic subset.
     if (p instanceof Ty.Var) {
       return INT;
     }
     throw unsupported(
-        "type " + Types.show(p) + " (WasmGC backend handles Int/Bool/Float, tuples and List Int)");
+        "type " + Types.show(p) + " (WasmGC backend handles Int/Bool/Float, tuples, records and List Int)");
+  }
+
+  /** A record's field names in canonical (sorted) order, matching the struct's field layout. */
+  private static List<String> sortedFields(Ty.Record rec) {
+    List<String> names = new ArrayList<>(rec.fields().keySet());
+    java.util.Collections.sort(names);
+    return names;
   }
 
   static ElmRuntimeError unsupported(String what) {
@@ -181,13 +194,17 @@ public final class WasmGc {
       return ctorTag.get(ctor);
     }
 
-    /** Recursively registers every tuple shape inside a type. */
+    /** Recursively registers every tuple and record shape inside a type. */
     void registerAll(Ty t) {
       Ty p = Types.prune(t);
       switch (p) {
         case Ty.Tuple tup -> {
           tup.items().forEach(this::registerAll);
           indexOf(tup);
+        }
+        case Ty.Record rec -> {
+          rec.fields().values().forEach(this::registerAll);
+          recordIndexOf(rec);
         }
         case Ty.Arrow a -> {
           registerAll(a.from());
@@ -205,7 +222,23 @@ public final class WasmGc {
       for (Ty it : tup.items()) {
         fields.add(wOf(it, this));
       }
-      String key = keyOf(fields);
+      return register("T" + keyOf(fields), fields);
+    }
+
+    /** The struct type index for a record shape (fields in sorted-name order, like the linear-memory
+     * backend), registering it if new. Records and tuples share the struct space but never collide
+     * (their keys are prefixed), so a record's field-by-index access stays well defined. */
+    int recordIndexOf(Ty.Record rec) {
+      List<W> fields = new ArrayList<>();
+      StringBuilder names = new StringBuilder("R");
+      for (String name : sortedFields(rec)) {
+        names.append(name).append(':');
+        fields.add(wOf(rec.fields().get(name), this));
+      }
+      return register(names + keyOf(fields), fields);
+    }
+
+    private int register(String key, List<W> fields) {
       Integer existing = indexByKey.get(key);
       if (existing != null) {
         return existing;
@@ -369,19 +402,109 @@ public final class WasmGc {
           code.write(0x00);
           leb(code, tupleIndex(nodeType(tup))); // struct.new $tupleN
         }
+        case Expr.Record rec -> emitRecord(rec);
+        case Expr.RecordAccess acc -> {
+          Ty.Record rt = recordTypeOf(acc.target());
+          gen(acc.target());
+          code.write(0xFB);
+          code.write(0x02); // struct.get
+          leb(code, tupleIndex(nodeType(acc.target())));
+          leb(code, sortedFields(rt).indexOf(acc.field()));
+        }
+        case Expr.RecordUpdate up -> emitRecordUpdate(up);
         case Expr.App app -> app(app, false);
         case Expr.Case c -> caseExpr(c, this::gen);
         default -> throw unsupported(e.getClass().getSimpleName());
       }
     }
 
-    /** The struct type index of a tuple-typed expression. */
+    /** The struct type index of a tuple-/record-typed expression. */
     private int tupleIndex(Ty t) {
       W w = wOf(t, tuples);
       if (w instanceof Ref r) {
         return r.typeIndex();
       }
-      throw unsupported("a tuple operation on a non-tuple");
+      throw unsupported("a tuple/record operation on a non-struct");
+    }
+
+    private Ty.Record recordTypeOf(Expr e) {
+      Ty t = Types.prune(nodeType(e));
+      if (t instanceof Ty.Record rec) {
+        return rec;
+      }
+      throw unsupported("a record operation on a non-record");
+    }
+
+    /** A record literal: struct.new with the field values in canonical (sorted-name) order. */
+    private void emitRecord(Expr.Record rec) {
+      Ty.Record rt = recordTypeOf(rec);
+      for (String name : sortedFields(rt)) {
+        gen(fieldValue(rec, name));
+      }
+      code.write(0xFB);
+      code.write(0x00);
+      leb(code, tupleIndex(nodeType(rec))); // struct.new $recordN
+    }
+
+    /** A record update `{ base | f = v, … }`: struct.new copying base's fields, overriding the
+     * updated ones. */
+    private void emitRecordUpdate(Expr.RecordUpdate up) {
+      Ty.Record rt = recordTypeOf(up);
+      int ti = tupleIndex(nodeType(up));
+      // Evaluate the base record once into a fresh local, then copy unchanged fields from it.
+      int baseLocal = freshLocal("$rec" + code.size(), new Ref(ti));
+      emitVarRef(up.base());
+      code.write(0x21);
+      leb(code, baseLocal);
+      List<String> names = sortedFields(rt);
+      for (String name : names) {
+        Expr updated = updateValue(up, name);
+        if (updated != null) {
+          gen(updated);
+        } else {
+          code.write(0x20);
+          leb(code, baseLocal);
+          code.write(0xFB);
+          code.write(0x02); // struct.get
+          leb(code, ti);
+          leb(code, names.indexOf(name));
+        }
+      }
+      code.write(0xFB);
+      code.write(0x00);
+      leb(code, ti); // struct.new
+    }
+
+    /** Pushes the value of a variable: a local, or a no-arg top-level function (called). */
+    private void emitVarRef(String name) {
+      Integer li = locals.get(name);
+      if (li != null) {
+        code.write(0x20);
+        leb(code, li);
+      } else if (funcs.containsKey(name) && funcs.get(name)[1] == 0) {
+        code.write(0x10);
+        leb(code, funcs.get(name)[0]);
+      } else {
+        throw unsupported("record update base " + name);
+      }
+    }
+
+    private static Expr fieldValue(Expr.Record rec, String name) {
+      for (Expr.Record.Field f : rec.fields()) {
+        if (f.name().equals(name)) {
+          return f.value();
+        }
+      }
+      throw unsupported("record literal missing field " + name);
+    }
+
+    private static Expr updateValue(Expr.RecordUpdate up, String name) {
+      for (Expr.Record.Field f : up.fields()) {
+        if (f.name().equals(name)) {
+          return f.value();
+        }
+      }
+      return null;
     }
 
     private void binOp(Expr.BinOp b) {
@@ -554,6 +677,16 @@ public final class WasmGc {
         code.write(0x02); // struct.get
         leb(code, tupleIndex(nodeType(args.get(0))));
         leb(code, v.name().equals("first") ? 0 : 1);
+        return;
+      }
+      // A record accessor used as a function: `.field record`.
+      if (head instanceof Expr.Accessor acc && args.size() == 1) {
+        Ty.Record rt = recordTypeOf(args.get(0));
+        gen(args.get(0));
+        code.write(0xFB);
+        code.write(0x02); // struct.get
+        leb(code, tupleIndex(nodeType(args.get(0))));
+        leb(code, sortedFields(rt).indexOf(acc.field()));
         return;
       }
       if (head instanceof Expr.Var v && funcs.containsKey(v.name()) && funcs.get(v.name())[1] == args.size()) {
