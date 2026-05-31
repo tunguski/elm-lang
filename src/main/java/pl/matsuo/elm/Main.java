@@ -273,19 +273,19 @@ public final class Main implements Runnable {
             cache != null
                 ? JsCompiler.appBundleProjectCached(cache, arr)
                 : JsCompiler.appBundleProject(arr);
-        String artifact;
-        if (output.endsWith(".js")) {
-          artifact = optimize ? JsCompiler.optimize(bundle) : bundle;
-        } else {
-          String js = optimize ? JsCompiler.optimize(bundle) : bundle;
-          artifact =
-              "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"
-                  + "<body>\n<div id=\"app\"></div>\n<script>\n"
-                  + js
-                  + "\n</script>\n</body>\n</html>\n";
-        }
+        String js = optimize ? JsCompiler.optimize(bundle) : bundle;
+        String artifact =
+            output.endsWith(".js")
+                ? js
+                : "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"
+                    + "<body>\n<div id=\"app\"></div>\n<script>\n" + js + "\n</script>\n</body>\n</html>\n";
         Files.writeString(Path.of(output), artifact);
         System.out.println("Wrote " + output + " (" + artifact.length() + " bytes)");
+        if (optimize) {
+          int saved = bundle.length() - js.length();
+          int pct = bundle.length() == 0 ? 0 : saved * 100 / bundle.length();
+          System.out.println("Optimized JS: " + bundle.length() + " -> " + js.length() + " bytes (-" + pct + "%)");
+        }
         return 0;
       } catch (IOException e) {
         throw new java.io.UncheckedIOException(e);

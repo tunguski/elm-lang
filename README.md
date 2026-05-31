@@ -94,7 +94,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 |---|---|
 | `run <file.elm> [--value NAME] [--backend interp\|bytecode] [--watch] [--no-check]` | Evaluate a definition (default `main`) and print it; Html/programs render to HTML. Type-checks first. |
 | `eval "<expr>" [--backend interp\|bytecode]` | Evaluate a single expression. |
-| `make <file.elm…> [--project DIR] [-o out.html\|out.js] [--optimize] [--cache DIR] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--project` pulls in an `elm.json`'s local + installed-dependency sources; `--cache` reuses per-module compiled output (recompiling only changed modules); `--optimize` tree-shakes + minifies. |
+| `make <file.elm…> [--project DIR] [-o out.html\|out.js] [--optimize] [--cache DIR] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--project` pulls in an `elm.json`'s local + installed-dependency sources; `--cache` reuses per-module compiled output (recompiling only changed modules); `--optimize` tree-shakes (dropping unreachable declarations **and unused kernel runtime entries**) + minifies, and reports the size saving. |
 | `js <file.elm> [--min] [--map]` | Emit JavaScript (optionally minified, with an inline column-level source map). |
 | `wasm <file.elm…> [-o out.wasm] [--project DIR]` | Compile a project's numeric/list/record/string functions to a WebAssembly binary (linear-memory backend; merges the entry module with its imported/local/package modules). |
 | `check <file.elm> [more.elm…]` | Type-check a module or a multi-module project. |

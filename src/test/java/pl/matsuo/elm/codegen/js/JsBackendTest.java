@@ -96,6 +96,21 @@ class JsBackendTest {
   }
 
   @Test
+  void optimizePrunesUnusedKernelEntries() {
+    // A program that uses List.map but not Dict: after optimize, Dict's kernel entries are gone,
+    // List.map's are kept, and the optimized bundle is smaller than the unoptimized one.
+    String src = "module Main exposing (main)\nimport Html exposing (text)\n"
+        + "main = text (String.fromInt (List.sum (List.map (\\x -> x * x) [ 1, 2, 3 ])))\n";
+    String bundle = JsCompiler.appBundle(src);
+    String optimized = JsCompiler.optimize(bundle);
+    assertTrue(bundle.contains("Dict.insert"), "kernel defines Dict.insert");
+    assertTrue(!optimized.contains("Dict.insert"), "unused Dict entry pruned: ");
+    assertTrue(!optimized.contains("Bitwise.and"), "unused Bitwise entry pruned");
+    assertTrue(optimized.contains("List.map"), "used List.map kept");
+    assertTrue(optimized.length() < bundle.length(), "optimized is smaller");
+  }
+
+  @Test
   void bitwiseModuleAgreesAcrossBackends() {
     same("Bitwise.and 12 10");
     same("Bitwise.or 12 10");
