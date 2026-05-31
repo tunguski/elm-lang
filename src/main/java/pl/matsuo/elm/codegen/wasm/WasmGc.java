@@ -27,7 +27,8 @@ import pl.matsuo.elm.types.Types;
  * discarding lists is reclaimed by the engine's collector with no manual memory management.
  *
  * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float}/{@code String}
- * (an {@code array i8}: literals, {@code String.length} = byte length, ASCII-correct, and {@code ++}),
+ * (an {@code array i8}: literals, {@code String.length} counted in UTF-16 units like the other
+ * backends — a loop over the UTF-8 bytes counting lead bytes, +1 for a 4-byte astral lead — and {@code ++}),
  * <b>lists of any supported element</b> ({@code List Int}/{@code List Float}/{@code List} of
  * tuples/records/lists), <b>tuples</b>, <b>closed records</b> and <b>nullary custom types</b>:
  * integer and floating-point
@@ -1089,6 +1090,71 @@ public final class WasmGc {
       code.write(0x0F); // array.len
     }
 
+    private void setLocal(int local) {
+      code.write(0x21);
+      leb(code, local);
+    }
+
+    /**
+     * Consumes a string ({@code array i8}) on the stack and leaves its length as an i64 — counted in
+     * UTF-16 code units, matching {@code String.length} on the other backends (Java/JS strings). Each
+     * UTF-8 lead byte ({@code (b & 0xC0) != 0x80}) is one unit, and a 4-byte (astral) lead
+     * ({@code (b & 0xF8) == 0xF0}) is a surrogate pair, so it counts one extra.
+     */
+    private void emitCodePointCount() {
+      int s = freshLocal("$cpStr" + code.size(), new Ref(tuples.strIndex()));
+      int n = freshLocal("$cpLen" + code.size(), new Sca(0x7F)); // i32
+      int i = freshLocal("$cpIdx" + code.size(), new Sca(0x7F));
+      int c = freshLocal("$cpCnt" + code.size(), new Sca(0x7F));
+      int b = freshLocal("$cpByte" + code.size(), new Sca(0x7F));
+      setLocal(s); // the string ref was on the stack
+      arrayLen(s);
+      setLocal(n);
+      i32const(0);
+      setLocal(i);
+      i32const(0);
+      setLocal(c);
+      code.write(0x02); // block void
+      code.write(0x40);
+      code.write(0x03); // loop void
+      code.write(0x40);
+      get(i);
+      get(n);
+      code.write(0x4E); // i32.ge_s
+      code.write(0x0D); // br_if
+      leb(code, 1); // -> exit the block when i >= n
+      get(s);
+      get(i);
+      code.write(0xFB);
+      code.write(0x0D); // array.get_u (unsigned byte from the packed i8 array)
+      leb(code, tuples.strIndex());
+      setLocal(b);
+      get(b);
+      i32const(0xC0);
+      code.write(0x71); // i32.and
+      i32const(0x80);
+      code.write(0x47); // i32.ne  -> 1 for a (non-continuation) lead byte
+      get(b);
+      i32const(0xF8);
+      code.write(0x71); // i32.and
+      i32const(0xF0);
+      code.write(0x46); // i32.eq  -> 1 for a 4-byte lead (a surrogate pair: +1 UTF-16 unit)
+      code.write(0x6A); // i32.add  -> 1 or 2 for a lead byte, 0 for a continuation
+      get(c);
+      code.write(0x6A); // i32.add
+      setLocal(c);
+      get(i);
+      i32const(1);
+      code.write(0x6A); // i32.add
+      setLocal(i);
+      code.write(0x0C); // br
+      leb(code, 0); // -> loop
+      code.write(0x0B); // end loop
+      code.write(0x0B); // end block
+      get(c);
+      code.write(0xAD); // i64.extend_i32_u
+    }
+
     private void arrayCopy(int typeIdx) {
       code.write(0xFB);
       code.write(0x11); // array.copy
@@ -1163,15 +1229,14 @@ public final class WasmGc {
         leb(code, v.name().equals("first") ? 0 : 1);
         return;
       }
-      // String.length s: array.len of the string's byte array, widened to i64.
+      // String.length s: count UTF-8 code points (bytes that are not 0x80-0xBF continuation bytes),
+      // so it's correct for non-ASCII, not just the byte length.
       if (head instanceof Expr.Var v
           && "String".equals(v.module())
           && v.name().equals("length")
           && args.size() == 1) {
         gen(args.get(0));
-        code.write(0xFB);
-        code.write(0x0F); // array.len -> i32
-        code.write(0xAD); // i64.extend_i32_u
+        emitCodePointCount();
         return;
       }
       // An applied boxed constructor `Ctor a b …`: struct.new $variant (tag, args…).

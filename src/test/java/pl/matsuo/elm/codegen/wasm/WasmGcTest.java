@@ -373,6 +373,10 @@ class WasmGcTest {
     agrees("main = String.length \"hello\"\n"); // 5
     agrees("main = String.length \"\"\n"); // 0
     agrees("main = String.length (\"ab\" ++ \"cde\")\n"); // 5
+    // Code-point/UTF-16-aware length (matches the interpreter), not raw UTF-8 byte length:
+    agrees("main = String.length \"héllo\"\n"); // é is 2 bytes but 1 unit -> 5
+    agrees("main = String.length \"éèê\"\n"); // 3 accented letters -> 3
+    agrees("main = String.length \"café 世界\"\n"); // "café 世界" -> 7
     agrees("main = String.length (\"\" ++ \"xyz\")\n"); // 3
     agrees("greet name = \"hi \" ++ name\nmain = String.length (greet \"bob\")\n"); // 6
   }

@@ -382,8 +382,8 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
   function values** (both need closure structs). It also lacks: **row-polymorphic / open records**
   (only closed records with a fixed field set); a single polymorphic union used at **two different
   representations** in one module (it is monomorphised to one; the second use is rejected); a
-  **code-point-aware `String`** (length is byte/ASCII-correct only) and most of the `String`/`Dict`/
-  `Array` API.
+  most of the `String`/`Dict`/`Array` API. (`String.length` is now UTF-16-unit-correct — counted
+  over the UTF-8 bytes — matching the other backends, not just a byte count.)
 - **Packages / registry** — `elm install` resolves and downloads from a static-file registry
   (`--from`) or the public `package.elm-lang.org` (`--elm`), and the interpreter/type-checker/JS
   backend compile installed modules; but there is **no checksum verification**, **no
