@@ -9,6 +9,7 @@ import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Type;
 import pl.matsuo.elm.json.JsonEncode;
+import pl.matsuo.elm.lexer.Lexer;
 import pl.matsuo.elm.parser.Parser;
 import pl.matsuo.elm.types.TypeChecker;
 
@@ -19,23 +20,27 @@ import pl.matsuo.elm.types.TypeChecker;
  */
 public final class ApiDocs {
 
-  /** An exposed value/function and its rendered type ({@code ""} if inference couldn't type it). */
-  public record Value(String name, String type) {}
+  /** An exposed value/function: its rendered type ({@code ""} if inference couldn't type it) and
+   *  its doc comment ({@code ""} if none). */
+  public record Value(String name, String type, String comment) {}
 
-  /** An exposed custom type: its parameters and each constructor's rendered argument types. */
-  public record Union(String name, List<String> params, Map<String, List<String>> tags) {}
+  /** An exposed custom type: its parameters, each constructor's rendered argument types, and doc. */
+  public record Union(String name, List<String> params, Map<String, List<String>> tags,
+      String comment) {}
 
-  /** An exposed type alias: its parameters and the rendered aliased type. */
-  public record Alias(String name, List<String> params, String type) {}
+  /** An exposed type alias: its parameters, the rendered aliased type, and doc comment. */
+  public record Alias(String name, List<String> params, String type, String comment) {}
 
   private final String moduleName;
+  private final String moduleComment;
   private final Map<String, Value> values; // sorted by name
   private final Map<String, Union> unions;
   private final Map<String, Alias> aliases;
 
-  private ApiDocs(String moduleName, Map<String, Value> values, Map<String, Union> unions,
-      Map<String, Alias> aliases) {
+  private ApiDocs(String moduleName, String moduleComment, Map<String, Value> values,
+      Map<String, Union> unions, Map<String, Alias> aliases) {
     this.moduleName = moduleName;
+    this.moduleComment = moduleComment;
     this.values = values;
     this.unions = unions;
     this.aliases = aliases;
@@ -43,6 +48,10 @@ public final class ApiDocs {
 
   public String moduleName() {
     return moduleName;
+  }
+
+  public String moduleComment() {
+    return moduleComment;
   }
 
   public Map<String, Value> values() {
@@ -69,6 +78,18 @@ public final class ApiDocs {
     boolean all = module.exposing().open();
     List<String> exposed = module.exposing().names();
 
+    // Doc comments: the module doc is the first {-| block after the header; each declaration's doc
+    // is the nearest {-| block above it (the module doc is never reused as a declaration's).
+    List<Lexer.Comment> comments = Lexer.comments(source);
+    int moduleDocLine = -1;
+    for (Lexer.Comment c : comments) {
+      if (c.block() && c.text().startsWith("{-|") && c.line() > module.pos().line()
+          && (moduleDocLine == -1 || c.line() < moduleDocLine)) {
+        moduleDocLine = c.line();
+      }
+    }
+    String moduleComment = moduleDocLine >= 0 ? docBefore(moduleDocLine + 1, comments, -1) : "";
+
     Map<String, Value> values = new TreeMap<>();
     Map<String, Union> unions = new TreeMap<>();
     Map<String, Alias> aliases = new TreeMap<>();
@@ -76,7 +97,8 @@ public final class ApiDocs {
       switch (d) {
         case Decl.Value v -> {
           if ((all || exposed.contains(v.name())) && !v.name().equals("main")) {
-            values.put(v.name(), new Value(v.name(), types.getOrDefault(v.name(), "")));
+            values.put(v.name(), new Value(v.name(), types.getOrDefault(v.name(), ""),
+                docBefore(v.pos().line(), comments, moduleDocLine)));
           }
         }
         case Decl.Union u -> {
@@ -85,28 +107,62 @@ public final class ApiDocs {
             for (Decl.Union.Variant variant : u.variants()) {
               tags.put(variant.name(), variant.args().stream().map(ApiDocs::render).toList());
             }
-            unions.put(u.name(), new Union(u.name(), u.params(), tags));
+            unions.put(u.name(), new Union(u.name(), u.params(), tags,
+                docBefore(u.pos().line(), comments, moduleDocLine)));
           }
         }
         case Decl.TypeAlias ta -> {
           if (all || exposed.contains(ta.name())) {
-            aliases.put(ta.name(), new Alias(ta.name(), ta.params(), render(ta.type())));
+            aliases.put(ta.name(), new Alias(ta.name(), ta.params(), render(ta.type()),
+                docBefore(ta.pos().line(), comments, moduleDocLine)));
           }
         }
         default -> {}
       }
     }
-    return new ApiDocs(module.name(), values, unions, aliases);
+    return new ApiDocs(module.name(), moduleComment, values, unions, aliases);
   }
 
-  /** Serialises the API to a {@code docs.json}-style JSON document. */
+  /** The text of the {@code &#123;-| … -&#125;} doc comment closest above {@code line}, or "";
+   *  the module doc (on {@code excludeLine}) is never reused for a declaration. */
+  private static String docBefore(int line, List<Lexer.Comment> comments, int excludeLine) {
+    Lexer.Comment best = null;
+    for (Lexer.Comment c : comments) {
+      if (c.block() && c.text().startsWith("{-|") && c.line() < line && c.line() != excludeLine
+          && (best == null || c.line() > best.line())) {
+        best = c;
+      }
+    }
+    if (best == null) {
+      return "";
+    }
+    String t = best.text().substring(3); // drop "{-|"
+    if (t.endsWith("-}")) {
+      t = t.substring(0, t.length() - 2);
+    }
+    return t.strip();
+  }
+
+  /**
+   * Serialises the API to the standard Elm {@code docs.json} format: a JSON <em>array</em> of module
+   * objects (here one), each with its doc {@code comment}, {@code unions}/{@code aliases}/
+   * {@code values} (carrying their own doc comments) and an (empty) {@code binops} list — the same
+   * shape package.elm-lang.org serves and {@code elm diff} consumes.
+   */
   public String toJson() {
+    return JsonEncode.serialize(List.<Object>of(moduleObject()), 2) + "\n";
+  }
+
+  /** The single module object inside the {@code docs.json} array. */
+  private Map<String, Object> moduleObject() {
     Map<String, Object> doc = new LinkedHashMap<>();
     doc.put("name", moduleName);
+    doc.put("comment", moduleComment);
     List<Object> us = new ArrayList<>();
     unions.values().forEach(u -> {
       Map<String, Object> o = new LinkedHashMap<>();
       o.put("name", u.name());
+      o.put("comment", u.comment());
       o.put("args", u.params());
       List<Object> cases = new ArrayList<>();
       u.tags().forEach((tag, args) -> cases.add(List.of(tag, args)));
@@ -118,6 +174,7 @@ public final class ApiDocs {
     aliases.values().forEach(a -> {
       Map<String, Object> o = new LinkedHashMap<>();
       o.put("name", a.name());
+      o.put("comment", a.comment());
       o.put("args", a.params());
       o.put("type", a.type());
       as.add(o);
@@ -127,11 +184,13 @@ public final class ApiDocs {
     values.values().forEach(v -> {
       Map<String, Object> o = new LinkedHashMap<>();
       o.put("name", v.name());
+      o.put("comment", v.comment());
       o.put("type", v.type());
       vs.add(o);
     });
     doc.put("values", vs);
-    return JsonEncode.serialize(doc, 2) + "\n";
+    doc.put("binops", new ArrayList<>());
+    return doc;
   }
 
   /** Renders a surface type to a single-line string (used for constructor args and alias bodies). */

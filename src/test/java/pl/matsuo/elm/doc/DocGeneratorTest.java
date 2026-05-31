@@ -59,4 +59,26 @@ class DocGeneratorTest {
     assertTrue(md.contains("### `type Shape`"), md);
     assertTrue(md.contains("Constructors: Circle, Rect"), md);
   }
+
+  @Test
+  void docsJsonIsAModuleArrayCarryingDocComments() {
+    String src =
+        """
+        module Math exposing (double)
+
+        {-| Small math helpers. -}
+
+
+        {-| Doubles a number. -}
+        double n =
+            n * 2
+        """;
+    String json = ApiDocs.of(src).toJson();
+    assertTrue(json.stripLeading().startsWith("["), "docs.json is an array of modules: " + json);
+    assertTrue(json.contains("\"Math\""), json);
+    assertTrue(json.contains("\"comment\""), "entries carry a comment field: " + json);
+    assertTrue(json.contains("Small math helpers."), "module doc comment included: " + json);
+    assertTrue(json.contains("Doubles a number."), "value doc comment included: " + json);
+    assertTrue(json.contains("\"binops\""), json);
+  }
 }

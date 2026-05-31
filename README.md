@@ -277,8 +277,9 @@ package manager** for everything outside the bundled set:
   interpreter and JS compiler** as your own code — `import`s of it resolve, type-check, run and
   compile into the bundle. (Built-in packages are skipped to avoid double-defining the standard
   library.)
-- **Publishing.** `docs --json` emits a `docs.json` of a module's public API (exposed values with
-  inferred types, custom types, aliases); `diff` compares two API versions into a semver magnitude
+- **Publishing.** `docs --json` emits a standard-format `docs.json` (a JSON array of module objects,
+  each carrying its doc `comment`, exposed values with inferred types, custom types, aliases and a
+  `binops` list — the shape package.elm-lang.org serves); `diff` compares two API versions into a semver magnitude
   (a removed/changed entry is MAJOR, an addition MINOR, nothing PATCH); `bump` proposes the next
   version from that magnitude — Elm's API-driven semver, enforced from the code.
 
