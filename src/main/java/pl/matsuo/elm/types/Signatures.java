@@ -163,6 +163,20 @@ public final class Signatures {
     g("String.split", "String -> String -> List String");
     g("String.contains", "String -> String -> Bool");
     g("String.isEmpty", "String -> Bool");
+    g("String.padLeft", "Int -> Char -> String -> String");
+    g("String.padRight", "Int -> Char -> String -> String");
+    g("String.pad", "Int -> Char -> String -> String");
+    g("String.indexes", "String -> String -> List Int");
+    g("String.indices", "String -> String -> List Int");
+
+    // Bitwise (32-bit).
+    g("Bitwise.and", "Int -> Int -> Int");
+    g("Bitwise.or", "Int -> Int -> Int");
+    g("Bitwise.xor", "Int -> Int -> Int");
+    g("Bitwise.complement", "Int -> Int");
+    g("Bitwise.shiftLeftBy", "Int -> Int -> Int");
+    g("Bitwise.shiftRightBy", "Int -> Int -> Int");
+    g("Bitwise.shiftRightZfBy", "Int -> Int -> Int");
 
     // Maybe / Result.
     g("Maybe.withDefault", "a -> Maybe a -> a");
@@ -192,6 +206,8 @@ public final class Signatures {
     g("Char.toLower", "Char -> Char");
     g("Char.isDigit", "Char -> Bool");
     g("Char.isAlpha", "Char -> Bool");
+    g("Char.isHexDigit", "Char -> Bool");
+    g("Char.isOctDigit", "Char -> Bool");
 
     // Debug.
     g("Debug.toString", "a -> String");

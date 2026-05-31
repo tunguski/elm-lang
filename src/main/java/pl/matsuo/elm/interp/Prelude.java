@@ -111,6 +111,7 @@ public final class Prelude {
     registerList();
     registerString();
     registerChar();
+    registerBitwise();
     registerMaybe();
     registerResult();
     registerTuple();
@@ -1133,6 +1134,22 @@ public final class Prelude {
     fn("String.endsWith", 2, a -> ((String) a[1]).endsWith((String) a[0]));
     fn("String.repeat", 2, a -> ((String) a[1]).repeat((int) Math.max(0, Operators.asLong(a[0]))));
     fn("String.replace", 3, a -> ((String) a[2]).replace((String) a[0], (String) a[1]));
+    fn("String.padLeft", 3, a -> padString((String) a[2], (int) Operators.asLong(a[0]), ((ElmChar) a[1]).codePoint(), true, false));
+    fn("String.padRight", 3, a -> padString((String) a[2], (int) Operators.asLong(a[0]), ((ElmChar) a[1]).codePoint(), false, true));
+    fn("String.pad", 3, a -> padString((String) a[2], (int) Operators.asLong(a[0]), ((ElmChar) a[1]).codePoint(), true, true));
+    Function<Object[], Object> indexesFn = a -> {
+      String sub = (String) a[0];
+      String s = (String) a[1];
+      List<Object> out = new ArrayList<>();
+      if (!sub.isEmpty()) {
+        for (int i = s.indexOf(sub); i >= 0; i = s.indexOf(sub, i + 1)) {
+          out.add((long) i);
+        }
+      }
+      return ElmList.fromJava(out);
+    };
+    fn("String.indexes", 2, indexesFn);
+    fn("String.indices", 2, indexesFn);
     fn("String.toList", 1, a -> {
       String s = (String) a[0];
       List<Object> out = new ArrayList<>();
@@ -1171,6 +1188,30 @@ public final class Prelude {
     return Math.max(0, Math.min(v, len));
   }
 
+  /** Pads {@code s} with code-point {@code cp} to total (code-point) length {@code n}. For centering
+   * ({@code left && right}) the larger half goes on the left, matching elm/core's {@code String.pad}. */
+  private static String padString(String s, int n, int cp, boolean left, boolean right) {
+    int len = s.codePointCount(0, s.length());
+    int total = n - len;
+    if (total <= 0) {
+      return s;
+    }
+    int leftPad;
+    int rightPad;
+    if (left && right) {
+      leftPad = (total + 1) / 2;
+      rightPad = total / 2;
+    } else if (left) {
+      leftPad = total;
+      rightPad = 0;
+    } else {
+      leftPad = 0;
+      rightPad = total;
+    }
+    String fill = new String(Character.toChars(cp));
+    return fill.repeat(leftPad) + s + fill.repeat(rightPad);
+  }
+
   // --- Char --------------------------------------------------------------
 
   private static void registerChar() {
@@ -1186,6 +1227,29 @@ public final class Prelude {
     fn("Char.isLower", 1, a -> Character.isLowerCase(((ElmChar) a[0]).codePoint()));
     fn("Char.isAlpha", 1, a -> Character.isLetter(((ElmChar) a[0]).codePoint()));
     fn("Char.isAlphaNum", 1, a -> Character.isLetterOrDigit(((ElmChar) a[0]).codePoint()));
+    fn("Char.isHexDigit", 1, a -> {
+      int c = ((ElmChar) a[0]).codePoint();
+      return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    });
+    fn("Char.isOctDigit", 1, a -> {
+      int c = ((ElmChar) a[0]).codePoint();
+      return c >= '0' && c <= '7';
+    });
+  }
+
+  // --- Bitwise (32-bit, matching elm/core and JavaScript's bitwise operators) ----------------------
+
+  private static void registerBitwise() {
+    fn("Bitwise.and", 2, a -> (long) ((int) Operators.asLong(a[0]) & (int) Operators.asLong(a[1])));
+    fn("Bitwise.or", 2, a -> (long) ((int) Operators.asLong(a[0]) | (int) Operators.asLong(a[1])));
+    fn("Bitwise.xor", 2, a -> (long) ((int) Operators.asLong(a[0]) ^ (int) Operators.asLong(a[1])));
+    fn("Bitwise.complement", 1, a -> (long) (~(int) Operators.asLong(a[0])));
+    // shift*By n value: n is the first argument (elm/core's argument order).
+    fn("Bitwise.shiftLeftBy", 2, a -> (long) ((int) Operators.asLong(a[1]) << (int) Operators.asLong(a[0])));
+    fn("Bitwise.shiftRightBy", 2, a -> (long) ((int) Operators.asLong(a[1]) >> (int) Operators.asLong(a[0])));
+    fn("Bitwise.shiftRightZfBy",
+        2,
+        a -> ((long) ((int) Operators.asLong(a[1]) >>> (int) Operators.asLong(a[0]))) & 0xFFFFFFFFL);
   }
 
   // --- Maybe -------------------------------------------------------------

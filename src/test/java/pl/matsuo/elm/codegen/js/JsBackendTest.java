@@ -96,6 +96,32 @@ class JsBackendTest {
   }
 
   @Test
+  void bitwiseModuleAgreesAcrossBackends() {
+    same("Bitwise.and 12 10");
+    same("Bitwise.or 12 10");
+    same("Bitwise.xor 12 10");
+    same("Bitwise.complement 0");
+    same("Bitwise.shiftLeftBy 2 1");
+    same("Bitwise.shiftRightBy 1 8");
+    same("Bitwise.shiftRightZfBy 1 -2"); // unsigned 32-bit shift
+  }
+
+  @Test
+  void stringAndCharAdditionsAgreeAcrossBackends() {
+    same("String.padLeft 5 '0' \"42\"");
+    same("String.padRight 5 '.' \"ab\"");
+    same("String.pad 5 '*' \"ab\"");
+    same("String.indexes \"a\" \"banana\"");
+    same("String.map Char.toUpper \"abc\"");
+    same("String.filter Char.isDigit \"a1b2c3\"");
+    same("String.slice 1 3 \"hello\"");
+    same("String.slice 1 -1 \"hello\"");
+    same("String.uncons \"hi\"");
+    same("String.cons 'h' \"i\"");
+    same("if Char.isHexDigit 'f' then 1 else 0");
+  }
+
+  @Test
   void comparisonsAndBooleans() {
     same("3 < 5 && 2 == 2");
     same("\"abc\" < \"abd\"");
