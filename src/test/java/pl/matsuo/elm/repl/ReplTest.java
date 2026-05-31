@@ -56,6 +56,32 @@ class ReplTest {
   }
 
   @Test
+  void loadBringsAFilesDefinitionsIntoScope() throws Exception {
+    java.nio.file.Path f = java.nio.file.Files.createTempFile("repl-load-", ".elm");
+    java.nio.file.Files.writeString(
+        f, "module Helpers exposing (..)\n\nimport String\n\ndouble n = n * 2\n");
+    String out = session(":load " + f + "\ndouble 21\n:quit\n");
+    assertTrue(out.contains("loaded 1 definitions"), out);
+    assertTrue(out.contains("42"), out); // the loaded `double` is now callable
+    java.nio.file.Files.deleteIfExists(f);
+  }
+
+  @Test
+  void historyListsEntries() throws Exception {
+    String out = session("1 + 1\nx = 5\n:history\n:quit\n");
+    assertTrue(out.contains("1  1 + 1"), out);
+    assertTrue(out.contains("2  x = 5"), out);
+  }
+
+  @Test
+  void topLevelDefsDropsHeadersAndImports() {
+    var defs = Repl.topLevelDefs("module M exposing (..)\n\nimport String\n\nfoo = 1\n\nbar n = n\n");
+    assertTrue(defs.stream().anyMatch(d -> d.startsWith("foo")), defs.toString());
+    assertTrue(defs.stream().anyMatch(d -> d.startsWith("bar")), defs.toString());
+    assertTrue(defs.stream().noneMatch(d -> d.startsWith("module") || d.startsWith("import")), defs.toString());
+  }
+
+  @Test
   void completeDetectsBalanceAndContinuations() {
     assertTrue(Repl.complete("1 + 2"));
     assertTrue(Repl.complete("begin")); // ends in "in" but isn't the keyword

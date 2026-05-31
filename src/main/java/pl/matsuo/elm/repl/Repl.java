@@ -4,6 +4,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Reader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import pl.matsuo.elm.interp.Interpreter;
@@ -16,7 +18,9 @@ import pl.matsuo.elm.types.TypeChecker;
  * <b>expression</b>, which is evaluated and printed. Multi-line input is supported: the loop keeps
  * reading (showing a {@code |} continuation prompt) until brackets are balanced and the entry
  * doesn't end on a continuation token. Commands: {@code :type <expr>} (alias {@code :t}) shows the
- * inferred type, {@code :reset} forgets all definitions, {@code :help}, {@code :quit}/{@code :q}.
+ * inferred type, {@code :load <file.elm>} (alias {@code :l}) brings a module's definitions into
+ * scope, {@code :history} lists the session's entries, {@code :reset} forgets all definitions,
+ * {@code :help}, {@code :quit}/{@code :q}.
  */
 public final class Repl {
 
@@ -26,7 +30,8 @@ public final class Repl {
   public static void loop(Reader in, PrintStream out) throws IOException {
     BufferedReader reader = in instanceof BufferedReader b ? b : new BufferedReader(in);
     List<String> defs = new ArrayList<>(); // accumulated `name … = …` definitions
-    out.println("elm-lang REPL — expressions, definitions (x = …), :type, :reset, :help, :quit");
+    List<String> history = new ArrayList<>(); // entries entered this session
+    out.println("elm-lang REPL — expressions, definitions (x = …), :type, :load, :history, :reset, :help, :quit");
     out.print("> ");
     out.flush();
     StringBuilder buffer = new StringBuilder();
@@ -44,15 +49,33 @@ public final class Repl {
       }
       buffer.setLength(0);
       String trimmed = entry.trim();
+      if (!trimmed.isEmpty() && !trimmed.equals(":history")) {
+        history.add(trimmed);
+      }
       if (trimmed.equals(":quit") || trimmed.equals(":q")) {
         break;
       } else if (trimmed.isEmpty()) {
         // nothing
       } else if (trimmed.equals(":help")) {
-        out.println("expressions are evaluated; `x = …` defines a binding; :type <expr>, :reset, :quit");
+        out.println(
+            "expressions are evaluated; `x = …` defines a binding; :type <expr>, :load <file.elm>,"
+                + " :history, :reset, :quit");
       } else if (trimmed.equals(":reset")) {
         defs.clear();
         out.println("(forgot all definitions)");
+      } else if (trimmed.equals(":history")) {
+        for (int i = 0; i < history.size(); i++) {
+          out.println((i + 1) + "  " + history.get(i).replace("\n", "\n   "));
+        }
+      } else if (trimmed.startsWith(":load ") || trimmed.startsWith(":l ")) {
+        String path = trimmed.substring(trimmed.indexOf(' ') + 1).trim();
+        try {
+          List<String> loaded = topLevelDefs(Files.readString(Path.of(path)));
+          defs.addAll(loaded);
+          out.println("(loaded " + loaded.size() + " definitions from " + path + ")");
+        } catch (Exception e) {
+          out.println("Error: could not load " + path + ": " + e.getMessage());
+        }
       } else if (trimmed.startsWith(":type ") || trimmed.startsWith(":t ")) {
         String expr = trimmed.substring(trimmed.indexOf(' ') + 1);
         out.println(typeOf(defs, expr));
@@ -95,6 +118,36 @@ public final class Repl {
     } catch (RuntimeException e) {
       return "?";
     }
+  }
+
+  /** The top-level definition chunks of a module's source (value/type/alias/port declarations),
+   * dropping the {@code module} header, {@code import}s and comment-only chunks — so {@code :load}
+   * brings a file's definitions into REPL scope. Chunks split on column-0 lines (layout-lite). */
+  static List<String> topLevelDefs(String content) {
+    List<String> chunks = new ArrayList<>();
+    StringBuilder cur = new StringBuilder();
+    for (String line : content.split("\n", -1)) {
+      boolean topStart = !line.isEmpty() && !Character.isWhitespace(line.charAt(0));
+      if (topStart && cur.length() > 0) {
+        addChunk(chunks, cur.toString());
+        cur.setLength(0);
+      }
+      cur.append(line).append("\n");
+    }
+    addChunk(chunks, cur.toString());
+    return chunks;
+  }
+
+  private static void addChunk(List<String> chunks, String chunk) {
+    String t = chunk.strip();
+    if (t.isEmpty() || t.startsWith("--") || t.startsWith("{-")) {
+      return;
+    }
+    String first = t.split("\\s+", 2)[0];
+    if (first.equals("module") || first.equals("import")) {
+      return;
+    }
+    chunks.add(chunk.stripTrailing());
   }
 
   private static String moduleWith(List<String> defs, String extra) {
