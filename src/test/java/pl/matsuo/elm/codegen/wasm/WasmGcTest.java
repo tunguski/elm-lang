@@ -171,6 +171,17 @@ class WasmGcTest {
   }
 
   @Test
+  void strings() throws Exception {
+    // Strings are GC `array i8`; literals build the array, `String.length` is array.len (byte count,
+    // == code-point count for ASCII), and `++` allocates a fresh array and copies both halves in.
+    agrees("main = String.length \"hello\"\n"); // 5
+    agrees("main = String.length \"\"\n"); // 0
+    agrees("main = String.length (\"ab\" ++ \"cde\")\n"); // 5
+    agrees("main = String.length (\"\" ++ \"xyz\")\n"); // 3
+    agrees("greet name = \"hi \" ++ name\nmain = String.length (greet \"bob\")\n"); // 6
+  }
+
+  @Test
   void sumsAConsListBuiltOnTheGcHeap() throws Exception {
     agrees(
         """

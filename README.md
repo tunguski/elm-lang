@@ -365,12 +365,13 @@ publishes it as an artifact.
   a sound **arena reclamation** — a scalar-returning call that consumes a heap argument frees what it
   allocated (purity makes this safe), keeping "reduce a structure, in a loop" programs bounded. The
   alternative **WasmGC** backend instead hands lists, tuples and records to the engine's collector and
-  now covers `Int`/`Bool`/`Float`, **lists of any supported element** (`List Int`/`List Float`/lists
-  of tuples/records/lists — one cons type per element type), **tuples** (`Tuple.first`/`second`,
+  now covers `Int`/`Bool`/`Float`, **`String`** (a GC `array i8` — literals, `String.length`, `++`;
+  ASCII-correct length), **lists of any supported element** (`List Int`/`List Float`/lists of
+  tuples/records/lists — one cons type per element type), **tuples** (`Tuple.first`/`second`,
   destructuring), **closed records** (literals, `.field` access, `{ r | f = v }` update — fields laid
   out in sorted-name order) and **nullary custom types** (i64 tags); carrying the rest of the value
-  model (row-polymorphic open records, argument-carrying custom types, strings as host-opaque GC
-  arrays, closures — which need boxing / struct subtyping) onto WasmGC is future work. The other gap is the
+  model (row-polymorphic open records, argument-carrying custom types, closures — which need boxing /
+  struct subtyping — and a code-point-aware `String` API) onto WasmGC is future work. The other gap is the
   rest of the larger standard library (most `String`/`Dict`/`Array` operations).
 - **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
   the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,

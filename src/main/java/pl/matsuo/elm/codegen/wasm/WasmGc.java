@@ -25,9 +25,11 @@ import pl.matsuo.elm.types.Types;
  * type {@code E}), so building and
  * discarding lists is reclaimed by the engine's collector with no manual memory management.
  *
- * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float}, <b>lists of any
- * supported element</b> ({@code List Int}/{@code List Float}/{@code List} of tuples/records/lists),
- * <b>tuples</b>, <b>closed records</b> and <b>nullary custom types</b>: integer and floating-point
+ * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float}/{@code String}
+ * (an {@code array i8}: literals, {@code String.length} = byte length, ASCII-correct, and {@code ++}),
+ * <b>lists of any supported element</b> ({@code List Int}/{@code List Float}/{@code List} of
+ * tuples/records/lists), <b>tuples</b>, <b>closed records</b> and <b>nullary custom types</b>:
+ * integer and floating-point
  * arithmetic and comparisons ({@code Float} is an {@code f64}, with {@code /} and {@code f64}
  * compares), {@code if}, {@code let} (including {@code let (a, b) = …}), top-level functions and
  * recursion, list literals and {@code ::}, tuple construction with {@code Tuple.first}/{@code
@@ -36,10 +38,11 @@ import pl.matsuo.elm.types.Types;
  * union. Each function's parameter and result wasm types come from Hindley–Milner inference: an
  * {@code Int} (and a nullary custom type, as its variant tag) is an {@code i64}, a {@code Float} an
  * {@code f64}, a {@code List Int} the cons struct, and each tuple/record shape its own GC struct
- * (record fields laid out in sorted-name order). <b>Row-polymorphic</b> (open) record parameters
- * have no fixed struct layout, and argument-carrying custom types, closures and strings remain on
- * the linear-memory backend — extending this one to them (boxing / struct subtyping, and host-opaque
- * GC arrays for strings) is future work.
+ * (record fields laid out in sorted-name order), and a {@code String} an {@code array i8}.
+ * <b>Row-polymorphic</b> (open) record parameters have no fixed struct layout, and argument-carrying
+ * custom types and closures remain on the linear-memory backend — extending this one to them (boxing
+ * / struct subtyping) and finishing the {@code String} API (code-point-aware length, more ops) is
+ * future work.
  */
 public final class WasmGc {
 
@@ -59,13 +62,15 @@ public final class WasmGc {
 
   private record Ref(int typeIndex) implements W {} // (ref null typeIndex)
 
-  /** A GC struct definition: a cons cell {@code {head : E, tail : (ref null self)}} for {@code
-   * List E}, or a plain struct (a tuple/record's fields). */
-  private sealed interface StructDef permits ConsDef, PlainDef {}
+  /** A GC type definition: a cons cell {@code {head : E, tail : (ref null self)}} for {@code List
+   * E}, a plain struct (a tuple/record's fields), or the {@code array i8} backing a {@code String}. */
+  private sealed interface StructDef permits ConsDef, PlainDef, StrArrayDef {}
 
   private record ConsDef(W head) implements StructDef {}
 
   private record PlainDef(List<W> fields) implements StructDef {}
+
+  private record StrArrayDef() implements StructDef {} // array i8 (a UTF-8 string's bytes)
 
   private static final W INT = new Sca(I64);
   private static final W FLOAT = new Sca(F64);
@@ -135,6 +140,9 @@ public final class WasmGc {
     Ty p = Types.prune(t);
     if (p instanceof Ty.Con c && c.name().equals("List")) {
       return new Ref(tuples.consIndexOf(wOf(listElem(c), tuples)));
+    }
+    if (p instanceof Ty.Con c && c.name().equals("String")) {
+      return new Ref(tuples.strIndex());
     }
     if (p instanceof Ty.Con c && c.name().equals("Float")) {
       return FLOAT;
@@ -215,6 +223,7 @@ public final class WasmGc {
           registerAll(listElem(c));
           consIndexOf(wOf(listElem(c), this));
         }
+        case Ty.Con c when c.name().equals("String") -> strIndex();
         case Ty.Tuple tup -> {
           tup.items().forEach(this::registerAll);
           indexOf(tup);
@@ -235,6 +244,11 @@ public final class WasmGc {
     /** The struct type index for a {@code List E} cons cell with the given element type. */
     int consIndexOf(W head) {
       return register("L" + keyOf(List.of(head)), new ConsDef(head));
+    }
+
+    /** The (singleton) {@code array i8} type backing every {@code String}. */
+    int strIndex() {
+      return register("STR$", new StrArrayDef());
     }
 
     /** The struct type index for a tuple shape (registering it if new — nested tuples must already
@@ -366,6 +380,18 @@ public final class WasmGc {
           sleb(code, tuples.tagOf(c.name())); // a nullary custom-type constructor is its i64 tag
         }
         case Expr.FloatLit lit -> emitF64(lit.value());
+        case Expr.StrLit lit -> {
+          // array.new_fixed $str <bytes…>: push each UTF-8 byte as an i32, then build the array.
+          byte[] bytes = lit.value().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+          for (byte b : bytes) {
+            code.write(0x41); // i32.const
+            sleb(code, b & 0xFF);
+          }
+          code.write(0xFB);
+          code.write(0x08); // array.new_fixed
+          leb(code, tupleIndex(nodeType(lit)));
+          leb(code, bytes.length);
+        }
         case Expr.Negate n -> {
           if (isFloat(n)) {
             gen(n.operand());
@@ -557,6 +583,7 @@ public final class WasmGc {
             });
           }
         }
+        case "++" -> strConcat(b);
         case "//" -> {
           gen(b.left());
           gen(b.right());
@@ -634,6 +661,68 @@ public final class WasmGc {
       code.write(0xA7);
     }
 
+    /** {@code a ++ b} for strings: a fresh mutable byte array of len(a)+len(b), with a then b
+     * copied in (array.copy). Uses only ref locals; lengths are recomputed via array.len. */
+    private void strConcat(Expr.BinOp b) {
+      int si = tupleIndex(nodeType(b)); // the string array type
+      int a = freshLocal("$sa" + code.size(), new Ref(si));
+      gen(b.left());
+      code.write(0x21);
+      leb(code, a);
+      int bb = freshLocal("$sb" + code.size(), new Ref(si));
+      gen(b.right());
+      code.write(0x21);
+      leb(code, bb);
+      int res = freshLocal("$sr" + code.size(), new Ref(si));
+      // res = array.new_default $str (len a + len b)
+      arrayLen(a);
+      arrayLen(bb);
+      code.write(0x6A); // i32.add
+      code.write(0xFB);
+      code.write(0x07); // array.new_default
+      leb(code, si);
+      code.write(0x21);
+      leb(code, res);
+      // array.copy res 0 a 0 (len a)
+      get(res);
+      i32const(0);
+      get(a);
+      i32const(0);
+      arrayLen(a);
+      arrayCopy(si);
+      // array.copy res (len a) b 0 (len b)
+      get(res);
+      arrayLen(a);
+      get(bb);
+      i32const(0);
+      arrayLen(bb);
+      arrayCopy(si);
+      get(res);
+    }
+
+    private void get(int local) {
+      code.write(0x20);
+      leb(code, local);
+    }
+
+    private void i32const(int v) {
+      code.write(0x41);
+      sleb(code, v);
+    }
+
+    private void arrayLen(int local) {
+      get(local);
+      code.write(0xFB);
+      code.write(0x0F); // array.len
+    }
+
+    private void arrayCopy(int typeIdx) {
+      code.write(0xFB);
+      code.write(0x11); // array.copy
+      leb(code, typeIdx); // dest type
+      leb(code, typeIdx); // src type
+    }
+
     private void emitList(List<Expr> items, int i, int consIndex) {
       if (i >= items.size()) {
         code.write(0xD0); // ref.null
@@ -699,6 +788,17 @@ public final class WasmGc {
         code.write(0x02); // struct.get
         leb(code, tupleIndex(nodeType(args.get(0))));
         leb(code, v.name().equals("first") ? 0 : 1);
+        return;
+      }
+      // String.length s: array.len of the string's byte array, widened to i64.
+      if (head instanceof Expr.Var v
+          && "String".equals(v.module())
+          && v.name().equals("length")
+          && args.size() == 1) {
+        gen(args.get(0));
+        code.write(0xFB);
+        code.write(0x0F); // array.len -> i32
+        code.write(0xAD); // i64.extend_i32_u
         return;
       }
       // A record accessor used as a function: `.field record`.
@@ -962,6 +1062,10 @@ public final class WasmGc {
             writeType(types, w);
             types.write(0x00); // immutable field
           }
+        } else if (def instanceof StrArrayDef) {
+          types.write(0x5E); // array
+          types.write(0x78); // i8 packed storage
+          types.write(0x01); // mutable (so concat can array.copy into it)
         }
       }
     }
