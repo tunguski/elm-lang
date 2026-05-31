@@ -8,13 +8,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
+import pl.matsuo.elm.ast.FreeVars;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Pattern;
 import pl.matsuo.elm.error.ElmSyntaxError;
@@ -946,6 +950,122 @@ public final class LspServer {
     return out;
   }
 
+  /** A symbol found anywhere in the workspace: its location (URI + 0-based position) and kind. */
+  public record WorkspaceSymbol(String uri, String name, int kind, int line, int character) {}
+
+  /**
+   * Every top-level symbol across all indexed documents whose name contains {@code query}
+   * (case-insensitive; an empty query matches all) — powering the editor's "Go to Symbol in
+   * Workspace" (Ctrl-T). Reuses {@link #documentSymbols} per file.
+   */
+  public List<WorkspaceSymbol> workspaceSymbols(Map<String, String> workspace, String query) {
+    String q = query.toLowerCase(Locale.ROOT);
+    List<WorkspaceSymbol> out = new ArrayList<>();
+    for (Map.Entry<String, String> e : workspace.entrySet()) {
+      for (Symbol s : documentSymbols(e.getValue())) {
+        if (q.isEmpty() || s.name().toLowerCase(Locale.ROOT).contains(q)) {
+          out.add(new WorkspaceSymbol(e.getKey(), s.name(), s.kind(), s.line(), s.character()));
+        }
+      }
+    }
+    return out;
+  }
+
+  /** A multi-edit refactor: a title and the edits (each a {@link CodeAction}) applied together. */
+  public record Refactor(String title, List<CodeAction> edits) {}
+
+  /** Refactors available for a 0-based selection — currently "Extract to function". */
+  public List<Refactor> refactors(String source, int sl, int sc, int el, int ec) {
+    List<Refactor> out = new ArrayList<>();
+    extractFunction(source, sl, sc, el, ec, out);
+    return out;
+  }
+
+  /**
+   * "Extract to function": when the selection is a complete expression, replace it with a call to a
+   * fresh top-level function and append that function. The function's parameters are the selection's
+   * free <em>local</em> variables (those not bound to a top-level name or constructor), so the
+   * extracted code still resolves. No-op if the selection doesn't parse as an expression.
+   */
+  private void extractFunction(String source, int sl, int sc, int el, int ec, List<Refactor> out) {
+    String sel = slice(source, sl, sc, el, ec);
+    if (sel == null || sel.strip().isEmpty()) {
+      return;
+    }
+    String trimmed = sel.strip();
+    Expr expr;
+    Module module;
+    try {
+      expr = Parser.parseExpression(trimmed);
+      module = Parser.parseModule(source);
+    } catch (RuntimeException e) {
+      return; // not a complete expression, or the file doesn't parse
+    }
+    Set<String> topLevel = new HashSet<>();
+    for (Decl d : module.decls()) {
+      switch (d) {
+        case Decl.Value v -> topLevel.add(v.name());
+        case Decl.Union u -> u.variants().forEach(va -> topLevel.add(va.name()));
+        case Decl.Port p -> topLevel.add(p.name());
+        default -> {}
+      }
+    }
+    List<String> params = new ArrayList<>();
+    for (String f : FreeVars.of(expr)) {
+      if (!topLevel.contains(f)) {
+        params.add(f);
+      }
+    }
+    String name = freshName("extracted", topLevel);
+    String paramList = params.isEmpty() ? "" : " " + String.join(" ", params);
+    String call = name + paramList;
+    String[] lines = source.split("\n", -1);
+    int lastLine = lines.length - 1;
+    String body = trimmed.replace("\n", "\n    "); // re-indent continuation lines under the body
+    String fn = "\n\n" + name + paramList + " =\n    " + body + "\n";
+    out.add(
+        new Refactor(
+            "Extract to function `" + name + "`",
+            List.of(
+                new CodeAction("extract", sl, sc, el, ec, call),
+                new CodeAction("extract", lastLine, lines[lastLine].length(), fn))));
+  }
+
+  /** The text of {@code source} between two 0-based positions, or null if the range is invalid. */
+  private static String slice(String source, int sl, int sc, int el, int ec) {
+    String[] lines = source.split("\n", -1);
+    if (sl < 0 || el >= lines.length || sl > el) {
+      return null;
+    }
+    if (sl == el) {
+      String line = lines[sl];
+      if (sc < 0 || ec > line.length() || sc > ec) {
+        return null;
+      }
+      return line.substring(sc, ec);
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append(lines[sl].substring(Math.min(sc, lines[sl].length())));
+    for (int i = sl + 1; i < el; i++) {
+      sb.append("\n").append(lines[i]);
+    }
+    sb.append("\n").append(lines[el].substring(0, Math.min(ec, lines[el].length())));
+    return sb.toString();
+  }
+
+  /** {@code base}, or {@code base2}, {@code base3}, … — the first not already a top-level name. */
+  private static String freshName(String base, Set<String> taken) {
+    if (!taken.contains(base)) {
+      return base;
+    }
+    for (int i = 2; ; i++) {
+      String candidate = base + i;
+      if (!taken.contains(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
   /** The declared module name of {@code source} (its {@code module X …} header), or "" if none. */
   static String moduleName(String source) {
     try {
@@ -1297,10 +1417,15 @@ public final class LspServer {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         Map<String, Object> range = (Map<String, Object>) params.get("range");
         Map<String, Object> start = (Map<String, Object>) range.get("start");
+        Map<String, Object> end = (Map<String, Object>) range.get("end");
         String uri = (String) td.get("uri");
+        String src = docs.getOrDefault(uri, "");
         int line = ((Number) start.get("line")).intValue();
+        int startChar = ((Number) start.get("character")).intValue();
+        int endLine = ((Number) end.get("line")).intValue();
+        int endChar = ((Number) end.get("character")).intValue();
         List<Object> actions = new ArrayList<>();
-        for (CodeAction a : codeActions(docs.getOrDefault(uri, ""), line)) {
+        for (CodeAction a : codeActions(src, line)) {
           Map<String, Object> r = new LinkedHashMap<>();
           r.put("start", point(a.line(), a.character()));
           r.put("end", point(a.endLine(), a.endChar()));
@@ -1317,7 +1442,47 @@ public final class LspServer {
           action.put("edit", workspaceEdit);
           actions.add(action);
         }
+        // Refactors (e.g. "Extract to function") carry several edits applied together.
+        for (Refactor rf : refactors(src, line, startChar, endLine, endChar)) {
+          List<Object> edits = new ArrayList<>();
+          for (CodeAction ed : rf.edits()) {
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("start", point(ed.line(), ed.character()));
+            r.put("end", point(ed.endLine(), ed.endChar()));
+            Map<String, Object> edit = new LinkedHashMap<>();
+            edit.put("range", r);
+            edit.put("newText", ed.newText());
+            edits.add(edit);
+          }
+          Map<String, Object> changes = new LinkedHashMap<>();
+          changes.put(uri, edits);
+          Map<String, Object> workspaceEdit = new LinkedHashMap<>();
+          workspaceEdit.put("changes", changes);
+          Map<String, Object> action = new LinkedHashMap<>();
+          action.put("title", rf.title());
+          action.put("kind", "refactor.extract");
+          action.put("edit", workspaceEdit);
+          actions.add(action);
+        }
         reply(out, id, actions);
+      }
+      case "workspace/symbol" -> {
+        String query = params.get("query") instanceof String q ? q : "";
+        List<Object> syms = new ArrayList<>();
+        for (WorkspaceSymbol s : workspaceSymbols(docs, query)) {
+          Map<String, Object> r = new LinkedHashMap<>();
+          r.put("start", point(s.line(), s.character()));
+          r.put("end", point(s.line(), s.character() + s.name().length()));
+          Map<String, Object> location = new LinkedHashMap<>();
+          location.put("uri", s.uri());
+          location.put("range", r);
+          Map<String, Object> si = new LinkedHashMap<>();
+          si.put("name", s.name());
+          si.put("kind", (long) s.kind());
+          si.put("location", location);
+          syms.add(si);
+        }
+        reply(out, id, syms);
       }
       case "textDocument/inlayHint" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
@@ -1388,6 +1553,7 @@ public final class LspServer {
     caps.put("codeLensProvider", new LinkedHashMap<>());
     caps.put("renameProvider", true);
     caps.put("codeActionProvider", true);
+    caps.put("workspaceSymbolProvider", true);
     caps.put("documentFormattingProvider", true);
     caps.put("inlayHintProvider", true);
     Map<String, Object> sig = new LinkedHashMap<>();

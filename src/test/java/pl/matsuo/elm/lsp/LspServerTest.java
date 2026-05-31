@@ -323,6 +323,51 @@ class LspServerTest {
     assertTrue(refs.get("file:///Util.elm").size() >= 2, refs.toString());
   }
 
+  @Test
+  void workspaceSymbolsSearchAcrossAllFiles() {
+    // A query matches top-level symbols in every indexed document, with their locating URI.
+    var syms = server.workspaceSymbols(workspace(), "square");
+    assertTrue(syms.stream().anyMatch(s -> s.name().equals("square") && s.uri().endsWith("Util.elm")),
+        syms.toString());
+    // An empty query lists everything (here: square, main, ...).
+    var all = server.workspaceSymbols(workspace(), "");
+    assertTrue(all.stream().anyMatch(s -> s.name().equals("main")), all.toString());
+    assertTrue(all.size() >= 2, all.toString());
+  }
+
+  // --- extract-function refactor -----------------------------------------
+
+  @Test
+  void extractFunctionLiftsAClosedExpression() {
+    // Selecting `2 + 3` (the right side, chars 7..12 of line 0) extracts a parameterless function.
+    String src = "main = 2 + 3\n";
+    var refactors = server.refactors(src, 0, 7, 0, 12);
+    assertEquals(1, refactors.size(), refactors.toString());
+    var rf = refactors.get(0);
+    assertTrue(rf.title().contains("extracted"), rf.title());
+    assertEquals(2, rf.edits().size()); // replace the selection + append the function
+    assertEquals("extracted", rf.edits().get(0).newText()); // call (no free locals)
+    assertTrue(rf.edits().get(1).newText().contains("extracted =\n    2 + 3"),
+        rf.edits().get(1).newText());
+  }
+
+  @Test
+  void extractFunctionParameterisesFreeLocals() {
+    // `n * n` uses the local `n`, so the extracted function takes `n` and the call passes it.
+    String src = "square n =\n    n * n\n";
+    var refactors = server.refactors(src, 1, 4, 1, 9); // the `n * n` on line 1
+    assertEquals(1, refactors.size(), refactors.toString());
+    var rf = refactors.get(0);
+    assertEquals("extracted n", rf.edits().get(0).newText()); // call passes the free local
+    assertTrue(rf.edits().get(1).newText().contains("extracted n =\n    n * n"),
+        rf.edits().get(1).newText());
+  }
+
+  @Test
+  void extractFunctionDeclinesANonExpressionSelection() {
+    assertTrue(server.refactors("main = 2 + 3\n", 0, 0, 0, 6).isEmpty()); // "main =" isn't an expression
+  }
+
   // --- semantic tokens ---------------------------------------------------
 
   @Test
