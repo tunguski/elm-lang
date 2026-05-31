@@ -29,6 +29,7 @@ heuristics.
 | Completion | `textDocument/completion` | Module-local names + the bundled standard library, with inferred-type detail. |
 | Document symbols | `textDocument/documentSymbol` | Outline of a file's top-level declarations. |
 | Workspace symbols | `workspace/symbol` | Search top-level symbols across **all** indexed files (e.g. VS Code `Ctrl+T`). |
+| Call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls` | Who calls a function, and what it calls — across modules (qualified and unqualified). |
 | Document highlight | `textDocument/documentHighlight` | Every occurrence of the symbol under the cursor in the file. |
 | Code lenses | `textDocument/codeLens` | A reference count above each top-level definition. |
 | Inlay hints | `textDocument/inlayHint` | Inferred type signatures shown inline for unannotated values. |
@@ -65,6 +66,8 @@ Offered for the cursor's position / selection:
   replaces the selection with a call to it. The expression's **free local variables** (anything not
   bound to a top-level name or constructor) become the new function's parameters, so the result still
   resolves. Declined when the selection isn't a complete expression.
+- **Inline** — the inverse: on a use of a top-level *parameterless* value with a single-line body,
+  replaces the occurrence with that body in parentheses.
 
 ---
 

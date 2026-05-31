@@ -974,10 +974,193 @@ public final class LspServer {
   /** A multi-edit refactor: a title and the edits (each a {@link CodeAction}) applied together. */
   public record Refactor(String title, List<CodeAction> edits) {}
 
-  /** Refactors available for a 0-based selection — currently "Extract to function". */
+  /** Refactors available for a 0-based selection: "Extract to function" and "Inline". */
   public List<Refactor> refactors(String source, int sl, int sc, int el, int ec) {
     List<Refactor> out = new ArrayList<>();
     extractFunction(source, sl, sc, el, ec, out);
+    inlineValue(source, sl, sc, out);
+    return out;
+  }
+
+  /**
+   * "Inline" (the inverse of extract): when the cursor is on a use of a top-level <em>parameterless</em>
+   * value whose body is a single-line expression, replace that occurrence with the body in parentheses.
+   * No-op on the definition itself, on parameterised functions, or on multi-line bodies.
+   */
+  private void inlineValue(String source, int line0, int char0, List<Refactor> out) {
+    int[] span = wordSpan(source, line0, char0);
+    if (span == null) {
+      return;
+    }
+    String[] lines = source.split("\n", -1);
+    String word = lines[line0].substring(span[0], span[1]);
+    if (word.isEmpty() || !Character.isLowerCase(word.charAt(0))) {
+      return;
+    }
+    Module module;
+    try {
+      module = Parser.parseModule(source);
+    } catch (RuntimeException e) {
+      return;
+    }
+    Decl.Value def = null;
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v && v.name().equals(word) && v.params().isEmpty()) {
+        def = v;
+      }
+    }
+    if (def == null || def.pos().line() - 1 == line0) {
+      return; // unknown / parameterised, or the cursor is on the definition itself
+    }
+    String defText = lines[def.pos().line() - 1];
+    int eq = defText.indexOf('=');
+    if (eq < 0) {
+      return;
+    }
+    String body = defText.substring(eq + 1).strip();
+    try {
+      if (body.isEmpty()) {
+        return;
+      }
+      Parser.parseExpression(body); // single-line, complete expression only
+    } catch (RuntimeException e) {
+      return;
+    }
+    out.add(
+        new Refactor(
+            "Inline `" + word + "`",
+            List.of(new CodeAction("inline", line0, span[0], line0, span[1], "(" + body + ")"))));
+  }
+
+  /** The [startChar, endChar) of the identifier covering a 0-based position, or null if none. */
+  private static int[] wordSpan(String source, int line0, int char0) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return null;
+    }
+    String line = lines[line0];
+    int n = line.length();
+    int c = Math.min(Math.max(char0, 0), n);
+    int start = c;
+    while (start > 0 && isIdentChar(line.charAt(start - 1))) {
+      start--;
+    }
+    int end = c;
+    while (end < n && isIdentChar(line.charAt(end))) {
+      end++;
+    }
+    return start == end ? null : new int[] {start, end};
+  }
+
+  /** An item in the call hierarchy: a top-level function and where it is declared. */
+  public record CallHierarchyItem(String uri, String name, int kind, int line, int character) {}
+
+  /** One edge of the call hierarchy: the other function, and the call-site ranges. */
+  public record CallSite(CallHierarchyItem item, List<int[]> fromRanges) {}
+
+  private record DeclRef(String uri, Decl.Value decl) {}
+
+  private List<DeclRef> allTopLevelValues(Map<String, String> workspace) {
+    List<DeclRef> out = new ArrayList<>();
+    for (Map.Entry<String, String> e : workspace.entrySet()) {
+      try {
+        for (Decl d : Parser.parseModule(e.getValue()).decls()) {
+          if (d instanceof Decl.Value v) {
+            out.add(new DeclRef(e.getKey(), v));
+          }
+        }
+      } catch (RuntimeException ignored) {
+        // unparseable file — skip
+      }
+    }
+    return out;
+  }
+
+  /** The top-level names a function's body references (its callees): free variables of the body that
+   * are top-level names, minus the function's own parameters. */
+  private static Set<String> calleesOf(Decl.Value v, Set<String> topLevel) {
+    Set<String> params = new HashSet<>();
+    for (Pattern p : v.params()) {
+      if (p instanceof Pattern.Var pv) {
+        params.add(pv.name());
+      }
+    }
+    Set<String> out = new java.util.LinkedHashSet<>();
+    for (String f : FreeVars.of(v.body())) {
+      if (!params.contains(f) && topLevel.contains(f)) {
+        out.add(f); // unqualified call (scope-aware: excludes locals/params)
+      }
+    }
+    for (String f : FreeVars.qualifiedRefs(v.body())) {
+      if (topLevel.contains(f)) {
+        out.add(f); // cross-module call, e.g. `Util.square`
+      }
+    }
+    return out;
+  }
+
+  private static CallHierarchyItem item(DeclRef dr) {
+    Decl.Value v = dr.decl();
+    int kind = v.params().isEmpty() ? 13 : 12; // Variable / Function
+    return new CallHierarchyItem(
+        dr.uri(), v.name(), kind, Math.max(0, v.pos().line() - 1), Math.max(0, v.pos().col() - 1));
+  }
+
+  /** The call-hierarchy item for the top-level function whose name is under the cursor, if any. */
+  public Optional<CallHierarchyItem> prepareCallHierarchy(
+      Map<String, String> workspace, String uri, int line0, int char0) {
+    String word = wordAt(workspace.getOrDefault(uri, ""), line0, char0);
+    if (word.isEmpty()) {
+      return Optional.empty();
+    }
+    for (DeclRef dr : allTopLevelValues(workspace)) {
+      if (dr.decl().name().equals(word)) {
+        return Optional.of(item(dr));
+      }
+    }
+    return Optional.empty();
+  }
+
+  /** Functions that call {@code name} (incoming calls), with the call-site ranges in each caller. */
+  public List<CallSite> incomingCalls(Map<String, String> workspace, String name) {
+    List<DeclRef> all = allTopLevelValues(workspace);
+    Set<String> topLevel = new HashSet<>();
+    all.forEach(dr -> topLevel.add(dr.decl().name()));
+    List<CallSite> out = new ArrayList<>();
+    for (DeclRef dr : all) {
+      if (calleesOf(dr.decl(), topLevel).contains(name)) {
+        out.add(new CallSite(item(dr), callRanges(workspace.get(dr.uri()), name)));
+      }
+    }
+    return out;
+  }
+
+  /** Occurrences of {@code name} in {@code src} as 0-based [line, startChar, endChar] ranges. */
+  private List<int[]> callRanges(String src, String name) {
+    List<int[]> rs = new ArrayList<>();
+    for (int[] o : occurrences(src, name)) {
+      rs.add(new int[] {o[0], o[1], o[1] + name.length()});
+    }
+    return rs;
+  }
+
+  /** Functions that {@code name} calls (outgoing calls), with the call-site ranges in {@code name}. */
+  public List<CallSite> outgoingCalls(Map<String, String> workspace, String name) {
+    List<DeclRef> all = allTopLevelValues(workspace);
+    Set<String> topLevel = new HashSet<>();
+    all.forEach(dr -> topLevel.add(dr.decl().name()));
+    DeclRef caller = all.stream().filter(dr -> dr.decl().name().equals(name)).findFirst().orElse(null);
+    if (caller == null) {
+      return List.of();
+    }
+    String callerSrc = workspace.get(caller.uri());
+    List<CallSite> out = new ArrayList<>();
+    for (String callee : calleesOf(caller.decl(), topLevel)) {
+      all.stream()
+          .filter(dr -> dr.decl().name().equals(callee))
+          .findFirst()
+          .ifPresent(dr -> out.add(new CallSite(item(dr), callRanges(callerSrc, callee))));
+    }
     return out;
   }
 
@@ -1460,11 +1643,47 @@ public final class LspServer {
           workspaceEdit.put("changes", changes);
           Map<String, Object> action = new LinkedHashMap<>();
           action.put("title", rf.title());
-          action.put("kind", "refactor.extract");
+          action.put("kind", rf.title().startsWith("Inline") ? "refactor.inline" : "refactor.extract");
           action.put("edit", workspaceEdit);
           actions.add(action);
         }
         reply(out, id, actions);
+      }
+      case "textDocument/prepareCallHierarchy" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        String uri = (String) td.get("uri");
+        int line = ((Number) pos.get("line")).intValue();
+        int ch = ((Number) pos.get("character")).intValue();
+        List<Object> items = new ArrayList<>();
+        prepareCallHierarchy(docs, uri, line, ch).ifPresent(i -> items.add(callHierarchyItem(i)));
+        reply(out, id, items);
+      }
+      case "callHierarchy/incomingCalls" -> {
+        CallHierarchyItem from = callHierarchyItemArg(params);
+        List<Object> calls = new ArrayList<>();
+        if (from != null) {
+          for (CallSite cs : incomingCalls(docs, from.name())) {
+            Map<String, Object> call = new LinkedHashMap<>();
+            call.put("from", callHierarchyItem(cs.item()));
+            call.put("fromRanges", ranges(cs.fromRanges()));
+            calls.add(call);
+          }
+        }
+        reply(out, id, calls);
+      }
+      case "callHierarchy/outgoingCalls" -> {
+        CallHierarchyItem of = callHierarchyItemArg(params);
+        List<Object> calls = new ArrayList<>();
+        if (of != null) {
+          for (CallSite cs : outgoingCalls(docs, of.name())) {
+            Map<String, Object> call = new LinkedHashMap<>();
+            call.put("to", callHierarchyItem(cs.item()));
+            call.put("fromRanges", ranges(cs.fromRanges()));
+            calls.add(call);
+          }
+        }
+        reply(out, id, calls);
       }
       case "workspace/symbol" -> {
         String query = params.get("query") instanceof String q ? q : "";
@@ -1554,6 +1773,7 @@ public final class LspServer {
     caps.put("renameProvider", true);
     caps.put("codeActionProvider", true);
     caps.put("workspaceSymbolProvider", true);
+    caps.put("callHierarchyProvider", true);
     caps.put("documentFormattingProvider", true);
     caps.put("inlayHintProvider", true);
     Map<String, Object> sig = new LinkedHashMap<>();
@@ -1665,6 +1885,43 @@ public final class LspServer {
     p.put("line", (long) line);
     p.put("character", (long) character);
     return p;
+  }
+
+  /** Serialises a {@link CallHierarchyItem} to the LSP shape (its declaration range = its name). */
+  private static Map<String, Object> callHierarchyItem(CallHierarchyItem i) {
+    Map<String, Object> r = new LinkedHashMap<>();
+    r.put("start", point(i.line(), i.character()));
+    r.put("end", point(i.line(), i.character() + i.name().length()));
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("name", i.name());
+    m.put("kind", (long) i.kind());
+    m.put("uri", i.uri());
+    m.put("range", r);
+    m.put("selectionRange", r);
+    return m;
+  }
+
+  /** Reconstructs the {@link CallHierarchyItem} a client echoes back in an incoming/outgoing request. */
+  @SuppressWarnings("unchecked")
+  private static CallHierarchyItem callHierarchyItemArg(Map<String, Object> params) {
+    if (!(params.get("item") instanceof Map<?, ?> m) || !(m.get("name") instanceof String name)) {
+      return null;
+    }
+    String uri = m.get("uri") instanceof String u ? u : "";
+    int kind = m.get("kind") instanceof Number k ? k.intValue() : 12;
+    return new CallHierarchyItem(uri, name, kind, 0, 0);
+  }
+
+  /** A list of [line, startChar, endChar] triples as LSP {@code Range} objects. */
+  private static List<Object> ranges(List<int[]> rs) {
+    List<Object> out = new ArrayList<>();
+    for (int[] r : rs) {
+      Map<String, Object> range = new LinkedHashMap<>();
+      range.put("start", point(r[0], r[1]));
+      range.put("end", point(r[0], r[2]));
+      out.add(range);
+    }
+    return out;
   }
 
   private static Map<String, Object> range(int line, int startChar, int endChar) {

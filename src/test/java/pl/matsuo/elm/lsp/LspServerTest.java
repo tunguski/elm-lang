@@ -365,7 +365,41 @@ class LspServerTest {
 
   @Test
   void extractFunctionDeclinesANonExpressionSelection() {
-    assertTrue(server.refactors("main = 2 + 3\n", 0, 0, 0, 6).isEmpty()); // "main =" isn't an expression
+    var rs = server.refactors("main = 2 + 3\n", 0, 0, 0, 6); // "main =" isn't an expression
+    assertTrue(rs.stream().noneMatch(r -> r.title().startsWith("Extract")), rs.toString());
+  }
+
+  @Test
+  void inlineReplacesAUseWithTheDefinitionBody() {
+    // `answer = 42` ; on the `answer` use in `main`, inline replaces it with `(42)`.
+    String src = "answer = 42\nmain = answer + 1\n";
+    var rs = server.refactors(src, 1, 7, 1, 7); // cursor on `answer` (line 1)
+    var inline = rs.stream().filter(r -> r.title().startsWith("Inline")).findFirst().orElseThrow();
+    assertEquals(1, inline.edits().size());
+    assertEquals("(42)", inline.edits().get(0).newText());
+    assertEquals(1, inline.edits().get(0).line()); // the use site, not the definition
+  }
+
+  @Test
+  void inlineNotOfferedOnAParameterisedFunction() {
+    String src = "double n = n * 2\nmain = double 21\n";
+    var rs = server.refactors(src, 1, 7, 1, 7); // on the `double` call
+    assertTrue(rs.stream().noneMatch(r -> r.title().startsWith("Inline")), rs.toString());
+  }
+
+  // --- call hierarchy ----------------------------------------------------
+
+  @Test
+  void callHierarchyFindsIncomingAndOutgoingCalls() {
+    var prep = server.prepareCallHierarchy(workspace(), "file:///Util.elm", 3, 0); // on `square`
+    assertTrue(prep.isPresent(), "prepare resolves the function under the cursor");
+    assertEquals("square", prep.get().name());
+    // Main.elm calls Util.square -> square has an incoming call from `main`.
+    var incoming = server.incomingCalls(workspace(), "square");
+    assertTrue(incoming.stream().anyMatch(c -> c.item().name().equals("main")), incoming.toString());
+    // And `main`'s outgoing calls include `square`.
+    var outgoing = server.outgoingCalls(workspace(), "main");
+    assertTrue(outgoing.stream().anyMatch(c -> c.item().name().equals("square")), outgoing.toString());
   }
 
   // --- semantic tokens ---------------------------------------------------

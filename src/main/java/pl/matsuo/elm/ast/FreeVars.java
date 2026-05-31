@@ -24,6 +24,60 @@ public final class FreeVars {
     return new ArrayList<>(out);
   }
 
+  /** The final segments of qualified variable references in {@code e} (e.g. {@code square} in
+   * {@code Util.square}) — never locals, so no scope tracking is needed. Used (with {@link #of}) to
+   * find cross-module calls for the LSP call hierarchy. */
+  public static List<String> qualifiedRefs(Expr e) {
+    Set<String> out = new LinkedHashSet<>();
+    collectQualified(e, out);
+    return new ArrayList<>(out);
+  }
+
+  private static void collectQualified(Expr e, Set<String> out) {
+    switch (e) {
+      case Expr.Var v -> {
+        if (v.module() != null && !v.name().isEmpty() && Character.isLowerCase(v.name().charAt(0))) {
+          out.add(v.name());
+        }
+      }
+      case Expr.App a -> {
+        collectQualified(a.fn(), out);
+        collectQualified(a.arg(), out);
+      }
+      case Expr.BinOp b -> {
+        collectQualified(b.left(), out);
+        collectQualified(b.right(), out);
+      }
+      case Expr.If i -> {
+        collectQualified(i.cond(), out);
+        collectQualified(i.thenBranch(), out);
+        collectQualified(i.elseBranch(), out);
+      }
+      case Expr.Negate n -> collectQualified(n.operand(), out);
+      case Expr.Lambda lam -> collectQualified(lam.body(), out);
+      case Expr.Let let -> {
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            collectQualified(v.body(), out);
+          }
+        }
+        collectQualified(let.body(), out);
+      }
+      case Expr.Case c -> {
+        collectQualified(c.scrutinee(), out);
+        for (Expr.Case.Branch br : c.branches()) {
+          collectQualified(br.body(), out);
+        }
+      }
+      case Expr.ListLit l -> l.items().forEach(x -> collectQualified(x, out));
+      case Expr.Tuple t -> t.items().forEach(x -> collectQualified(x, out));
+      case Expr.Record r -> r.fields().forEach(f -> collectQualified(f.value(), out));
+      case Expr.RecordAccess a -> collectQualified(a.target(), out);
+      case Expr.RecordUpdate u -> u.fields().forEach(f -> collectQualified(f.value(), out));
+      default -> {}
+    }
+  }
+
   private static void addFree(Expr e, Set<String> bound, Set<String> out) {
     switch (e) {
       case Expr.Var v -> {
