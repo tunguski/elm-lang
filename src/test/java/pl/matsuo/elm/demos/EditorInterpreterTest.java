@@ -202,6 +202,44 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsExpandedListLibrary() {
+    assertEquals("[3, 2, 1]", eval("List.reverse [1, 2, 3]"));
+    assertEquals("[2, 4]", eval("List.filter (\\x -> x > 1) [1, 2, 1, 4]"));
+    assertEquals("10", eval("List.foldl (\\x acc -> x + acc) 0 [1, 2, 3, 4]"));
+    assertEquals("[1, 2, 3, 4]", eval("List.append [1, 2] [3, 4]"));
+    assertEquals("True", eval("List.member 3 [1, 2, 3]"));
+    assertEquals("False", eval("List.member 9 [1, 2, 3]"));
+    assertEquals("[2, 4, 6]", eval("List.map2 (\\a b -> a + b) [1, 2, 3] [1, 2, 3]"));
+    assertEquals("[2, 4]", eval("List.filterMap (\\x -> if x > 1 then Just x else Nothing) [1, 2, 1, 4]"));
+    assertEquals("[1, 2]", eval("List.take 2 [1, 2, 3, 4]"));
+    assertEquals("[3, 4]", eval("List.drop 2 [1, 2, 3, 4]"));
+    assertEquals("[1, 2, 3]", eval("List.sort [3, 1, 2]"));
+    assertEquals("4", eval("Maybe.withDefault 0 (List.maximum [1, 4, 2])"));
+    assertEquals("True", eval("List.all (\\x -> x > 0) [1, 2, 3]"));
+    assertEquals("True", eval("List.any (\\x -> x > 2) [1, 2, 3]"));
+    assertEquals("[1, 2, 3, 4]", eval("List.concat [[1, 2], [3, 4]]"));
+  }
+
+  @Test
+  void interpretsExpandedStringAndMaybeLibrary() {
+    assertEquals("\"abc\"", eval("String.append \"ab\" \"c\""));
+    assertEquals("True", eval("String.contains \"ell\" \"hello\""));
+    assertEquals("\"hel\"", eval("String.left 3 \"hello\""));
+    assertEquals("\"llo\"", eval("String.right 3 \"hello\""));
+    assertEquals("[\"a\", \"b\", \"c\"]", eval("String.split \",\" \"a,b,c\""));
+    assertEquals("Just 42", eval("String.toInt \"42\""));
+    assertEquals("Nothing", eval("String.toInt \"x\""));
+    assertEquals("Just 11", eval("Maybe.map (\\x -> x + 1) (Just 10)"));
+    assertEquals("Nothing", eval("Maybe.map (\\x -> x + 1) Nothing"));
+    assertEquals("7", eval("Result.withDefault 0 (Ok 7)"));
+    assertEquals("0", eval("Result.withDefault 0 (Err \"boom\")"));
+    assertEquals("3", eval("clamp 0 3 9"));
+    assertEquals("1", eval("modBy 3 7"));
+    assertEquals("1", eval("Tuple.first (1, 2)"));
+    assertEquals("2", eval("Tuple.second (1, 2)"));
+  }
+
+  @Test
   void compilesToJavaScriptForTheBrowser() {
     // The editor is a multi-module Browser.sandbox program; the JS backend must bundle all modules.
     String page = JsCompiler.htmlPageProject(null, moduleSources());

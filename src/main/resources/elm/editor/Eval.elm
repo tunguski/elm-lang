@@ -21,6 +21,11 @@ builtins =
         ++ [ "text", "onClick", "onInput", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat" ]
         ++ [ "Browser.sandbox", "Browser.element" ]
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
+        ++ [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product" ]
+        ++ [ "List.filter", "List.append", "List.member", "List.filterMap", "List.take", "List.drop", "List.any", "List.all", "List.indexedMap", "List.repeat", "List.sortBy", "List.foldl", "List.foldr", "List.map2", "List.concatMap" ]
+        ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Result.withDefault", "Result.map", "Result.andThen", "Result.toMaybe" ]
+        ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
+        ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
@@ -70,6 +75,12 @@ arity : String -> Int
 arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
+
+    else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ] then
+        1
+
+    else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
+        3
 
     else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable", "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object" ] then
         1
@@ -634,6 +645,223 @@ runBuiltin globals name args =
             ( "Encode.encode", [ _, value ] ) ->
                 Ok (VStr (jsonEncode value))
 
+            -- List ---------------------------------------------------------------------------
+            ( "List.reverse", [ VList xs ] ) ->
+                Ok (VList (List.reverse xs))
+
+            ( "List.head", [ VList xs ] ) ->
+                Ok (maybeValue (List.head xs))
+
+            ( "List.tail", [ VList xs ] ) ->
+                Ok (maybeValue (Maybe.map VList (List.tail xs)))
+
+            ( "List.isEmpty", [ VList xs ] ) ->
+                Ok (VBool (List.isEmpty xs))
+
+            ( "List.maximum", [ VList xs ] ) ->
+                Ok (maybeValue (Maybe.map VNum (List.maximum (List.filterMap asNum xs))))
+
+            ( "List.minimum", [ VList xs ] ) ->
+                Ok (maybeValue (Maybe.map VNum (List.minimum (List.filterMap asNum xs))))
+
+            ( "List.sort", [ VList xs ] ) ->
+                Ok (VList (List.sortWith valueCompare xs))
+
+            ( "List.sortBy", [ f, VList xs ] ) ->
+                -- Keys are computed once per element, then compared (a Schwartzian transform).
+                keyValues globals f xs
+                    |> Result.map (\keyed -> VList (List.map Tuple.second (List.sortWith (\a b -> valueCompare (Tuple.first a) (Tuple.first b)) keyed)))
+
+            ( "List.concat", [ VList xs ] ) ->
+                Ok (VList (List.concatMap asList xs))
+
+            ( "List.product", [ VList xs ] ) ->
+                Ok (VNum (List.product (List.filterMap asNum xs)))
+
+            ( "List.append", [ VList a, VList b ] ) ->
+                Ok (VList (a ++ b))
+
+            ( "List.member", [ x, VList xs ] ) ->
+                Ok (VBool (List.any (valueEq x) xs))
+
+            ( "List.filter", [ f, VList xs ] ) ->
+                filterValues globals f xs |> Result.map VList
+
+            ( "List.filterMap", [ f, VList xs ] ) ->
+                mapValues globals f xs |> Result.map (\ys -> VList (List.filterMap keepJust ys))
+
+            ( "List.concatMap", [ f, VList xs ] ) ->
+                mapValues globals f xs |> Result.map (\ys -> VList (List.concatMap asList ys))
+
+            ( "List.take", [ VNum n, VList xs ] ) ->
+                Ok (VList (List.take (round n) xs))
+
+            ( "List.drop", [ VNum n, VList xs ] ) ->
+                Ok (VList (List.drop (round n) xs))
+
+            ( "List.repeat", [ VNum n, x ] ) ->
+                Ok (VList (List.repeat (round n) x))
+
+            ( "List.any", [ f, VList xs ] ) ->
+                anyValues globals f xs |> Result.map VBool
+
+            ( "List.all", [ f, VList xs ] ) ->
+                allValues globals f xs |> Result.map VBool
+
+            ( "List.indexedMap", [ f, VList xs ] ) ->
+                indexedMapValues globals f 0 xs |> Result.map VList
+
+            ( "List.map2", [ f, VList a, VList b ] ) ->
+                map2Values globals f a b |> Result.map VList
+
+            ( "List.foldl", [ f, acc, VList xs ] ) ->
+                foldlValues globals f acc xs
+
+            ( "List.foldr", [ f, acc, VList xs ] ) ->
+                foldlValues globals f acc (List.reverse xs)
+
+            -- Maybe / Result -----------------------------------------------------------------
+            ( "Maybe.map", [ f, v ] ) ->
+                case v of
+                    VCtor "Just" [ x ] ->
+                        applyValue globals f x |> Result.map (\y -> VCtor "Just" [ y ])
+
+                    _ ->
+                        Ok (VCtor "Nothing" [])
+
+            ( "Maybe.andThen", [ f, v ] ) ->
+                case v of
+                    VCtor "Just" [ x ] ->
+                        applyValue globals f x
+
+                    _ ->
+                        Ok (VCtor "Nothing" [])
+
+            ( "Maybe.map2", [ f, va, vb ] ) ->
+                case ( va, vb ) of
+                    ( VCtor "Just" [ a ], VCtor "Just" [ b ] ) ->
+                        applyValue globals f a |> Result.andThen (\g -> applyValue globals g b) |> Result.map (\y -> VCtor "Just" [ y ])
+
+                    _ ->
+                        Ok (VCtor "Nothing" [])
+
+            ( "Result.withDefault", [ dflt, v ] ) ->
+                case v of
+                    VCtor "Ok" [ x ] ->
+                        Ok x
+
+                    _ ->
+                        Ok dflt
+
+            ( "Result.map", [ f, v ] ) ->
+                case v of
+                    VCtor "Ok" [ x ] ->
+                        applyValue globals f x |> Result.map (\y -> VCtor "Ok" [ y ])
+
+                    _ ->
+                        Ok v
+
+            ( "Result.andThen", [ f, v ] ) ->
+                case v of
+                    VCtor "Ok" [ x ] ->
+                        applyValue globals f x
+
+                    _ ->
+                        Ok v
+
+            ( "Result.toMaybe", [ v ] ) ->
+                case v of
+                    VCtor "Ok" [ x ] ->
+                        Ok (VCtor "Just" [ x ])
+
+                    _ ->
+                        Ok (VCtor "Nothing" [])
+
+            -- Tuple / Basics -----------------------------------------------------------------
+            ( "Tuple.first", [ VTup (a :: _) ] ) ->
+                Ok a
+
+            ( "Tuple.second", [ VTup (_ :: b :: _) ] ) ->
+                Ok b
+
+            ( "Tuple.pair", [ a, b ] ) ->
+                Ok (VTup [ a, b ])
+
+            ( "identity", [ v ] ) ->
+                Ok v
+
+            ( "always", [ v, _ ] ) ->
+                Ok v
+
+            ( "min", [ VNum a, VNum b ] ) ->
+                Ok (VNum (Basics.min a b))
+
+            ( "max", [ VNum a, VNum b ] ) ->
+                Ok (VNum (Basics.max a b))
+
+            ( "clamp", [ VNum lo, VNum hi, VNum x ] ) ->
+                Ok (VNum (Basics.clamp lo hi x))
+
+            ( "modBy", [ VNum m, VNum n ] ) ->
+                if round m == 0 then
+                    Err "modBy: division by zero"
+
+                else
+                    Ok (VNum (toFloat (modBy (round m) (round n))))
+
+            ( "remainderBy", [ VNum m, VNum n ] ) ->
+                if round m == 0 then
+                    Err "remainderBy: division by zero"
+
+                else
+                    Ok (VNum (toFloat (remainderBy (round m) (round n))))
+
+            -- String -------------------------------------------------------------------------
+            ( "String.append", [ VStr a, VStr b ] ) ->
+                Ok (VStr (a ++ b))
+
+            ( "String.contains", [ VStr sub, VStr s ] ) ->
+                Ok (VBool (String.contains sub s))
+
+            ( "String.startsWith", [ VStr pre, VStr s ] ) ->
+                Ok (VBool (String.startsWith pre s))
+
+            ( "String.endsWith", [ VStr suf, VStr s ] ) ->
+                Ok (VBool (String.endsWith suf s))
+
+            ( "String.left", [ VNum n, VStr s ] ) ->
+                Ok (VStr (String.left (round n) s))
+
+            ( "String.right", [ VNum n, VStr s ] ) ->
+                Ok (VStr (String.right (round n) s))
+
+            ( "String.dropLeft", [ VNum n, VStr s ] ) ->
+                Ok (VStr (String.dropLeft (round n) s))
+
+            ( "String.dropRight", [ VNum n, VStr s ] ) ->
+                Ok (VStr (String.dropRight (round n) s))
+
+            ( "String.repeat", [ VNum n, VStr s ] ) ->
+                Ok (VStr (String.repeat (round n) s))
+
+            ( "String.slice", [ VNum a, VNum b, VStr s ] ) ->
+                Ok (VStr (String.slice (round a) (round b) s))
+
+            ( "String.split", [ VStr sep, VStr s ] ) ->
+                Ok (VList (List.map VStr (String.split sep s)))
+
+            ( "String.isEmpty", [ VStr s ] ) ->
+                Ok (VBool (String.isEmpty s))
+
+            ( "String.fromChar", [ VStr s ] ) ->
+                Ok (VStr s)
+
+            ( "String.toInt", [ VStr s ] ) ->
+                Ok (maybeValue (Maybe.map (\n -> VNum (toFloat n)) (String.toInt (String.trim s))))
+
+            ( "String.toFloat", [ VStr s ] ) ->
+                Ok (maybeValue (Maybe.map VNum (String.toFloat (String.trim s))))
+
             _ ->
                 Err ("bad arguments to " ++ name)
 
@@ -668,6 +896,185 @@ mapValues globals f xs =
         x :: rest ->
             applyValue globals f x
                 |> Result.andThen (\y -> mapValues globals f rest |> Result.map (\ys -> y :: ys))
+
+
+{-| `Maybe a` as an interpreter value (`Nothing`/`Just`). -}
+maybeValue : Maybe Value -> Value
+maybeValue m =
+    case m of
+        Just v ->
+            VCtor "Just" [ v ]
+
+        Nothing ->
+            VCtor "Nothing" []
+
+
+{-| Unwraps a `Just`-tagged value, dropping `Nothing`s — for `List.filterMap`. -}
+keepJust : Value -> Maybe Value
+keepJust v =
+    case v of
+        VCtor "Just" [ x ] ->
+            Just x
+
+        _ ->
+            Nothing
+
+
+{-| Treats a value as a list (for `List.concat`/`concatMap`); non-lists contribute nothing. -}
+asList : Value -> List Value
+asList v =
+    case v of
+        VList xs ->
+            xs
+
+        _ ->
+            []
+
+
+{-| Keeps the elements for which the predicate returns `True`, short-circuiting on error. -}
+filterValues : Globals -> Value -> List Value -> Result String (List Value)
+filterValues globals f xs =
+    case xs of
+        [] ->
+            Ok []
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen
+                    (\keep ->
+                        filterValues globals f rest
+                            |> Result.map
+                                (\ys ->
+                                    if keep == VBool True then
+                                        x :: ys
+
+                                    else
+                                        ys
+                                )
+                    )
+
+
+{-| True if the predicate holds for any element. -}
+anyValues : Globals -> Value -> List Value -> Result String Bool
+anyValues globals f xs =
+    case xs of
+        [] ->
+            Ok False
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen
+                    (\b ->
+                        if b == VBool True then
+                            Ok True
+
+                        else
+                            anyValues globals f rest
+                    )
+
+
+{-| True if the predicate holds for every element. -}
+allValues : Globals -> Value -> List Value -> Result String Bool
+allValues globals f xs =
+    case xs of
+        [] ->
+            Ok True
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen
+                    (\b ->
+                        if b == VBool True then
+                            allValues globals f rest
+
+                        else
+                            Ok False
+                    )
+
+
+{-| `List.indexedMap`: applies `f index element`, threading the index. -}
+indexedMapValues : Globals -> Value -> Int -> List Value -> Result String (List Value)
+indexedMapValues globals f i xs =
+    case xs of
+        [] ->
+            Ok []
+
+        x :: rest ->
+            applyValue globals f (VNum (toFloat i))
+                |> Result.andThen (\g -> applyValue globals g x)
+                |> Result.andThen (\y -> indexedMapValues globals f (i + 1) rest |> Result.map (\ys -> y :: ys))
+
+
+{-| `List.map2`: applies `f a b` pairwise, stopping at the shorter list. -}
+map2Values : Globals -> Value -> List Value -> List Value -> Result String (List Value)
+map2Values globals f xs ys =
+    case ( xs, ys ) of
+        ( x :: xrest, y :: yrest ) ->
+            applyValue globals f x
+                |> Result.andThen (\g -> applyValue globals g y)
+                |> Result.andThen (\z -> map2Values globals f xrest yrest |> Result.map (\zs -> z :: zs))
+
+        _ ->
+            Ok []
+
+
+{-| `List.foldl`: applies `f element acc` left to right. -}
+foldlValues : Globals -> Value -> Value -> List Value -> Result String Value
+foldlValues globals f acc xs =
+    case xs of
+        [] ->
+            Ok acc
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen (\g -> applyValue globals g acc)
+                |> Result.andThen (\acc2 -> foldlValues globals f acc2 rest)
+
+
+{-| Pairs each element with the key `f element` produces (for `List.sortBy`). -}
+keyValues : Globals -> Value -> List Value -> Result String (List ( Value, Value ))
+keyValues globals f xs =
+    case xs of
+        [] ->
+            Ok []
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen (\k -> keyValues globals f rest |> Result.map (\ks -> ( k, x ) :: ks))
+
+
+{-| A total ordering on values, used by `List.sort`/`sortBy` (numbers, strings, then bools). -}
+valueCompare : Value -> Value -> Order
+valueCompare a b =
+    case ( a, b ) of
+        ( VNum x, VNum y ) ->
+            compare x y
+
+        ( VStr x, VStr y ) ->
+            compare x y
+
+        ( VBool x, VBool y ) ->
+            compare (boolRank x) (boolRank y)
+
+        ( VTup (x :: xrest), VTup (y :: yrest) ) ->
+            case valueCompare x y of
+                EQ ->
+                    valueCompare (VTup xrest) (VTup yrest)
+
+                ord ->
+                    ord
+
+        _ ->
+            EQ
+
+
+boolRank : Bool -> Int
+boolRank b =
+    if b then
+        1
+
+    else
+        0
 
 
 applyClosure : Globals -> List String -> Expr -> Env -> Value -> Result String Value
