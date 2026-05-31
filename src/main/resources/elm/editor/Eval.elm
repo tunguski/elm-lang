@@ -22,18 +22,25 @@ builtins =
         ++ [ "Browser.sandbox", "Browser.element" ]
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim" ]
+        ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
+        ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond" ]
 
 
-{-| The Html element builtins (each takes a list of attributes then a list of children). -}
+{-| The Html (and inline SVG) element builtins (each takes a list of attributes then a list of
+children). Inline SVG renders directly in the browser, so `svg`/`circle`/… serialize like any node. -}
 htmlTags : List String
 htmlTags =
     [ "div", "button", "p", "span", "h1", "h2", "h3", "h4", "ul", "ol", "li", "pre", "code", "input", "textarea", "label", "a", "section", "strong", "em", "br", "img", "table", "tr", "td", "th" ]
+        ++ [ "svg", "circle", "rect", "line", "ellipse", "polygon", "polyline", "path", "g", "text_", "defs", "stop", "linearGradient", "radialGradient" ]
 
 
-{-| `Html.Attributes` taking a single string, rendered as `key=value`. (`type_` maps to `type`.) -}
+{-| `Html.Attributes` / `Svg.Attributes` taking a single string, rendered as `key=value`. (`type_`
+maps to `type`; the camelCase SVG names map to their hyphenated attribute — see `attrKey`.) -}
 htmlStringAttrs : List String
 htmlStringAttrs =
     [ "placeholder", "value", "type_", "class", "id", "href", "src", "title", "alt", "name", "for", "target", "rel", "width", "height", "rows", "cols", "autocomplete", "step" ]
+        ++ [ "viewBox", "cx", "cy", "r", "x", "y", "x1", "y1", "x2", "y2", "rx", "ry", "fill", "stroke", "points", "d", "transform", "offset", "opacity" ]
+        ++ [ "strokeWidth", "strokeLinecap", "strokeDasharray", "fillOpacity", "stopColor", "textAnchor", "fontSize", "fontFamily", "gradientUnits" ]
 
 
 {-| `Html.Attributes` taking a single bool, rendered as a bare `key` when `True`. -}
@@ -46,6 +53,9 @@ htmlBoolAttrs =
 arity : String -> Int
 arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
+        1
+
+    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis" ] then
         1
 
     else if List.member name htmlStringAttrs || List.member name htmlBoolAttrs then
@@ -82,7 +92,13 @@ evalExpr globals env expr =
                                 Ok (VClosure decl.params decl.body [])
 
                         Nothing ->
-                            if List.member name builtins then
+                            if name == "pi" then
+                                Ok (VNum pi)
+
+                            else if name == "e" then
+                                Ok (VNum e)
+
+                            else if List.member name builtins then
                                 Ok (VBuiltin name [])
 
                             else
@@ -176,9 +192,17 @@ evalExpr globals env expr =
                         qualified =
                             moduleName ++ "." ++ field
                     in
-                    if moduleName == "Cmd" || moduleName == "Sub" then
-                        -- Effects are opaque no-ops in the editor (Cmd.none, Sub.none, Cmd.batch …).
+                    if moduleName == "Cmd" || moduleName == "Sub" || moduleName == "Task" then
+                        -- Effects are opaque no-ops in the editor (Cmd.none, Sub.none, Task.perform …).
                         Ok (VCtor moduleName [])
+
+                    else if qualified == "Time.here" || qualified == "Time.now" || qualified == "Time.every" then
+                        -- Effectful Time values are opaque (they only feed a discarded Cmd/Sub).
+                        Ok (VCtor "Cmd" [])
+
+                    else if qualified == "Time.utc" then
+                        Ok (VNum 0)
+                        -- a Zone, modelled as a 0 offset
 
                     else if List.member qualified builtins then
                         Ok (VBuiltin qualified [])
@@ -409,6 +433,52 @@ runBuiltin globals name args =
 
                     _ ->
                         Ok dflt
+
+            ( "cos", [ VNum n ] ) ->
+                Ok (VNum (cos n))
+
+            ( "sin", [ VNum n ] ) ->
+                Ok (VNum (sin n))
+
+            ( "tan", [ VNum n ] ) ->
+                Ok (VNum (tan n))
+
+            ( "sqrt", [ VNum n ] ) ->
+                Ok (VNum (sqrt n))
+
+            ( "toFloat", [ VNum n ] ) ->
+                Ok (VNum n)
+
+            ( "round", [ VNum n ] ) ->
+                Ok (VNum (toFloat (round n)))
+
+            ( "floor", [ VNum n ] ) ->
+                Ok (VNum (toFloat (floor n)))
+
+            ( "ceiling", [ VNum n ] ) ->
+                Ok (VNum (toFloat (ceiling n)))
+
+            ( "truncate", [ VNum n ] ) ->
+                Ok (VNum (toFloat (truncate n)))
+
+            ( "abs", [ VNum n ] ) ->
+                Ok (VNum (abs n))
+
+            -- Time: a Posix is modelled as its milliseconds (a VNum); the Zone is ignored (UTC).
+            ( "Time.millisToPosix", [ VNum n ] ) ->
+                Ok (VNum n)
+
+            ( "Time.posixToMillis", [ VNum n ] ) ->
+                Ok (VNum n)
+
+            ( "Time.toHour", [ _, VNum ms ] ) ->
+                Ok (VNum (toFloat (modBy 24 (round ms // 3600000))))
+
+            ( "Time.toMinute", [ _, VNum ms ] ) ->
+                Ok (VNum (toFloat (modBy 60 (round ms // 60000))))
+
+            ( "Time.toSecond", [ _, VNum ms ] ) ->
+                Ok (VNum (toFloat (modBy 60 (round ms // 1000))))
 
             _ ->
                 Err ("bad arguments to " ++ name)
@@ -1040,6 +1110,33 @@ attrKey : String -> String
 attrKey name =
     if name == "type_" then
         "type"
+
+    else if name == "strokeWidth" then
+        "stroke-width"
+
+    else if name == "strokeLinecap" then
+        "stroke-linecap"
+
+    else if name == "strokeDasharray" then
+        "stroke-dasharray"
+
+    else if name == "fillOpacity" then
+        "fill-opacity"
+
+    else if name == "stopColor" then
+        "stop-color"
+
+    else if name == "textAnchor" then
+        "text-anchor"
+
+    else if name == "fontSize" then
+        "font-size"
+
+    else if name == "fontFamily" then
+        "font-family"
+
+    else if name == "gradientUnits" then
+        "gradientUnits"
 
     else
         name

@@ -123,10 +123,12 @@ runs each selected file's `main` live in the browser — static views, computed 
 opaque `Cmd`/`Sub`, all via a from-scratch Elm interpreter written in Elm (itself a `Browser.element`
 app using `Http`). Its lexer/parser handle `--` line comments, the pipe/compose operators
 (`|>`, `<|`, `>>`, `<<`, desugared to application/lambdas), multi-binding `let`, record `type alias`
-constructors (`Point 3 4`) and the common `Html.Attributes` (`placeholder`, `type_`, `value`, `class`,
-`href`, …) and `String.*` helpers — enough that every pure-Html / TEA example from the elm-lang.org
-gallery parses and the `Browser.sandbox`-style ones render live. Examples that need full library
-runtimes — SVG, WebGL, HTTP, `Time`, `File`/`Json.Decode` effects, and the `elm-playground`
+constructors (`Point 3 4`), the common `Html.Attributes` (`placeholder`, `type_`, `value`, `class`,
+`href`, …) and `Svg`/`Svg.Attributes` (so the **shapes** and **clock** examples render as inline SVG),
+plus `String.*`, `Time` (UTC), and `Basics` math (`cos`/`sin`/`pi`/`toFloat`/…) helpers — enough that
+every pure-Html / TEA / SVG example from the elm-lang.org gallery parses and renders live (the
+`Random`/`Time`-driven ones — numbers, cards, clock — render their initial view). Examples that need
+full effect runtimes — WebGL, HTTP, `File`/`Json.Decode`, and the `elm-playground`
 `picture`/`animation`/`game` APIs — parse but fall outside this teaching-subset interpreter.
 
 ## Type inference

@@ -443,5 +443,18 @@ renderAttr files v =
         VCtor "Html.style" [ VStr k, VStr val ] ->
             Just (style k val)
 
+        VCtor "Html.attr" [ VStr k, VStr val ] ->
+            Just (Html.Attributes.attribute k val)
+
+        VCtor "Html.attr" [ VStr k, VBool b ] ->
+            if b then
+                Just (Html.Attributes.attribute k k)
+
+            else
+                Nothing
+
+        VCtor "Html.attr" [ VStr k, other ] ->
+            Just (Html.Attributes.attribute k (renderValue other))
+
         _ ->
             Nothing

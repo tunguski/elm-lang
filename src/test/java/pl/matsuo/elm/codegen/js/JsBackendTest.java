@@ -368,4 +368,41 @@ class JsBackendTest {
     assertTrue(html.contains("type=text"), html);
     assertTrue(html.contains("value=v"), html);
   }
+
+  @Test
+  void editorRendersInlineSvg() {
+    String html =
+        editorRender(
+            "main = svg [ viewBox \"0 0 100 100\", width \"100\" ]"
+                + " [ circle [ cx \"50\", cy \"50\", r \"40\", fill \"red\" ] []"
+                + " , rect [ x \"10\", y \"10\", strokeWidth \"2\" ] [] ]\n");
+    assertTrue(html.contains("<svg"), html);
+    assertTrue(html.contains("<circle") && html.contains("cx=50") && html.contains("fill=red"), html);
+    assertTrue(html.contains("<rect") && html.contains("stroke-width=2"), html); // camelCase → hyphen
+  }
+
+  @Test
+  void editorSupportsTimeAndMathBuiltins() {
+    // Time: a Posix is its milliseconds; 7,200,000 ms = 2 hours (UTC).
+    assertEquals(
+        "2",
+        editorRender(
+            "main = text (String.fromInt (Time.toHour zone (Time.millisToPosix 7200000)))\nzone = Time.utc\n"));
+    // Math: cos 0 = 1.
+    assertEquals("100", editorRender("main = text (String.fromInt (round (100 * cos 0)))\n"));
+  }
+
+  @Test
+  void editorRendersTheGallerySvgExamples() {
+    // The elm-lang.org shapes and clock examples render as inline SVG (clock also needs Time + trig).
+    String shapes = editorRender(read("/examples/shapes.elm"));
+    assertTrue(shapes.contains("<svg") && shapes.contains("<circle") && shapes.contains("<rect"), shapes);
+    String clock = editorRender(read("/examples/clock.elm"));
+    assertTrue(clock.contains("<svg") && clock.contains("<circle") && clock.contains("<line"), clock);
+  }
+
+  /** Reads a classpath resource, normalising CRLF so the editor's `\n`-based escaping is correct. */
+  private static String read(String path) {
+    return pl.matsuo.elm.util.Resources.read(path).replace("\r", "");
+  }
 }

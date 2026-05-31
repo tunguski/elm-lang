@@ -18,6 +18,7 @@
   ['disabled','checked','selected','required','autofocus','hidden','multiple'].forEach(function(nm){
     $rt['Html.Attributes.'+nm]=function(v){ return $data('$Prop',[nm,v]); }; });
   $rt['Html.Attributes.style']=function(k){ return function(v){ return $data('$Style',[k,v]); }; };
+  $rt['Html.Attributes.attribute']=function(k){ return function(v){ return $data('$Att',[k,v]); }; };
   $rt['Html.Events.onClick']=function(m){ return $data('$On',['click',m]); };
   $rt['Html.Events.onInput']=function(f){ return $data('$On',['input',f]); };
   $rt['Html.Events.onCheck']=function(f){ return $data('$On',['check',f]); };
