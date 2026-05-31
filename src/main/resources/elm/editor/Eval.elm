@@ -24,6 +24,18 @@ builtins =
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond" ]
+        ++ playgroundNames
+
+
+{-| evancz/elm-playground builtins: shape constructors, transforms, colours and the `picture`/
+`animation` entry points, implemented natively in the editor (rendering to SVG `Value` trees). The
+`circle`/`polygon` names overlap with the Svg builtins but are disambiguated at run time by the
+argument types (`circle color radius` vs `circle attrs children`). -}
+playgroundNames : List String
+playgroundNames =
+    [ "picture", "animation", "oval", "rectangle", "square", "triangle", "pentagon", "hexagon", "octagon", "words" ]
+        ++ [ "move", "moveUp", "moveDown", "moveLeft", "moveRight", "moveX", "moveY", "rotate", "scale", "fade" ]
+        ++ [ "rgb", "spin", "wave", "zigzag" ]
 
 
 {-| The Html (and inline SVG) element builtins (each takes a list of attributes then a list of
@@ -55,8 +67,14 @@ arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
-    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis" ] then
+    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation" ] then
         1
+
+    else if List.member name [ "oval", "rectangle", "move", "rgb" ] then
+        3
+
+    else if List.member name [ "wave", "zigzag" ] then
+        4
 
     else if List.member name htmlStringAttrs || List.member name htmlBoolAttrs then
         1
@@ -98,11 +116,17 @@ evalExpr globals env expr =
                             else if name == "e" then
                                 Ok (VNum e)
 
-                            else if List.member name builtins then
-                                Ok (VBuiltin name [])
-
                             else
-                                Err ("undefined variable: " ++ name)
+                                case playgroundColor name of
+                                    Just hex ->
+                                        Ok (VStr hex)
+
+                                    Nothing ->
+                                        if List.member name builtins then
+                                            Ok (VBuiltin name [])
+
+                                        else
+                                            Err ("undefined variable: " ++ name)
 
         Ctor name ->
             -- A `type alias` record constructor is registered as a global; everything else
@@ -337,7 +361,14 @@ applyValue globals fn arg =
 `globals` so higher-order builtins (List.map) can apply the function value they're given. -}
 runBuiltin : Globals -> String -> List Value -> Result String Value
 runBuiltin globals name args =
-    if List.member name htmlTags then
+    if name == "circle" && playgroundCircle args then
+        -- Playground `circle color radius` (Svg `circle attrs children` falls through below).
+        Ok (mkShape (VCtor "PCircle" args))
+
+    else if List.member name playgroundNames then
+        runPlayground globals name args
+
+    else if List.member name htmlTags then
         case args of
             [ attrs, children ] ->
                 Ok (VCtor "Html.node" [ VStr name, attrs, children ])
@@ -1140,3 +1171,288 @@ attrKey name =
 
     else
         name
+
+
+
+-- PLAYGROUND (evancz/elm-playground) ---------------------------------------
+
+
+{-| Whether `circle`'s arguments are the Playground form (a colour string and a numeric radius)
+rather than the Svg element form (an attribute list and a child list). -}
+playgroundCircle : List Value -> Bool
+playgroundCircle args =
+    case args of
+        [ VStr _, VNum _ ] ->
+            True
+
+        _ ->
+            False
+
+
+{-| A fresh shape at the origin: PShape form x y angle scale alpha. -}
+mkShape : Value -> Value
+mkShape form =
+    VCtor "PShape" [ form, VNum 0, VNum 0, VNum 0, VNum 1, VNum 1 ]
+
+
+{-| Rebuilds a shape from its updated transform fields. -}
+withShape : Value -> (Value -> Float -> Float -> Float -> Float -> Float -> Value) -> Result String Value
+withShape shape f =
+    case shape of
+        VCtor "PShape" [ form, VNum x, VNum y, VNum a, VNum sc, VNum al ] ->
+            Ok (f form x y a sc al)
+
+        _ ->
+            Err "expected a shape"
+
+
+runPlayground : Globals -> String -> List Value -> Result String Value
+runPlayground globals name args =
+    case ( name, args ) of
+        ( "picture", [ VList shapes ] ) ->
+            Ok (pictureSvg shapes)
+
+        ( "animation", [ view ] ) ->
+            -- The editor is a one-shot renderer: draw the initial frame (time 0).
+            applyValue globals view (VNum 0)
+                |> Result.andThen
+                    (\frame ->
+                        case frame of
+                            VList shapes ->
+                                Ok (pictureSvg shapes)
+
+                            _ ->
+                                Err "animation view must return a list of shapes"
+                    )
+
+        ( "rectangle", [ color, VNum w, VNum h ] ) ->
+            Ok (mkShape (VCtor "PRect" [ color, VNum w, VNum h ]))
+
+        ( "square", [ color, VNum s ] ) ->
+            Ok (mkShape (VCtor "PRect" [ color, VNum s, VNum s ]))
+
+        ( "oval", [ color, VNum w, VNum h ] ) ->
+            Ok (mkShape (VCtor "POval" [ color, VNum w, VNum h ]))
+
+        ( "triangle", [ color, VNum r ] ) ->
+            Ok (mkShape (VCtor "PNgon" [ color, VNum 3, VNum r ]))
+
+        ( "pentagon", [ color, VNum r ] ) ->
+            Ok (mkShape (VCtor "PNgon" [ color, VNum 5, VNum r ]))
+
+        ( "hexagon", [ color, VNum r ] ) ->
+            Ok (mkShape (VCtor "PNgon" [ color, VNum 6, VNum r ]))
+
+        ( "octagon", [ color, VNum r ] ) ->
+            Ok (mkShape (VCtor "PNgon" [ color, VNum 8, VNum r ]))
+
+        ( "words", [ color, VStr s ] ) ->
+            Ok (mkShape (VCtor "PWords" [ color, VStr s ]))
+
+        ( "move", [ VNum dx, VNum dy, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum (x + dx), VNum (y + dy), VNum a, VNum sc, VNum al ])
+
+        ( "moveUp", [ VNum d, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum x, VNum (y + d), VNum a, VNum sc, VNum al ])
+
+        ( "moveDown", [ VNum d, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum x, VNum (y - d), VNum a, VNum sc, VNum al ])
+
+        ( "moveLeft", [ VNum d, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum (x - d), VNum y, VNum a, VNum sc, VNum al ])
+
+        ( "moveRight", [ VNum d, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum (x + d), VNum y, VNum a, VNum sc, VNum al ])
+
+        ( "moveX", [ VNum d, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum (x + d), VNum y, VNum a, VNum sc, VNum al ])
+
+        ( "moveY", [ VNum d, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum x, VNum (y + d), VNum a, VNum sc, VNum al ])
+
+        ( "rotate", [ VNum da, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum x, VNum y, VNum (a + da), VNum sc, VNum al ])
+
+        ( "scale", [ VNum k, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum x, VNum y, VNum a, VNum (sc * k), VNum al ])
+
+        ( "fade", [ VNum o, shape ] ) ->
+            withShape shape (\f x y a sc al -> VCtor "PShape" [ f, VNum x, VNum y, VNum a, VNum sc, VNum o ])
+
+        ( "rgb", [ VNum r, VNum g, VNum b ] ) ->
+            Ok (VStr ("rgb(" ++ ic r ++ "," ++ ic g ++ "," ++ ic b ++ ")"))
+
+        ( "spin", [ VNum period, VNum time ] ) ->
+            Ok (VNum (360 * frac period time))
+
+        ( "wave", [ VNum lo, VNum hi, VNum period, VNum time ] ) ->
+            Ok (VNum (lo + (hi - lo) * (1 + sin (2 * pi * frac period time)) / 2))
+
+        ( "zigzag", [ VNum lo, VNum hi, VNum period, VNum time ] ) ->
+            Ok (VNum (lo + (hi - lo) * abs (2 * frac period time - 1)))
+
+        _ ->
+            Err ("bad arguments to Playground." ++ name)
+
+
+{-| The fractional position (0..1) through a `period`-second cycle at the given time (ms). -}
+frac : Float -> Float -> Float
+frac period time =
+    let
+        q =
+            time / (period * 1000)
+    in
+    q - toFloat (floor q)
+
+
+ic : Float -> String
+ic n =
+    String.fromInt (round n)
+
+
+ff : Float -> String
+ff x =
+    String.fromFloat x
+
+
+attrS : String -> String -> Value
+attrS k v =
+    VCtor "Html.attr" [ VStr k, VStr v ]
+
+
+{-| Wraps rendered shapes in a centred SVG canvas (y-axis points up, as in Playground). -}
+pictureSvg : List Value -> Value
+pictureSvg shapes =
+    VCtor "Html.node"
+        [ VStr "svg"
+        , VList [ attrS "viewBox" "-320 -240 640 480", attrS "width" "640", attrS "height" "480" ]
+        , VList (List.map renderShape shapes)
+        ]
+
+
+renderShape : Value -> Value
+renderShape shape =
+    case shape of
+        VCtor "PShape" [ form, VNum x, VNum y, VNum a, VNum sc, VNum al ] ->
+            VCtor "Html.node"
+                [ VStr "g"
+                , VList [ attrS "transform" (transformStr x y a sc), attrS "opacity" (ff al) ]
+                , VList [ renderForm form ]
+                ]
+
+        _ ->
+            VCtor "Html.text" [ VStr "" ]
+
+
+transformStr : Float -> Float -> Float -> Float -> String
+transformStr x y a sc =
+    "translate(" ++ ff x ++ " " ++ ff (negate y) ++ ") rotate(" ++ ff (negate a) ++ ") scale(" ++ ff sc ++ ")"
+
+
+renderForm : Value -> Value
+renderForm form =
+    case form of
+        VCtor "PCircle" [ VStr color, VNum r ] ->
+            VCtor "Html.node" [ VStr "ellipse", VList [ attrS "cx" "0", attrS "cy" "0", attrS "rx" (ff r), attrS "ry" (ff r), attrS "fill" color ], VList [] ]
+
+        VCtor "POval" [ VStr color, VNum w, VNum h ] ->
+            VCtor "Html.node" [ VStr "ellipse", VList [ attrS "cx" "0", attrS "cy" "0", attrS "rx" (ff (w / 2)), attrS "ry" (ff (h / 2)), attrS "fill" color ], VList [] ]
+
+        VCtor "PRect" [ VStr color, VNum w, VNum h ] ->
+            VCtor "Html.node" [ VStr "rect", VList [ attrS "x" (ff (negate (w / 2))), attrS "y" (ff (negate (h / 2))), attrS "width" (ff w), attrS "height" (ff h), attrS "fill" color ], VList [] ]
+
+        VCtor "PNgon" [ VStr color, VNum n, VNum r ] ->
+            VCtor "Html.node" [ VStr "path", VList [ attrS "d" (ngonPath n r), attrS "fill" color ], VList [] ]
+
+        VCtor "PWords" [ VStr color, VStr s ] ->
+            VCtor "Html.node" [ VStr "text_", VList [ attrS "x" "0", attrS "y" "0", attrS "text-anchor" "middle", attrS "fill" color ], VList [ VCtor "Html.text" [ VStr s ] ] ]
+
+        _ ->
+            VCtor "Html.text" [ VStr "" ]
+
+
+ngonPath : Float -> Float -> String
+ngonPath n r =
+    let
+        pts =
+            List.map
+                (\i ->
+                    let
+                        ang =
+                            2 * pi * toFloat i / n - pi / 2
+                    in
+                    { px = r * cos ang, py = r * sin ang }
+                )
+                (List.range 0 (round n - 1))
+    in
+    case pts of
+        [] ->
+            ""
+
+        p0 :: rest ->
+            "M " ++ ff p0.px ++ " " ++ ff p0.py ++ String.join "" (List.map (\p -> " L " ++ ff p.px ++ " " ++ ff p.py) rest) ++ " Z"
+
+
+{-| The Playground named colours (approximate hex). -}
+playgroundColor : String -> Maybe String
+playgroundColor name =
+    case name of
+        "red" ->
+            Just "#cc0000"
+
+        "orange" ->
+            Just "#f57900"
+
+        "yellow" ->
+            Just "#edd400"
+
+        "green" ->
+            Just "#4e9a06"
+
+        "blue" ->
+            Just "#3465a4"
+
+        "purple" ->
+            Just "#75507b"
+
+        "brown" ->
+            Just "#8f5902"
+
+        "black" ->
+            Just "#000000"
+
+        "white" ->
+            Just "#ffffff"
+
+        "lightGray" ->
+            Just "#d3d7cf"
+
+        "gray" ->
+            Just "#babdb6"
+
+        "darkGray" ->
+            Just "#888a85"
+
+        "charcoal" ->
+            Just "#2e3436"
+
+        "lightBlue" ->
+            Just "#729fcf"
+
+        "lightGreen" ->
+            Just "#8ae234"
+
+        "lightYellow" ->
+            Just "#fce94f"
+
+        "darkRed" ->
+            Just "#a40000"
+
+        "darkGreen" ->
+            Just "#4e9a06"
+
+        "darkBlue" ->
+            Just "#204a87"
+
+        _ ->
+            Nothing

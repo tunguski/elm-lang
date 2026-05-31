@@ -401,6 +401,22 @@ class JsBackendTest {
     assertTrue(clock.contains("<svg") && clock.contains("<circle") && clock.contains("<line"), clock);
   }
 
+  @Test
+  void editorRendersElmPlaygroundPictureAndAnimation() {
+    // evancz/elm-playground: `picture` draws shapes to SVG; `animation` draws its initial frame.
+    String picture = editorRender(read("/examples/picture.elm"));
+    assertTrue(picture.contains("<svg") && picture.contains("<rect") && picture.contains("<ellipse"), picture);
+    String animation = editorRender(read("/examples/animation.elm"));
+    assertTrue(animation.contains("<svg") && animation.contains("<path"), animation); // octagons as paths
+  }
+
+  @Test
+  void editorLexesNegativeLiteralsInArgumentPosition() {
+    // `f -2` applies f to the negative literal; `a - b` (spaces) stays subtraction.
+    assertEquals("-2", editorRender("main = text (String.fromInt (id -2))\nid x = x\n"));
+    assertEquals("3", editorRender("main = text (String.fromInt (5 - 2))\n"));
+  }
+
   /** Reads a classpath resource, normalising CRLF so the editor's `\n`-based escaping is correct. */
   private static String read(String path) {
     return pl.matsuo.elm.util.Resources.read(path).replace("\r", "");

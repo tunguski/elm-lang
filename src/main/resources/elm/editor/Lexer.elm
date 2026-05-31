@@ -124,6 +124,47 @@ dropWhileGreater col stack =
             []
 
 
+{-| Reads a negative number literal from chars beginning with `-` immediately followed by a digit
+(e.g. `-2`, `-1.5`), returning the token and the rest. Used for prefix negation in argument
+position; ordinary `a - b` keeps the spaces around `-` so this does not fire. -}
+negNumber : List Char -> Maybe ( Token, List Char )
+negNumber chars =
+    case chars of
+        '-' :: d :: _ ->
+            if Char.isDigit d then
+                let
+                    taken =
+                        takeWhile isNumChar (List.drop 1 chars) ""
+                in
+                case String.toFloat (Tuple.first taken) of
+                    Just n ->
+                        Just ( TNum (negate n), Tuple.second taken )
+
+                    Nothing ->
+                        Nothing
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
+
+
+{-| Whether a `-` here begins an expression (so a following number is negated), based on the
+preceding token: start of input, an opener (`(`/`[`/`,`/`=`/`->`/`\`) or another operator. -}
+prefixContext : List Token -> Bool
+prefixContext acc =
+    case acc of
+        [] ->
+            True
+
+        (TOp _) :: _ ->
+            True
+
+        t :: _ ->
+            List.member t [ TLParen, TLBracket, TComma, TEquals, TArrow, TLambda ]
+
+
 tokenizeHelp : List Char -> List Token -> Result String (List Token)
 tokenizeHelp chars acc =
     case chars of
@@ -132,11 +173,26 @@ tokenizeHelp chars acc =
 
         c :: rest ->
             if c == ' ' || c == '\n' || c == '\t' || c == '\u{000D}' then
-                tokenizeHelp rest acc
+                -- After whitespace, a `-` glued to a digit (`f -2`) is a negative literal, not a minus.
+                case negNumber rest of
+                    Just ( tok, after ) ->
+                        tokenizeHelp after (tok :: acc)
+
+                    Nothing ->
+                        tokenizeHelp rest acc
 
             else if c == '-' && List.head rest == Just '-' then
                 -- line comment: drop the rest of the line
                 Ok (List.reverse acc)
+
+            else if c == '-' && prefixContext acc then
+                -- A `-` after `(`, `[`, `,`, `=`, `->` or another operator negates a following number.
+                case negNumber (c :: rest) of
+                    Just ( tok, after ) ->
+                        tokenizeHelp after (tok :: acc)
+
+                    Nothing ->
+                        tokenizeHelp rest (TOp "-" :: acc)
 
             else if c == '(' then
                 tokenizeHelp rest (TLParen :: acc)
