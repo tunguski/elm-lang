@@ -28,6 +28,7 @@ class EditorInterpreterTest {
     "/elm/editor/Lexer.elm",
     "/elm/editor/Parser.elm",
     "/elm/editor/Eval.elm",
+    "/elm/editor/Highlight.elm",
     "/elm/editor/Main.elm",
   };
 
@@ -260,6 +261,44 @@ class EditorInterpreterTest {
     assertTrue(html.contains("2 entities"), html);
     // The shader literal itself evaluates to its (flattened) source string.
     assertTrue(evalProject(project, "frag").contains("gl_FragColor"), "shader body preserved");
+  }
+
+  /** Calls `Highlight.segments : String -> List (String, String)`. */
+  @SuppressWarnings("unchecked")
+  private List<ElmTuple> segments(String src) {
+    Object r = Apply.apply(EDITOR.value("Highlight", "segments"), src);
+    return (List<ElmTuple>) (List<?>) ((ElmList) r).toJava();
+  }
+
+  @Test
+  void highlighterIsCharacterFaithfulAndClassifies() {
+    String src = "-- a comment\nadd : Int -> Int\nadd n = n + 42 -- tail\nname = \"Bob\"";
+    List<ElmTuple> segs = segments(src);
+    // Faithful: concatenating every segment's text reproduces the source exactly.
+    StringBuilder sb = new StringBuilder();
+    for (ElmTuple seg : segs) {
+      sb.append((String) seg.get(1));
+    }
+    assertEquals(src, sb.toString(), "highlighter must preserve every character");
+    // Classification: at least one of each expected class is produced.
+    assertTrue(hasClassWith(segs, "com", "-- a comment"), "line comment");
+    assertTrue(hasClassWith(segs, "type", "Int"), "upper-case type name");
+    assertTrue(hasClassWith(segs, "num", "42"), "number literal");
+    assertTrue(hasClassWith(segs, "str", "\"Bob\""), "string literal");
+    assertTrue(hasClassWith(segs, "op", "->"), "operator");
+  }
+
+  @Test
+  void highlighterTagsKeywords() {
+    List<ElmTuple> segs = segments("case x of\n  _ -> if a then b else c");
+    assertTrue(hasClassWith(segs, "kw", "case"), "case keyword");
+    assertTrue(hasClassWith(segs, "kw", "of"), "of keyword");
+    assertTrue(hasClassWith(segs, "kw", "if"), "if keyword");
+    assertTrue(hasClassWith(segs, "kw", "else"), "else keyword");
+  }
+
+  private static boolean hasClassWith(List<ElmTuple> segs, String cls, String text) {
+    return segs.stream().anyMatch(s -> cls.equals(s.get(0)) && text.equals(s.get(1)));
   }
 
   @Test

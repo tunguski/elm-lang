@@ -20,6 +20,7 @@ import Set exposing (Set)
 import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput)
+import Highlight
 import Http
 import Lang exposing (Value(..))
 import Time
@@ -445,28 +446,92 @@ view model =
                         , style "padding" "8px 14px"
                         ]
                         [ text model.selected ]
-                    , textarea
-                        [ onInput EditSource
-                        , value (lookup model.selected model.files |> Maybe.withDefault "")
-                        , style "width" "100%"
-                        , style "height" "300px"
-                        , style "font-family" "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-                        , style "font-size" "13px"
-                        , style "line-height" "1.5"
-                        , style "padding" "14px"
-                        , style "box-sizing" "border-box"
-                        , style "border" "none"
-                        , style "background" "#0f1720"
-                        , style "color" "#e6edf3"
-                        , style "outline" "none"
-                        , style "resize" "vertical"
-                        ]
-                        []
+                    , codeEditor (lookup model.selected model.files |> Maybe.withDefault "")
                     ]
                 , mainPane model
                 ]
             ]
         ]
+
+
+{-| The syntax-highlighted code editor: a transparent `<textarea>` (which owns the caret, selection
+and typing) layered over a `<pre>` of coloured `<span>`s. Both share the exact same font, padding and
+wrapping, so the highlighted text underneath stays aligned with what's typed (the react-simple-code-
+editor technique). The `<pre>` is in normal flow and sets the height; the textarea fills it. -}
+codeEditor : String -> Html Msg
+codeEditor source =
+    div [ style "position" "relative", style "background" "#0f1720" ]
+        [ pre
+            (style "margin" "0"
+                :: style "pointer-events" "none"
+                :: style "color" (segColor "")
+                :: codeStyles
+            )
+            (List.map renderSegment (Highlight.segments source) ++ [ text "\n" ])
+        , textarea
+            (onInput EditSource
+                :: value source
+                :: style "position" "absolute"
+                :: style "top" "0"
+                :: style "left" "0"
+                :: style "height" "100%"
+                :: style "color" "transparent"
+                :: style "background" "transparent"
+                :: style "caret-color" "#e6edf3"
+                :: style "border" "none"
+                :: style "outline" "none"
+                :: style "resize" "none"
+                :: style "overflow" "hidden"
+                :: codeStyles
+            )
+            []
+        ]
+
+
+{-| The font/size/padding/wrapping shared by the highlight `<pre>` and the editing `<textarea>` so
+they line up character for character. -}
+codeStyles : List (Html.Attribute Msg)
+codeStyles =
+    [ style "font-family" "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+    , style "font-size" "13px"
+    , style "line-height" "1.5"
+    , style "padding" "14px"
+    , style "box-sizing" "border-box"
+    , style "white-space" "pre-wrap"
+    , style "word-break" "break-word"
+    , style "width" "100%"
+    , style "min-height" "300px"
+    ]
+
+
+renderSegment : ( String, String ) -> Html Msg
+renderSegment ( cls, txt ) =
+    span [ style "color" (segColor cls) ] [ text txt ]
+
+
+{-| The colour for each highlighter class (a dark theme; `""` is the default foreground). -}
+segColor : String -> String
+segColor cls =
+    if cls == "kw" then
+        "#c792ea"
+
+    else if cls == "type" then
+        "#82aaff"
+
+    else if cls == "num" then
+        "#f78c6c"
+
+    else if cls == "str" then
+        "#c3e88d"
+
+    else if cls == "com" then
+        "#637084"
+
+    else if cls == "op" then
+        "#89ddff"
+
+    else
+        "#e6edf3"
 
 
 fileSidebar : Model -> Html Msg
