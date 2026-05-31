@@ -97,7 +97,7 @@ public final class WasmGc {
   /** A GC type definition: a cons cell {@code {head : E, tail : (ref null self)}} for {@code List
    * E}, a plain struct (a tuple/record's fields), or the {@code array i8} backing a {@code String}. */
   private sealed interface StructDef
-      permits ConsDef, PlainDef, StrArrayDef, AdtBaseDef, AdtVariantDef {}
+      permits ConsDef, PlainDef, StrArrayDef, AdtBaseDef, AdtVariantDef, FuncDef {}
 
   private record ConsDef(W head) implements StructDef {}
 
@@ -110,6 +110,11 @@ public final class WasmGc {
 
   /** A constructor's subtype of {@link AdtBaseDef}: {@code {tag : i32, args…}}. */
   private record AdtVariantDef(int baseIndex, List<W> argFields) implements StructDef {}
+
+  /** A function type {@code (params…) -> result}. Shares the type-index space with the structs (one
+   * rec group), so {@code wOf(Ty.Arrow)} can refer to one during the pre-pass — the basis for the
+   * closure-calling convention and {@code call_ref}. */
+  private record FuncDef(List<W> params, W result) implements StructDef {}
 
   private static final W INT = new Sca(I64);
   private static final W FLOAT = new Sca(F64);
@@ -181,6 +186,11 @@ public final class WasmGc {
         funcs.add(
             new Func(v.name(), params, paramTypes, wOf(resultType(t, params.size()), tuples), v.body()));
       }
+    }
+    // All structs are now registered; register each function's own signature functype after them, so
+    // functypes occupy the type indices above the structs (one shared rec group).
+    for (Func f : funcs) {
+      tuples.funcTypeIndex(f.paramTypes(), f.result());
     }
     return assemble(funcs, nodeTypes, tuples);
   }
@@ -511,6 +521,12 @@ public final class WasmGc {
         fields.add(wOf(rec.fields().get(name), this));
       }
       return register(names + keyOf(fields), new PlainDef(fields));
+    }
+
+    /** The type index of a function type {@code (params…) -> result}, registering it if new. Always
+     * called after the structs are registered, so functypes occupy the indices above them. */
+    int funcTypeIndex(List<W> params, W result) {
+      return register("FN" + keyOf(params) + ">" + keyOf(List.of(result)), new FuncDef(params, result));
     }
 
     private int register(String key, StructDef def) {
@@ -1383,33 +1399,21 @@ public final class WasmGc {
       funcResult.put(funcList.get(i).name(), funcList.get(i).result());
     }
 
-    // Struct types occupy indices 0..(structCount-1): list cons cells, tuples and records, in
-    // registration order. Function signature types come after them.
-    List<StructDef> structs = tuples.shapes();
-    int structCount = structs.size();
-    List<Func> sigOrder = new ArrayList<>();
-    Map<String, Integer> sigIndex = new LinkedHashMap<>();
-    for (Func f : funcList) {
-      String sig = sigKey(f);
-      if (!sigIndex.containsKey(sig)) {
-        sigIndex.put(sig, structCount + sigIndex.size());
-        sigOrder.add(f);
-      }
-    }
-
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     out.writeBytes(new byte[] {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00});
 
-    // Type section: one rec group with every struct (so self/mutually-referential cons cells and
-    // nested tuples/records resolve), then one functype per distinct signature.
+    // Type section: a single rec group holding every GC type definition — list cons cells, tuples,
+    // records, ADT base/variants, string arrays AND function types — so any can reference any other
+    // (self-referential cons cells; closure structs that hold a (ref $functype)). Indices follow
+    // registration order: all structs first (registered in the pre-pass), then functypes.
+    List<StructDef> shapes = tuples.shapes();
     ByteArrayOutputStream types = new ByteArrayOutputStream();
-    int recGroups = structCount > 0 ? 1 : 0;
-    leb(types, recGroups + sigOrder.size());
-    if (structCount > 0) {
+    leb(types, shapes.isEmpty() ? 0 : 1);
+    if (!shapes.isEmpty()) {
       types.write(0x4E);
-      leb(types, structCount);
-      for (int i = 0; i < structCount; i++) {
-        StructDef def = structs.get(i);
+      leb(types, shapes.size());
+      for (int i = 0; i < shapes.size(); i++) {
+        StructDef def = shapes.get(i);
         if (def instanceof ConsDef cd) {
           types.write(0x5F); // struct
           leb(types, 2);
@@ -1450,25 +1454,24 @@ public final class WasmGc {
             writeType(types, w);
             types.write(0x00);
           }
+        } else if (def instanceof FuncDef fd) {
+          types.write(0x60); // functype
+          leb(types, fd.params().size());
+          for (W w : fd.params()) {
+            writeType(types, w);
+          }
+          leb(types, 1);
+          writeType(types, fd.result());
         }
       }
     }
-    for (Func f : sigOrder) {
-      types.write(0x60);
-      leb(types, f.paramTypes().size());
-      for (W w : f.paramTypes()) {
-        writeType(types, w);
-      }
-      leb(types, 1);
-      writeType(types, f.result());
-    }
     section(out, 1, types);
 
-    // Function section.
+    // Function section: each function's type is its signature functype in the shared rec group.
     ByteArrayOutputStream funcs = new ByteArrayOutputStream();
     leb(funcs, funcList.size());
     for (Func f : funcList) {
-      leb(funcs, sigIndex.get(sigKey(f)));
+      leb(funcs, tuples.funcTypeIndex(f.paramTypes(), f.result()));
     }
     section(out, 3, funcs);
 
@@ -1496,14 +1499,6 @@ public final class WasmGc {
     }
     section(out, 10, code);
     return out.toByteArray();
-  }
-
-  private static String sigKey(Func f) {
-    StringBuilder b = new StringBuilder();
-    for (W w : f.paramTypes()) {
-      b.append(w).append(',');
-    }
-    return b.append("->").append(f.result()).toString();
   }
 
   private static void section(ByteArrayOutputStream out, int id, ByteArrayOutputStream content) {
