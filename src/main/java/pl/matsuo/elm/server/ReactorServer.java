@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import pl.matsuo.elm.codegen.js.JsCompiler;
+import pl.matsuo.elm.error.ElmTypeError;
+import pl.matsuo.elm.types.TypeChecker;
 
 /**
  * A from-scratch {@code elm reactor}: a development server that compiles a project's {@code .elm}
@@ -93,6 +95,16 @@ public final class ReactorServer {
       if (!sources.contains(readOrEmpty(target))) {
         sources.add(readOrEmpty(target)); // ensure the requested module is present
       }
+      // Type-check first, so type errors surface as a located excerpt+caret (the JS backend itself
+      // doesn't type-check). A checker limitation (any non-type-error) is ignored — fall through to
+      // compilation, as `run`/`make` do.
+      try {
+        TypeChecker.checkProject(sources.toArray(new String[0]));
+      } catch (ElmTypeError te) {
+        return errorPage(relPath, te.getMessage(), generation);
+      } catch (RuntimeException ignored) {
+        // not a type error we can locate; let compilation report parse/codegen problems
+      }
       String page = JsCompiler.htmlPageProject(null, sources.toArray(new String[0]));
       return inject(page, generation);
     } catch (RuntimeException e) {
@@ -120,10 +132,19 @@ public final class ReactorServer {
   }
 
   static String errorPage(String relPath, String message, long generation) {
-    return "<!doctype html><meta charset=utf-8><body style=\"font-family:monospace;padding:20px\">"
-        + "<h2 style=\"color:#a00\">Could not compile " + relPath + "</h2><pre style=\"white-space:pre-wrap\">"
-        + escape(message) + "</pre>"
-        + RELOAD_SCRIPT.replace("%GEN%", Long.toString(generation)) + "</body>";
+    return "<!doctype html><meta charset=utf-8>"
+        + "<body style=\"margin:0;background:#1e1e1e;color:#e0e0e0;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace\">"
+        + "<div style=\"max-width:920px;margin:0 auto;padding:28px\">"
+        + "<div style=\"color:#ff6b6b;font-size:18px;font-weight:700;margin-bottom:14px\">✗ Could not compile "
+        + escape(relPath)
+        + "</div>"
+        + "<pre style=\"white-space:pre-wrap;background:#141414;border:1px solid #383838;border-left:4px solid #ff6b6b;border-radius:8px;padding:16px;overflow:auto;margin:0\">"
+        + escape(message)
+        + "</pre>"
+        + "<p style=\"color:#888;margin-top:14px\">Fix the error and save — this page reloads automatically.</p>"
+        + "</div>"
+        + RELOAD_SCRIPT.replace("%GEN%", Long.toString(generation))
+        + "</body>";
   }
 
   /** Polls {@code /_reload}; when the generation differs from the page's, reloads. */

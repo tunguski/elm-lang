@@ -80,4 +80,19 @@ class ReactorServerTest {
     String page = get("/Bad.elm");
     assertTrue(page.contains("Could not compile Bad.elm"), page);
   }
+
+  @Test
+  void showsALocatedTypeErrorWithExcerptAndCaret(@TempDir Path dir) throws Exception {
+    // A type error (which the JS backend itself wouldn't catch) is surfaced with the located
+    // excerpt and caret from the type checker.
+    Files.writeString(
+        dir.resolve("Mismatch.elm"),
+        "module Mismatch exposing (main)\nmain = \"x\" + 1\n",
+        StandardCharsets.UTF_8);
+    server = ReactorServer.start(dir, 0);
+    String page = get("/Mismatch.elm");
+    assertTrue(page.contains("Could not compile Mismatch.elm"), page);
+    assertTrue(page.contains("2 | main = \"x\" + 1"), page); // source excerpt
+    assertTrue(page.contains("^"), page); // caret under the offending expression
+  }
 }
