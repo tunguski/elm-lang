@@ -104,18 +104,57 @@ public final class Bundler {
     return outJar;
   }
 
-  /** Runs {@code native-image -jar <jar> <outBinary>}; returns its exit code. */
-  public static int compileNative(Path nativeImage, Path jar, Path outBinary)
+  /** Builds a tiny jar holding only the embedded app resources, for use on a native-image classpath
+   * alongside the real (modular) dependency jars — a flattened uber jar can't be native-imaged
+   * because Truffle's polyglot module must stay on the module path with its descriptor intact. */
+  public static Path buildEmbedJar(String source, String mode, int port, Path outJar)
+      throws IOException {
+    Files.createDirectories(outJar.toAbsolutePath().getParent());
+    Set<String> seen = new HashSet<>();
+    try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(outJar))) {
+      writeEntry(jos, seen, "META-INF/elm/app.elm", source.getBytes(StandardCharsets.UTF_8));
+      writeEntry(jos, seen, "META-INF/elm/mode", mode.getBytes(StandardCharsets.UTF_8));
+      writeEntry(
+          jos, seen, "META-INF/elm/port", Integer.toString(port).getBytes(StandardCharsets.UTF_8));
+    }
+    return outJar;
+  }
+
+  /** True when the classpath is a single jar (e.g. the shaded `elm.jar`) — native-image needs the
+   * individual modular dependency jars, so a single uber jar can't be compiled natively. */
+  public static boolean classpathIsSingleJar(List<String> classpath) {
+    return classpath.size() == 1 && classpath.get(0).endsWith(".jar");
+  }
+
+  /**
+   * Compiles a native binary by running {@code native-image} against the live classpath (the real,
+   * still-modular dependency jars) plus the small {@code embedJar}, with {@link #LAUNCHER} as the
+   * entry point. Returns the process exit code.
+   */
+  public static int compileNative(
+      Path nativeImage, List<String> classpath, Path embedJar, Path outBinary)
       throws IOException, InterruptedException {
+    String cp =
+        embedJar.toAbsolutePath()
+            + File.pathSeparator
+            + String.join(File.pathSeparator, classpath);
     List<String> cmd =
         List.of(
             nativeImage.toString(),
             "--no-fallback",
-            "-jar",
-            jar.toAbsolutePath().toString(),
+            "-O2",
+            "-H:+ReportExceptionStackTraces",
+            "-cp",
+            cp,
+            LAUNCHER,
             outBinary.toAbsolutePath().toString());
     Process p = new ProcessBuilder(cmd).inheritIO().start();
     return p.waitFor();
+  }
+
+  /** The current process's classpath entries. */
+  public static List<String> currentClasspath() {
+    return new ArrayList<>(List.of(System.getProperty("java.class.path").split(File.pathSeparator)));
   }
 
   /** True if any jar on the classpath declares {@code Multi-Release: true} in its manifest. */

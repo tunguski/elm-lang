@@ -72,6 +72,28 @@ class BundlerTest {
     assertFalse(Bundler.runningAsNativeImage());
   }
 
+  @Test
+  void embedJarHoldsOnlyTheAppResources(@TempDir Path dir) throws Exception {
+    // The native-image classpath uses a tiny embed jar (not a fat jar) so the real modular
+    // dependency jars stay intact on the path.
+    Path embed = dir.resolve("embed.jar");
+    Bundler.buildEmbedJar(SCRIPT, "script", 7000, embed);
+    try (JarFile jf = new JarFile(embed.toFile())) {
+      assertEquals("script", read(jf, "META-INF/elm/mode"));
+      assertEquals("7000", read(jf, "META-INF/elm/port"));
+      assertTrue(read(jf, "META-INF/elm/app.elm").contains("bundled!"));
+      assertEquals(null, jf.getEntry("pl/matsuo/elm/bundle/Standalone.class"), "no classes in embed jar");
+    }
+  }
+
+  @Test
+  void detectsAShadedSingleJarClasspath() {
+    // Native compilation is refused from a single uber jar (Truffle's polyglot module must stay
+    // modular), but allowed from a multi-entry build classpath.
+    assertTrue(Bundler.classpathIsSingleJar(List.of("target/elm.jar")));
+    assertFalse(Bundler.classpathIsSingleJar(List.of("target/classes", "lib/dep.jar")));
+  }
+
   private static String read(JarFile jf, String entry) throws Exception {
     try (var in = jf.getInputStream(jf.getEntry(entry))) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);

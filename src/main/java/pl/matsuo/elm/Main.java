@@ -506,10 +506,23 @@ public final class Main implements Runnable {
             "GraalVM native-image was not found (set GRAALVM_HOME or put it on PATH); the JAR is ready.");
         return 1;
       }
+      var classpath = pl.matsuo.elm.bundle.Bundler.currentClasspath();
+      if (pl.matsuo.elm.bundle.Bundler.classpathIsSingleJar(classpath)) {
+        System.err.println(
+            "Native compilation needs the individual (modular) dependency jars, but this `elm` is "
+                + "running from a single shaded jar. Run `elm bundle --native` from the build "
+                + "classpath (e.g. via Maven), or use the executable JAR above. The reliable native "
+                + "path for the elm tool itself is `./mvnw -Pnative package`.");
+        return 1;
+      }
       boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
       Path binary = Path.of(base + (windows ? ".exe" : ""));
-      System.out.println("Compiling " + binary + " with native-image (this can take a minute)…");
-      int code = pl.matsuo.elm.bundle.Bundler.compileNative(nativeImage.get(), jar, binary);
+      Path embedJar = Path.of(base + "-embed.jar");
+      pl.matsuo.elm.bundle.Bundler.buildEmbedJar(source, kind, port, embedJar);
+      System.out.println("Compiling " + binary + " with native-image (this can take a few minutes)…");
+      int code =
+          pl.matsuo.elm.bundle.Bundler.compileNative(nativeImage.get(), classpath, embedJar, binary);
+      Files.deleteIfExists(embedJar);
       if (code == 0) {
         System.out.println("Wrote native binary " + binary);
       } else {
