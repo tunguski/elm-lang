@@ -23,8 +23,17 @@ public final class Project {
   private final Map<String, Module> modules = new LinkedHashMap<>();
   private final Map<String, RuntimeEnv> envs = new HashMap<>();
   private final Map<String, Object> globals;
+  /** Module names whose top-level functions are coverage-tracked, or null for no tracking. */
+  private final java.util.Set<String> tracked;
+  private final java.util.Set<String> coverable = new java.util.LinkedHashSet<>();
+  private final java.util.Set<String> covered = new java.util.HashSet<>();
 
   private Project(List<String> sources) {
+    this(sources, null);
+  }
+
+  private Project(List<String> sources, java.util.Set<String> tracked) {
+    this.tracked = tracked;
     for (String source : sources) {
       Module module = Parser.parseModule(source);
       modules.put(module.name(), module);
@@ -59,6 +68,48 @@ public final class Project {
 
   public static Project load(String... sources) {
     return new Project(List.of(sources));
+  }
+
+  /** Loads with coverage tracking of the top-level functions in {@code trackedModules}. */
+  public static Project loadWithCoverage(List<String> sources, java.util.Set<String> trackedModules) {
+    return new Project(sources, trackedModules);
+  }
+
+  /** A one-line-per-function coverage report ("✓"/"✗") over the tracked modules, with a summary. */
+  public String coverageReport() {
+    StringBuilder sb = new StringBuilder();
+    for (String name : coverable) {
+      sb.append(covered.contains(name) ? "✓ " : "✗ ").append(name).append("\n");
+    }
+    int total = coverable.size();
+    int hit = covered.size();
+    int pct = total == 0 ? 100 : 100 * hit / total;
+    sb.append(hit).append("/").append(total).append(" functions exercised (").append(pct).append("%)\n");
+    return sb.toString();
+  }
+
+  /** Wraps a top-level function so its invocation records the (unqualified) name as covered. */
+  private Object recordingValue(String name, Object value) {
+    if (!(value instanceof pl.matsuo.elm.runtime.ElmCallable c)) {
+      return value;
+    }
+    return new pl.matsuo.elm.runtime.ElmCallable() {
+      @Override
+      public int arity() {
+        return c.arity();
+      }
+
+      @Override
+      public String name() {
+        return c.name();
+      }
+
+      @Override
+      public Object invoke(Object[] args) {
+        covered.add(name);
+        return c.invoke(args);
+      }
+    };
   }
 
   private RuntimeEnv buildEnv(
@@ -101,6 +152,10 @@ public final class Project {
           value = new Thunk(() -> node.execute(root));
         } else {
           value = compiler.compileLambda(v.params(), v.body(), v.name()).execute(root);
+        }
+        if (tracked != null && tracked.contains(m.name()) && !v.params().isEmpty()) {
+          coverable.add(v.name());
+          value = recordingValue(v.name(), value);
         }
         env.defineTopLevel(v.name(), value);
         globals.put(m.name() + "." + v.name(), value);

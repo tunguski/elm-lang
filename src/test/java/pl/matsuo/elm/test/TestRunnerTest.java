@@ -108,6 +108,25 @@ class TestRunnerTest {
   }
 
   @Test
+  void coverageReportsExercisedAndUnexercisedFunctions() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (test)
+        used n = n + 1
+        unused n = n - 1
+        suite = test "uses used" (\\_ -> Expect.equal 2 (used 1))
+        """;
+    TestRunner.Result r =
+        TestRunner.run(List.of(src), new TestRunner.Options(100, 0x5eedL, null, true));
+    assertEquals(0, r.failed(), r.report());
+    assertTrue(r.report().contains("Coverage"), r.report());
+    assertTrue(r.report().contains("✓ used"), r.report()); // exercised by the test
+    assertTrue(r.report().contains("✗ unused"), r.report()); // never called
+  }
+
+  @Test
   void noTestsIsACleanPass() {
     TestRunner.Result r = TestRunner.run(List.of("module M exposing (..)\nanswer = 42\n"));
     assertEquals(0, r.passed());

@@ -31,9 +31,14 @@ public final class TestRunner {
   }
 
   /** Run options: how many random inputs each {@code fuzz} test gets, the seed that makes those
-   * inputs reproducible, and an optional case-insensitive substring filter on a test's full path. */
-  public record Options(int fuzzRuns, long seed, String filter) {
-    public static final Options DEFAULTS = new Options(100, 0x5eedL, null);
+   * inputs reproducible, an optional case-insensitive substring filter on a test's full path, and
+   * whether to report which top-level functions of the test files the suite exercised. */
+  public record Options(int fuzzRuns, long seed, String filter, boolean coverage) {
+    public static final Options DEFAULTS = new Options(100, 0x5eedL, null, false);
+
+    public Options(int fuzzRuns, long seed, String filter) {
+      this(fuzzRuns, seed, filter, false);
+    }
   }
 
   private static final String TEST_LIB = Resources.read("/elm/lib/Test.elm");
@@ -51,7 +56,17 @@ public final class TestRunner {
     all.add(TEST_LIB);
     all.add(EXPECT_LIB);
     all.add(FUZZ_LIB);
-    Project project = Project.load(all.toArray(new String[0]));
+    Project project;
+    if (opts.coverage()) {
+      // Track only the user test files' modules (not the bundled Test/Expect/Fuzz libraries).
+      java.util.Set<String> userModules = new java.util.HashSet<>();
+      for (String src : userSources) {
+        userModules.add(Parser.parseModule(src).name());
+      }
+      project = Project.loadWithCoverage(all, userModules);
+    } else {
+      project = Project.load(all.toArray(new String[0]));
+    }
 
     StringBuilder report = new StringBuilder();
     int[] counts = {0, 0, 0}; // passed, failed, skipped
@@ -85,6 +100,9 @@ public final class TestRunner {
       report.append(", ").append(counts[2]).append(" skipped");
     }
     report.append(" (in ").append(ms).append(" ms)\n");
+    if (opts.coverage()) {
+      report.append("\nCoverage (test-file functions):\n").append(project.coverageReport());
+    }
     return new Result(counts[0], counts[1], counts[2], report.toString());
   }
 
