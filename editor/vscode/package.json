@@ -1,0 +1,53 @@
+{
+  "name": "elm-lang-tunguski",
+  "displayName": "Elm (tunguski/elm-lang)",
+  "description": "Editor support for the from-scratch tunguski/elm-lang toolchain: diagnostics, hover types, go-to-definition, completion, references, rename, outline, inlay hints, signature help and semantic highlighting — all served by `elm lsp`.",
+  "version": "0.1.0",
+  "publisher": "tunguski",
+  "repository": { "type": "git", "url": "https://github.com/tunguski/elm-lang" },
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages", "Linters"],
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:elm"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "elm",
+        "aliases": ["Elm", "elm"],
+        "extensions": [".elm"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "elm",
+        "scopeName": "source.elm",
+        "path": "./syntaxes/elm.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Elm (tunguski/elm-lang)",
+      "properties": {
+        "elmLang.serverJar": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the built `elm.jar` (the shaded CLI, produced by `mvn package`). If empty, the extension looks for `target/elm.jar` under the workspace root."
+        },
+        "elmLang.javaPath": {
+          "type": "string",
+          "default": "java",
+          "description": "Path to the `java` executable used to launch the language server."
+        },
+        "elmLang.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace the JSON-RPC traffic between VS Code and the Elm language server."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

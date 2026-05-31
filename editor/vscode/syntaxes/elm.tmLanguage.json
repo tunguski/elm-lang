@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Elm",
+  "scopeName": "source.elm",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#chars" },
+    { "include": "#keywords" },
+    { "include": "#numbers" },
+    { "include": "#types" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-dash.elm", "match": "--.*$" },
+        { "name": "comment.block.elm", "begin": "\\{-", "end": "-\\}" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.elm",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
+        },
+        {
+          "name": "string.quoted.double.elm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "name": "constant.character.escape.elm", "match": "\\\\." }]
+        }
+      ]
+    },
+    "chars": {
+      "name": "string.quoted.single.elm",
+      "match": "'(\\\\.|[^'])'"
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.elm",
+          "match": "\\b(if|then|else|case|of|let|in)\\b"
+        },
+        {
+          "name": "keyword.other.elm",
+          "match": "\\b(module|import|exposing|as|port|type|alias|where|effect)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.elm",
+      "match": "\\b(0[xX][0-9a-fA-F]+|[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?)\\b"
+    },
+    "types": {
+      "name": "entity.name.type.elm",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "operators": {
+      "name": "keyword.operator.elm",
+      "match": "(\\|>|<\\||>>|<<|\\+\\+|::|->|==|/=|<=|>=|&&|\\|\\||[-+*/<>=|.])"
+    }
+  }
+}

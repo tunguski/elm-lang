@@ -99,7 +99,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `bump <old.elm> <new.elm> [version]` | Propose the next version from the API change since a baseline. |
 | `coverage <file.elm> [--value NAME]` | Run a definition and report which top-level definitions executed. |
 | `repl` | Interactive REPL: expressions, persistent `x = …` definitions, `:type`, multi-line input. |
-| `lsp` | Language server over stdio: diagnostics, hover, completion (with inferred-type detail), **inlay type hints**, **signature help**, document symbols, code actions, semantic-token highlighting, and **workspace-wide** go-to-definition, find-references and rename across modules. |
+| `lsp` | Language server over stdio: diagnostics, hover, completion (with inferred-type detail), **inlay type hints**, **signature help**, document symbols, code actions, semantic-token highlighting, and **workspace-wide** go-to-definition, find-references and rename across modules. A ready-to-run **[VS Code client](editor/vscode/)** wraps it. |
 | `script <file.elm> [args…]` | Run an Elm file as a POSIX-style CLI script (the bundled `Posix` module). |
 | `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
 | `reactor [dir] [--port N]` | Dev server: compiles each `.elm` module to a live page on the fly and hot-reloads the browser when a source file changes. |
