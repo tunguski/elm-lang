@@ -81,6 +81,17 @@ public final class LspServer {
     return out;
   }
 
+  /** The elm-format-style reformatting of the source, or empty if it is unparseable or already
+   * formatted (so the client makes no edit). */
+  public Optional<String> formatDocument(String source) {
+    try {
+      String formatted = pl.matsuo.elm.fmt.Formatter.format(source);
+      return formatted.equals(source) ? Optional.empty() : Optional.of(formatted);
+    } catch (RuntimeException e) {
+      return Optional.empty();
+    }
+  }
+
   /** The inferred type of the top-level definition on the given 0-based line, if any. */
   public Optional<String> hoverType(String source, int line0) {
     Map<String, String> types;
@@ -858,6 +869,27 @@ public final class LspServer {
         workspaceEdit.put("changes", changes);
         reply(out, id, workspaceEdit);
       }
+      case "textDocument/formatting" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String uri = (String) td.get("uri");
+        String source = docs.getOrDefault(uri, "");
+        List<Object> edits = new ArrayList<>();
+        formatDocument(source)
+            .ifPresent(
+                formatted -> {
+                  // One edit replacing the whole document (start of file → end of the last line).
+                  String[] lines = source.split("\n", -1);
+                  int lastLine = lines.length - 1;
+                  Map<String, Object> r = new LinkedHashMap<>();
+                  r.put("start", point(0, 0));
+                  r.put("end", point(lastLine, lines[lastLine].length()));
+                  Map<String, Object> edit = new LinkedHashMap<>();
+                  edit.put("range", r);
+                  edit.put("newText", formatted);
+                  edits.add(edit);
+                });
+        reply(out, id, edits);
+      }
       case "textDocument/codeAction" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         Map<String, Object> range = (Map<String, Object>) params.get("range");
@@ -948,6 +980,7 @@ public final class LspServer {
     caps.put("documentSymbolProvider", true);
     caps.put("renameProvider", true);
     caps.put("codeActionProvider", true);
+    caps.put("documentFormattingProvider", true);
     caps.put("inlayHintProvider", true);
     Map<String, Object> sig = new LinkedHashMap<>();
     sig.put("triggerCharacters", List.of(" ", "("));
@@ -1051,6 +1084,13 @@ public final class LspServer {
     params.put("uri", uri);
     params.put("diagnostics", diags);
     notify(out, "textDocument/publishDiagnostics", params);
+  }
+
+  private static Map<String, Object> point(int line, int character) {
+    Map<String, Object> p = new LinkedHashMap<>();
+    p.put("line", (long) line);
+    p.put("character", (long) character);
+    return p;
   }
 
   private static Map<String, Object> range(int line, int startChar, int endChar) {

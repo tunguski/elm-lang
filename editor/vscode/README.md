@@ -12,6 +12,7 @@ implements:
 - **Completion** — module-local names plus the bundled standard library.
 - **Document symbols** (outline), **inlay hints** (inferred signatures), **signature help**, and
   **semantic tokens** for highlighting (with a TextMate grammar as a fallback).
+- **Formatting** — elm-format-style; **format-on-save** is enabled by default for `.elm` files.
 
 ## Prerequisites
 

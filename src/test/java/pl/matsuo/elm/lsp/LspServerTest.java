@@ -167,6 +167,20 @@ class LspServerTest {
     assertTrue(response.contains("documentSymbolProvider"), response);
     assertTrue(response.contains("renameProvider"), response);
     assertTrue(response.contains("semanticTokensProvider"), response);
+    assertTrue(response.contains("documentFormattingProvider"), response);
+  }
+
+  @Test
+  void formattingReturnsTheReformattedDocument() {
+    Optional<String> formatted = server.formatDocument("main =     1+2\n");
+    assertTrue(formatted.isPresent(), "messy source should reformat");
+    assertTrue(formatted.get().contains("1 + 2"), formatted.get());
+  }
+
+  @Test
+  void formattingAlreadyFormattedSourceMakesNoEdit() {
+    String clean = pl.matsuo.elm.fmt.Formatter.format("main = 1 + 2\n");
+    assertTrue(server.formatDocument(clean).isEmpty(), "idempotent: no edit for clean source");
   }
 
   // --- workspace-wide navigation -----------------------------------------

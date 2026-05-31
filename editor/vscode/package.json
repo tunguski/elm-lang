@@ -25,6 +25,11 @@
         "path": "./syntaxes/elm.tmLanguage.json"
       }
     ],
+    "configurationDefaults": {
+      "[elm]": {
+        "editor.formatOnSave": true
+      }
+    },
     "configuration": {
       "title": "Elm (tunguski/elm-lang)",
       "properties": {
