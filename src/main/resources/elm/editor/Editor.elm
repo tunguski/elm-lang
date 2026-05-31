@@ -34,6 +34,8 @@ type alias Model =
     , gameMem : Maybe Value
     , gameKeys : Set String
     , gameTime : Float
+    , history : List Value -- successive app models (time-travel debugger)
+    , historyAt : Int -- the index currently shown (last = live)
     }
 
 
@@ -44,6 +46,7 @@ type Msg
     | AddFile
     | RemoveFile String
     | Interp Value
+    | Rewind Int
     | Tick Int
     | KeyDown String
     | KeyUp String
@@ -113,6 +116,8 @@ initModel =
         , gameMem = Nothing
         , gameKeys = Set.empty
         , gameTime = 0
+        , history = []
+        , historyAt = 0
         }
 
 
@@ -131,17 +136,48 @@ selectedFile model =
 is a Browser.sandbox-style program; otherwise the app slot is unused. -}
 refreshApp : Model -> Model
 refreshApp model =
-    { model
-        | app =
+    let
+        app =
             if hasApp (selectedFile model) then
                 appInit (selectedFile model)
 
             else
                 Err ""
+    in
+    { model
+        | app = app
         , gameMem = gameInitMem (selectedFile model)
         , gameKeys = Set.empty
         , gameTime = 0
+        , history = app |> Result.map (\m -> [ m ]) |> Result.withDefault []
+        , historyAt = 0
     }
+
+
+{-| Records the app's next model in the time-travel history (capped) and jumps the cursor to it. -}
+recordModel : Model -> Value -> Model
+recordModel model m =
+    let
+        hist =
+            List.take 200 (model.history ++ [ m ])
+    in
+    { model | app = Ok m, history = hist, historyAt = List.length hist - 1 }
+
+
+{-| The app model currently shown — the one the history cursor points at (live = the last). -}
+shownModel : Model -> Result String Value
+shownModel model =
+    case nth model.historyAt model.history of
+        Just m ->
+            Ok m
+
+        Nothing ->
+            model.app
+
+
+nth : Int -> List a -> Maybe a
+nth i xs =
+    List.head (List.drop i xs)
 
 
 {-| Runs one interpreted message through `update`, then handles the command it produces:
@@ -150,11 +186,16 @@ refreshApp model =
 bounds the command-chasing in case an app loops. -}
 stepApp : Int -> Model -> Value -> ( Model, Cmd Msg )
 stepApp fuel model interpMsg =
-    case model.app of
+    case shownModel model of
         Ok m ->
+            -- Continue from whatever state is shown; if rewound, drop the (now-superseded) future.
+            let
+                truncated =
+                    { model | history = List.take (model.historyAt + 1) model.history }
+            in
             case appUpdateCmd (selectedFile model) interpMsg m of
                 Ok ( m2, cmd ) ->
-                    runCmd fuel { model | app = Ok m2 } cmd
+                    runCmd fuel (recordModel truncated m2) cmd
 
                 Err e ->
                     ( { model | app = Err e }, Cmd.none )
@@ -248,6 +289,9 @@ update msg model =
 
         Interp interpMsg ->
             stepApp 100 model interpMsg
+
+        Rewind i ->
+            ( { model | historyAt = clamp 0 (List.length model.history - 1) i }, Cmd.none )
 
         Tick t ->
             -- A Time.every tick: feed the subscription's message (toMsg (millisToPosix t)) to update.
@@ -546,17 +590,65 @@ gamePane model mem =
 
 liveApp : Model -> Html Msg
 liveApp model =
-    case model.app of
+    case shownModel model of
         Err e ->
             errorBox e
 
         Ok appModel ->
             case appView (selectedFile model) appModel of
                 Ok html ->
-                    renderHtml (selectedFile model) html
+                    div [] [ debugBar model, renderHtml (selectedFile model) html ]
 
                 Err e ->
                     errorBox e
+
+
+{-| The time-travel debugger: a scrubber over the recorded app models. Shown once a TEA app has
+taken at least one step; dragging it re-renders an earlier state, and dispatching a message from
+there continues history from that point. -}
+debugBar : Model -> Html Msg
+debugBar model =
+    let
+        last =
+            List.length model.history - 1
+    in
+    if last < 1 then
+        text ""
+
+    else
+        div
+            [ style "display" "flex"
+            , style "align-items" "center"
+            , style "gap" "8px"
+            , style "margin-bottom" "10px"
+            , style "padding" "6px 10px"
+            , style "background" "#1f2933"
+            , style "border-radius" "6px"
+            , style "color" "#cbd2d9"
+            , style "font" "12px system-ui, sans-serif"
+            ]
+            [ span [ style "font-weight" "700" ] [ text "⏱ time travel" ]
+            , Html.node "input"
+                [ Html.Attributes.attribute "type" "range"
+                , Html.Attributes.attribute "min" "0"
+                , Html.Attributes.attribute "max" (String.fromInt last)
+                , value (String.fromInt model.historyAt)
+                , onInput (\s -> Rewind (Maybe.withDefault last (String.toInt s)))
+                , style "flex" "1"
+                ]
+                []
+            , span [] [ text ("msg " ++ String.fromInt model.historyAt ++ " / " ++ String.fromInt last) ]
+            , button
+                [ onClick (Rewind last)
+                , style "border" "none"
+                , style "border-radius" "4px"
+                , style "background" (if model.historyAt == last then "#3a7bd5" else "#52606d")
+                , style "color" "#fff"
+                , style "cursor" "pointer"
+                , style "padding" "2px 8px"
+                ]
+                [ text "live" ]
+            ]
 
 
 staticMain : List ( String, String ) -> Html Msg

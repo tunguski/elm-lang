@@ -207,6 +207,24 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void editorTimeTravelDebuggerRecordsAndRewinds() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    // Dispatch two Increment messages into the interpreted Buttons app, then rewind to the start.
+    String inc = "$data('Interp',[$data('VCtor',['Increment',$nil])])";
+    String driver =
+        "window.$app.dispatch(" + inc + ");window.$app.dispatch(" + inc + ");"
+            + "window.$app.dispatch($data('Rewind',[0]));";
+    String dom = renderPage(JsCompiler.htmlPageProject(driver, modules));
+    assertTrue(dom.contains("time travel"), "the time-travel scrubber appears after steps");
+    assertTrue(dom.contains("msg 0 /"), "cursor rewound to message 0");
+    assertTrue(dom.contains("<div>0</div>"), "rewinding re-renders the initial model");
+  }
+
+  @Test
   void editorLoadsExamplesOverHttp() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Serve the editor page + example files over real HTTP and confirm the editor fetches them at
