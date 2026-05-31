@@ -41,11 +41,16 @@ import pl.matsuo.elm.types.Types;
  * (record fields laid out in sorted-name order), and a {@code String} an {@code array i8}.
  * <b>Argument-carrying custom types</b> (including recursive ones like {@code Tree}) compile to a
  * shared base {@code sub (struct {tag : i32})} with a subtype per constructor; a {@code case} reads
- * the tag and {@code ref.cast}s to the matching subtype to bind its arguments. <b>Row-polymorphic</b>
- * (open) record parameters have no fixed struct layout, and <b>polymorphic</b> custom types (a
- * constructor argument that is a type variable, e.g. {@code Maybe a}) and closures remain on the
- * linear-memory backend — extending this one to them, and finishing the {@code String} API
- * (code-point-aware length, more ops), is future work.
+ * the tag and {@code ref.cast}s to the matching subtype to bind its arguments. <b>Polymorphic</b>
+ * custom types (a constructor argument that is a type variable, e.g. {@code Box a = Wrap a | Empty})
+ * are <b>monomorphised</b>: each constructor's field wasm types are read from how it is applied in
+ * the module ({@code Wrap 5} fixes the field to an {@code i64}, {@code Wrap "x"} to a string ref,
+ * {@code Wrap [1]} to a cons-list ref), so a union used at a single instantiation compiles; a union
+ * used at two representations in one module has no single layout and is reported unsupported.
+ * <b>Row-polymorphic</b> (open) record parameters have no fixed struct layout, and closures (and the
+ * built-in {@code Maybe}/{@code Result}, which aren't predeclared here) remain on the linear-memory
+ * backend — extending this one to them, and finishing the {@code String} API (code-point-aware
+ * length, more ops), is future work.
  */
 public final class WasmGc {
 
@@ -105,14 +110,24 @@ public final class WasmGc {
         }
       }
     }
-    // Now register each boxed constructor's subtype (its argument wasm types).
+    // Concrete field layouts for (possibly polymorphic) boxed constructors, read from how they are
+    // *applied* in this program: at `Just 5` the argument's inferred type (Int) fixes Just's field to
+    // an i64; at `Just "x"` it fixes it to a string ref. This monomorphises polymorphic unions
+    // (`Maybe a` / `Result e a` / user unions) to their single concrete instantiation in the module.
+    Map<String, List<W>> inferredCtorFields =
+        inferredConstructorFields(module, nodeTypes, tuples);
+    // Now register each boxed constructor's subtype (its argument wasm types): the inferred concrete
+    // layout when the constructor is applied somewhere, else its declared (concrete) surface types.
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Union u && tuples.isBoxed(u.name())) {
         List<Decl.Union.Variant> vs = u.variants();
         for (int i = 0; i < vs.size(); i++) {
-          List<W> argFields = new ArrayList<>();
-          for (pl.matsuo.elm.ast.Type arg : vs.get(i).args()) {
-            argFields.add(wOfSurface(arg, tuples));
+          List<W> argFields = inferredCtorFields.get(vs.get(i).name());
+          if (argFields == null) {
+            argFields = new ArrayList<>();
+            for (pl.matsuo.elm.ast.Type arg : vs.get(i).args()) {
+              argFields.add(wOfSurface(arg, tuples));
+            }
           }
           tuples.registerVariant(vs.get(i).name(), i, argFields);
         }
@@ -236,6 +251,64 @@ public final class WasmGc {
       };
     }
     throw unsupported("a polymorphic or compound constructor argument");
+  }
+
+  /**
+   * The concrete wasm field layout of each boxed constructor as it is <em>applied</em> in the module:
+   * for every full constructor application {@code Ctor a b …}, the arguments' inferred types fix the
+   * fields' wasm types. This is what lets a polymorphic union (e.g. {@code Maybe a}) compile — it is
+   * monomorphised to the one instantiation the program uses. A constructor applied at two different
+   * representations in the same module has no single layout, so that is reported as unsupported.
+   */
+  private static Map<String, List<W>> inferredConstructorFields(
+      Module module, Map<Expr, Ty> nodeTypes, Tuples tuples) {
+    Map<String, Integer> arity = new HashMap<>();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Union u && tuples.isBoxed(u.name())) {
+        for (Decl.Union.Variant va : u.variants()) {
+          arity.put(va.name(), va.args().size());
+        }
+      }
+    }
+    Map<String, List<W>> out = new HashMap<>();
+    for (Expr e : nodeTypes.keySet()) {
+      if (!(e instanceof Expr.App)) {
+        continue;
+      }
+      List<Expr> args = new ArrayList<>();
+      Expr head = e;
+      while (head instanceof Expr.App a) {
+        args.add(0, a.arg());
+        head = a.fn();
+      }
+      if (!(head instanceof Expr.Ctor ct)) {
+        continue;
+      }
+      Integer n = arity.get(ct.name());
+      if (n == null || args.size() != n) {
+        continue; // not a full application of a boxed constructor
+      }
+      List<W> fields = new ArrayList<>();
+      boolean ok = true;
+      for (Expr arg : args) {
+        Ty at = nodeTypes.get(arg);
+        if (at == null) {
+          ok = false;
+          break;
+        }
+        fields.add(wOf(at, tuples));
+      }
+      if (!ok) {
+        continue;
+      }
+      List<W> prev = out.put(ct.name(), fields);
+      if (prev != null && !prev.equals(fields)) {
+        throw unsupported(
+            "a polymorphic custom type instantiated at more than one representation (constructor "
+                + ct.name() + ")");
+      }
+    }
+    return out;
   }
 
   /**

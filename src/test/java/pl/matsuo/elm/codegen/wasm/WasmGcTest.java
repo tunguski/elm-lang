@@ -128,6 +128,83 @@ class WasmGcTest {
   }
 
   @Test
+  void polymorphicCustomTypeAtInt() throws Exception {
+    // A polymorphic union monomorphised to its single instantiation (here `Box Int`): the type
+    // variable `a` resolves to Int from the use site, so Wrap's field is laid out as an i64.
+    agrees(
+        """
+        type Box a = Wrap a | Empty
+        unwrap b = case b of
+            Wrap x -> x
+            Empty -> 0
+        main = unwrap (Wrap 42) + unwrap Empty
+        """); // 42 + 0 = 42
+  }
+
+  @Test
+  void polymorphicCustomTypeAtStringPayload() throws Exception {
+    // The same union instantiated at String: Wrap's field becomes a string-array reference, and the
+    // bound variable is read back as that reference (String.length over it).
+    agrees(
+        """
+        type Box a = Wrap a | Empty
+        size b = case b of
+            Wrap s -> String.length s
+            Empty -> 0
+        main = size (Wrap "hello")
+        """); // 5
+  }
+
+  @Test
+  void polymorphicCustomTypeAtFloat() throws Exception {
+    // Instantiated at Float: Wrap's field is an f64.
+    agrees(
+        """
+        type Opt a = Some a | None
+        get o = case o of
+            Some x -> x
+            None -> 0.0
+        main = get (Some 2.5) + get None
+        """); // 2.5
+  }
+
+  @Test
+  void polymorphicCustomTypeCarryingAList() throws Exception {
+    // The payload itself is compound (`List Int`): Wrap's field is the cons-list reference.
+    agrees(
+        """
+        type Box a = Wrap a | Empty
+        total b = case b of
+            Wrap xs -> sum xs
+            Empty -> 0
+        sum xs = case xs of
+            [] -> 0
+            h :: t -> h + sum t
+        main = total (Wrap [ 1, 2, 3, 4 ])
+        """); // 10
+  }
+
+  @Test
+  void polymorphicUnionAtTwoRepresentationsIsRejected() {
+    // No single wasm layout exists for `Wrap` used at both Int and String in one module — reported
+    // as unsupported rather than miscompiled.
+    org.junit.jupiter.api.Assertions.assertThrows(
+        RuntimeException.class,
+        () ->
+            WasmGc.module(
+                """
+                type Box a = Wrap a | Empty
+                asInt b = case b of
+                    Wrap x -> x
+                    Empty -> 0
+                asLen b = case b of
+                    Wrap s -> String.length s
+                    Empty -> 0
+                main = asInt (Wrap 1) + asLen (Wrap "x")
+                """));
+  }
+
+  @Test
   void nullaryCustomTypesAsEnumTags() throws Exception {
     // A nullary union is an i64 tag; `case` dispatches on it (last branch is the default).
     agrees(

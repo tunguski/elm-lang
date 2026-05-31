@@ -379,10 +379,14 @@ publishes it as an artifact.
   destructuring), **closed records** (literals, `.field` access, `{ r | f = v }` update — fields laid
   out in sorted-name order), **nullary custom types** (i64 tags) and **argument-carrying custom
   types** (including recursive ones like `Tree` — a shared `sub (struct {tag})` base with a subtype
-  per constructor, `case` dispatching on the tag and `ref.cast`ing to read arguments); carrying the
-  rest of the value model (row-polymorphic open records, *polymorphic* custom types like `Maybe a`,
-  closures — which need boxing / further struct work — and a code-point-aware `String` API) onto
-  WasmGC is future work. The other gap is the
+  per constructor, `case` dispatching on the tag and `ref.cast`ing to read arguments) and
+  **polymorphic custom types** (`type Box a = Wrap a | Empty`), **monomorphised** to the one
+  instantiation a module uses — each constructor's field types are read from how it is applied
+  (`Wrap 5` → `i64`, `Wrap "x"` → string ref, `Wrap [1]` → cons-list ref), with a union used at two
+  representations in one module reported as unsupported rather than miscompiled; carrying the
+  rest of the value model (row-polymorphic open records, closures — which need boxing / further
+  struct work — the built-in `Maybe`/`Result` predeclared here, and a code-point-aware `String` API)
+  onto WasmGC is future work. The other gap is the
   rest of the larger standard library (most `String`/`Dict`/`Array` operations).
 - **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
   the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,
