@@ -96,6 +96,41 @@ class BytecodeBackendTest {
   }
 
   @Test
+  void deepSelfTailRecursionDoesNotOverflow() {
+    // Self-tail-calls become a TAIL_CALL loop, so this runs in constant Java stack. Before TCO the
+    // bytecode VM kept every call on the stack and overflowed well before a million.
+    sameModule("sumTo n acc = if n == 0 then acc else sumTo (n - 1) (acc + n)\nmain = sumTo 1000000 0\n");
+    // Tail call from inside a `case` and a `let` (the other tail positions) also loops.
+    sameModule(
+        """
+        count n acc =
+            case n of
+                0 -> acc
+                _ -> count (n - 1) (acc + 1)
+        main = count 500000 0
+        """);
+    sameModule(
+        """
+        go n acc =
+            let step = acc + n
+            in if n == 0 then acc else go (n - 1) step
+        main = go 500000 0
+        """);
+  }
+
+  @Test
+  void tailCallIsNotMisfiredWhenTheNameIsShadowed() {
+    // A `let` binding shadowing the function name must NOT be treated as a self-tail-call.
+    sameModule(
+        """
+        f n =
+            let f = n + 1
+            in f
+        main = f 41
+        """); // 42, not infinite recursion
+  }
+
+  @Test
   void nestedCaseAndLet() {
     sameModule(
         """

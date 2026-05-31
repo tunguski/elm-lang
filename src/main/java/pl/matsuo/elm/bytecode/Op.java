@@ -25,5 +25,6 @@ public enum Op {
   MATCH, // operand: Pattern, arg: jump target on failure
   BIND_PAT, // operand: Pattern; pop value and bind (irrefutable)
   ERROR, // operand: message
+  TAIL_CALL, // arg: argument count; rebind the current chunk's params from the stack and jump to 0
   RETURN // return top of stack
 }

@@ -31,6 +31,9 @@ public final class VM {
     int sp = 0;
     Deque<Scope> scopes = new ArrayDeque<>();
     Scope scope = initialScope;
+    // The closure's captured scope (the parent of the param scope) — a self-tail-call rebinds params
+    // into a fresh child of it, so deep tail recursion reuses this one VM frame.
+    Scope captured = initialScope.parent() != null ? initialScope.parent() : initialScope;
     Object scrut = null;
     int ip = 0;
 
@@ -134,6 +137,22 @@ public final class VM {
           PatternMatcher.match((Pattern) in.operand(), v, scope);
         }
         case ERROR -> throw new ElmRuntimeError((String) in.operand());
+        case TAIL_CALL -> {
+          // Self-tail-call: the N argument values are on top of the stack (in source order). Rebind
+          // the chunk's params into a fresh scope and jump to the start — no new Java frame.
+          int n = in.arg();
+          Object[] args = new Object[n];
+          for (int i = 0; i < n; i++) {
+            args[i] = stack[sp - n + i];
+          }
+          scope = captured.child();
+          for (int i = 0; i < n; i++) {
+            PatternMatcher.match(chunk.params().get(i), args[i], scope);
+          }
+          sp = 0;
+          scopes.clear();
+          ip = 0;
+        }
         case RETURN -> {
           return stack[--sp];
         }

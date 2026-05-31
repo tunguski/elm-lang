@@ -12,12 +12,127 @@ import pl.matsuo.elm.runtime.ElmUnit;
 /** Compiles the {@link Expr} AST into {@link Chunk}s of stack {@link Op} bytecode. */
 public final class BytecodeCompiler {
 
-  /** Compiles a function/lambda body (with parameter patterns) into a chunk. */
+  /** Compiles a function/lambda body (with parameter patterns) into a chunk. Self-tail-calls in the
+   * body become a {@code TAIL_CALL} (rebind params + jump to 0) instead of a fresh VM frame, so deep
+   * tail recursion runs in constant Java stack — matching the interpreter's tail-loop. */
   public Chunk compileChunk(List<Pattern> params, Expr body, String name) {
     List<Instr> code = new ArrayList<>();
-    compile(code, body);
-    code.add(Instr.of(Op.RETURN));
+    // Disable self-tail-call detection if a parameter shadows the function's own name.
+    String tco = params.stream().anyMatch(p -> binds(p, name)) ? null : name;
+    compileTail(code, body, tco, params.size());
     return new Chunk(code, params, name);
+  }
+
+  /**
+   * Compiles {@code e} in tail position: every control path ends in either a {@code RETURN} or, when
+   * the path is a full self-application of {@code name}/{@code arity}, a {@code TAIL_CALL}. {@code
+   * name} is null when self-tail-call optimisation is disabled (e.g. the name is shadowed).
+   */
+  private void compileTail(List<Instr> c, Expr e, String name, int arity) {
+    switch (e) {
+      case Expr.If iff -> {
+        compile(c, iff.cond());
+        int toElse = emitJump(c, Op.JUMP_IF_FALSE);
+        compileTail(c, iff.thenBranch(), name, arity);
+        patch(c, toElse, c.size());
+        compileTail(c, iff.elseBranch(), name, arity);
+      }
+      case Expr.Let let -> {
+        c.add(Instr.of(Op.PUSH_SCOPE));
+        boolean shadows = false;
+        for (Decl d : let.defs()) {
+          switch (d) {
+            case Decl.Value v -> {
+              if (v.params().isEmpty()) {
+                compile(c, v.body());
+              } else {
+                c.add(Instr.of(Op.MAKE_CLOSURE, compileChunk(v.params(), v.body(), v.name())));
+              }
+              c.add(Instr.of(Op.BIND_PAT, new Pattern.Var(v.name())));
+              shadows |= v.name().equals(name);
+            }
+            case Decl.Destructure de -> {
+              compile(c, de.body());
+              c.add(Instr.of(Op.BIND_PAT, de.pattern()));
+              shadows |= binds(de.pattern(), name);
+            }
+            default -> throw new ElmRuntimeError("Unsupported declaration in let: " + d);
+          }
+        }
+        // The let bindings stay live while a tail call's arguments are evaluated; TAIL_CALL resets the
+        // scope, and a RETURN abandons it, so no POP_SCOPE is needed on these self-terminating paths.
+        compileTail(c, let.body(), shadows ? null : name, arity);
+      }
+      case Expr.Case ca -> compileCaseTail(c, ca, name, arity);
+      case Expr.App app when isSelfCall(app, name, arity) -> {
+        for (Expr arg : appArgs(app)) {
+          compile(c, arg);
+        }
+        c.add(Instr.ofArg(Op.TAIL_CALL, arity));
+      }
+      default -> {
+        compile(c, e);
+        c.add(Instr.of(Op.RETURN));
+      }
+    }
+  }
+
+  /** Whether {@code app} is a full application ({@code arity} args) of an unqualified variable named
+   * {@code name} — i.e. a self-call eligible for tail-call optimisation. */
+  private static boolean isSelfCall(Expr.App app, String name, int arity) {
+    if (name == null) {
+      return false;
+    }
+    List<Expr> args = appArgs(app);
+    Expr head = app;
+    while (head instanceof Expr.App a) {
+      head = a.fn();
+    }
+    return args.size() == arity
+        && head instanceof Expr.Var v
+        && v.module() == null
+        && v.name().equals(name);
+  }
+
+  /** The arguments of a curried application spine, in source order. */
+  private static List<Expr> appArgs(Expr.App app) {
+    List<Expr> args = new ArrayList<>();
+    Expr head = app;
+    while (head instanceof Expr.App a) {
+      args.add(0, a.arg());
+      head = a.fn();
+    }
+    return args;
+  }
+
+  /** Whether a pattern binds the name {@code n} (so it would shadow the function name). */
+  private static boolean binds(Pattern p, String n) {
+    return switch (p) {
+      case Pattern.Var v -> v.name().equals(n);
+      case Pattern.Alias a -> a.name().equals(n) || binds(a.pattern(), n);
+      case Pattern.Ctor ct -> ct.args().stream().anyMatch(x -> binds(x, n));
+      case Pattern.Tuple t -> t.items().stream().anyMatch(x -> binds(x, n));
+      case Pattern.ListPat l -> l.items().stream().anyMatch(x -> binds(x, n));
+      case Pattern.Cons cs -> binds(cs.head(), n) || binds(cs.tail(), n);
+      case Pattern.RecordPat r -> r.fields().contains(n);
+      default -> false;
+    };
+  }
+
+  /** Like {@link #compileCase} but each branch body is compiled in tail position. */
+  private void compileCaseTail(List<Instr> c, Expr.Case ca, String name, int arity) {
+    compile(c, ca.scrutinee());
+    c.add(Instr.of(Op.SET_SCRUT));
+    for (Expr.Case.Branch br : ca.branches()) {
+      c.add(Instr.of(Op.PUSH_SCOPE));
+      int matchIdx = c.size();
+      c.add(new Instr(Op.MATCH, -1, br.pattern()));
+      // On a match the bound scope stays live for the tail body (which RETURNs or TAIL_CALLs away).
+      compileTail(c, br.body(), binds(br.pattern(), name) ? null : name, arity);
+      patch(c, matchIdx, c.size());
+      c.add(Instr.of(Op.POP_SCOPE)); // failure path: undo PUSH_SCOPE then try the next branch
+    }
+    c.add(Instr.of(Op.ERROR, "Non-exhaustive pattern match"));
   }
 
   private void compile(List<Instr> c, Expr e) {
