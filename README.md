@@ -375,9 +375,12 @@ publishes it as an artifact.
   ASCII-correct length), **lists of any supported element** (`List Int`/`List Float`/lists of
   tuples/records/lists — one cons type per element type), **tuples** (`Tuple.first`/`second`,
   destructuring), **closed records** (literals, `.field` access, `{ r | f = v }` update — fields laid
-  out in sorted-name order) and **nullary custom types** (i64 tags); carrying the rest of the value
-  model (row-polymorphic open records, argument-carrying custom types, closures — which need boxing /
-  struct subtyping — and a code-point-aware `String` API) onto WasmGC is future work. The other gap is the
+  out in sorted-name order), **nullary custom types** (i64 tags) and **argument-carrying custom
+  types** (including recursive ones like `Tree` — a shared `sub (struct {tag})` base with a subtype
+  per constructor, `case` dispatching on the tag and `ref.cast`ing to read arguments); carrying the
+  rest of the value model (row-polymorphic open records, *polymorphic* custom types like `Maybe a`,
+  closures — which need boxing / further struct work — and a code-point-aware `String` API) onto
+  WasmGC is future work. The other gap is the
   rest of the larger standard library (most `String`/`Dict`/`Array` operations).
 - **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
   the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,

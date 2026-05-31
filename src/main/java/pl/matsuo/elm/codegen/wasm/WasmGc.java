@@ -39,10 +39,13 @@ import pl.matsuo.elm.types.Types;
  * {@code Int} (and a nullary custom type, as its variant tag) is an {@code i64}, a {@code Float} an
  * {@code f64}, a {@code List Int} the cons struct, and each tuple/record shape its own GC struct
  * (record fields laid out in sorted-name order), and a {@code String} an {@code array i8}.
- * <b>Row-polymorphic</b> (open) record parameters have no fixed struct layout, and argument-carrying
- * custom types and closures remain on the linear-memory backend — extending this one to them (boxing
- * / struct subtyping) and finishing the {@code String} API (code-point-aware length, more ops) is
- * future work.
+ * <b>Argument-carrying custom types</b> (including recursive ones like {@code Tree}) compile to a
+ * shared base {@code sub (struct {tag : i32})} with a subtype per constructor; a {@code case} reads
+ * the tag and {@code ref.cast}s to the matching subtype to bind its arguments. <b>Row-polymorphic</b>
+ * (open) record parameters have no fixed struct layout, and <b>polymorphic</b> custom types (a
+ * constructor argument that is a type variable, e.g. {@code Maybe a}) and closures remain on the
+ * linear-memory backend — extending this one to them, and finishing the {@code String} API
+ * (code-point-aware length, more ops), is future work.
  */
 public final class WasmGc {
 
@@ -64,13 +67,20 @@ public final class WasmGc {
 
   /** A GC type definition: a cons cell {@code {head : E, tail : (ref null self)}} for {@code List
    * E}, a plain struct (a tuple/record's fields), or the {@code array i8} backing a {@code String}. */
-  private sealed interface StructDef permits ConsDef, PlainDef, StrArrayDef {}
+  private sealed interface StructDef
+      permits ConsDef, PlainDef, StrArrayDef, AdtBaseDef, AdtVariantDef {}
 
   private record ConsDef(W head) implements StructDef {}
 
   private record PlainDef(List<W> fields) implements StructDef {}
 
   private record StrArrayDef() implements StructDef {} // array i8 (a UTF-8 string's bytes)
+
+  /** The shared supertype of every argument-carrying custom-type value: {@code sub (struct {tag:i32})}. */
+  private record AdtBaseDef() implements StructDef {}
+
+  /** A constructor's subtype of {@link AdtBaseDef}: {@code {tag : i32, args…}}. */
+  private record AdtVariantDef(int baseIndex, List<W> argFields) implements StructDef {}
 
   private static final W INT = new Sca(I64);
   private static final W FLOAT = new Sca(F64);
@@ -85,10 +95,27 @@ public final class WasmGc {
     // Pre-pass: register every tuple shape (innermost first) so it has a stable struct type index
     // before any function body is compiled.
     Tuples tuples = new Tuples();
-    // Register all-nullary unions as i64-tagged enums.
+    // Classify unions: all-nullary -> i64-tagged enum; otherwise -> a boxed ADT (base + subtypes).
     for (Decl d : module.decls()) {
-      if (d instanceof Decl.Union u && u.variants().stream().allMatch(v -> v.args().isEmpty())) {
-        tuples.registerEnum(u.name(), u.variants().stream().map(Decl.Union.Variant::name).toList());
+      if (d instanceof Decl.Union u) {
+        if (u.variants().stream().allMatch(v -> v.args().isEmpty())) {
+          tuples.registerEnum(u.name(), u.variants().stream().map(Decl.Union.Variant::name).toList());
+        } else {
+          tuples.markBoxed(u.name()); // mark all boxed first so recursive arg types resolve
+        }
+      }
+    }
+    // Now register each boxed constructor's subtype (its argument wasm types).
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Union u && tuples.isBoxed(u.name())) {
+        List<Decl.Union.Variant> vs = u.variants();
+        for (int i = 0; i < vs.size(); i++) {
+          List<W> argFields = new ArrayList<>();
+          for (pl.matsuo.elm.ast.Type arg : vs.get(i).args()) {
+            argFields.add(wOfSurface(arg, tuples));
+          }
+          tuples.registerVariant(vs.get(i).name(), i, argFields);
+        }
       }
     }
     for (Scheme s : schemes.values()) {
@@ -153,6 +180,9 @@ public final class WasmGc {
     if (p instanceof Ty.Con c && tuples.isEnum(c.name())) {
       return INT; // a nullary custom type is an i64 tag
     }
+    if (p instanceof Ty.Con c && tuples.isBoxed(c.name())) {
+      return new Ref(tuples.adtBaseIndex()); // an argument-carrying custom type: a ref to the base
+    }
     if (p instanceof Ty.Tuple tup) {
       return new Ref(tuples.indexOf(tup));
     }
@@ -185,6 +215,29 @@ public final class WasmGc {
     return new ElmRuntimeError("WasmGC backend does not support " + what);
   }
 
+  /** A constructor argument's wasm type, from its declared surface {@link pl.matsuo.elm.ast.Type}
+   * (concrete subset only — a type variable means a polymorphic union, which isn't supported). */
+  private static W wOfSurface(pl.matsuo.elm.ast.Type t, Tuples tuples) {
+    if (t instanceof pl.matsuo.elm.ast.Type.Con c) {
+      return switch (c.name()) {
+        case "Int", "Bool" -> INT;
+        case "Float" -> FLOAT;
+        case "String" -> new Ref(tuples.strIndex());
+        case "List" -> new Ref(tuples.consIndexOf(wOfSurface(c.args().get(0), tuples)));
+        default -> {
+          if (tuples.isEnum(c.name())) {
+            yield INT;
+          }
+          if (tuples.isBoxed(c.name())) {
+            yield new Ref(tuples.adtBaseIndex());
+          }
+          throw unsupported("constructor argument of type " + c.name());
+        }
+      };
+    }
+    throw unsupported("a polymorphic or compound constructor argument");
+  }
+
   /**
    * The distinct tuple shapes a module uses, each assigned a GC struct type index (the cons list is
    * type 0, tuples are 1..T, function signatures come after). A pre-pass registers every tuple that
@@ -197,6 +250,12 @@ public final class WasmGc {
     // Nullary ("enum") custom types: each is represented as an i64 tag (the variant's index).
     private final java.util.Set<String> enumTypes = new java.util.HashSet<>();
     private final Map<String, Long> ctorTag = new HashMap<>();
+    // Argument-carrying ("boxed") custom types: a shared base struct {tag:i32} with a subtype per
+    // constructor. `ctorVariant` maps a constructor to {subtypeIndex, tag, arity}.
+    private final java.util.Set<String> boxedUnions = new java.util.HashSet<>();
+    private final Map<String, int[]> ctorVariant = new HashMap<>();
+    private final Map<String, List<W>> ctorFields = new HashMap<>();
+    private int adtBase = -1;
 
     /** Registers an all-nullary union as an enum whose constructors are i64 tags 0,1,2,…. */
     void registerEnum(String typeName, List<String> ctorsInOrder) {
@@ -213,6 +272,41 @@ public final class WasmGc {
     /** The i64 tag of a nullary constructor, or {@code null} if it isn't an enum constructor. */
     Long tagOf(String ctor) {
       return ctorTag.get(ctor);
+    }
+
+    boolean isBoxed(String typeName) {
+      return boxedUnions.contains(typeName);
+    }
+
+    /** Marks an argument-carrying union as boxed (so recursive references resolve) and ensures the
+     * shared base struct exists. */
+    void markBoxed(String typeName) {
+      boxedUnions.add(typeName);
+      if (adtBase < 0) {
+        adtBase = register("ADTBASE$", new AdtBaseDef());
+      }
+    }
+
+    int adtBaseIndex() {
+      return adtBase;
+    }
+
+    /** Registers a boxed constructor's subtype (fields = its argument wasm types) and records its
+     * {subtypeIndex, tag, arity}. */
+    void registerVariant(String ctor, int tag, List<W> argFields) {
+      int sub = register("ADTV$" + ctor + "$" + tag, new AdtVariantDef(adtBase, argFields));
+      ctorVariant.put(ctor, new int[] {sub, tag, argFields.size()});
+      ctorFields.put(ctor, argFields);
+    }
+
+    /** A boxed constructor's {subtypeIndex, tag, arity}, or {@code null}. */
+    int[] variantOf(String ctor) {
+      return ctorVariant.get(ctor);
+    }
+
+    /** A boxed constructor's argument wasm types. */
+    List<W> variantFields(String ctor) {
+      return ctorFields.get(ctor);
     }
 
     /** Recursively registers every list, tuple and record shape inside a type (innermost first). */
@@ -387,6 +481,15 @@ public final class WasmGc {
         case Expr.Ctor c when tuples.tagOf(c.name()) != null -> {
           code.write(0x42);
           sleb(code, tuples.tagOf(c.name())); // a nullary custom-type constructor is its i64 tag
+        }
+        case Expr.Ctor c when tuples.variantOf(c.name()) != null -> {
+          // A nullary boxed constructor: struct.new $variant (just the i32 tag).
+          int[] v = tuples.variantOf(c.name());
+          code.write(0x41);
+          sleb(code, v[1]); // i32.const tag
+          code.write(0xFB);
+          code.write(0x00);
+          leb(code, v[0]); // struct.new subtype
         }
         case Expr.FloatLit lit -> emitF64(lit.value());
         case Expr.StrLit lit -> {
@@ -813,6 +916,19 @@ public final class WasmGc {
         code.write(0xAD); // i64.extend_i32_u
         return;
       }
+      // An applied boxed constructor `Ctor a b …`: struct.new $variant (tag, args…).
+      if (head instanceof Expr.Ctor ct && tuples.variantOf(ct.name()) != null) {
+        int[] v = tuples.variantOf(ct.name());
+        code.write(0x41);
+        sleb(code, v[1]); // i32.const tag
+        for (Expr arg : args) {
+          gen(arg);
+        }
+        code.write(0xFB);
+        code.write(0x00);
+        leb(code, v[0]); // struct.new subtype
+        return;
+      }
       // A record accessor used as a function: `.field record`.
       if (head instanceof Expr.Accessor acc && args.size() == 1) {
         Ty.Record rt = recordTypeOf(args.get(0));
@@ -834,13 +950,16 @@ public final class WasmGc {
       throw unsupported("application of " + (head instanceof Expr.Var v ? v.name() : "expression"));
     }
 
-    /** Dispatches a {@code case} to the tuple, enum or list compiler based on its branch patterns. */
+    /** Dispatches a {@code case} to the tuple, enum, boxed-ADT or list compiler. */
     private void caseExpr(Expr.Case c, java.util.function.Consumer<Expr> body) {
       if (c.branches().stream().anyMatch(br -> br.pattern() instanceof Pattern.Tuple)) {
         tupleCase(c, body);
       } else if (c.branches().stream()
           .anyMatch(br -> br.pattern() instanceof Pattern.Ctor ct && tuples.tagOf(ct.name()) != null)) {
         enumCase(c, body);
+      } else if (c.branches().stream()
+          .anyMatch(br -> br.pattern() instanceof Pattern.Ctor ct && tuples.variantOf(ct.name()) != null)) {
+        adtCase(c, body);
       } else {
         listCase(c, body);
       }
@@ -887,6 +1006,89 @@ public final class WasmGc {
       code.write(0x05); // else
       emitEnumChain(branches, i + 1, s, result, body);
       code.write(0x0B);
+    }
+
+    /** A {@code case} over a boxed (argument-carrying) custom type: read the i32 tag from the base
+     * struct, then a chain of {@code i32.eq} tests; the matching branch {@code ref.cast}s to the
+     * constructor's subtype and binds its argument fields. */
+    private void adtCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
+      int base = tuples.adtBaseIndex();
+      int s = freshLocal("$adt" + code.size(), new Ref(base));
+      gen(c.scrutinee());
+      code.write(0x21);
+      leb(code, s);
+      emitAdtChain(c.branches(), 0, s, base, wOf(nodeType(c), tuples), body);
+    }
+
+    private void emitAdtChain(
+        List<Expr.Case.Branch> branches, int i, int s, int base, W result,
+        java.util.function.Consumer<Expr> body) {
+      Expr.Case.Branch br = branches.get(i);
+      boolean last = i == branches.size() - 1;
+      Pattern p = br.pattern();
+      // A wildcard / var / the final branch is the default (no tag test).
+      if (p instanceof Pattern.Wildcard || p instanceof Pattern.Var || (last && tuples.variantOf(ctorName(p)) == null)) {
+        body.accept(br.body());
+        return;
+      }
+      Pattern.Ctor ct = (Pattern.Ctor) p;
+      int[] v = tuples.variantOf(ct.name());
+      // local.get s; struct.get base 0 (tag); i32.const variantTag; i32.eq
+      code.write(0x20);
+      leb(code, s);
+      code.write(0xFB);
+      code.write(0x02);
+      leb(code, base);
+      leb(code, 0);
+      code.write(0x41);
+      sleb(code, v[1]);
+      code.write(0x46); // i32.eq
+      code.write(0x04); // if
+      writeType(code, result);
+      bindAdtArgs(ct, v, s);
+      body.accept(br.body());
+      code.write(0x05); // else
+      if (last) {
+        code.write(0x00); // unreachable (a well-typed case is exhaustive)
+      } else {
+        emitAdtChain(branches, i + 1, s, base, result, body);
+      }
+      code.write(0x0B);
+    }
+
+    /** Casts the scrutinee to the constructor's subtype and binds each argument variable. */
+    private void bindAdtArgs(Pattern.Ctor ct, int[] v, int s) {
+      boolean anyVar = ct.args().stream().anyMatch(a -> a instanceof Pattern.Var);
+      if (!anyVar) {
+        return;
+      }
+      int sub = v[0];
+      List<W> fields = tuples.variantFields(ct.name());
+      int casted = freshLocal("$cast" + code.size(), new Ref(sub));
+      code.write(0x20);
+      leb(code, s);
+      code.write(0xFB);
+      code.write(0x17); // ref.cast (ref null sub)
+      sleb(code, sub);
+      code.write(0x21);
+      leb(code, casted);
+      for (int i = 0; i < ct.args().size(); i++) {
+        if (ct.args().get(i) instanceof Pattern.Var pv) {
+          int idx = freshLocal(pv.name(), fields.get(i));
+          code.write(0x20);
+          leb(code, casted);
+          code.write(0xFB);
+          code.write(0x02);
+          leb(code, sub);
+          leb(code, i + 1); // field 0 is the tag; args start at 1
+          code.write(0x21);
+          leb(code, idx);
+        }
+      }
+    }
+
+    private static String ctorName(Pattern p) {
+      return p instanceof Pattern.Ctor ct ? ct.name() : "";
     }
 
     /** A {@code case} whose single branch destructures a tuple: bind each field, then the body. */
@@ -1078,6 +1280,27 @@ public final class WasmGc {
           types.write(0x5E); // array
           types.write(0x78); // i8 packed storage
           types.write(0x01); // mutable (so concat can array.copy into it)
+        } else if (def instanceof AdtBaseDef) {
+          // sub (no supertype) struct { tag : i32 } — subtypable.
+          types.write(0x50);
+          leb(types, 0);
+          types.write(0x5F);
+          leb(types, 1);
+          types.write(0x7F); // i32 tag
+          types.write(0x00);
+        } else if (def instanceof AdtVariantDef vd) {
+          // sub <base> struct { tag : i32, args… } — width-subtypes the base.
+          types.write(0x50);
+          leb(types, 1);
+          leb(types, vd.baseIndex());
+          types.write(0x5F);
+          leb(types, 1 + vd.argFields().size());
+          types.write(0x7F); // i32 tag (inherited slot)
+          types.write(0x00);
+          for (W w : vd.argFields()) {
+            writeType(types, w);
+            types.write(0x00);
+          }
         }
       }
     }

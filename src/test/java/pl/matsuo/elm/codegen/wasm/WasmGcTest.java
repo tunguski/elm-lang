@@ -101,6 +101,33 @@ class WasmGcTest {
   }
 
   @Test
+  void argumentCarryingCustomTypes() throws Exception {
+    // A boxed custom type: a shared base struct {tag} with a subtype per constructor; `case`
+    // dispatches on the tag and ref.casts to read the arguments.
+    agrees(
+        """
+        type Shape = Circle Int | Rect Int Int
+        area s = case s of
+            Circle r -> 3 * r * r
+            Rect w h -> w * h
+        main = area (Circle 10) + area (Rect 3 4)
+        """); // 300 + 12 = 312
+  }
+
+  @Test
+  void recursiveCustomType() throws Exception {
+    // A recursive boxed type: Node's fields reference the shared base (Tree = ref to the base).
+    agrees(
+        """
+        type Tree = Leaf | Node Int Tree Tree
+        sum t = case t of
+            Leaf -> 0
+            Node n l r -> n + sum l + sum r
+        main = sum (Node 1 (Node 2 Leaf Leaf) (Node 3 Leaf Leaf))
+        """); // 1 + 2 + 3 = 6
+  }
+
+  @Test
   void nullaryCustomTypesAsEnumTags() throws Exception {
     // A nullary union is an i64 tag; `case` dispatches on it (last branch is the default).
     agrees(
