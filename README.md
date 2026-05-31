@@ -120,7 +120,13 @@ at startup** (every gallery example plus its own demos, served as raw `.elm` und
 runs each selected file's `main` live in the browser — static views, computed values, and interactive
 `Browser.sandbox`/`Browser.element` apps with `onClick`/`onInput`, tuples, `List`/`Maybe` helpers and
 opaque `Cmd`/`Sub`, all via a from-scratch Elm interpreter written in Elm (itself a `Browser.element`
-app using `Http`).
+app using `Http`). Its lexer/parser handle `--` line comments, the pipe/compose operators
+(`|>`, `<|`, `>>`, `<<`, desugared to application/lambdas), multi-binding `let`, record `type alias`
+constructors (`Point 3 4`) and the common `Html.Attributes` (`placeholder`, `type_`, `value`, `class`,
+`href`, …) and `String.*` helpers — enough that every pure-Html / TEA example from the elm-lang.org
+gallery parses and the `Browser.sandbox`-style ones render live. Examples that need full library
+runtimes — SVG, WebGL, HTTP, `Time`, `File`/`Json.Decode` effects, and the `elm-playground`
+`picture`/`animation`/`game` APIs — parse but fall outside this teaching-subset interpreter.
 
 ## Type inference
 

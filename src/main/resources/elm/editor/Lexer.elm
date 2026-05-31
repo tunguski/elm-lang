@@ -58,9 +58,10 @@ indentOf line =
     String.length line - String.length (String.trimLeft line)
 
 
-{-| Resolves layout: drops the `TLine` markers, inserting a `TSemi` between `case` branches (lines
-at the branch's indentation). Operates per top-level chunk, so the only column-0 line is the chunk
-header — branch indentation is always deeper, which keeps the rule simple and safe. -}
+{-| Resolves layout: drops the `TLine` markers, inserting a `TSemi` between sibling `case` branches
+and `let` bindings (lines at the branch/binding indentation). Operates per top-level chunk, so the
+only column-0 line is the chunk header — branch indentation is always deeper, which keeps the rule
+simple and safe. -}
 cookLayout : List Token -> List Token
 cookLayout toks =
     cook toks [] [] False
@@ -100,6 +101,11 @@ cook toks out stack afterOf =
         (TId "of") :: rest ->
             cook rest (TId "of" :: out) stack True
 
+        (TId "let") :: rest ->
+            -- like `of`: the next line establishes the binding column, so sibling
+            -- bindings at that column get a `TSemi`; the dedent at `in` pops it back.
+            cook rest (TId "let" :: out) stack True
+
         t :: rest ->
             cook rest (t :: out) stack afterOf
 
@@ -127,6 +133,10 @@ tokenizeHelp chars acc =
         c :: rest ->
             if c == ' ' || c == '\n' || c == '\t' || c == '\u{000D}' then
                 tokenizeHelp rest acc
+
+            else if c == '-' && List.head rest == Just '-' then
+                -- line comment: drop the rest of the line
+                Ok (List.reverse acc)
 
             else if c == '(' then
                 tokenizeHelp rest (TLParen :: acc)
@@ -263,7 +273,7 @@ classifyOp s =
     else if s == "|" then
         Ok TPipe
 
-    else if List.member s [ "+", "-", "*", "/", "//", "==", "/=", "<", "<=", ">", ">=", "&&", "||", "++", "::" ] then
+    else if List.member s [ "+", "-", "*", "/", "//", "==", "/=", "<", "<=", ">", ">=", "&&", "||", "++", "::", "|>", "<|", ">>", "<<" ] then
         Ok (TOp s)
 
     else

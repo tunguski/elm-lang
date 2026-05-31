@@ -317,4 +317,55 @@ class JsBackendTest {
             "main = div [] (List.map sq (List.range 1 4))\nsq n = div [] [ text (String.fromInt (n * n)) ]\n");
     assertTrue(squares.contains("<div>1</div>") && squares.contains("<div>16</div>"), squares);
   }
+
+  @Test
+  void editorSkipsLineCommentsAndSupportsPipeOperators() {
+    // `--` comments are dropped by the lexer; `|>` desugars to application (lowest precedence, so
+    // it applies to the whole `++` chain).
+    assertEquals(
+        "HELLO, WORLD",
+        editorRender(
+            String.join(
+                "\n",
+                "main = text shout   -- render the greeting",
+                "shout = \"Hello, \" ++ name |> String.toUpper",
+                "name = \"world\"   -- who to greet")));
+  }
+
+  @Test
+  void editorSupportsMultiBindingLet() {
+    assertEquals(
+        "30",
+        editorRender(
+            String.join(
+                "\n",
+                "main = text (String.fromInt total)",
+                "total =",
+                "    let",
+                "        a = 10",
+                "        b = 20",
+                "    in",
+                "    a + b")));
+  }
+
+  @Test
+  void editorSupportsRecordTypeAliasConstructors() {
+    // `type alias Point = { ... }` doubles as a positional constructor `Point 3 4`.
+    assertEquals(
+        "7",
+        editorRender(
+            String.join(
+                "\n",
+                "type alias Point = { x : Int, y : Int }",
+                "main = text (String.fromInt (add (Point 3 4)))",
+                "add p = p.x + p.y")));
+  }
+
+  @Test
+  void editorSupportsHtmlAttributeBuiltins() {
+    String html = editorRender("main = input [ placeholder \"hi\", type_ \"text\", value \"v\" ] []\n");
+    assertTrue(html.contains("placeholder=hi"), html);
+    assertTrue(html.contains("type=text"), html);
+    assertTrue(html.contains("value=v"), html);
+  }
 }

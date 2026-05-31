@@ -31,7 +31,10 @@ parseExpr tokens =
 
 opPrec : String -> Int
 opPrec op =
-    if op == "||" then
+    if op == "|>" || op == "<|" then
+        1
+
+    else if op == "||" then
         2
 
     else if op == "&&" then
@@ -46,8 +49,14 @@ opPrec op =
     else if op == "+" || op == "-" then
         6
 
-    else
+    else if op == "*" || op == "/" || op == "//" then
         7
+
+    else if op == ">>" || op == "<<" then
+        8
+
+    else
+        9
 
 
 parseBinary : Int -> List Token -> Result String ( Expr, List Token )
@@ -62,13 +71,35 @@ climb minPrec left tokens =
         (TOp op) :: rest ->
             if opPrec op >= minPrec then
                 parseBinary (opPrec op + 1) rest
-                    |> Result.andThen (\r -> climb minPrec (BinOp op left (Tuple.first r)) (Tuple.second r))
+                    |> Result.andThen (\r -> climb minPrec (mkBin op left (Tuple.first r)) (Tuple.second r))
 
             else
                 Ok ( left, tokens )
 
         _ ->
             Ok ( left, tokens )
+
+
+{-| Pipe and composition operators desugar into ordinary application / lambdas so the
+evaluator needs no special cases: `a |> f` = `f a`, `f <| a` = `f a`,
+`f >> g` = `\x -> g (f x)`, `f << g` = `\x -> f (g x)`.
+-}
+mkBin : String -> Expr -> Expr -> Expr
+mkBin op left right =
+    if op == "|>" then
+        App right left
+
+    else if op == "<|" then
+        App left right
+
+    else if op == ">>" then
+        Lam [ "$x" ] (App right (App left (Var "$x")))
+
+    else if op == "<<" then
+        Lam [ "$x" ] (App left (App right (Var "$x")))
+
+    else
+        BinOp op left right
 
 
 parseUnary : List Token -> Result String ( Expr, List Token )
@@ -285,24 +316,75 @@ parseIf tokens =
             )
 
 
+{-| `let` supports several bindings (separated by the `TSemi` that layout inserts), each of which
+may take parameters (`let f x = ... in`). Bindings desugar to nested `Let` nodes. -}
 parseLet : List Token -> Result String ( Expr, List Token )
 parseLet tokens =
-    case tokens of
-        (TId name) :: TEquals :: afterEq ->
-            parseExpr afterEq
-                |> Result.andThen
-                    (\rv ->
-                        case Tuple.second rv of
-                            (TId "in") :: afterIn ->
-                                parseExpr afterIn
-                                    |> Result.map (\rb -> ( Let name (Tuple.first rv) (Tuple.first rb), Tuple.second rb ))
+    parseLetBinding tokens
+        |> Result.andThen
+            (\rb ->
+                let
+                    binding =
+                        Tuple.first rb
+                in
+                case Tuple.second rb of
+                    TSemi :: afterSemi ->
+                        parseLet afterSemi
+                            |> Result.map
+                                (\rr -> ( Let (Tuple.first binding) (Tuple.second binding) (Tuple.first rr), Tuple.second rr ))
 
-                            _ ->
-                                Err "expected 'in'"
-                    )
+                    (TId "in") :: afterIn ->
+                        parseExpr afterIn
+                            |> Result.map
+                                (\rbody -> ( Let (Tuple.first binding) (Tuple.second binding) (Tuple.first rbody), Tuple.second rbody ))
+
+                    _ ->
+                        Err "expected 'in'"
+            )
+
+
+parseLetBinding : List Token -> Result String ( ( String, Expr ), List Token )
+parseLetBinding tokens =
+    case tokens of
+        (TId name) :: rest ->
+            let
+                collected =
+                    collectParams rest []
+
+                params =
+                    Tuple.first collected
+            in
+            case Tuple.second collected of
+                TEquals :: afterEq ->
+                    parseExpr afterEq
+                        |> Result.map
+                            (\rv ->
+                                let
+                                    value =
+                                        if List.isEmpty params then
+                                            Tuple.first rv
+
+                                        else
+                                            Lam params (Tuple.first rv)
+                                in
+                                ( ( name, value ), Tuple.second rv )
+                            )
+
+                _ ->
+                    Err "expected '=' in let binding"
 
         _ ->
             Err "expected 'NAME =' after let"
+
+
+collectParams : List Token -> List String -> ( List String, List Token )
+collectParams tokens acc =
+    case tokens of
+        (TId p) :: rest ->
+            collectParams rest (acc ++ [ p ])
+
+        _ ->
+            ( acc, tokens )
 
 
 parseLambda : List Token -> List String -> Result String ( Expr, List Token )
@@ -580,7 +662,12 @@ parseDecl source =
         firstWord =
             trimmed |> String.split " " |> List.head |> Maybe.withDefault ""
     in
-    if List.member firstWord [ "module", "import", "type", "port", "" ] || String.startsWith "--" trimmed then
+    if String.startsWith "type alias " trimmed then
+        -- A record type alias doubles as a positional constructor: `Model a b` builds
+        -- `{ field1 = a, field2 = b }` in declaration order.
+        Ok (typeAliasCtor source)
+
+    else if List.member firstWord [ "module", "import", "type", "port", "" ] || String.startsWith "--" trimmed then
         Ok []
 
     else
@@ -595,6 +682,51 @@ parseDecl source =
 
                     _ ->
                         Ok []
+
+
+{-| Builds the positional constructor for a record `type alias`. Non-record aliases (no `{ ... }`)
+register nothing. Field names are read directly from the source (the `:` in field annotations is
+not a lexable token), so this stays independent of the expression tokenizer. -}
+typeAliasCtor : String -> Globals
+typeAliasCtor source =
+    case ( aliasName source, recordFields source ) of
+        ( Just nm, fields ) ->
+            if List.isEmpty fields then
+                []
+
+            else
+                [ ( nm, { name = nm, params = fields, body = RecordLit (List.map (\f -> ( f, Var f )) fields) } ) ]
+
+        _ ->
+            []
+
+
+aliasName : String -> Maybe String
+aliasName source =
+    case String.words source of
+        "type" :: "alias" :: nm :: _ ->
+            Just nm
+
+        _ ->
+            Nothing
+
+
+recordFields : String -> List String
+recordFields source =
+    case String.split "{" source of
+        _ :: afterBrace :: _ ->
+            case String.split "}" afterBrace of
+                inner :: _ ->
+                    inner
+                        |> String.split ","
+                        |> List.map (\part -> part |> String.split ":" |> List.head |> Maybe.withDefault "" |> String.trim)
+                        |> List.filter (\f -> f /= "")
+
+                _ ->
+                    []
+
+        _ ->
+            []
 
 
 parseDeclParams : String -> List Token -> List String -> Result String Globals

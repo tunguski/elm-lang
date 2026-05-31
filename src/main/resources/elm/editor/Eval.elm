@@ -16,9 +16,12 @@ Elm Architecture programs (Browser.sandbox apps) can be rendered live by the edi
 builtins : List String
 builtins =
     htmlTags
+        ++ htmlStringAttrs
+        ++ htmlBoolAttrs
         ++ [ "text", "onClick", "onInput", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat" ]
         ++ [ "Browser.sandbox", "Browser.element" ]
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
+        ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim" ]
 
 
 {-| The Html element builtins (each takes a list of attributes then a list of children). -}
@@ -27,10 +30,25 @@ htmlTags =
     [ "div", "button", "p", "span", "h1", "h2", "h3", "h4", "ul", "ol", "li", "pre", "code", "input", "textarea", "label", "a", "section", "strong", "em", "br", "img", "table", "tr", "td", "th" ]
 
 
+{-| `Html.Attributes` taking a single string, rendered as `key=value`. (`type_` maps to `type`.) -}
+htmlStringAttrs : List String
+htmlStringAttrs =
+    [ "placeholder", "value", "type_", "class", "id", "href", "src", "title", "alt", "name", "for", "target", "rel", "width", "height", "rows", "cols", "autocomplete", "step" ]
+
+
+{-| `Html.Attributes` taking a single bool, rendered as a bare `key` when `True`. -}
+htmlBoolAttrs : List String
+htmlBoolAttrs =
+    [ "checked", "disabled", "selected", "readonly", "autofocus", "hidden" ]
+
+
 {-| How many arguments a builtin consumes before it runs. -}
 arity : String -> Int
 arity name =
-    if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
+    if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
+        1
+
+    else if List.member name htmlStringAttrs || List.member name htmlBoolAttrs then
         1
 
     else
@@ -71,7 +89,18 @@ evalExpr globals env expr =
                                 Err ("undefined variable: " ++ name)
 
         Ctor name ->
-            Ok (VCtor name [])
+            -- A `type alias` record constructor is registered as a global; everything else
+            -- (custom-type constructors) builds a tagged value.
+            case lookup name globals of
+                Just decl ->
+                    if List.isEmpty decl.params then
+                        evalExpr globals [] decl.body
+
+                    else
+                        Ok (VClosure decl.params decl.body [])
+
+                Nothing ->
+                    Ok (VCtor name [])
 
         Case subject branches ->
             evalExpr globals env subject
@@ -292,6 +321,14 @@ runBuiltin globals name args =
             _ ->
                 Err (name ++ " needs attributes and children")
 
+    else if List.member name htmlStringAttrs || List.member name htmlBoolAttrs then
+        case args of
+            [ v ] ->
+                Ok (VCtor "Html.attr" [ VStr (attrKey name), v ])
+
+            _ ->
+                Err (name ++ " needs a value")
+
     else
         case ( name, args ) of
             ( "text", [ v ] ) ->
@@ -324,6 +361,21 @@ runBuiltin globals name args =
 
             ( "String.fromFloat", [ VNum n ] ) ->
                 Ok (VStr (String.fromFloat n))
+
+            ( "String.reverse", [ VStr s ] ) ->
+                Ok (VStr (String.reverse s))
+
+            ( "String.length", [ VStr s ] ) ->
+                Ok (VNum (toFloat (String.length s)))
+
+            ( "String.toUpper", [ VStr s ] ) ->
+                Ok (VStr (String.toUpper s))
+
+            ( "String.toLower", [ VStr s ] ) ->
+                Ok (VStr (String.toLower s))
+
+            ( "String.trim", [ VStr s ] ) ->
+                Ok (VStr (String.trim s))
 
             ( "Browser.sandbox", [ config ] ) ->
                 -- The editor drives init/update/view directly; evaluating `main` just yields the config.
@@ -966,5 +1018,28 @@ attrToString v =
         VCtor "Html.style" [ VStr k, VStr val ] ->
             " style=" ++ k ++ ":" ++ val
 
+        VCtor "Html.attr" [ VStr k, VStr val ] ->
+            " " ++ k ++ "=" ++ val
+
+        VCtor "Html.attr" [ VStr k, VBool b ] ->
+            if b then
+                " " ++ k
+
+            else
+                ""
+
+        VCtor "Html.attr" [ VStr k, other ] ->
+            " " ++ k ++ "=" ++ renderValue other
+
         _ ->
             ""
+
+
+{-| Maps an attribute builtin name to its rendered key (`type_` is a keyword-avoiding alias). -}
+attrKey : String -> String
+attrKey name =
+    if name == "type_" then
+        "type"
+
+    else
+        name
