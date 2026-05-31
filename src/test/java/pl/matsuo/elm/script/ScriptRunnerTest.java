@@ -249,6 +249,80 @@ class ScriptRunnerTest {
   }
 
   @Test
+  void bashHeadTailSortUniq() throws Exception {
+    Path dir = Files.createTempDirectory("bash-lines-");
+    Path file = dir.resolve("data.txt");
+    Files.writeString(file, "banana\napple\napple\ncherry\n");
+    String src =
+        """
+        module Main exposing (main)
+        import Bash exposing (..)
+        main : Io
+        main =
+            head 2 "%s" (\\h ->
+            sort "%s" (\\s ->
+            uniq "%s" (\\u ->
+            case (h, s, u) of
+                (Ok hs, Ok ss, Ok us) ->
+                    print ("head=" ++ String.join "," hs)
+                        (print ("sort=" ++ String.join "," ss)
+                            (print ("uniq=" ++ String.join "," us) done))
+                _ -> exit 1)))
+        """
+            .formatted(lit(file), lit(file), lit(file));
+    Run r = runScript(src, List.of(), "", true);
+    assertEquals(0, r.code());
+    assertTrue(r.out().contains("head=banana,apple"), r.out());
+    assertTrue(r.out().contains("sort=apple,apple,banana,cherry"), r.out());
+    assertTrue(r.out().contains("uniq=banana,apple,cherry"), r.out()); // adjacent apples collapsed
+  }
+
+  @Test
+  void bashDuAndTouchAndStat() throws Exception {
+    Path dir = Files.createTempDirectory("bash-meta-");
+    Files.writeString(dir.resolve("a.txt"), "12345"); // 5 bytes
+    Path made = dir.resolve("new.txt");
+    String src =
+        """
+        module Main exposing (main)
+        import Bash exposing (..)
+        main : Io
+        main =
+            touch "%s" (\\_ ->
+            du "%s" (\\d ->
+            case d of
+                Ok bytes -> print ("du=" ++ String.fromInt bytes) done
+                Err e -> print e (exit 1)))
+        """
+            .formatted(lit(made), lit(dir));
+    Run r = runScript(src, List.of(), "", true);
+    assertEquals(0, r.code());
+    assertTrue(Files.exists(made), "touch created the file");
+    assertTrue(r.out().contains("du=5"), r.out()); // only a.txt has bytes
+  }
+
+  @Test
+  void bashExecCapturesStructuredResult() throws Exception {
+    // Run the JVM's own `java -version` (always present); assert a structured Proc comes back.
+    String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+    String src =
+        """
+        module Main exposing (main)
+        import Bash exposing (..)
+        main : Io
+        main =
+            exec "%s" [ "-version" ] (\\result ->
+                case result of
+                    Ok proc -> print ("exit=" ++ String.fromInt proc.exitCode) done
+                    Err e -> print ("err: " ++ e) (exit 1))
+        """
+            .formatted(lit(java));
+    Run r = runScript(src, List.of(), "", true);
+    assertEquals(0, r.code());
+    assertTrue(r.out().contains("exit=0"), r.out());
+  }
+
+  @Test
   void folderReportSummarisesADirectory() throws Exception {
     Path dir = Files.createTempDirectory("report-");
     Files.writeString(dir.resolve("a.elm"), "module A exposing (..)\n");

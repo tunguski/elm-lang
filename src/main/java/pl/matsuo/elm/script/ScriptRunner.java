@@ -213,6 +213,84 @@ public final class ScriptRunner {
           Object found = which(str(d.arg(0)));
           cur = Thunk.resolve(Apply.apply(d.arg(1), found));
         }
+        case "Stat" -> {
+          String path = str(d.arg(0));
+          Object result;
+          Path p = Path.of(path);
+          if (Files.exists(p)) {
+            result = ok(entry(p));
+          } else {
+            result = err("no such file: " + path);
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Du" -> {
+          Object result;
+          try (var paths = Files.walk(Path.of(str(d.arg(0))))) {
+            long total = 0;
+            for (Path p : paths.filter(Files::isRegularFile).toList()) {
+              total += Files.size(p);
+            }
+            result = ok(total);
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Touch" -> {
+          String path = str(d.arg(0));
+          Object result;
+          try {
+            Path p = Path.of(path);
+            if (Files.exists(p)) {
+              Files.setLastModifiedTime(p, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
+            } else {
+              Files.createFile(p);
+            }
+            result = ok(path);
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Head" -> {
+          int n = (int) ((Number) Thunk.resolve(d.arg(0))).longValue();
+          cur = Thunk.resolve(Apply.apply(d.arg(2), lines(str(d.arg(1)), ls -> ls.stream().limit(Math.max(0, n)).toList())));
+        }
+        case "Tail" -> {
+          int n = (int) ((Number) Thunk.resolve(d.arg(0))).longValue();
+          cur = Thunk.resolve(Apply.apply(d.arg(2), lines(str(d.arg(1)), ls -> ls.subList(Math.max(0, ls.size() - Math.max(0, n)), ls.size()))));
+        }
+        case "SortLines" ->
+            cur =
+                Thunk.resolve(
+                    Apply.apply(
+                        d.arg(1),
+                        lines(str(d.arg(0)), ls -> ls.stream().sorted().toList())));
+        case "UniqLines" ->
+            cur = Thunk.resolve(Apply.apply(d.arg(1), lines(str(d.arg(0)), ScriptRunner::dropAdjacentDuplicates)));
+        case "Exec" -> {
+          Object result;
+          try {
+            java.util.List<String> argv = new java.util.ArrayList<>();
+            argv.add(str(d.arg(0)));
+            for (Object a : ((ElmList) Thunk.resolve(d.arg(1))).toJava()) {
+              argv.add((String) Thunk.resolve(a));
+            }
+            Process pr = new ProcessBuilder(argv).start();
+            String so = new String(pr.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String se = new String(pr.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            int exit = pr.waitFor();
+            java.util.Map<String, Object> fields = new java.util.LinkedHashMap<>();
+            fields.put("exitCode", (long) exit);
+            fields.put("stdout", so);
+            fields.put("stderr", se);
+            result = ok(new pl.matsuo.elm.runtime.ElmRecord(fields));
+          } catch (IOException | InterruptedException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(2), result));
+        }
         case "Exit" -> {
           return (int) ((Number) Thunk.resolve(d.arg(0))).longValue();
         }
@@ -238,6 +316,32 @@ public final class ScriptRunner {
 
   private static String message(Exception e) {
     return e.getMessage() == null ? e.toString() : e.getMessage();
+  }
+
+  /** Reads a file's lines, applies {@code transform}, and wraps the result as {@code Ok (List String)}
+   * (or {@code Err message} on failure) — the shared shape of head/tail/sort/uniq. */
+  private static ElmData lines(
+      String path, java.util.function.Function<List<String>, List<String>> transform) {
+    try {
+      List<String> all = Files.readAllLines(Path.of(path), StandardCharsets.UTF_8);
+      List<Object> out = new java.util.ArrayList<>(transform.apply(all));
+      return ok(ElmList.fromJava(out));
+    } catch (IOException | RuntimeException e) {
+      return err(message(e));
+    }
+  }
+
+  /** Drops runs of equal adjacent lines (like {@code uniq}). */
+  private static List<String> dropAdjacentDuplicates(List<String> in) {
+    List<String> out = new java.util.ArrayList<>();
+    String prev = null;
+    for (String line : in) {
+      if (!line.equals(prev)) {
+        out.add(line);
+      }
+      prev = line;
+    }
+    return out;
   }
 
   /** Builds a {@code Posix.Entry} record from a path, reading its metadata (lenient on errors). */

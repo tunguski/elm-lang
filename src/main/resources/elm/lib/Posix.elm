@@ -12,6 +12,7 @@ module Posix exposing
     , Entry
     , Match
     , Counts
+    , Proc
     , ls
     , find
     , grep
@@ -23,6 +24,14 @@ module Posix exposing
     , mv
     , env
     , which
+    , stat
+    , du
+    , touch
+    , head
+    , tail
+    , sort
+    , uniq
+    , exec
     )
 
 {-| A tiny POSIX-style I/O API for writing Elm programs that run as command-line scripts
@@ -65,6 +74,14 @@ type alias Counts =
     }
 
 
+{-| The structured result of running an external process with `exec`. -}
+type alias Proc =
+    { exitCode : Int
+    , stdout : String
+    , stderr : String
+    }
+
+
 {-| A description of a sequence of I/O effects. Opaque: build it with the helpers below. -}
 type Io
     = Print String Io
@@ -87,6 +104,14 @@ type Io
     | Mv String String (Result String String -> Io)
     | EnvAll (List ( String, String ) -> Io)
     | Which String (Maybe String -> Io)
+    | Stat String (Result String Entry -> Io)
+    | Du String (Result String Int -> Io)
+    | Touch String (Result String String -> Io)
+    | Head Int String (Result String (List String) -> Io)
+    | Tail Int String (Result String (List String) -> Io)
+    | SortLines String (Result String (List String) -> Io)
+    | UniqLines String (Result String (List String) -> Io)
+    | Exec String (List String) (Result String Proc -> Io)
 
 
 {-| Print a line to stdout, then continue. -}
@@ -207,3 +232,52 @@ env =
 which : String -> (Maybe String -> Io) -> Io
 which =
     Which
+
+
+{-| Metadata for a single path (like `stat`): name, full path, isDir, size and modified time. -}
+stat : String -> (Result String Entry -> Io) -> Io
+stat =
+    Stat
+
+
+{-| Total size in bytes of a file or directory tree (like `du -s`). -}
+du : String -> (Result String Int -> Io) -> Io
+du =
+    Du
+
+
+{-| Create an empty file, or bump an existing file's modified time (like `touch`). -}
+touch : String -> (Result String String -> Io) -> Io
+touch =
+    Touch
+
+
+{-| The first `n` lines of a file (like `head -n`). -}
+head : Int -> String -> (Result String (List String) -> Io) -> Io
+head =
+    Head
+
+
+{-| The last `n` lines of a file (like `tail -n`). -}
+tail : Int -> String -> (Result String (List String) -> Io) -> Io
+tail =
+    Tail
+
+
+{-| A file's lines sorted lexicographically (like `sort`). -}
+sort : String -> (Result String (List String) -> Io) -> Io
+sort =
+    SortLines
+
+
+{-| A file's lines with adjacent duplicates removed (like `uniq`). -}
+uniq : String -> (Result String (List String) -> Io) -> Io
+uniq =
+    UniqLines
+
+
+{-| Run an external process with the given arguments (like a direct command invocation); the
+continuation gets a structured `Proc` (exit code, captured stdout and stderr). -}
+exec : String -> List String -> (Result String Proc -> Io) -> Io
+exec =
+    Exec

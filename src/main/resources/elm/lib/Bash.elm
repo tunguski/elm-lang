@@ -3,6 +3,7 @@ module Bash exposing
     , Entry
     , Match
     , Counts
+    , Proc
     , ls
     , find
     , grep
@@ -15,6 +16,14 @@ module Bash exposing
     , mv
     , env
     , which
+    , stat
+    , du
+    , touch
+    , head
+    , tail
+    , sort
+    , uniq
+    , exec
     , print
     , writeFile
     , getArgs
@@ -66,6 +75,11 @@ type alias Match =
 {-| Line / word / character counts from `wc`. -}
 type alias Counts =
     Posix.Counts
+
+
+{-| The structured result of `exec`: exit code plus captured stdout and stderr. -}
+type alias Proc =
+    Posix.Proc
 
 
 {-| List a directory's immediate entries with metadata (like `ls`), sorted by name. -}
@@ -138,6 +152,54 @@ env =
 which : String -> (Maybe String -> Io) -> Io
 which =
     Posix.which
+
+
+{-| Metadata for a single path (like `stat`). -}
+stat : String -> (Result String Entry -> Io) -> Io
+stat =
+    Posix.stat
+
+
+{-| Total size in bytes of a file or directory tree (like `du -s`). -}
+du : String -> (Result String Int -> Io) -> Io
+du =
+    Posix.du
+
+
+{-| Create an empty file or bump its modified time (like `touch`). -}
+touch : String -> (Result String String -> Io) -> Io
+touch =
+    Posix.touch
+
+
+{-| The first `n` lines of a file (like `head -n`). -}
+head : Int -> String -> (Result String (List String) -> Io) -> Io
+head =
+    Posix.head
+
+
+{-| The last `n` lines of a file (like `tail -n`). -}
+tail : Int -> String -> (Result String (List String) -> Io) -> Io
+tail =
+    Posix.tail
+
+
+{-| A file's lines sorted (like `sort`). -}
+sort : String -> (Result String (List String) -> Io) -> Io
+sort =
+    Posix.sort
+
+
+{-| A file's lines with adjacent duplicates removed (like `uniq`). -}
+uniq : String -> (Result String (List String) -> Io) -> Io
+uniq =
+    Posix.uniq
+
+
+{-| Run an external process, capturing a structured `Proc` (exit code, stdout, stderr). -}
+exec : String -> List String -> (Result String Proc -> Io) -> Io
+exec =
+    Posix.exec
 
 
 {-| Print a line to stdout, then continue. -}
