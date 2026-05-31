@@ -407,28 +407,29 @@ class LspServerTest {
   // --- non-exhaustive case warnings -------------------------------------
 
   @Test
-  void warnsAboutANonExhaustiveCase() {
+  void surfacesANonExhaustiveCaseAsAnError() {
+    // The type checker reports non-exhaustiveness (matching Elm), surfaced by the LSP as an error.
     String src =
         "type Color = Red | Green | Blue\n"
             + "name c =\n    case c of\n        Red -> \"r\"\n        Green -> \"g\"\n";
     var ds = server.diagnose(src);
     assertTrue(
-        ds.stream().anyMatch(d -> d.severity() == 2 && d.message().contains("Non-exhaustive")
+        ds.stream().anyMatch(d -> d.severity() == 1 && d.message().contains("does not handle")
             && d.message().contains("Blue")),
         ds.toString());
   }
 
   @Test
-  void doesNotWarnAboutAnExhaustiveOrCatchAllCase() {
+  void doesNotReportAnExhaustiveOrCatchAllCase() {
     String exhaustive =
         "type Color = Red | Green\nname c =\n    case c of\n        Red -> \"r\"\n        Green -> \"g\"\n";
     assertTrue(
-        server.diagnose(exhaustive).stream().noneMatch(d -> d.message().contains("Non-exhaustive")),
+        server.diagnose(exhaustive).stream().noneMatch(d -> d.message().contains("does not handle")),
         "all constructors covered");
     String catchAll =
         "type Color = Red | Green | Blue\nname c =\n    case c of\n        Red -> \"r\"\n        _ -> \"other\"\n";
     assertTrue(
-        server.diagnose(catchAll).stream().noneMatch(d -> d.message().contains("Non-exhaustive")),
+        server.diagnose(catchAll).stream().noneMatch(d -> d.message().contains("does not handle")),
         "wildcard branch makes it exhaustive");
   }
 

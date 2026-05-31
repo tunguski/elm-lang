@@ -89,73 +89,8 @@ public final class LspServer {
     }
     out.addAll(unusedImportWarnings(source, module));
     out.addAll(unusedBindingWarnings(module));
-    out.addAll(nonExhaustiveCaseWarnings(module));
-    return out;
-  }
-
-  /**
-   * Warns about a {@code case} over a custom type (or {@code Bool}/{@code Maybe}/{@code Result}/
-   * {@code Order}) that doesn't cover every constructor and has no catch-all ({@code _} or a variable)
-   * branch. Conservative: only flags a case whose constructor patterns all belong to one known union;
-   * cases over literals, lists or tuples, or with a wildcard branch, are left alone. The existing
-   * "Add missing case branches" quick-fix fixes exactly what this flags.
-   */
-  List<Diagnostic> nonExhaustiveCaseWarnings(Module module) {
-    Map<String, List<String>> unionCtors = new java.util.HashMap<>();
-    Map<String, String> ctorUnion = new java.util.HashMap<>();
-    Map<String, Integer> ctorArity = new java.util.HashMap<>();
-    seedBuiltinUnions(unionCtors, ctorUnion, ctorArity);
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Union u) {
-        List<String> names = new ArrayList<>();
-        for (Decl.Union.Variant variant : u.variants()) {
-          names.add(variant.name());
-          ctorUnion.put(variant.name(), u.name());
-        }
-        unionCtors.put(u.name(), names);
-      }
-    }
-    List<Expr.Case> cases = new ArrayList<>();
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Value v) {
-        collectCases(v.body(), cases);
-      }
-    }
-    List<Diagnostic> out = new ArrayList<>();
-    for (Expr.Case c : cases) {
-      boolean catchAll = false;
-      java.util.Set<String> matched = new java.util.HashSet<>();
-      String union = null;
-      for (Expr.Case.Branch br : c.branches()) {
-        if (br.pattern() instanceof Pattern.Wildcard || br.pattern() instanceof Pattern.Var) {
-          catchAll = true;
-          break;
-        }
-        if (br.pattern() instanceof Pattern.Ctor ct) {
-          matched.add(ct.name());
-          if (ctorUnion.containsKey(ct.name())) {
-            union = ctorUnion.get(ct.name());
-          }
-        }
-      }
-      if (catchAll || union == null) {
-        continue; // exhaustive via catch-all, or not a recognised-union case
-      }
-      List<String> missing = new ArrayList<>();
-      for (String ctor : unionCtors.get(union)) {
-        if (!matched.contains(ctor)) {
-          missing.add(ctor);
-        }
-      }
-      if (!missing.isEmpty()) {
-        out.add(
-            warn(
-                c.pos(),
-                "Non-exhaustive `case`: missing branch"
-                    + (missing.size() > 1 ? "es" : "")
-                    + " for " + String.join(", ", missing) + "."));
-      }
-    }
+    // Non-exhaustive `case` is reported by the type checker above (as an error, matching Elm), so it
+    // needs no separate warning here.
     return out;
   }
 

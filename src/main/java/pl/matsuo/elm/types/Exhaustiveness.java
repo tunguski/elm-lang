@@ -95,11 +95,44 @@ final class Exhaustiveness {
       return; // couldn't determine a column's signature — stay sound, report nothing
     }
     if (witness != null) {
-      throw new ElmTypeError("This `case` does not handle all possible inputs.")
-          .at(
-              c.pos(),
-              "Missing a branch for: " + witness[0] + ". Add it, or a wildcard `_ ->` branch.");
+      // For a plain single-union match, list *every* missing constructor (more helpful than the one
+      // witness Maranget yields); otherwise fall back to the witness value.
+      List<String> missingCtors = topLevelMissingUnion(tops);
+      String hint =
+          missingCtors != null && missingCtors.size() > 1
+              ? "Missing branches for: " + String.join(", ", missingCtors)
+                  + ". Add them, or a wildcard `_ ->` branch."
+              : "Missing a branch for: " + witness[0] + ". Add it, or a wildcard `_ ->` branch.";
+      throw new ElmTypeError("This `case` does not handle all possible inputs.").at(c.pos(), hint);
     }
+  }
+
+  /** If every branch is a top-level constructor pattern of one known union, the union's constructors
+   * that no branch matches (in declaration order); otherwise null. */
+  private List<String> topLevelMissingUnion(List<Pattern> tops) {
+    String union = null;
+    java.util.Set<String> matched = new java.util.HashSet<>();
+    for (Pattern p : tops) {
+      if (!(p instanceof Pattern.Ctor ct) || !ctorUnion.containsKey(ct.name())) {
+        return null;
+      }
+      String u = ctorUnion.get(ct.name());
+      if (union != null && !union.equals(u)) {
+        return null;
+      }
+      union = u;
+      matched.add(ct.name());
+    }
+    if (union == null) {
+      return null;
+    }
+    List<String> missing = new ArrayList<>();
+    for (String ctor : unionCtors.get(union)) {
+      if (!matched.contains(ctor)) {
+        missing.add(ctor);
+      }
+    }
+    return missing;
   }
 
   // --- Maranget's algorithm I (witness-producing usefulness) -------------

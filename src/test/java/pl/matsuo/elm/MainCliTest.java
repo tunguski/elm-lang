@@ -208,6 +208,18 @@ class MainCliTest {
   }
 
   @Test
+  void checkReportsNonExhaustiveCaseListingAllMissingConstructors() throws Exception {
+    Path f =
+        tempElm(
+            "module M exposing (..)\ntype Color = Red | Green | Blue\n"
+                + "name c =\n    case c of\n        Red -> \"r\"\n"); // missing Green and Blue
+    Result r = invoke("check", f.toString());
+    assertTrue(r.code() == 1, r.out());
+    assertTrue(r.out().contains("does not handle all possible inputs"), r.out());
+    assertTrue(r.out().contains("Missing branches for: Green, Blue"), r.out()); // all missing listed
+  }
+
+  @Test
   void wasmCommandCompilesAMultiModuleProjectToABinary() throws Exception {
     Path util = tempElm("module Util exposing (square)\nsquare n = n * n\n");
     Path main = tempElm("module Main exposing (main)\nimport Util exposing (square)\nmain = square 7\n");

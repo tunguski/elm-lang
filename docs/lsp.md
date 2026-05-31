@@ -43,12 +43,12 @@ heuristics.
 Published on `didOpen` and after each `didChange`. Each diagnostic carries `source: "elm-lang"` and a
 `severity`:
 
-- **Error** (`severity: 1`) — parse errors and type errors. Multiple independent errors are reported
-  together rather than stopping at the first.
+- **Error** (`severity: 1`) — parse errors and type errors, including a **non-exhaustive `case`**
+  (missing constructors are named; for a single-union match all of them are listed), which the "Add
+  missing case branches" quick-fix then resolves. Multiple independent errors are reported together
+  rather than stopping at the first.
 - **Warning** (`severity: 2`) — unused imports, unused exposed/imported names, unused private
-  top-level definitions, unused function parameters and `let` bindings, and a **non-exhaustive
-  `case`** (a custom type / `Bool`/`Maybe`/`Result`/`Order` match missing constructors and lacking a
-  catch-all) — which the "Add missing case branches" quick-fix then resolves.
+  top-level definitions, and unused function parameters and `let` bindings.
 
 ### Code actions
 
