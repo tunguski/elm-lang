@@ -298,6 +298,26 @@ public final class LspServer {
     }
   }
 
+  /** The LSP {@code TextEdit[]} that reformats {@code source}: a single whole-document replacement,
+   * or none if it's unparseable or already formatted. Shared by formatting and range-formatting. */
+  private List<Object> fullFormatEdits(String source) {
+    List<Object> edits = new ArrayList<>();
+    formatDocument(source)
+        .ifPresent(
+            formatted -> {
+              String[] lines = source.split("\n", -1);
+              int lastLine = lines.length - 1;
+              Map<String, Object> r = new LinkedHashMap<>();
+              r.put("start", point(0, 0));
+              r.put("end", point(lastLine, lines[lastLine].length()));
+              Map<String, Object> edit = new LinkedHashMap<>();
+              edit.put("range", r);
+              edit.put("newText", formatted);
+              edits.add(edit);
+            });
+    return edits;
+  }
+
   /** The inferred type of the top-level definition on the given 0-based line, if any. */
   public Optional<String> hoverType(String source, int line0) {
     Map<String, String> types;
@@ -1050,10 +1070,12 @@ public final class LspServer {
   /** A multi-edit refactor: a title and the edits (each a {@link CodeAction}) applied together. */
   public record Refactor(String title, List<CodeAction> edits) {}
 
-  /** Refactors available for a 0-based selection: "Extract to function" and "Inline". */
+  /** Refactors available for a 0-based selection: "Extract to function", "Convert lambda to a
+   * top-level function" and "Inline". */
   public List<Refactor> refactors(String source, int sl, int sc, int el, int ec) {
     List<Refactor> out = new ArrayList<>();
     extractFunction(source, sl, sc, el, ec, out);
+    lambdaToTopLevel(source, sl, sc, el, ec, out);
     inlineValue(source, sl, sc, out);
     return out;
   }
@@ -1288,6 +1310,66 @@ public final class LspServer {
             List.of(
                 new CodeAction("extract", sl, sc, el, ec, call),
                 new CodeAction("extract", lastLine, lines[lastLine].length(), fn))));
+  }
+
+  /**
+   * "Convert lambda to a top-level function": when the selection is a lambda {@code \p… -> body},
+   * lift it to a named top-level function {@code name <captures> <params> = body} (its captured
+   * locals lead the parameter list) and replace the selection with the partially-applied name.
+   */
+  private void lambdaToTopLevel(String source, int sl, int sc, int el, int ec, List<Refactor> out) {
+    String sel = slice(source, sl, sc, el, ec);
+    if (sel == null) {
+      return;
+    }
+    String t = sel.strip();
+    int arrow = t.indexOf("->");
+    if (!t.startsWith("\\") || arrow < 0) {
+      return;
+    }
+    Expr expr;
+    Module module;
+    try {
+      expr = Parser.parseExpression(t);
+      module = Parser.parseModule(source);
+    } catch (RuntimeException e) {
+      return;
+    }
+    if (!(expr instanceof Expr.Lambda)) {
+      return;
+    }
+    String paramsPart = t.substring(1, arrow).strip(); // the lambda's parameters, as written
+    String body = t.substring(arrow + 2).strip();
+    if (paramsPart.isEmpty() || body.isEmpty()) {
+      return;
+    }
+    Set<String> topLevel = new HashSet<>();
+    for (Decl d : module.decls()) {
+      switch (d) {
+        case Decl.Value v -> topLevel.add(v.name());
+        case Decl.Union u -> u.variants().forEach(va -> topLevel.add(va.name()));
+        case Decl.Port p -> topLevel.add(p.name());
+        default -> {}
+      }
+    }
+    List<String> captures = new ArrayList<>();
+    for (String f : FreeVars.of(expr)) { // lambda params are already excluded by FreeVars
+      if (!topLevel.contains(f)) {
+        captures.add(f);
+      }
+    }
+    String name = freshName("extracted", topLevel);
+    String lead = captures.isEmpty() ? "" : " " + String.join(" ", captures);
+    String fn = "\n\n" + name + lead + " " + paramsPart + " =\n    " + body.replace("\n", "\n    ") + "\n";
+    String call = captures.isEmpty() ? name : "(" + name + lead + ")";
+    String[] lines = source.split("\n", -1);
+    int lastLine = lines.length - 1;
+    out.add(
+        new Refactor(
+            "Convert lambda to top-level `" + name + "`",
+            List.of(
+                new CodeAction("lambda", sl, sc, el, ec, call),
+                new CodeAction("lambda", lastLine, lines[lastLine].length(), fn))));
   }
 
   /** The text of {@code source} between two 0-based positions, or null if the range is invalid. */
@@ -1659,26 +1741,12 @@ public final class LspServer {
         workspaceEdit.put("changes", changes);
         reply(out, id, workspaceEdit);
       }
-      case "textDocument/formatting" -> {
+      case "textDocument/formatting", "textDocument/rangeFormatting" -> {
+        // Range formatting reformats the whole module too (the formatter works on a complete module,
+        // not a fragment), so "Format Selection" cleanly formats the file.
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         String uri = (String) td.get("uri");
-        String source = docs.getOrDefault(uri, "");
-        List<Object> edits = new ArrayList<>();
-        formatDocument(source)
-            .ifPresent(
-                formatted -> {
-                  // One edit replacing the whole document (start of file → end of the last line).
-                  String[] lines = source.split("\n", -1);
-                  int lastLine = lines.length - 1;
-                  Map<String, Object> r = new LinkedHashMap<>();
-                  r.put("start", point(0, 0));
-                  r.put("end", point(lastLine, lines[lastLine].length()));
-                  Map<String, Object> edit = new LinkedHashMap<>();
-                  edit.put("range", r);
-                  edit.put("newText", formatted);
-                  edits.add(edit);
-                });
-        reply(out, id, edits);
+        reply(out, id, fullFormatEdits(docs.getOrDefault(uri, "")));
       }
       case "textDocument/codeAction" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
@@ -1861,6 +1929,7 @@ public final class LspServer {
     caps.put("workspaceSymbolProvider", true);
     caps.put("callHierarchyProvider", true);
     caps.put("documentFormattingProvider", true);
+    caps.put("documentRangeFormattingProvider", true);
     caps.put("inlayHintProvider", true);
     Map<String, Object> sig = new LinkedHashMap<>();
     sig.put("triggerCharacters", List.of(" ", "("));

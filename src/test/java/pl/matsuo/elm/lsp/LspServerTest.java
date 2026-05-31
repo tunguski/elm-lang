@@ -260,7 +260,10 @@ class LspServerTest {
     assertTrue(response.contains("renameProvider"), response);
     assertTrue(response.contains("semanticTokensProvider"), response);
     assertTrue(response.contains("documentFormattingProvider"), response);
+    assertTrue(response.contains("documentRangeFormattingProvider"), response);
     assertTrue(response.contains("documentHighlightProvider"), response);
+    assertTrue(response.contains("callHierarchyProvider"), response);
+    assertTrue(response.contains("workspaceSymbolProvider"), response);
   }
 
   @Test
@@ -367,6 +370,17 @@ class LspServerTest {
   void extractFunctionDeclinesANonExpressionSelection() {
     var rs = server.refactors("main = 2 + 3\n", 0, 0, 0, 6); // "main =" isn't an expression
     assertTrue(rs.stream().noneMatch(r -> r.title().startsWith("Extract")), rs.toString());
+  }
+
+  @Test
+  void convertLambdaToTopLevelFunction() {
+    String src = "main =\n    List.map (\\x -> x + 1) [ 1, 2, 3 ]\n";
+    var rs = server.refactors(src, 1, 14, 1, 25); // the `\x -> x + 1` lambda
+    var conv = rs.stream().filter(r -> r.title().startsWith("Convert lambda")).findFirst().orElseThrow();
+    assertEquals(2, conv.edits().size());
+    assertEquals("extracted", conv.edits().get(0).newText()); // no captures -> bare name
+    assertTrue(conv.edits().get(1).newText().contains("extracted x =\n    x + 1"),
+        conv.edits().get(1).newText());
   }
 
   @Test

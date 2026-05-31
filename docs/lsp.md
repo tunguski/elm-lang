@@ -68,8 +68,13 @@ Offered for the cursor's position / selection:
   replaces the selection with a call to it. The expression's **free local variables** (anything not
   bound to a top-level name or constructor) become the new function's parameters, so the result still
   resolves. Declined when the selection isn't a complete expression.
-- **Inline** — the inverse: on a use of a top-level *parameterless* value with a single-line body,
-  replaces the occurrence with that body in parentheses.
+- **Convert lambda to a top-level function** — lifts a selected `\x -> …` lambda to a named
+  top-level function (captured locals lead its parameters) and replaces the selection with it.
+- **Inline** — the inverse of extract: on a use of a top-level *parameterless* value with a
+  single-line body, replaces the occurrence with that body in parentheses.
+
+`textDocument/rangeFormatting` ("Format Selection") is also supported — it reformats the whole module
+(the formatter operates on a complete module, not a fragment).
 
 ---
 
