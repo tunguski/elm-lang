@@ -481,7 +481,7 @@ public final class WasmCompiler {
 
     /** Compiles an Int-typed expression into a complete code entry (locals + body + end). */
     byte[] compile(Expr e) {
-      intExpr(e);
+      tailExpr(e); // the body is in tail position: a direct self/other call becomes a return_call
       // Locals declaration covers only the non-parameter locals; params are implicit (0..n-1).
       int extra = localCount - numParams;
       ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -581,7 +581,7 @@ public final class WasmCompiler {
         case Expr.Ctor c when c.name().equals("True") -> { code.write(0x42); sleb(code, 1); }
         case Expr.Ctor c when c.name().equals("False") -> { code.write(0x42); sleb(code, 0); }
         case Expr.Ctor c when ctorTag.containsKey(c.name()) -> emitCtor(c.name(), List.of());
-        case Expr.Case c -> intCase(c);
+        case Expr.Case c -> intCase(c, this::intExpr);
         case Expr.Record r -> emitRecord(r);
         case Expr.RecordAccess a -> emitRecordAccess(a);
         case Expr.RecordUpdate u -> emitRecordUpdate(u);
@@ -860,14 +860,78 @@ public final class WasmCompiler {
     }
 
     /** Dispatches a {@code case} to the list or the custom-type compiler by its branch patterns. */
-    private void intCase(Expr.Case c) {
+    /**
+     * Compiles an expression in <b>tail position</b>: a direct, exactly-applied call to a top-level
+     * function becomes a {@code return_call} (reusing the current frame), so recursive Elm runs at
+     * any depth instead of overflowing the wasm call stack. Tail position flows through {@code if}
+     * branches, {@code let} bodies and {@code case} branches; anything else falls back to the
+     * ordinary value-leaving compilation (and is returned implicitly at the function's end).
+     */
+    private void tailExpr(Expr e) {
+      switch (e) {
+        case Expr.If iff -> {
+          boolExpr(iff.cond());
+          code.write(0x04);
+          code.write(I64); // if -> i64
+          tailExpr(iff.thenBranch());
+          code.write(0x05);
+          tailExpr(iff.elseBranch());
+          code.write(0x0B);
+        }
+        case Expr.Let let -> {
+          for (Decl d : let.defs()) {
+            if (d instanceof Decl.Value v && v.params().isEmpty()) {
+              int idx = local(v.name());
+              intExpr(v.body());
+              code.write(0x21);
+              leb(code, idx);
+            } else {
+              throw unsupported("let definition with parameters");
+            }
+          }
+          tailExpr(let.body());
+        }
+        case Expr.Case c -> intCase(c, this::tailExpr);
+        case Expr.App app -> tailApp(app);
+        default -> intExpr(e);
+      }
+    }
+
+    /** A direct, exactly-applied call to a known top-level function in tail position emits {@code
+     *  return_call}; anything else is left to the ordinary {@link #intApp}. */
+    private void tailApp(Expr.App app) {
+      List<Expr> args = new ArrayList<>();
+      Expr head = app;
+      while (head instanceof Expr.App a) {
+        args.add(0, a.arg());
+        head = a.fn();
+      }
+      if (head instanceof Expr.Var v
+          && funcs.containsKey(resolvedName(v))
+          && !locals.containsKey(resolvedName(v))
+          && funcs.get(resolvedName(v))[1] == args.size()
+          && !arenaResettable(app)) {
+        // A direct, exactly-applied call that does NOT need arena reclamation: tail-call it.
+        for (Expr arg : args) {
+          intExpr(arg);
+        }
+        code.write(0x12); // return_call
+        leb(code, funcs.get(resolvedName(v))[0]);
+        return;
+      }
+      // Otherwise go through emitApp so arena reclamation still runs (a tail call could not reset
+      // the heap pointer afterwards). Builtins/ctors/partial/closures land here too.
+      emitApp(app);
+    }
+
+    private void intCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
       boolean adt =
           c.branches().stream()
               .anyMatch(b -> b.pattern() instanceof Pattern.Ctor ct && ctorTag.containsKey(ct.name()));
       if (adt) {
-        intAdtCase(c);
+        intAdtCase(c, body);
       } else {
-        intListCase(c);
+        intListCase(c, body);
       }
     }
 
@@ -876,15 +940,16 @@ public final class WasmCompiler {
      * chain comparing it to each constructor's tag, binding fields (by word offset) in the match.
      * Constructor arguments must be variable/wildcard patterns (no nested matching).
      */
-    private void intAdtCase(Expr.Case c) {
+    private void intAdtCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
       int s = freshLocal();
       intExpr(c.scrutinee());
       code.write(0x21);
       leb(code, s); // local.set scrutinee pointer
-      emitAdtBranches(c.branches(), 0, s);
+      emitAdtBranches(c.branches(), 0, s, body);
     }
 
-    private void emitAdtBranches(List<Expr.Case.Branch> branches, int idx, int s) {
+    private void emitAdtBranches(
+        List<Expr.Case.Branch> branches, int idx, int s, java.util.function.Consumer<Expr> body) {
       if (idx >= branches.size()) {
         code.write(0x00); // unreachable: a well-typed case is exhaustive
         return;
@@ -897,9 +962,9 @@ public final class WasmCompiler {
           leb(code, s);
           code.write(0x21);
           leb(code, local); // bind the whole value
-          intExpr(br.body());
+          body.accept(br.body());
         }
-        case Pattern.Wildcard ignored -> intExpr(br.body());
+        case Pattern.Wildcard ignored -> body.accept(br.body());
         case Pattern.Ctor ctor -> {
           load(s, 0); // tag word
           code.write(0x42);
@@ -917,9 +982,9 @@ public final class WasmCompiler {
               throw unsupported("nested constructor pattern in WASM");
             }
           }
-          intExpr(br.body());
+          body.accept(br.body());
           code.write(0x05); // else
-          emitAdtBranches(branches, idx + 1, s);
+          emitAdtBranches(branches, idx + 1, s, body);
           code.write(0x0B); // end
         }
         default -> throw unsupported("custom-type case pattern in WASM");
@@ -927,7 +992,7 @@ public final class WasmCompiler {
     }
 
     /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
-    private void intListCase(Expr.Case c) {
+    private void intListCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
       Expr nilBody = null;
       Pattern consHead = null, consTail = null;
       Expr consBody = null;
@@ -955,7 +1020,7 @@ public final class WasmCompiler {
       code.write(0x50); // i64.eqz  (1 if Nil)
       code.write(0x04);
       code.write(I64); // if -> i64
-      intExpr(nilBody);
+      body.accept(nilBody);
       code.write(0x05); // else
       if (consHead instanceof Pattern.Var hv) {
         int h = local(hv.name());
@@ -969,7 +1034,7 @@ public final class WasmCompiler {
         code.write(0x21);
         leb(code, t); // local.set tail
       }
-      intExpr(consBody);
+      body.accept(consBody);
       code.write(0x0B); // end
     }
 

@@ -58,6 +58,11 @@ class WasmGcTest {
   }
 
   @Test
+  void tailRecursionRunsAtGreatDepth() throws Exception {
+    agrees("sumTo n acc = if n == 0 then acc else sumTo (n - 1) (acc + n)\nmain = sumTo 1000000 0\n");
+  }
+
+  @Test
   void sumsAConsListBuiltOnTheGcHeap() throws Exception {
     agrees(
         """

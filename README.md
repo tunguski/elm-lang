@@ -17,8 +17,9 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    **float** fragment plus a growable linear-memory heap (cons-lists, tuples, tagged custom types,
    type-directed **strings**, and self-describing **row-polymorphic records**), and first-class
    functions, **closures and currying** (a uniform closure value + a generic `$apply` runtime,
-   lambdas lambda-lifted), so recursive list/ADT, float, string, record, higher-order and curried
-   code compile and run anywhere `WebAssembly` does. A second, **WasmGC** code path (`WasmGc`)
+   lambdas lambda-lifted), with **tail calls** compiled to `return_call` so recursive loops run at
+   any depth, so recursive list/ADT, float, string, record, higher-order and curried code compile
+   and run anywhere `WebAssembly` does. A second, **WasmGC** code path (`WasmGc`)
    compiles the Int/`List Int` subset to host-garbage-collected `struct` references — cons-lists with
    no linear memory and no manual reclamation, collected by the engine.
 

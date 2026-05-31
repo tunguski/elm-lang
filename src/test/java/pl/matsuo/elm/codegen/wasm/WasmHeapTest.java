@@ -405,6 +405,22 @@ class WasmHeapTest {
   }
 
   @Test
+  void tailRecursionRunsAtGreatDepth() throws Exception {
+    // A direct tail call compiles to return_call, reusing the frame — so a million-deep loop runs
+    // instead of overflowing the wasm call stack.
+    agrees(
+        """
+        down n = if n == 0 then 0 else down (n - 1)
+        main = down 1000000
+        """);
+    agrees(
+        """
+        sumTo n acc = if n == 0 then acc else sumTo (n - 1) (acc + n)
+        main = sumTo 1000000 0
+        """);
+  }
+
+  @Test
   void appliesAFunctionPassedAsAValue() throws Exception {
     // A top-level function used as a value (its table index) and invoked via call_indirect.
     agrees(

@@ -137,7 +137,7 @@ public final class WasmGc {
     }
 
     byte[] compile(Expr body) {
-      gen(body);
+      tailGen(body); // tail position: a direct call becomes return_call (deep recursion is safe)
       // Emit each extra local as its own group (so mixed i64/ref types are declared correctly).
       ByteArrayOutputStream locs = new ByteArrayOutputStream();
       leb(locs, extraLocals.size());
@@ -213,8 +213,8 @@ public final class WasmGc {
           }
         }
         case Expr.ListLit l -> emitList(l.items(), 0);
-        case Expr.App app -> app(app);
-        case Expr.Case c -> listCase(c);
+        case Expr.App app -> app(app, false);
+        case Expr.Case c -> listCase(c, this::gen);
         default -> throw unsupported(e.getClass().getSimpleName());
       }
     }
@@ -309,7 +309,40 @@ public final class WasmGc {
       leb(code, 0); // struct.new $cons
     }
 
-    private void app(Expr.App app) {
+    /** Tail-position compilation: a direct call becomes {@code return_call} (deep recursion is
+     *  stack-safe); tail position flows through {@code if}/{@code let}/{@code case}. */
+    private void tailGen(Expr e) {
+      switch (e) {
+        case Expr.If iff -> {
+          boolGen(iff.cond());
+          code.write(0x04);
+          writeType(code, wOf(nodeType(iff)));
+          tailGen(iff.thenBranch());
+          code.write(0x05);
+          tailGen(iff.elseBranch());
+          code.write(0x0B);
+        }
+        case Expr.Let let -> {
+          for (Decl d : let.defs()) {
+            if (d instanceof Decl.Value v && v.params().isEmpty()) {
+              W w = wOf(nodeType(v.body()));
+              int idx = freshLocal(v.name(), w);
+              gen(v.body());
+              code.write(0x21);
+              leb(code, idx);
+            } else {
+              throw unsupported("let with parameters");
+            }
+          }
+          tailGen(let.body());
+        }
+        case Expr.Case c -> listCase(c, this::tailGen);
+        case Expr.App app -> app(app, true);
+        default -> gen(e);
+      }
+    }
+
+    private void app(Expr.App app, boolean tail) {
       List<Expr> args = new ArrayList<>();
       Expr head = app;
       while (head instanceof Expr.App a) {
@@ -320,7 +353,7 @@ public final class WasmGc {
         for (Expr arg : args) {
           gen(arg);
         }
-        code.write(0x10);
+        code.write(tail ? 0x12 : 0x10); // return_call in tail position, else call
         leb(code, funcs.get(v.name())[0]);
         return;
       }
@@ -328,7 +361,7 @@ public final class WasmGc {
     }
 
     /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
-    private void listCase(Expr.Case c) {
+    private void listCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
       Expr nilBody = null;
       Pattern consHead = null;
       Pattern consTail = null;
@@ -358,7 +391,7 @@ public final class WasmGc {
       code.write(0xD1); // ref.is_null
       code.write(0x04);
       writeType(code, wOf(nodeType(c))); // result type
-      gen(nilBody);
+      body.accept(nilBody);
       code.write(0x05);
       if (consHead instanceof Pattern.Var hv) {
         int h = freshLocal(hv.name(), W.INT);
@@ -382,7 +415,7 @@ public final class WasmGc {
         code.write(0x21);
         leb(code, t);
       }
-      gen(consBody);
+      body.accept(consBody);
       code.write(0x0B);
     }
 
