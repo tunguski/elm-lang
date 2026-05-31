@@ -251,6 +251,16 @@ class WasmGcTest {
   }
 
   @Test
+  void closedLambdasAsValues() throws Exception {
+    // A capture-free lambda is lifted to a top-level function and passed/applied like a named one.
+    agrees("apply f x = f x\nmain = apply (\\n -> n * 2) 21\n"); // 42
+    agrees("apply f x = f x\nmain = apply (\\n -> n + 1) 5\n"); // 6
+    agrees("twice f x = f (f x)\nmain = twice (\\n -> n + 3) 1\n"); // 7
+    // A lambda referring to a top-level function is still capture-free (the name is global).
+    agrees("inc n = n + 1\napply f x = f x\nmain = apply (\\n -> inc (inc n)) 5\n"); // 7
+  }
+
+  @Test
   void nullaryCustomTypesAsEnumTags() throws Exception {
     // A nullary union is an i64 tag; `case` dispatches on it (last branch is the default).
     agrees(

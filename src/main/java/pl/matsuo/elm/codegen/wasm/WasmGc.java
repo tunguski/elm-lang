@@ -187,12 +187,89 @@ public final class WasmGc {
             new Func(v.name(), params, paramTypes, wOf(resultType(t, params.size()), tuples), v.body()));
       }
     }
+    // Lift capture-free unary lambdas to top-level functions (a closed `\x -> …` is just a named
+    // function), so they can be passed and applied like any other function value. Lambdas that
+    // capture a local variable need closure structs and stay unsupported for now.
+    java.util.Set<String> topLevel = new java.util.HashSet<>();
+    for (Func f : funcs) {
+      topLevel.add(f.name());
+    }
+    Map<Expr.Lambda, Integer> liftedLambda = new java.util.IdentityHashMap<>();
+    int[] counter = {0};
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v && schemes.containsKey(v.name())) {
+        collectLambdas(v.body(), topLevel, nodeTypes, tuples, funcs, liftedLambda, counter);
+      }
+    }
     // All structs are now registered; register each function's own signature functype after them, so
     // functypes occupy the type indices above the structs (one shared rec group).
     for (Func f : funcs) {
       tuples.funcTypeIndex(f.paramTypes(), f.result());
     }
-    return assemble(funcs, nodeTypes, tuples);
+    return assemble(funcs, nodeTypes, tuples, liftedLambda);
+  }
+
+  /**
+   * Lifts every capture-free unary lambda reachable in {@code e} to a fresh top-level {@link Func}
+   * (appended to {@code funcs}) and records it in {@code lifted} (lambda → its function index). A
+   * lambda is liftable when it has one variable parameter and every free variable is a top-level
+   * name (so it captures no local) — then it is just a named function. Recurses into bodies for
+   * nested lambdas regardless.
+   */
+  private static void collectLambdas(
+      Expr e, java.util.Set<String> topLevel, Map<Expr, Ty> nodeTypes, Tuples tuples,
+      List<Func> funcs, Map<Expr.Lambda, Integer> lifted, int[] counter) {
+    switch (e) {
+      case Expr.Lambda lam -> {
+        Ty lt = lam == null ? null : (nodeTypes.get(lam) == null ? null : Types.prune(nodeTypes.get(lam)));
+        if (lam.params().size() == 1
+            && lam.params().get(0) instanceof Pattern.Var pv
+            && lt instanceof Ty.Arrow arr
+            && pl.matsuo.elm.ast.FreeVars.of(lam).stream().allMatch(topLevel::contains)) {
+          lifted.put(lam, funcs.size());
+          funcs.add(
+              new Func("lam$" + counter[0]++, List.of(pv.name()),
+                  List.of(wOf(arr.from(), tuples)), wOf(arr.to(), tuples), lam.body()));
+        }
+        collectLambdas(lam.body(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+      }
+      case Expr.App a -> {
+        collectLambdas(a.fn(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+        collectLambdas(a.arg(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+      }
+      case Expr.BinOp b -> {
+        collectLambdas(b.left(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+        collectLambdas(b.right(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+      }
+      case Expr.If i -> {
+        collectLambdas(i.cond(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+        collectLambdas(i.thenBranch(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+        collectLambdas(i.elseBranch(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+      }
+      case Expr.Negate n -> collectLambdas(n.operand(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+      case Expr.Let let -> {
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            collectLambdas(v.body(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+          } else if (d instanceof Decl.Destructure de) {
+            collectLambdas(de.body(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+          }
+        }
+        collectLambdas(let.body(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+      }
+      case Expr.Case c -> {
+        collectLambdas(c.scrutinee(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+        for (Expr.Case.Branch br : c.branches()) {
+          collectLambdas(br.body(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+        }
+      }
+      case Expr.ListLit l -> l.items().forEach(x -> collectLambdas(x, topLevel, nodeTypes, tuples, funcs, lifted, counter));
+      case Expr.Tuple t -> t.items().forEach(x -> collectLambdas(x, topLevel, nodeTypes, tuples, funcs, lifted, counter));
+      case Expr.Record r -> r.fields().forEach(f -> collectLambdas(f.value(), topLevel, nodeTypes, tuples, funcs, lifted, counter));
+      case Expr.RecordAccess a -> collectLambdas(a.target(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
+      case Expr.RecordUpdate u -> u.fields().forEach(f -> collectLambdas(f.value(), topLevel, nodeTypes, tuples, funcs, lifted, counter));
+      default -> {}
+    }
   }
 
   /** The i-th parameter type of an arrow chain. */
@@ -580,6 +657,7 @@ public final class WasmGc {
     private final Map<String, W> funcResult; // name -> result type
     private final Map<Expr, Ty> nodeTypes;
     private final Tuples tuples;
+    private final Map<Expr.Lambda, Integer> lifted; // lambda -> its lifted top-level function index
     private final Map<String, Integer> locals = new HashMap<>();
     private final Map<String, W> localTypes = new HashMap<>();
     private final List<W> extraLocals = new ArrayList<>(); // beyond params
@@ -587,11 +665,12 @@ public final class WasmGc {
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
 
     Gen(Map<String, int[]> funcs, Map<String, W> funcResult, Map<Expr, Ty> nodeTypes, Tuples tuples,
-        List<String> params, List<W> paramTypes) {
+        Map<Expr.Lambda, Integer> lifted, List<String> params, List<W> paramTypes) {
       this.funcs = funcs;
       this.funcResult = funcResult;
       this.nodeTypes = nodeTypes;
       this.tuples = tuples;
+      this.lifted = lifted;
       this.numParams = params.size();
       for (int i = 0; i < params.size(); i++) {
         locals.put(params.get(i), i);
@@ -755,6 +834,14 @@ public final class WasmGc {
         case Expr.RecordUpdate up -> emitRecordUpdate(up);
         case Expr.App app -> app(app, false);
         case Expr.Case c -> caseExpr(c, this::gen);
+        case Expr.Lambda lam -> {
+          Integer fi = lifted.get(lam);
+          if (fi == null) {
+            throw unsupported("a lambda that captures a local variable (WasmGC supports capture-free lambdas)");
+          }
+          code.write(0xD2); // ref.func -> the lifted top-level function as a value
+          leb(code, fi);
+        }
         default -> throw unsupported(e.getClass().getSimpleName());
       }
     }
@@ -1419,7 +1506,8 @@ public final class WasmGc {
 
   // --- module assembly ----------------------------------------------------
 
-  private static byte[] assemble(List<Func> funcList, Map<Expr, Ty> nodeTypes, Tuples tuples) {
+  private static byte[] assemble(
+      List<Func> funcList, Map<Expr, Ty> nodeTypes, Tuples tuples, Map<Expr.Lambda, Integer> lifted) {
     Map<String, int[]> table = new HashMap<>();
     Map<String, W> funcResult = new HashMap<>();
     for (int i = 0; i < funcList.size(); i++) {
@@ -1522,7 +1610,7 @@ public final class WasmGc {
     leb(code, funcList.size());
     for (Func f : funcList) {
       code.writeBytes(
-          new Gen(table, funcResult, nodeTypes, tuples, f.params(), f.paramTypes())
+          new Gen(table, funcResult, nodeTypes, tuples, lifted, f.params(), f.paramTypes())
               .compile(f.body()));
     }
     section(out, 10, code);
