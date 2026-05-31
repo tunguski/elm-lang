@@ -99,6 +99,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `lsp` | Language server over stdio (diagnostics, hover, completion, document symbols, code actions, semantic-token highlighting, and **workspace-wide** go-to-definition, find-references and rename across modules). |
 | `script <file.elm> [args…]` | Run an Elm file as a POSIX-style CLI script (the bundled `Posix` module). |
 | `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
+| `reactor [dir] [--port N]` | Dev server: compiles each `.elm` module to a live page on the fly and hot-reloads the browser when a source file changes. |
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
 | `init [dir]` | Scaffold `elm.json` + `src/`. |
 | `install <author/name> [--registry DIR] [--from URL] [--elm [URL]]` | Add a package to `elm.json`, re-solve dependencies, and download its sources into the cache (`--elm` = the public package.elm-lang.org registry) so it compiles and runs. |

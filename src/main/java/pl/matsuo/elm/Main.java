@@ -71,6 +71,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Install.class,
       Main.Diff.class,
       Main.Bump.class,
+      Main.Reactor.class,
       CommandLine.HelpCommand.class,
     })
 public final class Main implements Runnable {
@@ -425,6 +426,36 @@ public final class Main implements Runnable {
       Interpreter interp = Interpreter.loadWithCoverage(Files.readString(file));
       render(interp.value(value)); // force and render, exercising the program
       System.out.print(interp.coverageReport());
+      return 0;
+    }
+  }
+
+  @Command(
+      name = "reactor",
+      description = "Dev server: compile a project's .elm files on the fly and hot-reload on change.",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm reactor              # serve the current directory on http://localhost:8000",
+        "  elm reactor src --port 8080",
+        "",
+        "Open http://localhost:<port>/ for the module list, or /<Module>.elm to run it. Editing any",
+        ".elm file reloads the open page automatically.",
+      })
+  static final class Reactor implements Callable<Integer> {
+    @Parameters(index = "0", arity = "0..1", description = "Project directory (default: current).")
+    Path dir = Path.of(".");
+
+    @Option(
+        names = {"-p", "--port"},
+        description = "Port to listen on (default 8000).")
+    int port = 8000;
+
+    @Override
+    public Integer call() throws IOException, InterruptedException {
+      var server = pl.matsuo.elm.server.ReactorServer.start(dir, port);
+      System.out.println("Reactor serving " + dir + " on http://localhost:" + port + " (Ctrl-C to stop)");
+      Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));
+      Thread.currentThread().join();
       return 0;
     }
   }
