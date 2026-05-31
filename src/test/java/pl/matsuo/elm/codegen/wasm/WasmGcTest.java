@@ -123,6 +123,14 @@ class WasmGcTest {
   }
 
   @Test
+  void nestedLetShadowingIsScoped() throws Exception {
+    // Regression (found by the differential property test): a shadowing inner `let x` must not leak
+    // its local out to the enclosing `x`.
+    agrees("main = let x = 9 * (let x = (let x = 2 in x + x) in x + x) in x + x\n"); // 144
+    agrees("main = let x = 1 in (let x = 2 in x) + x\n"); // 3
+  }
+
+  @Test
   void recordsConstructAccessAndUpdate() throws Exception {
     // Records compile to GC structs (fields in sorted-name order); literal, access and update.
     agrees("main = .x { x = 3, y = 4 }\n"); // 3

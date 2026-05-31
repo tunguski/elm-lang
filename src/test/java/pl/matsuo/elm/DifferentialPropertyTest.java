@@ -16,6 +16,7 @@ import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
 import pl.matsuo.elm.codegen.js.JsCompiler;
 import pl.matsuo.elm.codegen.wasm.WasmCompiler;
+import pl.matsuo.elm.codegen.wasm.WasmGc;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
 import pl.matsuo.elm.parser.Parser;
@@ -39,6 +40,18 @@ class DifferentialPropertyTest {
     String expr(int depth) {
       if (depth <= 0 || rng.nextInt(100) < 25) {
         return Integer.toString(rng.nextInt(20)); // small non-negative literal
+      }
+      if (gcSafe) {
+        // The fragment all five backends share, including WasmGC: arithmetic, `if`, value `let`.
+        return switch (rng.nextInt(5)) {
+          case 0 -> "(" + expr(depth - 1) + " + " + expr(depth - 1) + ")";
+          case 1 -> "(" + expr(depth - 1) + " * " + expr(depth - 1) + ")";
+          case 2 -> "(" + expr(depth - 1) + " - " + expr(depth - 1) + ")";
+          case 3 ->
+              "(if " + expr(depth - 1) + " < " + expr(depth - 1) + " then "
+                  + expr(depth - 1) + " else " + expr(depth - 1) + ")";
+          default -> "(let x = " + expr(depth - 1) + " in (x + x))";
+        };
       }
       // `wasmSafe` restricts to the fragment the WASM backend supports (no lists).
       int n = wasmSafe ? 8 : 9;
@@ -65,6 +78,7 @@ class DifferentialPropertyTest {
     }
 
     boolean wasmSafe = false;
+    boolean gcSafe = false;
   }
 
   @Test
@@ -128,6 +142,50 @@ class DifferentialPropertyTest {
     if (wasm != null) {
       for (int i = 0; i < exprs.size(); i++) {
         assertEquals(interp.get(i), wasm.get(i), "WASM: " + exprs.get(i));
+      }
+    }
+  }
+
+  @Test
+  void allFiveBackendsAgreeIncludingWasmGc() throws Exception {
+    // The fragment WasmGC also supports (arithmetic / if / value-let). Compiled as one synthetic
+    // module exporting f0..fN, run under Node's WasmGC, and compared to the interpreter — alongside
+    // the bytecode VM, JS and the linear-memory WASM backend.
+    Gen gen = new Gen(777L);
+    gen.gcSafe = true;
+    List<String> exprs = new ArrayList<>();
+    List<Expr> parsed = new ArrayList<>();
+    StringBuilder module = new StringBuilder();
+    for (int i = 0; i < 80; i++) {
+      String e = gen.expr(4);
+      exprs.add(e);
+      parsed.add(Parser.parseExpression(e));
+      module.append("f").append(i).append(" = ").append(e).append("\n");
+    }
+
+    List<String> interp = new ArrayList<>();
+    for (String e : exprs) {
+      interp.add(Show.plain(Interpreter.eval(e)));
+      assertEquals(interp.get(interp.size() - 1), Show.plain(BytecodeInterpreter.eval(e)), "bytecode: " + e);
+    }
+
+    String js = runNode(JsCompiler.expressionsProgram(exprs));
+    if (js != null) {
+      String[] r = js.split("\n", -1);
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), r[i], "JS: " + exprs.get(i));
+      }
+    }
+    List<String> wasm = runWasm(WasmCompiler.module(parsed), exprs.size());
+    if (wasm != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), wasm.get(i), "WASM: " + exprs.get(i));
+      }
+    }
+    List<String> gc = runWasm(WasmGc.module(module.toString()), exprs.size());
+    if (gc != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), gc.get(i), "WasmGC: " + exprs.get(i));
       }
     }
   }

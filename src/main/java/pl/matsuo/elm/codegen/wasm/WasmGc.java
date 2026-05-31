@@ -352,6 +352,15 @@ public final class WasmGc {
       return entry.toByteArray();
     }
 
+    /** Restores the name→local maps to a snapshot (the allocated wasm slots stay; only the lexical
+     * bindings are rolled back), so a `let`'s names — including shadows — don't escape its body. */
+    private void restoreScope(Map<String, Integer> savedL, Map<String, W> savedT) {
+      locals.clear();
+      locals.putAll(savedL);
+      localTypes.clear();
+      localTypes.putAll(savedT);
+    }
+
     private int freshLocal(String name, W w) {
       int idx = numParams + extraLocals.size();
       extraLocals.add(w);
@@ -414,6 +423,8 @@ public final class WasmGc {
           code.write(0x0B);
         }
         case Expr.Let let -> {
+          Map<String, Integer> savedL = new HashMap<>(locals);
+          Map<String, W> savedT = new HashMap<>(localTypes);
           for (Decl d : let.defs()) {
             if (d instanceof Decl.Value v && v.params().isEmpty()) {
               W w = wOf(nodeType(v.body()), tuples);
@@ -428,6 +439,7 @@ public final class WasmGc {
             }
           }
           gen(let.body());
+          restoreScope(savedL, savedT); // a let's bindings don't escape (handles `let x` shadowing)
         }
         case Expr.Var v -> {
           Integer idx = locals.get(v.name());
