@@ -18,7 +18,9 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    type-directed **strings**, and self-describing **row-polymorphic records**), and first-class
    functions, **closures and currying** (a uniform closure value + a generic `$apply` runtime,
    lambdas lambda-lifted), so recursive list/ADT, float, string, record, higher-order and curried
-   code compile and run anywhere `WebAssembly` does.
+   code compile and run anywhere `WebAssembly` does. A second, **WasmGC** code path (`WasmGc`)
+   compiles the Int/`List Int` subset to host-garbage-collected `struct` references — cons-lists with
+   no linear memory and no manual reclamation, collected by the engine.
 
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions, and a non-trivial records/lists/closures
