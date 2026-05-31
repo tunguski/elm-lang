@@ -261,6 +261,34 @@ class WasmGcTest {
   }
 
   @Test
+  void capturingLambdasAsClosures() throws Exception {
+    // A lambda that closes over an enclosing parameter is lifted to a function taking its captures
+    // as struct fields; the closure value carries them and the body reads them via struct.get.
+    agrees("apply f x = f x\nadder a = \\n -> n + a\nmain = apply (adder 10) 5\n"); // 15
+    agrees("apply f x = f x\nmake a b = \\n -> n + a + b\nmain = apply (make 3 4) 5\n"); // 12
+    // The capture itself is a let-bound local, not a parameter.
+    agrees(
+        """
+        apply f x = f x
+        main =
+            let k = 100
+            in apply (\\n -> n + k) 7
+        """); // 107
+    // A top-level higher-order function applied to a capturing closure over a list element.
+    agrees(
+        """
+        map f xs = case xs of
+            [] -> []
+            h :: t -> f h :: map f t
+        sum xs = case xs of
+            [] -> 0
+            h :: t -> h + sum t
+        scaleAll k xs = map (\\x -> x * k) xs
+        main = sum (scaleAll 3 [1, 2, 3])
+        """); // 3+6+9 = 18
+  }
+
+  @Test
   void userDefinedHigherOrderOverLists() throws Exception {
     // A user-defined map/filter/foldr with a function parameter (call_ref) and a lambda argument —
     // higher-order code over cons-lists on the GC heap, end to end.

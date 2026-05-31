@@ -94,8 +94,19 @@ public final class WasmGc {
 
   private WasmGc() {}
 
-  /** A compiled function: name, parameter (name,type) pairs, result type and body. */
-  private record Func(String name, List<String> params, List<W> paramTypes, W result, Expr body) {}
+  /** A compiled function: name, parameters, result and body. For a lambda-lifted closure body,
+   * {@code captureNames}/{@code captureVariant} let codegen bind the captured locals from the
+   * closure's {@code env} (param 0) at entry; {@code captureVariant} is {@code -1} otherwise. */
+  private record Func(String name, List<String> params, List<W> paramTypes, W result, Expr body,
+      List<String> captureNames, int captureVariant) {
+    Func(String name, List<String> params, List<W> paramTypes, W result, Expr body) {
+      this(name, params, paramTypes, result, body, List.of(), -1);
+    }
+  }
+
+  /** How a lambda is realised as a closure value: the lifted function's index, the closure-struct
+   * variant to {@code struct.new}, and the captured local names (pushed as the variant's fields). */
+  private record ClosurePlan(int funcIndex, int variantIndex, List<String> captures) {}
 
   /** A wasm value type in the supported subset: a scalar (i64/f64) or a reference to a GC struct
    * type. Each distinct tuple/record shape and each distinct list element type gets its own struct. */
@@ -108,7 +119,8 @@ public final class WasmGc {
   /** A GC type definition: a cons cell {@code {head : E, tail : (ref null self)}} for {@code List
    * E}, a plain struct (a tuple/record's fields), or the {@code array i8} backing a {@code String}. */
   private sealed interface StructDef
-      permits ConsDef, PlainDef, StrArrayDef, AdtBaseDef, AdtVariantDef, FuncDef {}
+      permits ConsDef, PlainDef, StrArrayDef, AdtBaseDef, AdtVariantDef, FuncDef,
+          ClosBaseDef, ClosVariantDef {}
 
   private record ConsDef(W head) implements StructDef {}
 
@@ -126,6 +138,14 @@ public final class WasmGc {
    * rec group), so {@code wOf(Ty.Arrow)} can refer to one during the pre-pass — the basis for the
    * closure-calling convention and {@code call_ref}. */
   private record FuncDef(List<W> params, W result) implements StructDef {}
+
+  /** A closure base for one arrow signature: {@code sub (struct { fn : (ref null cc) })}, where
+   * {@code cc} is the calling-convention functype {@code (ref base, arg) -> result}. Subtypable so a
+   * capturing lambda can add capture fields, and instantiable for capture-free function values. */
+  private record ClosBaseDef(int ccIndex) implements StructDef {}
+
+  /** A closure subtype for a lambda that captures locals: {@code sub base (struct { fn, caps… })}. */
+  private record ClosVariantDef(int baseIndex, int ccIndex, List<W> captures) implements StructDef {}
 
   private static final W INT = new Sca(I64);
   private static final W FLOAT = new Sca(F64);
@@ -198,14 +218,36 @@ public final class WasmGc {
             new Func(v.name(), params, paramTypes, wOf(resultType(t, params.size()), tuples), v.body()));
       }
     }
-    // Lift capture-free unary lambdas to top-level functions (a closed `\x -> …` is just a named
-    // function), so they can be passed and applied like any other function value. Lambdas that
-    // capture a local variable need closure structs and stay unsupported for now.
     java.util.Set<String> topLevel = new java.util.HashSet<>();
+    Map<String, Integer> arity = new HashMap<>();
     for (Func f : funcs) {
       topLevel.add(f.name());
+      arity.put(f.name(), f.params().size());
     }
-    Map<Expr.Lambda, Integer> liftedLambda = new java.util.IdentityHashMap<>();
+    // A top-level (unary) function used as a *value* gets a wrapper `f$w(env, x) = f x` so it can
+    // become a closure {fn = ref.func f$w}; record name -> wrapper index.
+    java.util.Set<String> valueUses = new java.util.HashSet<>();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v && schemes.containsKey(v.name())) {
+        collectValueUses(v.body(), arity, valueUses);
+      }
+    }
+    Map<String, Integer> wrappers = new HashMap<>();
+    Position p0 = new Position(0, 0, 0);
+    for (int i = 0, k = funcs.size(); i < k; i++) {
+      Func f = funcs.get(i);
+      if (f.params().size() == 1 && valueUses.contains(f.name())) {
+        int base = tuples.closureBaseIndex(f.paramTypes().get(0), f.result());
+        wrappers.put(f.name(), funcs.size());
+        funcs.add(
+            new Func(f.name() + "$w", List.of("$env", "$x"),
+                List.of(new Ref(base), f.paramTypes().get(0)), f.result(),
+                new Expr.App(new Expr.Var(null, f.name(), p0), new Expr.Var(null, "$x", p0), p0)));
+      }
+    }
+    // Lift unary lambdas to top-level functions (capture-free ones, and capturing ones whose captures
+    // become closure-struct fields), so they can be passed and applied like any function value.
+    Map<Expr.Lambda, ClosurePlan> liftedLambda = new java.util.IdentityHashMap<>();
     int[] counter = {0};
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && schemes.containsKey(v.name())) {
@@ -217,7 +259,37 @@ public final class WasmGc {
     for (Func f : funcs) {
       tuples.funcTypeIndex(f.paramTypes(), f.result());
     }
-    return assemble(funcs, nodeTypes, tuples, liftedLambda);
+    return assemble(funcs, nodeTypes, tuples, liftedLambda, wrappers);
+  }
+
+  /** Top-level functions used as a value (not as the head of a full-arity application): they need a
+   * closure wrapper. The head of a complete call is a direct call, so it isn't counted. */
+  private static void collectValueUses(Expr e, Map<String, Integer> arity, java.util.Set<String> out) {
+    if (e instanceof Expr.App app) {
+      List<Expr> args = new ArrayList<>();
+      Expr head = app;
+      while (head instanceof Expr.App a) {
+        args.add(0, a.arg());
+        head = a.fn();
+      }
+      for (Expr arg : args) {
+        collectValueUses(arg, arity, out);
+      }
+      boolean fullCall =
+          head instanceof Expr.Var v && v.module() == null && arity.containsKey(v.name())
+              && arity.get(v.name()) == args.size();
+      if (!fullCall) {
+        collectValueUses(head, arity, out); // head is itself a value (partial app, or an expr)
+      }
+      return;
+    }
+    if (e instanceof Expr.Var v && v.module() == null && arity.getOrDefault(v.name(), 0) >= 1) {
+      out.add(v.name());
+      return;
+    }
+    for (Expr child : children(e)) {
+      collectValueUses(child, arity, out);
+    }
   }
 
   /**
@@ -227,20 +299,94 @@ public final class WasmGc {
    * name (so it captures no local) — then it is just a named function. Recurses into bodies for
    * nested lambdas regardless.
    */
+  /** The inferred type of a captured variable {@code name}, taken from an occurrence of it inside
+   * {@code e} that inference typed; {@code null} if none is found (then the lambda isn't lifted). */
+  private static Ty captureType(Expr e, String name, Map<Expr, Ty> nodeTypes) {
+    if (e instanceof Expr.Var v && v.module() == null && v.name().equals(name) && nodeTypes.containsKey(e)) {
+      return Types.prune(nodeTypes.get(e));
+    }
+    for (Expr child : children(e)) {
+      Ty t = captureType(child, name, nodeTypes);
+      if (t != null) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  /** The immediate sub-expressions of {@code e} (for generic AST walks). */
+  private static List<Expr> children(Expr e) {
+    return switch (e) {
+      case Expr.App a -> List.of(a.fn(), a.arg());
+      case Expr.BinOp b -> List.of(b.left(), b.right());
+      case Expr.If i -> List.of(i.cond(), i.thenBranch(), i.elseBranch());
+      case Expr.Negate n -> List.of(n.operand());
+      case Expr.Lambda l -> List.of(l.body());
+      case Expr.Let let -> {
+        List<Expr> out = new ArrayList<>();
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            out.add(v.body());
+          } else if (d instanceof Decl.Destructure de) {
+            out.add(de.body());
+          }
+        }
+        out.add(let.body());
+        yield out;
+      }
+      case Expr.Case c -> {
+        List<Expr> out = new ArrayList<>();
+        out.add(c.scrutinee());
+        c.branches().forEach(br -> out.add(br.body()));
+        yield out;
+      }
+      case Expr.ListLit l -> l.items();
+      case Expr.Tuple t -> t.items();
+      case Expr.Record r -> r.fields().stream().map(Expr.Record.Field::value).toList();
+      case Expr.RecordAccess a -> List.of(a.target());
+      case Expr.RecordUpdate u -> u.fields().stream().map(Expr.Record.Field::value).toList();
+      default -> List.of();
+    };
+  }
+
   private static void collectLambdas(
       Expr e, java.util.Set<String> topLevel, Map<Expr, Ty> nodeTypes, Tuples tuples,
-      List<Func> funcs, Map<Expr.Lambda, Integer> lifted, int[] counter) {
+      List<Func> funcs, Map<Expr.Lambda, ClosurePlan> lifted, int[] counter) {
     switch (e) {
       case Expr.Lambda lam -> {
-        Ty lt = lam == null ? null : (nodeTypes.get(lam) == null ? null : Types.prune(nodeTypes.get(lam)));
-        if (lam.params().size() == 1
-            && lam.params().get(0) instanceof Pattern.Var pv
-            && lt instanceof Ty.Arrow arr
-            && pl.matsuo.elm.ast.FreeVars.of(lam).stream().allMatch(topLevel::contains)) {
-          lifted.put(lam, funcs.size());
-          funcs.add(
-              new Func("lam$" + counter[0]++, List.of(pv.name()),
-                  List.of(wOf(arr.from(), tuples)), wOf(arr.to(), tuples), lam.body()));
+        Ty lt = nodeTypes.get(lam) == null ? null : Types.prune(nodeTypes.get(lam));
+        if (lam.params().size() == 1 && lam.params().get(0) instanceof Pattern.Var pv
+            && lt instanceof Ty.Arrow arr) {
+          // Lift the unary lambda to a top-level function `lam(env, x)`. Its free locals (anything not
+          // a top-level name) are captured: read from `env` at entry, and stored in the closure when
+          // the lambda value is built. Bail (leave unsupported) if a capture's type can't be resolved.
+          List<String> captures = new ArrayList<>();
+          List<W> captureTypes = new ArrayList<>();
+          boolean ok = true;
+          for (String f : pl.matsuo.elm.ast.FreeVars.of(lam)) {
+            if (topLevel.contains(f)) {
+              continue;
+            }
+            Ty ct = captureType(lam.body(), f, nodeTypes);
+            if (ct == null) {
+              ok = false;
+              break;
+            }
+            captures.add(f);
+            captureTypes.add(wOf(ct, tuples));
+          }
+          if (ok) {
+            int base = tuples.closureBaseIndex(wOf(arr.from(), tuples), wOf(arr.to(), tuples));
+            // Capture-free lambdas use the base struct directly; capturing ones use a subtype that
+            // adds the capture fields (and the lifted body reads them from `env` at entry).
+            int structIdx = captures.isEmpty() ? base : tuples.closureVariantIndex(base, captureTypes);
+            int prologueVariant = captures.isEmpty() ? -1 : structIdx;
+            lifted.put(lam, new ClosurePlan(funcs.size(), structIdx, captures));
+            funcs.add(
+                new Func("lam$" + counter[0]++, List.of("$env", pv.name()),
+                    List.of(new Ref(base), wOf(arr.from(), tuples)), wOf(arr.to(), tuples),
+                    lam.body(), captures, prologueVariant));
+          }
         }
         collectLambdas(lam.body(), topLevel, nodeTypes, tuples, funcs, lifted, counter);
       }
@@ -322,10 +468,10 @@ public final class WasmGc {
       return new Ref(tuples.adtBaseIndex()); // an argument-carrying custom type: a ref to the base
     }
     if (p instanceof Ty.Arrow arrow) {
-      // A first-class function value: a reference to its unary functype `(from) -> to`. A curried
-      // multi-argument type `a -> b -> c` nests (its result is itself a function ref).
+      // A first-class function value: a closure (ref to its per-signature base struct). A curried
+      // multi-argument type `a -> b -> c` nests (its result is itself a closure).
       return new Ref(
-          tuples.funcTypeIndex(List.of(wOf(arrow.from(), tuples)), wOf(arrow.to(), tuples)));
+          tuples.closureBaseIndex(wOf(arrow.from(), tuples), wOf(arrow.to(), tuples)));
     }
     if (p instanceof Ty.Tuple tup) {
       return new Ref(tuples.indexOf(tup));
@@ -628,6 +774,44 @@ public final class WasmGc {
       return index >= 0 && index < shapes.size() && shapes.get(index) instanceof FuncDef;
     }
 
+    /** The closure base struct for an arrow {@code arg -> result}, registering it (and its
+     * calling-convention functype {@code (ref base, arg) -> result}) if new. {@code wOf(Ty.Arrow)}
+     * returns a {@code (ref base)}; {@link #closureCc} gives the functype for {@code call_ref}. */
+    int closureBaseIndex(W arg, W result) {
+      String key = "CB" + keyOf(List.of(arg, result));
+      Integer existing = indexByKey.get(key);
+      if (existing != null) {
+        return existing;
+      }
+      int baseIdx = shapes.size();
+      indexByKey.put(key, baseIdx);
+      shapes.add(new ClosBaseDef(-1)); // placeholder; patched once the cc functype is registered
+      int cc = funcTypeIndex(List.of(new Ref(baseIdx), arg), result); // canonical, so wrappers share it
+      shapes.set(baseIdx, new ClosBaseDef(cc));
+      return baseIdx;
+    }
+
+    boolean isClosureBase(int index) {
+      return index >= 0 && index < shapes.size() && shapes.get(index) instanceof ClosBaseDef;
+    }
+
+    /** The calling-convention functype index of a closure base. */
+    int closureCc(int baseIndex) {
+      return ((ClosBaseDef) shapes.get(baseIndex)).ccIndex();
+    }
+
+    /** A subtype of {@code baseIndex} carrying a lambda's {@code captures}, registering it if new. */
+    int closureVariantIndex(int baseIndex, List<W> captures) {
+      return register(
+          "CV" + baseIndex + "/" + keyOf(captures),
+          new ClosVariantDef(baseIndex, closureCc(baseIndex), captures));
+    }
+
+    /** The capture field types of a closure variant (for binding them from {@code env}). */
+    List<W> closureVariantCaptures(int variantIndex) {
+      return ((ClosVariantDef) shapes.get(variantIndex)).captures();
+    }
+
     private int register(String key, StructDef def) {
       Integer existing = indexByKey.get(key);
       if (existing != null) {
@@ -668,7 +852,10 @@ public final class WasmGc {
     private final Map<String, W> funcResult; // name -> result type
     private final Map<Expr, Ty> nodeTypes;
     private final Tuples tuples;
-    private final Map<Expr.Lambda, Integer> lifted; // lambda -> its lifted top-level function index
+    private final Map<Expr.Lambda, ClosurePlan> lifted; // lambda -> how to build its closure value
+    private final Map<String, Integer> wrappers; // top-level fn name -> its closure-wrapper func index
+    private final List<String> captureNames; // captured locals to bind from env (closure bodies)
+    private final int captureVariant; // the closure subtype to ref.cast env to, or -1
     private final Map<String, Integer> locals = new HashMap<>();
     private final Map<String, W> localTypes = new HashMap<>();
     private final List<W> extraLocals = new ArrayList<>(); // beyond params
@@ -676,20 +863,43 @@ public final class WasmGc {
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
 
     Gen(Map<String, int[]> funcs, Map<String, W> funcResult, Map<Expr, Ty> nodeTypes, Tuples tuples,
-        Map<Expr.Lambda, Integer> lifted, List<String> params, List<W> paramTypes) {
+        Map<Expr.Lambda, ClosurePlan> lifted, Map<String, Integer> wrappers, Func f) {
       this.funcs = funcs;
       this.funcResult = funcResult;
       this.nodeTypes = nodeTypes;
       this.tuples = tuples;
       this.lifted = lifted;
-      this.numParams = params.size();
-      for (int i = 0; i < params.size(); i++) {
-        locals.put(params.get(i), i);
-        localTypes.put(params.get(i), paramTypes.get(i));
+      this.wrappers = wrappers;
+      this.captureNames = f.captureNames();
+      this.captureVariant = f.captureVariant();
+      this.numParams = f.params().size();
+      for (int i = 0; i < f.params().size(); i++) {
+        locals.put(f.params().get(i), i);
+        localTypes.put(f.params().get(i), f.paramTypes().get(i));
       }
     }
 
     byte[] compile(Expr body) {
+      // A closure body: bind each captured local by reading it from `env` (param 0) cast to the
+      // closure's subtype.
+      if (captureVariant >= 0 && !captureNames.isEmpty()) {
+        List<W> capTypes = tuples.closureVariantCaptures(captureVariant);
+        int cl = freshLocal("$clenv", new Ref(captureVariant));
+        get(0); // env (param 0)
+        code.write(0xFB);
+        code.write(0x17); // ref.cast (ref variant)
+        sleb(code, captureVariant);
+        setLocal(cl);
+        for (int i = 0; i < captureNames.size(); i++) {
+          int idx = freshLocal(captureNames.get(i), capTypes.get(i));
+          get(cl);
+          code.write(0xFB);
+          code.write(0x02); // struct.get
+          leb(code, captureVariant);
+          leb(code, i + 1); // field 0 is fn; captures start at 1
+          setLocal(idx);
+        }
+      }
       tailGen(body); // tail position: a direct call becomes return_call (deep recursion is safe)
       // Emit each extra local as its own group (so mixed i64/ref types are declared correctly).
       ByteArrayOutputStream locs = new ByteArrayOutputStream();
@@ -814,10 +1024,15 @@ public final class WasmGc {
           } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 0) {
             code.write(0x10);
             leb(code, funcs.get(v.name())[0]);
-          } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 1) {
-            // A unary top-level function used as a value: a bare function reference (ref $ft).
-            code.write(0xD2); // ref.func
-            leb(code, funcs.get(v.name())[0]);
+          } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 1
+              && wrappers.containsKey(v.name())) {
+            // A unary top-level function used as a value: a closure {fn = ref.func f$wrap}.
+            int base = ((Ref) wOf(nodeType(v), tuples)).typeIndex();
+            code.write(0xD2); // ref.func -> the wrapper
+            leb(code, wrappers.get(v.name()));
+            code.write(0xFB);
+            code.write(0x00); // struct.new $base
+            leb(code, base);
           } else if (funcs.containsKey(v.name())) {
             throw unsupported("passing a multi-argument function as a value (currying is not yet on WasmGC)");
           } else {
@@ -846,12 +1061,20 @@ public final class WasmGc {
         case Expr.App app -> app(app, false);
         case Expr.Case c -> caseExpr(c, this::gen);
         case Expr.Lambda lam -> {
-          Integer fi = lifted.get(lam);
-          if (fi == null) {
-            throw unsupported("a lambda that captures a local variable (WasmGC supports capture-free lambdas)");
+          ClosurePlan plan = lifted.get(lam);
+          if (plan == null) {
+            throw unsupported("this lambda (unary lambdas with resolvable captures are supported on WasmGC)");
           }
-          code.write(0xD2); // ref.func -> the lifted top-level function as a value
-          leb(code, fi);
+          // A closure value: struct.new $variant [ ref.func lifted, capture0, … ].
+          code.write(0xD2); // ref.func -> the lifted function
+          leb(code, plan.funcIndex());
+          Position p0 = new Position(0, 0, 0);
+          for (String cap : plan.captures()) {
+            gen(new Expr.Var(null, cap, p0)); // read the captured local from the enclosing scope
+          }
+          code.write(0xFB);
+          code.write(0x00); // struct.new
+          leb(code, plan.variantIndex());
         }
         default -> throw unsupported(e.getClass().getSimpleName());
       }
@@ -1287,19 +1510,28 @@ public final class WasmGc {
         leb(code, funcs.get(v.name())[0]);
         return;
       }
-      // Applying a function VALUE to one argument — a function-typed local (a parameter), or an
-      // immediately-applied capture-free lambda, or anything else that evaluates to a funcref. Push
-      // the argument, push the funcref, then call_ref on its functype. (A top-level function name is
-      // handled above; applying it to fewer than its arity is currying, not yet supported.)
+      // Applying a function VALUE to one argument — a function-typed local (a parameter), an
+      // immediately-applied lambda, or a top-level function passed as a value. The value is a
+      // closure `(ref $base)`; the calling convention is `(env, arg) -> res`. Evaluate the closure
+      // into a local, then push (env=closure, arg, fn=struct.get $base 0) and call_ref $cc.
       if (args.size() == 1
           && !(head instanceof Expr.Var hv && funcs.containsKey(hv.name()))
           && nodeTypes.containsKey(head)
           && wOf(nodeType(head), tuples) instanceof Ref r
-          && tuples.isFuncType(r.typeIndex())) {
-        gen(args.get(0));
+          && tuples.isClosureBase(r.typeIndex())) {
+        int base = r.typeIndex();
+        int cl = freshLocal("$cl" + code.size(), new Ref(base));
         gen(head);
-        code.write(0x14); // call_ref
-        leb(code, r.typeIndex());
+        setLocal(cl);
+        get(cl); // env (the closure itself)
+        gen(args.get(0)); // arg
+        get(cl);
+        code.write(0xFB);
+        code.write(0x02); // struct.get $base 0 -> the funcref
+        leb(code, base);
+        leb(code, 0);
+        code.write(tail ? 0x15 : 0x14); // return_call_ref / call_ref
+        leb(code, tuples.closureCc(base));
         return;
       }
       // Multi-argument application of a function value (currying) is not yet on WasmGC.
@@ -1584,7 +1816,8 @@ public final class WasmGc {
   // --- module assembly ----------------------------------------------------
 
   private static byte[] assemble(
-      List<Func> funcList, Map<Expr, Ty> nodeTypes, Tuples tuples, Map<Expr.Lambda, Integer> lifted) {
+      List<Func> funcList, Map<Expr, Ty> nodeTypes, Tuples tuples,
+      Map<Expr.Lambda, ClosurePlan> lifted, Map<String, Integer> wrappers) {
     Map<String, int[]> table = new HashMap<>();
     Map<String, W> funcResult = new HashMap<>();
     for (int i = 0; i < funcList.size(); i++) {
@@ -1655,6 +1888,29 @@ public final class WasmGc {
           }
           leb(types, 1);
           writeType(types, fd.result());
+        } else if (def instanceof ClosBaseDef cb) {
+          // sub (no supertype) struct { fn : (ref null cc) } — a closure value.
+          types.write(0x50);
+          leb(types, 0);
+          types.write(0x5F);
+          leb(types, 1);
+          types.write(0x63); // (ref null ccIndex)
+          sleb(types, cb.ccIndex());
+          types.write(0x00);
+        } else if (def instanceof ClosVariantDef cv) {
+          // sub <base> struct { fn : (ref null cc), captures… } — a capturing lambda.
+          types.write(0x50);
+          leb(types, 1);
+          leb(types, cv.baseIndex());
+          types.write(0x5F);
+          leb(types, 1 + cv.captures().size());
+          types.write(0x63); // fn : (ref null cc) (inherited slot)
+          sleb(types, cv.ccIndex());
+          types.write(0x00);
+          for (W w : cv.captures()) {
+            writeType(types, w);
+            types.write(0x00);
+          }
         }
       }
     }
@@ -1687,8 +1943,7 @@ public final class WasmGc {
     leb(code, funcList.size());
     for (Func f : funcList) {
       code.writeBytes(
-          new Gen(table, funcResult, nodeTypes, tuples, lifted, f.params(), f.paramTypes())
-              .compile(f.body()));
+          new Gen(table, funcResult, nodeTypes, tuples, lifted, wrappers, f).compile(f.body()));
     }
     section(out, 10, code);
     return out.toByteArray();
