@@ -23,8 +23,8 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    compiles a broad subset to host-garbage-collected `struct`/`array` references — with no linear
    memory and no manual reclamation — covering `Int`/`Bool`/`Float`, `String`, lists of any element,
    tuples, closed records, nullary and **argument-carrying custom types** (including recursive ones)
-   and **polymorphic** custom types (monomorphised to their use). Closures and the built-in
-   `Maybe`/`Result` remain on the linear-memory path.
+   and **polymorphic** custom types (monomorphised to their use), including the built-in
+   `Maybe`/`Result`. Closures remain on the linear-memory path.
 
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions — extended to a fifth path, the **WasmGC**
@@ -356,46 +356,44 @@ publishes it as an artifact.
 
 ## Known limitations
 
-- **Package manager**: `elm install` solves dependencies and downloads sources from either a simple
-  static-file registry (`--from`) or the **public `package.elm-lang.org`** registry (`--elm`, via
-  `all-packages`/`endpoint.json`/zipball); the interpreter, type checker and **JavaScript backend**
-  then compile and run installed packages' modules. Remaining gaps: the **WASM backend** loading
-  package sources, and registry niceties (checksum verification, test-dependencies). See
+This section states plainly what the implementation does **not** do or does only partially. (For
+what each backend *does* support, see the architecture overview at the top of this README and the
+[Language coverage](#language-coverage) section.) Nothing here is a silent failure — an unsupported
+construct is rejected with a clear "unsupported" error, not miscompiled.
+
+**Backends — what runs where.** The **interpreter** and **JavaScript** backends are full (TEA apps,
+the effect set — Random/Http/Time/Task/File/WebGL — virtual-DOM, etc.). The two **WebAssembly**
+backends compile **pure computation only** — they evaluate functions and data, *not* `Browser`
+programs or effects. Run interactive/effectful programs on the interpreter or JS.
+
+- **WASM (linear-memory) backend** — does **not** support: effects/TEA, the full standard library
+  (only a prelude of `List`/`Maybe`/`Result` helpers compiles — most `String`, `Dict`, `Set`,
+  `Array` and `Regex` operations are absent), or returning compound values to the host as anything
+  but an opaque heap pointer. `++`/`==` require operands statically typed (no fully
+  polymorphic `==`). Loading installed **package sources** is not wired up for this backend.
+- **WasmGC backend** — does **not** yet support: **closures / higher-order functions** (so
+  `List.map`, `foldl`, lambdas don't compile here — they run on the linear-memory backend or JS);
+  **row-polymorphic / open records** (only closed records with a fixed field set); a single
+  polymorphic union used at **two different representations** in one module (it is monomorphised to
+  one; the second use is rejected); a **code-point-aware `String`** (length is byte/ASCII-correct
+  only) and most of the `String`/`Dict`/`Array` API.
+- **Packages / registry** — `elm install` resolves and downloads from a static-file registry
+  (`--from`) or the public `package.elm-lang.org` (`--elm`), and the interpreter/type-checker/JS
+  backend compile installed modules; but there is **no checksum verification**, **no
+  test-dependencies**, and the **WASM backends can't load package sources**. See
   [Packages & dependencies](#packages--dependencies).
-- **WASM backend** scope: integers/booleans/**floats** (an `f64` stored as its i64 bit pattern, with
-  arithmetic, comparison and `toFloat`/`round`/`floor`/`ceiling`/`truncate`), a growable
-  linear-memory heap for cons-lists, tuples, tagged custom types, **strings** (type-directed; `++`/`==`
-  need operands statically typed `String`) and **records** (self-describing and fully
-  **row-polymorphic** — fields are looked up by name at runtime), first-class functions, **closures
-  and currying** (a uniform closure value + a generic `$apply` runtime, with lambdas lambda-lifted),
-  and a **standard library** (`List.map`/`foldl`/`foldr`/`filter`/`range`/`reverse`/`append`/`concat`/
-  `concatMap`/`take`/`drop`/`repeat`/`product`/`all`/`any`/`map2`/`isEmpty`/`maximum`/`minimum`/
-  `member`/`sort`/`sortBy`/`indexedMap`, `Maybe.map`/`andThen`/`withDefault`, `Result.map`/
-  `withDefault`) written in the same subset and prepended when used. The growable heap has
-  a sound **arena reclamation** — a scalar-returning call that consumes a heap argument frees what it
-  allocated (purity makes this safe), keeping "reduce a structure, in a loop" programs bounded. The
-  alternative **WasmGC** backend instead hands lists, tuples and records to the engine's collector and
-  now covers `Int`/`Bool`/`Float`, **`String`** (a GC `array i8` — literals, `String.length`, `++`;
-  ASCII-correct length), **lists of any supported element** (`List Int`/`List Float`/lists of
-  tuples/records/lists — one cons type per element type), **tuples** (`Tuple.first`/`second`,
-  destructuring), **closed records** (literals, `.field` access, `{ r | f = v }` update — fields laid
-  out in sorted-name order), **nullary custom types** (i64 tags) and **argument-carrying custom
-  types** (including recursive ones like `Tree` — a shared `sub (struct {tag})` base with a subtype
-  per constructor, `case` dispatching on the tag and `ref.cast`ing to read arguments) and
-  **polymorphic custom types** (`type Box a = Wrap a | Empty`), **monomorphised** to the one
-  instantiation a module uses — each constructor's field types are read from how it is applied
-  (`Wrap 5` → `i64`, `Wrap "x"` → string ref, `Wrap [1]` → cons-list ref), with a union used at two
-  representations in one module reported as unsupported rather than miscompiled; carrying the
-  rest of the value model (row-polymorphic open records, closures — which need boxing / further
-  struct work — the built-in `Maybe`/`Result` predeclared here, and a code-point-aware `String` API)
-  onto WasmGC is future work. The other gap is the
-  rest of the larger standard library (most `String`/`Dict`/`Array` operations).
-- **Type inference is complete for the examples**: every single-module elm-lang.org example *and*
-  the full ~1700-line evancz/elm-playground paired with each game (picture, animation, mouse,
-  keyboard, turtle, mario) type-checks end to end — exercising module-level let-generalization (SCC
-  ordering) and row-polymorphic records. (`run`/`make` still fall through to evaluation if a
-  program the checker can't analyze ever arises.)
-- The textured **WebGL** examples need a real GPU and same-origin images (cross-origin textures are
-  vendored into the gallery); verifying rasterized pixels requires a real browser.
-- **Type inference** is HM without records-as-extensible-everywhere subtleties of real Elm and
-  without kind checking; it's sound for the supported subset.
+
+**Type system**
+- Inference is **Hindley–Milner for the supported subset**. It does **not** implement real Elm's
+  fully extensible-records-everywhere typing or kind checking; it is sound for what it accepts, but a
+  program leaning on those subtleties may be rejected. `run`/`make` fall back to evaluation if the
+  checker can't analyze a program. (In practice it type-checks every elm-lang.org example and the
+  full ~1700-line evancz/elm-playground end to end.)
+
+**WebGL**
+- The textured WebGL examples need a **real GPU and a real browser**; cross-origin textures are
+  vendored into the gallery, and verifying rasterized pixels can't be done headlessly.
+
+**Editor (in-browser Elm-in-Elm interpreter)**
+- The live editor interprets a subset: it does **not** run WebGL or `File` effects, and its
+  `Json.Decode` covers the common combinators (no exotic decoders).
