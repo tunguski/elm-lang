@@ -18,7 +18,7 @@ import Eval exposing (appInit, appInitCmd, appSubscription, appUpdate, appUpdate
 import Json.Decode as Decode
 import Set exposing (Set)
 import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
-import Html.Attributes exposing (placeholder, style, value)
+import Html.Attributes exposing (placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Lang exposing (Value(..))
@@ -35,6 +35,7 @@ type alias Model =
     , gameKeys : Set String
     , gameTime : Float
     , history : List Value -- successive app models (time-travel debugger)
+    , msgLog : List Value -- the message that produced each model transition (msgLog[k] -> history[k+1])
     , historyAt : Int -- the index currently shown (last = live)
     }
 
@@ -117,6 +118,7 @@ initModel =
         , gameKeys = Set.empty
         , gameTime = 0
         , history = []
+        , msgLog = []
         , historyAt = 0
         }
 
@@ -150,18 +152,23 @@ refreshApp model =
         , gameKeys = Set.empty
         , gameTime = 0
         , history = app |> Result.map (\m -> [ m ]) |> Result.withDefault []
+        , msgLog = []
         , historyAt = 0
     }
 
 
-{-| Records the app's next model in the time-travel history (capped) and jumps the cursor to it. -}
-recordModel : Model -> Value -> Model
-recordModel model m =
+{-| Records the app's next model (and the message that produced it) in the time-travel history
+(capped) and jumps the cursor to the new state. -}
+recordModel : Model -> Value -> Value -> Model
+recordModel model msg m =
     let
         hist =
             List.take 200 (model.history ++ [ m ])
+
+        log =
+            List.take 199 (model.msgLog ++ [ msg ])
     in
-    { model | app = Ok m, history = hist, historyAt = List.length hist - 1 }
+    { model | app = Ok m, history = hist, msgLog = log, historyAt = List.length hist - 1 }
 
 
 {-| The app model currently shown — the one the history cursor points at (live = the last). -}
@@ -191,11 +198,14 @@ stepApp fuel model interpMsg =
             -- Continue from whatever state is shown; if rewound, drop the (now-superseded) future.
             let
                 truncated =
-                    { model | history = List.take (model.historyAt + 1) model.history }
+                    { model
+                        | history = List.take (model.historyAt + 1) model.history
+                        , msgLog = List.take model.historyAt model.msgLog
+                    }
             in
             case appUpdateCmd (selectedFile model) interpMsg m of
                 Ok ( m2, cmd ) ->
-                    runCmd fuel (recordModel truncated m2) cmd
+                    runCmd fuel (recordModel truncated interpMsg m2) cmd
 
                 Err e ->
                     ( { model | app = Err e }, Cmd.none )
@@ -597,7 +607,7 @@ liveApp model =
         Ok appModel ->
             case appView (selectedFile model) appModel of
                 Ok html ->
-                    div [] [ debugBar model, renderHtml (selectedFile model) html ]
+                    div [] [ debugBar model, renderHtml (selectedFile model) html, msgLogPanel model ]
 
                 Err e ->
                     errorBox e
@@ -649,6 +659,59 @@ debugBar model =
                 ]
                 [ text "live" ]
             ]
+
+
+{-| The message log beneath the live app: one clickable chip per dispatched message (rendered with
+`renderValue`), in dispatch order. Clicking a chip rewinds to the state that message produced; the
+chip for the currently-shown state is highlighted. Together with the scrubber this turns the
+time-travel debugger into a proper "what message led here" view. -}
+msgLogPanel : Model -> Html Msg
+msgLogPanel model =
+    if List.isEmpty model.msgLog then
+        text ""
+
+    else
+        div
+            [ style "display" "flex"
+            , style "flex-wrap" "wrap"
+            , style "gap" "4px"
+            , style "margin-top" "10px"
+            , style "max-height" "120px"
+            , style "overflow" "auto"
+            , style "font" "11px ui-monospace, monospace"
+            ]
+            (span [ style "color" "#9aa5b1", style "font-weight" "700", style "margin-right" "4px" ] [ text "messages:" ]
+                :: List.indexedMap (msgChip model) model.msgLog
+            )
+
+
+msgChip : Model -> Int -> Value -> Html Msg
+msgChip model i msg =
+    let
+        isCurrent =
+            model.historyAt == i + 1
+    in
+    button
+        [ onClick (Rewind (i + 1))
+        , title (renderValue msg)
+        , style "border" "none"
+        , style "border-radius" "4px"
+        , style "padding" "2px 6px"
+        , style "cursor" "pointer"
+        , style "max-width" "200px"
+        , style "overflow" "hidden"
+        , style "text-overflow" "ellipsis"
+        , style "white-space" "nowrap"
+        , style "background"
+            (if isCurrent then
+                "#3a7bd5"
+
+             else
+                "#323f4b"
+            )
+        , style "color" "#e4e7eb"
+        ]
+        [ text (String.fromInt (i + 1) ++ ". " ++ renderValue msg) ]
 
 
 staticMain : List ( String, String ) -> Html Msg

@@ -222,6 +222,10 @@ class HeadlessChromeTest {
     assertTrue(dom.contains("time travel"), "the time-travel scrubber appears after steps");
     assertTrue(dom.contains("msg 0 /"), "cursor rewound to message 0");
     assertTrue(dom.contains("<div>0</div>"), "rewinding re-renders the initial model");
+    // The message-log panel lists each dispatched message (rendered) as a clickable chip.
+    assertTrue(dom.contains("messages:"), "the message-log panel appears");
+    assertTrue(dom.contains("1. Increment"), "first dispatched message rendered in the log");
+    assertTrue(dom.contains("2. Increment"), "second dispatched message rendered in the log");
   }
 
   @Test
