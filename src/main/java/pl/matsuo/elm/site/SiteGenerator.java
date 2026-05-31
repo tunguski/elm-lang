@@ -128,6 +128,8 @@ public final class SiteGenerator {
     }
     writeBackendsPage();
     writePlaygroundPage();
+    writeExampleSources();
+    writeTodoMvcPage();
     writeEditorPage();
     List<DocPage> docs = writeDocPages();
     writeIndex(built, docs);
@@ -546,10 +548,48 @@ public final class SiteGenerator {
     "/elm/editor/Main.elm",
   };
 
+  /** The editor's loadable example modules, served under {@code examples/} for the editor to fetch. */
+  private static final String[] EDITOR_EXAMPLES = {
+    "Buttons", "TextField", "Element", "Hello", "Greeting", "Factorial", "ListSum", "Squares", "Toggle"
+  };
+
+  /**
+   * Writes the raw Elm sources under {@code examples/} so they are downloadable from the site and
+   * fetchable by the editor: every elm-lang.org example, the editor's own demo files, and TodoMVC.
+   */
+  private void writeExampleSources() throws IOException {
+    Path dir = outDir.resolve("examples");
+    Files.createDirectories(dir);
+    for (Example ex : EXAMPLES) {
+      Files.copy(
+          examplesDir.resolve(ex.slug() + ".elm"),
+          dir.resolve(ex.slug() + ".elm"),
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+    for (String name : EDITOR_EXAMPLES) {
+      Files.writeString(
+          dir.resolve(name + ".elm"),
+          pl.matsuo.elm.util.Resources.read("/elm/editor-examples/" + name + ".elm"),
+          StandardCharsets.UTF_8);
+    }
+    Files.writeString(
+        dir.resolve("todomvc.elm"),
+        pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm"),
+        StandardCharsets.UTF_8);
+  }
+
+  /** Compiles the bundled TodoMVC demo to a live, interactive page (the flagship TEA showcase). */
+  private void writeTodoMvcPage() throws IOException {
+    Files.writeString(
+        outDir.resolve("todomvc.html"),
+        JsCompiler.htmlPageProject(null, pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm")),
+        StandardCharsets.UTF_8);
+  }
+
   /**
    * The Ellie-style editor page: a multi-file interpreter written in Elm (the Lang/Lexer/Parser/
-   * Eval/Main modules), bundled by the JS backend and running live in the browser — edit files, see
-   * the result and step through a time-travel debugger.
+   * Eval/Main modules), bundled by the JS backend and running live in the browser — it fetches the
+   * example files over HTTP and lets you edit them, rendering each selected file's `main`.
    */
   private void writeEditorPage() throws IOException {
     String[] sources = new String[EDITOR_MODULES.length];
@@ -738,6 +778,7 @@ public final class SiteGenerator {
           <p class="stats">%LIVE% of %TOTAL% examples run as live compiled JavaScript ·
           <a href="backends.html">JS vs WASM &#8594;</a> ·
           <a href="playground.html">Playground &#8594;</a> ·
+          <a href="todomvc.html">TodoMVC &#8594;</a> ·
           <a href="editor.html">Elm-in-Elm editor &#8594;</a> ·%DOCS%
           <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></p>
         </header>

@@ -1,14 +1,15 @@
 module Editor exposing (program, Model, Msg)
 
-{-| A reusable, embeddable code playground: configure it with a list of `(filename, source)` files
-and it renders an editable file browser plus the live result of the selected file's `main`. The
-interpreter (Lang/Lexer/Parser/Eval) does the work; this module is only the UI and the wiring of
-interpreted click handlers back through a Browser.sandbox-style program's `update`.
+{-| A reusable, embeddable code playground: configure it with a list of example **URLs**, which it
+fetches over HTTP at startup and presents as editable files (alongside a built-in starter so it is
+never empty). It renders an editable file browser plus the live result of the selected file's
+`main`. The interpreter (Lang/Lexer/Parser/Eval) does the work; this module is the UI plus the
+loading and the wiring of interpreted click handlers back through a Browser.sandbox-style `update`.
 
 Each file is an independent program: the editor always evaluates and renders the **`main`** of the
-selected file — a static `Html` value, a `Browser.sandbox { init, update, view }` app (rendered live
-and interactive), or a plain value (shown as text). There is no entry-expression box and no choosing
-other functions, by design. Reuse it elsewhere with `Editor.program myFiles`.
+selected file — a static `Html` value, a `Browser.sandbox`/`Browser.element` app (rendered live and
+interactive), or a plain value (shown as text). There is no entry-expression box and no choosing
+other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrls`.
 -}
 
 import Browser
@@ -16,6 +17,7 @@ import Eval exposing (appInit, appUpdate, appView, applyHandler, hasApp, lookup,
 import Html exposing (Html, button, div, h1, h3, input, li, node, p, pre, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
+import Http
 import Lang exposing (Value(..))
 
 
@@ -34,23 +36,48 @@ type Msg
     | AddFile
     | RemoveFile String
     | Interp Value
+    | Loaded String (Result Http.Error String)
     | NoOp
 
 
-{-| Builds an editor program over the given files (the first file is selected initially). -}
-program : List ( String, String ) -> Program () Model Msg
-program files =
-    Browser.sandbox { init = initModel files, update = update, view = view }
+{-| A built-in starter file so the editor is usable immediately (and offline / before fetches). -}
+starter : ( String, String )
+starter =
+    ( "Buttons.elm"
+    , "module Main exposing (main)\n\nimport Browser\nimport Html exposing (button, div, text)\nimport Html.Events exposing (onClick)\n\nmain = Browser.sandbox { init = init, update = update, view = view }\n\ninit = 0\n\nupdate msg model =\n    case msg of\n        Increment ->\n            model + 1\n\n        Decrement ->\n            model - 1\n\nview model =\n    div []\n        [ button [ onClick Decrement ] [ text \"-\" ]\n        , div [] [ text (String.fromInt model) ]\n        , button [ onClick Increment ] [ text \"+\" ]\n        ]\n"
+    )
 
 
-initModel : List ( String, String ) -> Model
-initModel files =
+{-| Builds an editor that fetches each example URL at startup and lets the user edit them. -}
+program : List String -> Program () Model Msg
+program urls =
+    Browser.element
+        { init = \_ -> ( initModel, fetchAll urls )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }
+
+
+fetchAll : List String -> Cmd Msg
+fetchAll urls =
+    Cmd.batch (List.map (\url -> Http.get { url = url, expect = Http.expectString (Loaded url) }) urls)
+
+
+initModel : Model
+initModel =
     refreshApp
-        { files = files
-        , selected = files |> List.head |> Maybe.map Tuple.first |> Maybe.withDefault ""
+        { files = [ starter ]
+        , selected = Tuple.first starter
         , app = Err ""
         , newName = ""
         }
+
+
+{-| The file name from a URL ({@code examples/Foo.elm} -> {@code Foo.elm}). -}
+baseName : String -> String
+baseName url =
+    url |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault url
 
 
 selectedFile : Model -> List ( String, String )
@@ -72,17 +99,17 @@ refreshApp model =
     }
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SelectFile name ->
-            refreshApp { model | selected = name }
+            ( refreshApp { model | selected = name }, Cmd.none )
 
         EditSource content ->
-            refreshApp { model | files = setFile model.selected content model.files }
+            ( refreshApp { model | files = setFile model.selected content model.files }, Cmd.none )
 
         SetNewName n ->
-            { model | newName = n }
+            ( { model | newName = n }, Cmd.none )
 
         AddFile ->
             let
@@ -94,17 +121,17 @@ update msg model =
                         model.newName ++ ".elm"
             in
             if model.newName == "" || hasFile name model.files then
-                model
+                ( model, Cmd.none )
 
             else
-                refreshApp { model | files = model.files ++ [ ( name, "main = text \"new file\"" ) ], selected = name, newName = "" }
+                ( refreshApp { model | files = model.files ++ [ ( name, "main = text \"new file\"" ) ], selected = name, newName = "" }, Cmd.none )
 
         RemoveFile name ->
             let
                 remaining =
                     List.filter (\f -> Tuple.first f /= name) model.files
             in
-            refreshApp
+            ( refreshApp
                 { model
                     | files = remaining
                     , selected =
@@ -114,12 +141,34 @@ update msg model =
                         else
                             model.selected
                 }
+            , Cmd.none
+            )
 
         Interp interpMsg ->
-            { model | app = model.app |> Result.andThen (\m -> appUpdate (selectedFile model) interpMsg m) }
+            ( { model | app = model.app |> Result.andThen (\m -> appUpdate (selectedFile model) interpMsg m) }, Cmd.none )
+
+        Loaded url result ->
+            case result of
+                Ok content ->
+                    -- Add (or refresh) the fetched example as an editable file.
+                    let
+                        name =
+                            baseName url
+
+                        files =
+                            if hasFile name model.files then
+                                setFile name content model.files
+
+                            else
+                                model.files ++ [ ( name, content ) ]
+                    in
+                    ( refreshApp { model | files = files }, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
 
         NoOp ->
-            model
+            ( model, Cmd.none )
 
 
 setFile : String -> String -> List ( String, String ) -> List ( String, String )

@@ -1,174 +1,38 @@
 module Main exposing (main)
 
-{-| The hosted instance of the reusable {@link Editor}: it only supplies the set of example files.
-The editor itself (file browser, source editing, and live rendering of each file's `main`) lives in
-the `Editor` module, so it can be embedded elsewhere with a different file list. -}
+{-| The hosted instance of the reusable {@link Editor}: it only names the example files to offer.
+The editor fetches each over HTTP at startup (relative to the page) and presents them as editable
+files; the editor shell (file browser, source editing, live rendering of each file's `main`) lives
+in the `Editor` module, so it can be embedded elsewhere with a different list. -}
 
 import Editor
 
 
 main : Program () Editor.Model Editor.Msg
 main =
-    Editor.program examples
+    Editor.program exampleUrls
 
 
-{-| The examples shown in the editor. Each is an independent program whose `main` the editor renders
-— a static view, an interactive Browser.sandbox app, or a computed value. They stay within the
-in-browser interpreter's supported subset (Html, records, lists, recursion, sandbox apps). -}
-examples : List ( String, String )
-examples =
-    [ ( "Buttons.elm", buttons )
-    , ( "TextField.elm", textField )
-    , ( "Element.elm", element )
-    , ( "Hello.elm", hello )
-    , ( "Greeting.elm", greeting )
-    , ( "Factorial.elm", factorial )
-    , ( "ListSum.elm", listSum )
-    , ( "Squares.elm", squares )
-    , ( "Toggle.elm", toggle )
+{-| The example files the editor loads at startup, served by the gallery under `examples/`. The
+first group are tailored to the in-browser interpreter's subset (they render live); the rest are the
+full elm-lang.org gallery examples — editable and viewable here, though many use features (SVG,
+WebGL, HTTP, …) the small interpreter can't run, so their result pane shows what it can. -}
+exampleUrls : List String
+exampleUrls =
+    [ "examples/Buttons.elm"
+    , "examples/TextField.elm"
+    , "examples/Element.elm"
+    , "examples/Hello.elm"
+    , "examples/Greeting.elm"
+    , "examples/Factorial.elm"
+    , "examples/ListSum.elm"
+    , "examples/Squares.elm"
+    , "examples/Toggle.elm"
+    , "examples/todomvc.elm"
     ]
-
-
-buttons : String
-buttons =
-    """module Main exposing (main)
-
-import Browser
-import Html exposing (Html, button, div, text)
-import Html.Events exposing (onClick)
-
-main = Browser.sandbox { init = init, update = update, view = view }
-
-init = 0
-
-update msg model =
-    case msg of
-        Increment ->
-            model + 1
-
-        Decrement ->
-            model - 1
-
-view model =
-    div []
-        [ button [ onClick Decrement ] [ text "-" ]
-        , div [] [ text (String.fromInt model) ]
-        , button [ onClick Increment ] [ text "+" ]
-        ]
-"""
-
-
-textField : String
-textField =
-    """module Main exposing (main)
-
-import Browser
-import Html exposing (div, input, text)
-import Html.Events exposing (onInput)
-
-main = Browser.sandbox { init = init, update = update, view = view }
-
-init = ""
-
-update msg model =
-    case msg of
-        SetText s ->
-            s
-
-view model =
-    div []
-        [ input [ onInput SetText ] []
-        , div [] [ text ("You typed: " ++ model) ]
-        ]
-"""
-
-
-element : String
-element =
-    """module Main exposing (main)
-
-import Browser
-import Html exposing (button, div, text)
-import Html.Events exposing (onClick)
-
-main = Browser.element { init = init, update = update, view = view, subscriptions = subs }
-
-init flags = ( 0, Cmd.none )
-
-update msg model =
-    case msg of
-        Bump ->
-            ( model + 1, Cmd.none )
-
-subs model = Sub.none
-
-view model =
-    div []
-        [ button [ onClick Bump ] [ text "bump" ]
-        , div [] [ text (String.fromInt model) ]
-        ]
-"""
-
-
-hello : String
-hello =
-    """main =
-    div []
-        [ text "Hello, Elm!" ]
-"""
-
-
-greeting : String
-greeting =
-    """main = text (greet "world")
-
-greet name =
-    "Hello, " ++ name ++ "!"
-"""
-
-
-factorial : String
-factorial =
-    """main = text (String.fromInt (fact 5))
-
-fact n =
-    if n <= 1 then
-        1
-
-    else
-        n * fact (n - 1)
-"""
-
-
-listSum : String
-listSum =
-    """main = text (String.fromInt (List.sum (List.range 1 100)))
-"""
-
-
-squares : String
-squares =
-    """main = div [] (List.map square (List.range 1 5))
-
-square n =
-    div [] [ text (String.fromInt (n * n)) ]
-"""
-
-
-toggle : String
-toggle =
-    """main = Browser.sandbox { init = init, update = update, view = view }
-
-init = False
-
-update msg model =
-    case msg of
-        Toggle ->
-            not model
-
-view model =
-    div []
-        [ button [ onClick Toggle ] [ text "toggle " ]
-        , text (if model then "ON" else "OFF")
-        ]
-"""
+        ++ List.map (\slug -> "examples/" ++ slug ++ ".elm")
+            [ "hello", "groceries", "shapes", "buttons", "text-fields", "forms", "numbers", "cards"
+            , "positions", "book", "quotes", "time", "clock", "upload", "drag-and-drop"
+            , "image-previews", "triangle", "cube", "crate", "thwomp", "first-person", "picture"
+            , "animation", "mouse", "keyboard", "turtle", "mario"
+            ]

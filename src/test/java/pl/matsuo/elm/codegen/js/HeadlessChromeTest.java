@@ -91,6 +91,13 @@ class HeadlessChromeTest {
   private String renderPage(String html) throws Exception {
     Path page = Files.createTempFile("elm-page-", ".html");
     Files.writeString(page, html, StandardCharsets.UTF_8);
+    String dom = renderUrl(page.toUri().toString());
+    Files.deleteIfExists(page);
+    return dom;
+  }
+
+  /** Loads a URL in headless Chrome (letting timers/fetches run) and returns the serialized DOM. */
+  private String renderUrl(String url) throws Exception {
     Path userData = Files.createTempDirectory("elm-chrome-");
     Process p =
         new ProcessBuilder(
@@ -104,7 +111,7 @@ class HeadlessChromeTest {
                 "--user-data-dir=" + userData,
                 "--virtual-time-budget=2000",
                 "--dump-dom",
-                page.toUri().toString())
+                url)
             .redirectErrorStream(false)
             .start();
     String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -112,7 +119,6 @@ class HeadlessChromeTest {
       p.destroyForcibly();
       throw new IllegalStateException("Chrome timed out");
     }
-    Files.deleteIfExists(page);
     return out;
   }
 
@@ -191,13 +197,50 @@ class HeadlessChromeTest {
               StandardCharsets.UTF_8);
     }
     String dom = renderPage(JsCompiler.htmlPageProject(null, modules));
-    // The reusable Editor is configured (by Main) with a gallery of examples and renders the
-    // selected file's `main` live. Assert on rendered-only text (produced at runtime, not present
-    // in the inlined bundle source): the example file list, and the default file (Buttons.elm) run
-    // as a live app — its minus button and its initial model rendered as <div>0</div>.
-    assertTrue(dom.contains("Squares.elm") && dom.contains("Toggle.elm"), "example gallery listed");
+    // The editor fetches its example files over HTTP at startup; rendered from a file:// page those
+    // fetches don't resolve, so only the built-in starter (Buttons.elm) is present — and it runs
+    // live: the file list shows Buttons.elm and the minus button / initial model render. (The HTTP
+    // loading itself is covered by editorLoadsExamplesOverHttp, served over real HTTP.)
+    assertTrue(dom.contains("Buttons.elm"), "starter file listed");
     assertTrue(dom.contains(">-<"), "selected file's main rendered live (the minus button)");
     assertTrue(dom.contains("<div>0</div>"), "live app shows the initial interpreted model");
+  }
+
+  @Test
+  void editorLoadsExamplesOverHttp() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Serve the editor page + example files over real HTTP and confirm the editor fetches them at
+    // startup and lists them as editable files (here: Squares.elm and Toggle.elm).
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("elm-editor-http-");
+    java.nio.file.Files.writeString(dir.resolve("editor.html"), JsCompiler.htmlPageProject(null, modules));
+    java.nio.file.Path ex = java.nio.file.Files.createDirectories(dir.resolve("examples"));
+    for (String name : new String[] {"Buttons", "TextField", "Element", "Hello", "Greeting", "Factorial", "ListSum", "Squares", "Toggle"}) {
+      java.nio.file.Files.writeString(ex.resolve(name + ".elm"), resource("/elm/editor-examples/" + name + ".elm"));
+    }
+    com.sun.net.httpserver.HttpServer http =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    http.createContext("/", exchange -> {
+      java.nio.file.Path f = dir.resolve(exchange.getRequestURI().getPath().substring(1));
+      if (java.nio.file.Files.isRegularFile(f)) {
+        byte[] b = java.nio.file.Files.readAllBytes(f);
+        exchange.sendResponseHeaders(200, b.length);
+        try (java.io.OutputStream os = exchange.getResponseBody()) { os.write(b); }
+      } else {
+        exchange.sendResponseHeaders(404, -1);
+      }
+      exchange.close();
+    });
+    http.start();
+    try {
+      String dom = renderUrl("http://127.0.0.1:" + http.getAddress().getPort() + "/editor.html");
+      assertTrue(dom.contains("Squares.elm") && dom.contains("Toggle.elm"), "fetched examples listed: " + dom);
+    } finally {
+      http.stop(0);
+    }
   }
 
   @Test
