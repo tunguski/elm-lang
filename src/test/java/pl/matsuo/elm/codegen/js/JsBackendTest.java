@@ -510,6 +510,75 @@ class JsBackendTest {
     assertEquals("Just:1000", out);
   }
 
+  @Test
+  void editorDecodesAListWithOneOfFallback() {
+    // `list (oneOf [ field "n" int, succeed 0 ])`: each element tries `field "n" int`, falling back
+    // to 0 when that field is absent — exercises list, oneOf, field and succeed together.
+    String src =
+        editorDecoderProgram(
+            "list (oneOf [ field \"n\" int, succeed 0 ])",
+            "Result Http.Error (List Int)",
+            "Ok xs -> ( String.fromInt (List.sum xs), Cmd.none )");
+    String out = editorScript(src, jsonDriver("[{\\\"n\\\":5},{\\\"m\\\":1},{\\\"n\\\":2}]"));
+    assertTrue(out.contains("7"), out); // 5 + 0 (fallback) + 2
+  }
+
+  @Test
+  void editorDecodesWithAndThen() {
+    // `andThen` chooses the next decoder from an already-decoded value.
+    String src =
+        editorDecoderProgram(
+            "andThen pick (field \"kind\" string)\npick k = if k == \"double\" then field \"val\" int else succeed 0",
+            "Result Http.Error Int",
+            "Ok n -> ( String.fromInt n, Cmd.none )");
+    String out = editorScript(src, jsonDriver("{\\\"kind\\\":\\\"double\\\",\\\"val\\\":21}"));
+    assertTrue(out.contains("21"), out);
+  }
+
+  @Test
+  void editorDecodesNullable() {
+    // `nullable int` yields Nothing for a JSON null (and Just n otherwise).
+    String src =
+        editorDecoderProgram(
+            "field \"x\" (nullable int)\ndescribe m = case m of\n        Just n -> String.fromInt n\n        Nothing -> \"null\"",
+            "Result Http.Error (Maybe Int)",
+            "Ok m -> ( describe m, Cmd.none )");
+    String out = editorScript(src, jsonDriver("{\\\"x\\\":null}"));
+    assertTrue(out.contains("null"), out);
+  }
+
+  /** A minimal editor TEA program whose Http request decodes JSON with {@code decoderBody}; the
+   * {@code okBranch} renders the decoded value into the view. */
+  private static String editorDecoderProgram(String decoderBody, String msgType, String okBranch) {
+    return "import Browser\n"
+        + "import Html exposing (text)\n"
+        + "import Http\n"
+        + "import Json.Decode exposing (..)\n"
+        + "main = Browser.element { init = init, update = update, view = view, subscriptions = subs }\n"
+        + "subs model = Sub.none\n"
+        + "init flags = ( \"loading\", Http.get { url = \"u\", expect = Http.expectJson Got decoder } )\n"
+        + "decoder = " + decoderBody + "\n"
+        + "type Msg = Got (" + msgType + ")\n"
+        + "update msg model =\n"
+        + "    case msg of\n"
+        + "        Got result ->\n"
+        + "            case result of\n"
+        + "                " + okBranch + "\n"
+        + "                Err e -> ( \"err\", Cmd.none )\n"
+        + "view model = text model\n";
+  }
+
+  /** Drives an editor program's Http path: extracts the request's expect, feeds it {@code body} as
+   * the response, runs update, and returns the rendered view text. */
+  private static String jsonDriver(String body) {
+    return "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0]; var cmd=init._[0].vs[1];"
+        + "var h=_$Eval$httpCmd(cmd); var expect=h._[0].vs[1];"
+        + "var mr=_$Eval$httpResult(files)(expect)($maybe(\"" + body + "\"));"
+        + "var up=_$Eval$appUpdateCmd(files)(mr._[0])(model);"
+        + "var view=_$Eval$appView(files)(up._[0].vs[0]);"
+        + "process.stdout.write(_$Eval$htmlToString(view._[0]));";
+  }
+
   /** Reads a classpath resource, normalising CRLF so the editor's `\n`-based escaping is correct. */
   private static String read(String path) {
     return pl.matsuo.elm.util.Resources.read(path).replace("\r", "");

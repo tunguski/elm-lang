@@ -26,7 +26,7 @@ builtins =
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
-        ++ [ "field", "map2", "map3", "map4", "succeed" ]
+        ++ [ "field", "map2", "map3", "map4", "succeed", "list", "andThen", "oneOf", "nullable" ]
         ++ playgroundNames
 
 
@@ -70,7 +70,7 @@ arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
-    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed" ] then
+    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable" ] then
         1
 
     else if List.member name [ "toX", "toY", "degrees" ] then
@@ -572,6 +572,18 @@ runBuiltin globals name args =
 
             ( "map4", [ f, a, b, c, d ] ) ->
                 Ok (VCtor "Dec.map" [ f, a, b, c, d ])
+
+            ( "list", [ dec ] ) ->
+                Ok (VCtor "Dec.list" [ dec ])
+
+            ( "andThen", [ f, dec ] ) ->
+                Ok (VCtor "Dec.andThen" [ f, dec ])
+
+            ( "oneOf", [ decs ] ) ->
+                Ok (VCtor "Dec.oneOf" [ decs ])
+
+            ( "nullable", [ dec ] ) ->
+                Ok (VCtor "Dec.nullable" [ dec ])
 
             _ ->
                 Err ("bad arguments to " ++ name)
@@ -1302,8 +1314,66 @@ runDecoder globals decoder json =
         VCtor "Dec.map" (f :: decs) ->
             decodeAll globals decs json [] |> Result.andThen (\vals -> applyAll globals f vals)
 
+        VCtor "Dec.list" [ dec ] ->
+            case json of
+                VList items ->
+                    decodeEach globals dec items []
+
+                _ ->
+                    Err "expected a list"
+
+        VCtor "Dec.andThen" [ f, dec ] ->
+            runDecoder globals dec json
+                |> Result.andThen
+                    (\v ->
+                        applyValue globals f v
+                            |> Result.andThen (\next -> runDecoder globals next json)
+                    )
+
+        VCtor "Dec.oneOf" [ VList decs ] ->
+            tryDecoders globals decs json
+
+        VCtor "Dec.nullable" [ dec ] ->
+            case json of
+                VCtor "Null" [] ->
+                    Ok (VCtor "Nothing" [])
+
+                _ ->
+                    runDecoder globals dec json |> Result.map (\v -> VCtor "Just" [ v ])
+
         _ ->
             Err "unsupported decoder"
+
+
+{-| Runs `dec` against each element of a JSON array, collecting the decoded values into a `VList`. -}
+decodeEach : Globals -> Value -> List Value -> List Value -> Result String Value
+decodeEach globals dec items acc =
+    case items of
+        [] ->
+            Ok (VList (List.reverse acc))
+
+        x :: rest ->
+            runDecoder globals dec x |> Result.andThen (\v -> decodeEach globals dec rest (v :: acc))
+
+
+{-| Tries each decoder in turn (for `oneOf`), returning the first success or the last error. -}
+tryDecoders : Globals -> List Value -> Value -> Result String Value
+tryDecoders globals decs json =
+    case decs of
+        [] ->
+            Err "oneOf: no decoder succeeded"
+
+        d :: rest ->
+            case runDecoder globals d json of
+                Ok v ->
+                    Ok v
+
+                Err e ->
+                    if List.isEmpty rest then
+                        Err e
+
+                    else
+                        tryDecoders globals rest json
 
 
 decodeAll : Globals -> List Value -> Value -> List Value -> Result String (List Value)

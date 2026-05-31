@@ -395,5 +395,6 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
   vendored into the gallery, and verifying rasterized pixels can't be done headlessly.
 
 **Editor (in-browser Elm-in-Elm interpreter)**
-- The live editor interprets a subset: it does **not** run WebGL or `File` effects, and its
-  `Json.Decode` covers the common combinators (no exotic decoders).
+- The live editor interprets a subset: it does **not** run WebGL or `File` effects. Its
+  `Json.Decode` covers the common combinators (`string`/`int`/`float`/`bool`/`field`/`succeed`/
+  `map`–`map4`/`list`/`andThen`/`oneOf`/`nullable`) — not the full decoder API.
