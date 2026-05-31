@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -23,7 +23,8 @@ builtins =
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
-        ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond" ]
+        ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
+        ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ playgroundNames
 
 
@@ -220,8 +221,8 @@ evalExpr globals env expr =
                         -- Effects are opaque no-ops in the editor (Cmd.none, Sub.none, Task.perform …).
                         Ok (VCtor moduleName [])
 
-                    else if qualified == "Time.here" || qualified == "Time.now" || qualified == "Time.every" then
-                        -- Effectful Time values are opaque (they only feed a discarded Cmd/Sub).
+                    else if qualified == "Time.here" || qualified == "Time.now" then
+                        -- These effectful Time values are opaque (they only feed a discarded Cmd).
                         Ok (VCtor "Cmd" [])
 
                     else if qualified == "Time.utc" then
@@ -510,6 +511,23 @@ runBuiltin globals name args =
 
             ( "Time.toSecond", [ _, VNum ms ] ) ->
                 Ok (VNum (toFloat (modBy 60 (round ms // 1000))))
+
+            -- `Time.every interval toMsg` is a subscription the editor inspects to drive a live tick.
+            ( "Time.every", [ VNum interval, toMsg ] ) ->
+                Ok (VCtor "Sub.every" [ VNum interval, toMsg ])
+
+            -- Random generators carry their spec so the editor can sample them with its own seed.
+            ( "Random.int", [ VNum lo, VNum hi ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "int", VNum lo, VNum hi ])
+
+            ( "Random.float", [ VNum lo, VNum hi ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "float", VNum lo, VNum hi ])
+
+            ( "Random.uniform", [ first, VList rest ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "uniform", VList (first :: rest) ])
+
+            ( "Random.generate", [ toMsg, gen ] ) ->
+                Ok (VCtor "Cmd.random" [ toMsg, gen ])
 
             _ ->
                 Err ("bad arguments to " ++ name)
@@ -1034,6 +1052,137 @@ modelOf v =
 
         _ ->
             v
+
+
+-- Cmd/Sub-aware variants the editor uses to run effects (Random) and subscriptions (Time.every).
+
+
+{-| A no-op command (e.g. `Cmd.none`, or a sandbox update with no command). -}
+noCmd : Value
+noCmd =
+    VCtor "Cmd" []
+
+
+{-| Splits an init/update result into (model, command). -}
+splitMC : Value -> ( Value, Value )
+splitMC v =
+    case v of
+        VTup (m :: c :: _) ->
+            ( m, c )
+
+        VTup (m :: _) ->
+            ( m, noCmd )
+
+        _ ->
+            ( v, noCmd )
+
+
+{-| Like {@link appInit} but also returns the initial command. -}
+appInitCmd : List ( String, String ) -> Result String ( Value, Value )
+appInitCmd files =
+    parseProject files
+        |> Result.andThen
+            (\globals ->
+                evalGlobal globals "init"
+                    |> Result.andThen
+                        (\initVal ->
+                            case initVal of
+                                VClosure _ _ _ ->
+                                    applyValue globals initVal (VTup []) |> Result.map splitMC
+
+                                VRec _ _ _ _ ->
+                                    applyValue globals initVal (VTup []) |> Result.map splitMC
+
+                                _ ->
+                                    Ok ( initVal, noCmd )
+                        )
+            )
+
+
+{-| Like {@link appUpdate} but also returns the command produced by `update`. -}
+appUpdateCmd : List ( String, String ) -> Value -> Value -> Result String ( Value, Value )
+appUpdateCmd files msg model =
+    parseProject files
+        |> Result.andThen (\globals -> applyUpdate globals msg model |> Result.map splitMC)
+
+
+{-| Applies a message-producing function (a `Random.generate`/`Time.every` constructor) to a value. -}
+applyMsgIn : List ( String, String ) -> Value -> Value -> Result String Value
+applyMsgIn files fn arg =
+    parseProject files
+        |> Result.andThen (\globals -> applyValue globals fn arg)
+
+
+{-| If the app subscribes via `Time.every`, the (interval-ms, toMsg) the editor wires to a tick. -}
+appSubscription : List ( String, String ) -> Value -> Maybe ( Int, Value )
+appSubscription files model =
+    case parseProject files of
+        Ok globals ->
+            case evalGlobal globals "subscriptions" |> Result.andThen (\f -> applyValue globals f model) of
+                Ok (VCtor "Sub.every" [ VNum interval, toMsg ]) ->
+                    Just ( round interval, toMsg )
+
+                _ ->
+                    Nothing
+
+        Err _ ->
+            Nothing
+
+
+{-| Resolves a `Random.generate` command: samples its generator with the editor's `seed` and applies
+the message constructor, yielding the message to dispatch and the next seed. -}
+randomCmd : List ( String, String ) -> Int -> Value -> Maybe ( Value, Int )
+randomCmd files seed cmd =
+    case cmd of
+        VCtor "Cmd.random" [ toMsg, gen ] ->
+            let
+                ( v, seed2 ) =
+                    sampleGen seed gen
+            in
+            case applyMsgIn files toMsg v of
+                Ok msg ->
+                    Just ( msg, seed2 )
+
+                Err _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+{-| Samples a generator with a linear-congruential step of the seed, returning (value, next seed). -}
+sampleGen : Int -> Value -> ( Value, Int )
+sampleGen seed gen =
+    let
+        s =
+            abs (modBy 2147483647 (seed * 1103515245 + 12345))
+    in
+    case gen of
+        VCtor "Random.Gen" [ VStr "int", VNum lo, VNum hi ] ->
+            ( VNum (toFloat (round lo + modBy (round hi - round lo + 1) s)), s )
+
+        VCtor "Random.Gen" [ VStr "float", VNum lo, VNum hi ] ->
+            ( VNum (lo + (hi - lo) * (toFloat s / 2147483647)), s )
+
+        VCtor "Random.Gen" [ VStr "uniform", VList xs ] ->
+            ( listGet (modBy (max 1 (List.length xs)) s) xs, s )
+
+        _ ->
+            ( VNum 0, s )
+
+
+listGet : Int -> List Value -> Value
+listGet n xs =
+    case xs of
+        [] ->
+            VCtor "Nothing" []
+
+        x :: rest ->
+            if n <= 0 then
+                x
+
+            else
+                listGet (n - 1) rest
 
 
 {-| Evaluates `view model` to the Html `Value` tree the editor renders to live Html. -}

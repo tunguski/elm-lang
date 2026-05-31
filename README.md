@@ -128,9 +128,10 @@ constructors (`Point 3 4`), negative literals in argument position (`zigzag -2 �
 (so the **shapes** and **clock** examples render as inline SVG), `String.*`, `Time` (UTC), `Basics`
 math (`cos`/`sin`/`pi`/`toFloat`/…), and a built-in **`elm-playground`** (`picture` and `animation`,
 with the shape constructors, colours and transforms rendered to SVG) — enough that every pure-Html /
-TEA / SVG / `picture` / `animation` example from the elm-lang.org gallery parses and renders (the
-`Random`/`Time`-driven ones — numbers, cards, clock — render their initial view; `animation` renders
-its first frame). Examples that need full effect/interaction runtimes — WebGL, HTTP, `File`/
+TEA / SVG / `picture` / `animation` example from the elm-lang.org gallery parses and renders. It also
+runs **effects live**: `Random.generate` (sampled from a seed the editor advances — so **numbers**
+rolls a die and **cards** draws on click) and `Time.every` subscriptions (wired to a real tick — so
+the **clock** ticks). Examples that need full effect/interaction runtimes — WebGL, HTTP, `File`/
 `Json.Decode`, and `elm-playground`'s interactive `game` — parse but fall outside this teaching-subset
 interpreter.
 

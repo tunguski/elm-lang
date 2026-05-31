@@ -13,12 +13,13 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 -}
 
 import Browser
-import Eval exposing (appInit, appUpdate, appView, applyHandler, hasApp, lookup, mainValue, renderValue)
+import Eval exposing (appInit, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, hasApp, lookup, mainValue, randomCmd, renderValue)
 import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Lang exposing (Value(..))
+import Time
 
 
 type alias Model =
@@ -26,6 +27,7 @@ type alias Model =
     , selected : String
     , app : Result String Value
     , newName : String
+    , seed : Int
     }
 
 
@@ -36,6 +38,7 @@ type Msg
     | AddFile
     | RemoveFile String
     | Interp Value
+    | Tick Int
     | Loaded String (Result Http.Error String)
     | NoOp
 
@@ -55,8 +58,24 @@ program urls =
         { init = \_ -> ( initModel, fetchAll urls )
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
+
+
+{-| Wires a live tick when the selected app subscribes via `Time.every` (e.g. the clock). -}
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    case model.app of
+        Ok m ->
+            case appSubscription (selectedFile model) m of
+                Just ( interval, _ ) ->
+                    Time.every (toFloat interval) (\posix -> Tick (Time.posixToMillis posix))
+
+                Nothing ->
+                    Sub.none
+
+        Err _ ->
+            Sub.none
 
 
 fetchAll : List String -> Cmd Msg
@@ -71,6 +90,7 @@ initModel =
         , selected = Tuple.first starter
         , app = Err ""
         , newName = ""
+        , seed = 1
         }
 
 
@@ -97,6 +117,33 @@ refreshApp model =
             else
                 Err ""
     }
+
+
+{-| Runs one interpreted message through `update`, then resolves any `Random.generate` command it
+produces by sampling with the editor's seed and dispatching the generated message (so `Roll`-style
+buttons actually randomise). `fuel` bounds the command-chasing in case an app loops. -}
+stepApp : Int -> Model -> Value -> Model
+stepApp fuel model interpMsg =
+    case model.app of
+        Ok m ->
+            case appUpdateCmd (selectedFile model) interpMsg m of
+                Ok ( m2, cmd ) ->
+                    case randomCmd (selectedFile model) model.seed cmd of
+                        Just ( genMsg, seed2 ) ->
+                            if fuel <= 0 then
+                                { model | app = Ok m2, seed = seed2 }
+
+                            else
+                                stepApp (fuel - 1) { model | app = Ok m2, seed = seed2 } genMsg
+
+                        Nothing ->
+                            { model | app = Ok m2 }
+
+                Err e ->
+                    { model | app = Err e }
+
+        Err _ ->
+            model
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -145,7 +192,26 @@ update msg model =
             )
 
         Interp interpMsg ->
-            ( { model | app = model.app |> Result.andThen (\m -> appUpdate (selectedFile model) interpMsg m) }, Cmd.none )
+            ( stepApp 100 model interpMsg, Cmd.none )
+
+        Tick t ->
+            -- A Time.every tick: feed the subscription's message (toMsg (millisToPosix t)) to update.
+            case model.app of
+                Ok m ->
+                    case appSubscription (selectedFile model) m of
+                        Just ( _, toMsg ) ->
+                            case applyMsgIn (selectedFile model) toMsg (VNum (toFloat t)) of
+                                Ok interpMsg ->
+                                    ( stepApp 100 model interpMsg, Cmd.none )
+
+                                Err _ ->
+                                    ( model, Cmd.none )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
 
         Loaded url result ->
             case result of

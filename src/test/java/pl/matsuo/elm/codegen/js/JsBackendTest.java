@@ -417,8 +417,58 @@ class JsBackendTest {
     assertEquals("3", editorRender("main = text (String.fromInt (5 - 2))\n"));
   }
 
+  @Test
+  void editorResolvesRandomGenerateCommands() {
+    // Drives the `numbers` app: a Roll click produces a `Random.generate` command, which the editor
+    // samples with its seed and feeds back as a NewFace message — landing a die face in 1..6.
+    String out =
+        editorScript(
+            read("/examples/numbers.elm"),
+            "var roll=$data('VCtor',['Roll',$nil]);"
+                + "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0];"
+                + "var up=_$Eval$appUpdateCmd(files)(roll)(model);"
+                + "var cmd=up._[0].vs[1], model2=up._[0].vs[0];"
+                + "var rc=_$Eval$randomCmd(files)(12345)(cmd);"
+                + "if(rc.$==='Just'){var up2=_$Eval$appUpdateCmd(files)(rc._[0].vs[0])(model2);"
+                + "process.stdout.write(_$Eval$renderValue(up2._[0].vs[0]));}"
+                + "else process.stdout.write('NO-RANDOM');");
+    assertTrue(out.matches(".*dieFace = [1-6].*"), out);
+  }
+
+  @Test
+  void editorExtractsTimeEverySubscription() {
+    // The clock subscribes via `Time.every 1000 Tick`; the editor reads (interval, toMsg) to wire a
+    // live tick.
+    String out =
+        editorScript(
+            read("/examples/clock.elm"),
+            "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0];"
+                + "var sub=_$Eval$appSubscription(files)(model);"
+                + "process.stdout.write(sub.$+':'+(sub.$==='Just'?String(sub._[0].vs[0]):''));");
+    assertEquals("Just:1000", out);
+  }
+
   /** Reads a classpath resource, normalising CRLF so the editor's `\n`-based escaping is correct. */
   private static String read(String path) {
     return pl.matsuo.elm.util.Resources.read(path).replace("\r", "");
+  }
+
+  /** Runs a Node script with the editor bundle loaded and {@code files} bound to a single-file
+   * project, returning its stdout — lets a test drive the editor's interpreter directly. */
+  private String editorScript(String source, String body) {
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = pl.matsuo.elm.util.Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    String escaped = source.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+    String program =
+        "globalThis.window = globalThis;\n"
+            + JsCompiler.declarationsScriptWithDomProject(modules)
+            + "\nvar SRC=\""
+            + escaped
+            + "\";\nvar files=$cons({$:'#',vs:['Main.elm',SRC]},$nil);\n"
+            + body
+            + "\n";
+    return runNode(program);
   }
 }
