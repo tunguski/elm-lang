@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.codegen.js.JsCompiler;
 import pl.matsuo.elm.codegen.wasm.WasmCompiler;
 import pl.matsuo.elm.html.HtmlRender;
@@ -15,7 +14,6 @@ import pl.matsuo.elm.html.Tea;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Project;
 import pl.matsuo.elm.interp.Show;
-import pl.matsuo.elm.parser.Parser;
 import pl.matsuo.elm.runtime.ElmData;
 
 /**
@@ -437,7 +435,9 @@ public final class SiteGenerator {
         .replace("%SOURCE%", escape(source));
   }
 
-  /** Numeric snippets the WASM backend supports, evaluated live by both JS and WASM in the page. */
+  /** Elm snippets the WASM backend supports, evaluated live by both JS and WASM in the page. They
+   * span Int, Float, String and List results, so the page shows the backends agreeing on values that
+   * cross the wasm boundary as heap pointers (strings, cons-lists), not just plain numbers. */
   private static final List<String> BACKEND_SNIPPETS =
       List.of(
           "1 + 2 * 3",
@@ -448,7 +448,27 @@ public final class SiteGenerator {
           "let x = 6 in x * x",
           "(\\n -> n * n - 1) 9",
           "if 3 < 5 && 10 > 2 then 100 else 0",
-          "1000000 * 1000000");
+          "1000000 * 1000000",
+          "1.5 + 2.25",
+          "7.0 / 2.0",
+          "\"elm\" ++ \"-lang\"",
+          "List.range 1 5",
+          "List.map (\\x -> x * x) (List.range 1 4)",
+          "List.reverse (List.range 1 5)");
+
+  /** The decode strategy the page's JS uses to read a wasm {@code f()} result of this value. */
+  private static String kindOf(Object v) {
+    if (v instanceof Double) {
+      return "float"; // returned as the i64 bit-pattern of the double
+    }
+    if (v instanceof String) {
+      return "string"; // pointer to a heap string {i64 len, bytes…}
+    }
+    if (v instanceof pl.matsuo.elm.runtime.ElmList) {
+      return "list"; // pointer to a cons-list (0 = [], else {i64 head, i64 tail})
+    }
+    return "int";
+  }
 
   /**
    * A page that runs each numeric snippet through BOTH the JavaScript backend and the WebAssembly
@@ -456,14 +476,17 @@ public final class SiteGenerator {
    * as the expected baseline). Demonstrates the two compiled backends agreeing in-browser.
    */
   private void writeBackendsPage() throws IOException {
-    List<Expr> parsed = new ArrayList<>();
+    StringBuilder src = new StringBuilder();
     StringBuilder rows = new StringBuilder();
     for (int i = 0; i < BACKEND_SNIPPETS.size(); i++) {
       String snip = BACKEND_SNIPPETS.get(i);
-      parsed.add(Parser.parseExpression(snip));
-      String expected = Show.plain(Interpreter.eval(snip));
+      src.append("f").append(i).append(" = ").append(snip).append("\n");
+      Object value = Interpreter.eval(snip);
+      String expected = Show.plain(value);
       rows.append("<tr data-expected=\"")
           .append(escape(expected))
+          .append("\" data-kind=\"")
+          .append(kindOf(value))
           .append("\"><td><code>")
           .append(escape(snip))
           .append("</code></td><td class=\"exp\">")
@@ -476,7 +499,9 @@ public final class SiteGenerator {
           .append(i)
           .append("\"></td></tr>\n");
     }
-    String wasmB64 = Base64.getEncoder().encodeToString(WasmCompiler.module(parsed));
+    // Compile through the full source pipeline (type-directed codegen + lambda-lifting), so string
+    // and list results — not just numbers — are emitted; each f{i} is exported as `() -> i64`.
+    String wasmB64 = Base64.getEncoder().encodeToString(WasmCompiler.moduleFromSource(src.toString()));
     String jsEval = JsCompiler.expressionsEvalScript(BACKEND_SNIPPETS);
     String perf = perfChart();
 
@@ -497,10 +522,12 @@ public final class SiteGenerator {
         </header>
         <main>
           <h1>JavaScript vs WebAssembly</h1>
-          <p>Each numeric Elm expression below is compiled by two backends and run right here in your
+          <p>Each Elm expression below is compiled by two backends and run right here in your
           browser: the <strong>JavaScript</strong> backend and the from-scratch <strong>WebAssembly</strong>
-          backend (a wasm binary instantiated via <code>WebAssembly.instantiate</code>). The
-          interpreter's value is the expected baseline; ✓ means all three agree.</p>
+          backend (a wasm binary instantiated via <code>WebAssembly.instantiate</code>). Results span
+          <code>Int</code>, <code>Float</code>, <code>String</code> and <code>List</code> — the
+          non-numeric ones cross the wasm boundary as heap pointers the page decodes from linear
+          memory. The interpreter's value is the expected baseline; ✓ means all three agree.</p>
           <table>
             <thead><tr><th>Expression</th><th>Interpreter</th><th>JS</th><th>WASM</th><th></th></tr></thead>
             <tbody>
@@ -516,13 +543,31 @@ public final class SiteGenerator {
           for (var i=0;i<js.length;i++){ var el=document.getElementById('js'+i); if(el) el.textContent=js[i]; }
           var bin = Uint8Array.from(atob("%WASM%"), function(c){ return c.charCodeAt(0); });
           WebAssembly.instantiate(bin).then(function(r){
-            var ex=r.instance.exports, i=0;
-            while(('f'+i) in ex){ document.getElementById('wasm'+i).textContent = ex['f'+i]().toString(); i++; }
-            document.querySelectorAll('tbody tr').forEach(function(tr,n){
+            var ex=r.instance.exports;
+            var fb=new ArrayBuffer(8), fdv=new DataView(fb);
+            // A wasm f() returns an i64: a number, a Float's bit-pattern, or a heap pointer. Decode
+            // per the row's kind, re-reading memory.buffer each time (it may grow as strings/lists
+            // allocate, detaching an old view).
+            function decode(kind, raw){
+              if(kind==='float'){ fdv.setBigInt64(0, raw, true); return String(fdv.getFloat64(0,true)); }
+              var dv=new DataView(ex.memory.buffer);
+              if(kind==='string'){ var p=Number(raw), len=Number(dv.getBigInt64(p,true));
+                return new TextDecoder().decode(new Uint8Array(ex.memory.buffer, p+8, len)); }
+              if(kind==='list'){ var p=Number(raw), out=[];
+                while(p!==0){ out.push(Number(dv.getBigInt64(p,true)).toString()); p=Number(dv.getBigInt64(p+8,true)); }
+                return '['+out.join(',')+']'; }
+              return raw.toString();
+            }
+            document.querySelectorAll('tbody tr').forEach(function(tr,i){
+              if(!(('f'+i) in ex)) return;
+              tr.querySelector('.wasm').textContent = decode(tr.getAttribute('data-kind'), ex['f'+i]());
+            });
+            document.querySelectorAll('tbody tr').forEach(function(tr){
               var want=tr.getAttribute('data-expected');
               var a=tr.querySelector('.js').textContent, b=tr.querySelector('.wasm').textContent;
-              tr.querySelector('.ok').textContent = (a===want && b===want) ? '✓' : '✗';
-              tr.querySelector('.ok').className = 'ok ' + ((a===want && b===want)?'good':'bad');
+              var ok=(a===want && b===want);
+              tr.querySelector('.ok').textContent = ok ? '✓' : '✗';
+              tr.querySelector('.ok').className = 'ok ' + (ok?'good':'bad');
             });
           });
         })();

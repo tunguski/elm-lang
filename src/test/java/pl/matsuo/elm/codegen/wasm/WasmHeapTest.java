@@ -116,6 +116,68 @@ class WasmHeapTest {
   }
 
   @Test
+  void multiExportModuleDecodesEveryKind() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // Mirrors the JS-vs-WASM gallery page: one module exporting f0..fN of mixed result types, each
+    // decoded from the i64 return per its kind (number, Float bit-pattern, heap string, cons-list).
+    String source =
+        "f0 = 1 + 2 * 3\n"
+            + "f1 = 7.0 / 2.0\n"
+            + "f2 = \"elm\" ++ \"-lang\"\n"
+            + "f3 = List.map (\\x -> x * x) (List.range 1 4)\n";
+    String[] kinds = {"int", "float", "string", "list"};
+    String[] expected = {
+      Show.plain(Interpreter.eval("1 + 2 * 3")),
+      Show.plain(Interpreter.eval("7.0 / 2.0")),
+      Show.plain(Interpreter.eval("\"elm\" ++ \"-lang\"")),
+      Show.plain(Interpreter.eval("List.map (\\x -> x * x) (List.range 1 4)")),
+    };
+    String[] got = decodeKinds(source, kinds);
+    for (int i = 0; i < kinds.length; i++) {
+      assertEquals(expected[i], got[i], kinds[i] + " (f" + i + ")");
+    }
+  }
+
+  /** Compiles a multi-export module and decodes each f{i}() per the matching kind (as the page does). */
+  private String[] decodeKinds(String source, String[] kinds) throws Exception {
+    Path wasm = Files.createTempFile("elm-multi-", ".wasm");
+    Files.write(wasm, WasmCompiler.moduleFromSource(source));
+    Path js = Files.createTempFile("elm-multi-run-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs'); const kinds="
+            + "[" + String.join(",", java.util.Arrays.stream(kinds).map(k -> "\"" + k + "\"").toList()) + "];"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "const ex=r.instance.exports; const fb=new ArrayBuffer(8), fdv=new DataView(fb);"
+            + "function decode(kind,raw){"
+            + " if(kind==='float'){fdv.setBigInt64(0,raw,true);return String(fdv.getFloat64(0,true));}"
+            + " const dv=new DataView(ex.memory.buffer);"
+            + " if(kind==='string'){const p=Number(raw),len=Number(dv.getBigInt64(p,true));"
+            + "  return new TextDecoder().decode(new Uint8Array(ex.memory.buffer,p+8,len));}"
+            + " if(kind==='list'){let p=Number(raw);const out=[];"
+            + "  while(p!==0){out.push(Number(dv.getBigInt64(p,true)).toString());p=Number(dv.getBigInt64(p+8,true));}"
+            + "  return '['+out.join(',')+']';}"
+            + " return raw.toString();}"
+            + "const res=kinds.map((k,i)=>decode(k,ex['f'+i]()));"
+            + "process.stdout.write(res.join('\\u0001'));"
+            + "}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p = new ProcessBuilder("node", js.toString(), wasm.toString()).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    if (!p.waitFor(30, TimeUnit.SECONDS)) {
+      p.destroyForcibly();
+      throw new IllegalStateException("node timed out");
+    }
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    return out.split("\u0001", -1);
+  }
+
+  @Test
   void marshalsAListResultBackToTheHost() throws Exception {
     assumeTrue(NODE, "node not available");
     // Host marshalling: decode a wasm cons-list result (0 = [], else a {head, tail} cell) into a

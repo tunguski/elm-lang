@@ -319,8 +319,10 @@ For each example it emits a self-contained live demo page plus a wrapper that sh
 an "open in a new tab" link) next to its syntax-highlighted Elm source. **All 27 examples run as
 live compiled JavaScript** — the Playground games are bundled multi-module with the real
 evancz/elm-playground source, and the WebGL examples render into a real `<canvas>`. A separate
-[**JS vs WASM**](https://tunguski.github.io/elm-lang/backends.html) page runs numeric snippets
-through both compiled backends in the browser, side by side. Build it locally with:
+[**JS vs WASM**](https://tunguski.github.io/elm-lang/backends.html) page runs Elm snippets
+through both compiled backends in the browser, side by side — `Int`, `Float`, `String` and `List`
+results, where the non-numeric ones cross the wasm boundary as heap pointers the page decodes from
+linear memory (string `{len, bytes}`, cons-list cells, Float bit-patterns). Build it locally with:
 
 ```sh
 ./mvnw.cmd -DskipTests package
