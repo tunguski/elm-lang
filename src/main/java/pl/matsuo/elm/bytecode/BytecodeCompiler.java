@@ -152,7 +152,14 @@ public final class BytecodeCompiler {
         }
       }
       case Expr.Ctor ct -> c.add(Instr.of(Op.PUSH_CTOR, ct.name()));
-      case Expr.OpFunc o -> c.add(Instr.of(Op.PUSH_OPFUNC, o.op()));
+      case Expr.OpFunc o -> {
+        if (pl.matsuo.elm.interp.Operators.isBuiltin(o.op())) {
+          c.add(Instr.of(Op.PUSH_OPFUNC, o.op()));
+        } else {
+          // `(op)` as a value -> its defining function (a top-level binding from `infix`/`(op) = …`).
+          compile(c, new Expr.Var(null, o.op(), o.pos()));
+        }
+      }
       case Expr.ListLit l -> {
         l.items().forEach(it -> compile(c, it));
         c.add(Instr.ofArg(Op.MAKE_LIST, l.items().size()));
@@ -219,6 +226,15 @@ public final class BytecodeCompiler {
       patch(c, toRight, c.size());
       compile(c, b.right());
       patch(c, toEnd, c.size());
+      return;
+    }
+    if (!pl.matsuo.elm.interp.Operators.isBuiltin(b.op())) {
+      // A user/package-defined operator: `a op b` is the function `(op)` applied to a then b.
+      compile(c, new Expr.Var(null, b.op(), b.pos()));
+      compile(c, b.left());
+      c.add(Instr.of(Op.APPLY));
+      compile(c, b.right());
+      c.add(Instr.of(Op.APPLY));
       return;
     }
     compile(c, b.left());

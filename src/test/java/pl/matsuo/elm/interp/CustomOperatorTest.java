@@ -32,4 +32,32 @@ class CustomOperatorTest {
     assertEquals("10", Show.plain(Interpreter.load(src).value("main")));
     assertEquals("number", TypeChecker.checkModule(src).get("main"));
   }
+
+  private static final String INFIX_MODULE =
+      "add a b = a + b\n"
+          + "mul a b = a * b\n"
+          + "infix left 6 (^^) = add\n"
+          + "infix left 7 (~~) = mul\n"
+          + "main = 1 ^^ 2 ~~ 3\n"; // with the declared precedence: 1 ^^ (2 ~~ 3) = 1 + 6 = 7
+
+  @Test
+  void infixDeclarationGivesOperatorItsDeclaredPrecedence() {
+    // (~~) is declared tighter (7) than (^^) (6), so it binds first: add 1 (mul 2 3) = 7,
+    // not (1 ^^ 2) ~~ 3 = 9 (which is what the default lowest-precedence fallback would give).
+    assertEquals("7", Show.plain(Interpreter.load(INFIX_MODULE).value("main")));
+    assertEquals("number", TypeChecker.checkModule(INFIX_MODULE).get("main"));
+  }
+
+  @Test
+  void customOperatorRunsInTheBytecodeVm() {
+    assertEquals(
+        "5",
+        Show.plain(
+            pl.matsuo.elm.bytecode.BytecodeInterpreter.load("(+++) a b = a + b * 2\nmain = 1 +++ 2\n")
+                .value("main")));
+    // The infix-declared, precedence-sensitive module agrees with the tree interpreter.
+    assertEquals(
+        Show.plain(Interpreter.load(INFIX_MODULE).value("main")),
+        Show.plain(pl.matsuo.elm.bytecode.BytecodeInterpreter.load(INFIX_MODULE).value("main")));
+  }
 }

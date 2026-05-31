@@ -192,6 +192,20 @@ class JsBackendTest {
   }
 
   @Test
+  void customOperatorsAndInfixDeclarations() {
+    // A user-defined operator compiles to a call of its function in JS.
+    sameModule("(+++) a b = a + b * 2\nmain = 1 +++ 2\n");
+    // An `infix` declaration binds an operator to a function with a declared precedence; the JS
+    // backend must agree with the interpreter (1 ^^ 2 ~~ 3 = 1 + 2*3 = 7 with (~~) tighter).
+    sameModule(
+        "add a b = a + b\nmul a b = a * b\n"
+            + "infix left 6 (^^) = add\ninfix left 7 (~~) = mul\n"
+            + "main = 1 ^^ 2 ~~ 3\n");
+    // An operator passed as a value (a section/reference) also resolves.
+    sameModule("(+++) a b = a + b\nmain = List.foldl (+++) 0 [1, 2, 3, 4]\n");
+  }
+
+  @Test
   void jsonEncode() {
     same("Json.Encode.encode 0 (Json.Encode.int 42)");
     same("Json.Encode.encode 0 (Json.Encode.list Json.Encode.int [1, 2, 3])");

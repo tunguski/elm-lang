@@ -33,6 +33,8 @@ public final class Parser {
 
   private record Fixity(int prec, Assoc assoc) {}
 
+  /** Built-in (elm/core) and a few widely-used package fixities; a module's own {@code infix}
+   * declarations are layered on top per-parser (see {@link #fixities}). */
   private static final Map<String, Fixity> FIXITY =
       Map.ofEntries(
           Map.entry("<|", new Fixity(0, Assoc.RIGHT)),
@@ -78,8 +80,38 @@ public final class Parser {
   /** Columns strictly less-or-equal to {@code indent} on a fresh line end the current construct. */
   private int indent = 0;
 
+  /** Operator fixities in effect for this parse: the built-in defaults plus any the module declares
+   * with {@code infix} (pre-scanned up front so a use before its declaration still parses right). */
+  private final Map<String, Fixity> fixities;
+
   private Parser(List<Token> tokens) {
     this.tokens = tokens;
+    this.fixities = new java.util.HashMap<>(FIXITY);
+    scanInfixDeclarations();
+  }
+
+  /** Pre-scans the token stream for {@code infix <assoc> <prec> (<op>)} declarations and records
+   * their fixities, so operator-precedence parsing of expressions uses the declared precedence even
+   * when the {@code infix} line comes after (or is interleaved with) the expressions that use it. */
+  private void scanInfixDeclarations() {
+    for (int i = 0; i + 5 < tokens.size(); i++) {
+      if (tokens.get(i).type() == TokenType.LOWER
+          && tokens.get(i).text().equals("infix")
+          && tokens.get(i + 1).type() == TokenType.LOWER
+          && tokens.get(i + 2).type() == TokenType.INT
+          && tokens.get(i + 3).type() == TokenType.LPAREN
+          && tokens.get(i + 4).type() == TokenType.OPERATOR
+          && tokens.get(i + 5).type() == TokenType.RPAREN) {
+        Assoc assoc =
+            switch (tokens.get(i + 1).text()) {
+              case "right" -> Assoc.RIGHT;
+              case "non" -> Assoc.NON;
+              default -> Assoc.LEFT;
+            };
+        int prec = ((Long) tokens.get(i + 2).value()).intValue();
+        fixities.put(tokens.get(i + 4).text(), new Fixity(prec, assoc));
+      }
+    }
   }
 
   // --- public entry points ----------------------------------------------
@@ -313,7 +345,14 @@ public final class Parser {
     return switch (peek().type()) {
       case KW_TYPE -> parseTypeDecl(pos);
       case KW_PORT -> parsePortDecl(pos);
-      case LOWER -> parseValueOrAnnotation(pos);
+      case LOWER ->
+          // `infix <assoc> <prec> (<op>) = <function>` declares a custom operator (fixity already
+          // recorded by the pre-scan); bind the operator name to its implementing function.
+          (peek().text().equals("infix")
+                  && peek(1).type() == TokenType.LOWER
+                  && peek(2).type() == TokenType.INT)
+              ? parseInfixDecl(pos)
+              : parseValueOrAnnotation(pos);
       default -> {
         // A user/package-defined infix operator definition: `(op) a b = …` or `(op) : Type`.
         if (check(TokenType.LPAREN)
@@ -330,6 +369,21 @@ public final class Parser {
         throw error("Expected a declaration");
       }
     };
+  }
+
+  /** An `infix` fixity declaration: `infix left 6 (+++) = addDouble`. Records nothing further about
+   * the fixity (the pre-scan did that) and binds the operator name to its implementing function so
+   * `a +++ b` resolves like a normal call across every backend. */
+  private Object parseInfixDecl(Position pos) {
+    expect(TokenType.LOWER, "infix"); // 'infix'
+    advance(); // associativity (left/right/non)
+    advance(); // precedence (int)
+    expect(TokenType.LPAREN, "'('");
+    String op = expect(TokenType.OPERATOR, "operator").text();
+    expect(TokenType.RPAREN, "')'");
+    expect(TokenType.EQUALS, "'='");
+    String fn = expect(TokenType.LOWER, "implementing function name").text();
+    return new Decl.Value(op, List.of(), new Expr.Var(null, fn, pos), Optional.empty(), pos);
   }
 
   /** An operator definition `(op) a b = body` (or its annotation `(op) : Type`). */
@@ -415,7 +469,7 @@ public final class Parser {
     Expr left = parseOperand();
     while (continues() && check(TokenType.OPERATOR)) {
       String op = peek().text();
-      Fixity fx = FIXITY.getOrDefault(op, DEFAULT_FIXITY);
+      Fixity fx = fixities.getOrDefault(op, DEFAULT_FIXITY);
       if (fx.prec() < minPrec) {
         break;
       }
