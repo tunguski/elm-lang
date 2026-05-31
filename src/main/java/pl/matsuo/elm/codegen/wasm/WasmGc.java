@@ -233,6 +233,12 @@ public final class WasmGc {
     if (p instanceof Ty.Con c && tuples.isBoxed(c.name())) {
       return new Ref(tuples.adtBaseIndex()); // an argument-carrying custom type: a ref to the base
     }
+    if (p instanceof Ty.Arrow arrow) {
+      // A first-class function value: a reference to its unary functype `(from) -> to`. A curried
+      // multi-argument type `a -> b -> c` nests (its result is itself a function ref).
+      return new Ref(
+          tuples.funcTypeIndex(List.of(wOf(arrow.from(), tuples)), wOf(arrow.to(), tuples)));
+    }
     if (p instanceof Ty.Tuple tup) {
       return new Ref(tuples.indexOf(tup));
     }
@@ -529,6 +535,11 @@ public final class WasmGc {
       return register("FN" + keyOf(params) + ">" + keyOf(List.of(result)), new FuncDef(params, result));
     }
 
+    /** Whether the type at {@code index} is a function type (so a {@code (ref index)} is a funcref). */
+    boolean isFuncType(int index) {
+      return index >= 0 && index < shapes.size() && shapes.get(index) instanceof FuncDef;
+    }
+
     private int register(String key, StructDef def) {
       Integer existing = indexByKey.get(key);
       if (existing != null) {
@@ -713,6 +724,12 @@ public final class WasmGc {
           } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 0) {
             code.write(0x10);
             leb(code, funcs.get(v.name())[0]);
+          } else if (funcs.containsKey(v.name()) && funcs.get(v.name())[1] == 1) {
+            // A unary top-level function used as a value: a bare function reference (ref $ft).
+            code.write(0xD2); // ref.func
+            leb(code, funcs.get(v.name())[0]);
+          } else if (funcs.containsKey(v.name())) {
+            throw unsupported("passing a multi-argument function as a value (currying is not yet on WasmGC)");
           } else {
             throw unsupported("variable " + v.name());
           }
@@ -1108,9 +1125,20 @@ public final class WasmGc {
         leb(code, funcs.get(v.name())[0]);
         return;
       }
-      // Applying a function VALUE (a local of arrow type, or a partially-applied / lambda result) would
-      // need closures: see the class doc's "Closures" design note. Node supports call_ref; the blocker
-      // is the type-index unification, not the engine.
+      // Applying a function VALUE: a local (e.g. a parameter) of function type, called via call_ref.
+      // The argument is pushed first, then the funcref, then call_ref on its functype.
+      if (head instanceof Expr.Var v
+          && locals.containsKey(v.name())
+          && localTypes.get(v.name()) instanceof Ref r
+          && tuples.isFuncType(r.typeIndex())
+          && args.size() == 1) {
+        gen(args.get(0));
+        gen(head);
+        code.write(0x14); // call_ref
+        leb(code, r.typeIndex());
+        return;
+      }
+      // Multi-argument application of a function value (currying) is not yet on WasmGC.
       throw unsupported("application of " + (head instanceof Expr.Var v ? v.name() : "expression")
           + " (first-class functions / closures are not yet on WasmGC — use the interpreter, JS or the linear-memory WASM backend)");
     }

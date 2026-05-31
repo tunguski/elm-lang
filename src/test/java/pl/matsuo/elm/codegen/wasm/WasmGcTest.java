@@ -243,6 +243,14 @@ class WasmGcTest {
   }
 
   @Test
+  void higherOrderTopLevelFunction() throws Exception {
+    // A top-level unary function passed as a value (ref.func) and applied via call_ref.
+    agrees("inc n = n + 1\napply f x = f x\nmain = apply inc 5\n"); // 6
+    agrees("inc n = n + 1\ntwice f x = f (f x)\nmain = twice inc 5\n"); // 7
+    agrees("dbl n = n * 2\napplyTo7 f = f 7\nmain = applyTo7 dbl\n"); // 14
+  }
+
+  @Test
   void nullaryCustomTypesAsEnumTags() throws Exception {
     // A nullary union is an i64 tag; `case` dispatches on it (last branch is the default).
     agrees(
