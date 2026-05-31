@@ -79,6 +79,73 @@ class DifferentialPropertyTest {
 
     boolean wasmSafe = false;
     boolean gcSafe = false;
+
+    /**
+     * Generates expressions that evaluate to <em>compound</em> values — tuples, lists, records,
+     * {@code Maybe}/{@code Result} constructors and strings (nested arbitrarily) — for the backends
+     * that render a value back (interpreter / bytecode / JS). The constructs need not be well-typed:
+     * all three evaluate dynamically, so the only contract under test is that they agree.
+     */
+    String compound(int depth) {
+      if (depth <= 0 || rng.nextInt(100) < 30) {
+        return leaf();
+      }
+      return switch (rng.nextInt(8)) {
+        case 0 -> "( " + compound(depth - 1) + ", " + compound(depth - 1) + " )";
+        case 1 ->
+            "[ " + compound(depth - 1) + ", " + compound(depth - 1) + ", "
+                + compound(depth - 1) + " ]";
+        case 2 -> "(Just " + compound(depth - 1) + ")";
+        case 3 -> "Nothing";
+        case 4 -> "(Ok " + compound(depth - 1) + ")";
+        case 5 -> "(Err " + str() + ")";
+        case 6 -> "{ x = " + compound(depth - 1) + ", y = " + compound(depth - 1) + " }";
+        default -> "(" + str() + " ++ " + str() + ")";
+      };
+    }
+
+    private String leaf() {
+      return switch (rng.nextInt(3)) {
+        case 0 -> Integer.toString(rng.nextInt(20));
+        case 1 -> str();
+        default -> rng.nextBoolean() ? "True" : "False";
+      };
+    }
+
+    private String str() {
+      return "\"" + (char) ('a' + rng.nextInt(5)) + "\""; // single ASCII letter, no escaping needed
+    }
+  }
+
+  @Test
+  void backendsAgreeOnCompoundValues() throws Exception {
+    // Tuples / lists / records / Maybe / Result / strings, nested — compared on the backends that
+    // return a renderable value (interpreter, bytecode VM, and the JS compiler under Node). This
+    // extends the differential net past Int arithmetic to the structured value model.
+    Gen gen = new Gen(20260531L);
+    List<String> exprs = new ArrayList<>();
+    for (int i = 0; i < 150; i++) {
+      exprs.add(gen.compound(4));
+    }
+
+    List<String> interp = new ArrayList<>();
+    List<String> bytecode = new ArrayList<>();
+    for (String e : exprs) {
+      interp.add(Show.plain(Interpreter.eval(e)));
+      bytecode.add(Show.plain(BytecodeInterpreter.eval(e)));
+    }
+    for (int i = 0; i < exprs.size(); i++) {
+      assertEquals(interp.get(i), bytecode.get(i), "interp vs bytecode: " + exprs.get(i));
+    }
+
+    String node = runNode(JsCompiler.expressionsProgram(exprs));
+    if (node != null) {
+      String[] js = node.split("\n", -1);
+      assertEquals(exprs.size(), js.length, "JS produced a result per expression");
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), js[i], "interp vs JS: " + exprs.get(i));
+      }
+    }
   }
 
   @Test
