@@ -200,6 +200,119 @@ public final class LspServer {
     return new ArrayList<>(names);
   }
 
+  /** The type of {@code name} as rendered text: a module-local inferred type, else a stdlib
+   *  signature. Used for completion detail, signature help and inlay hints. */
+  public Optional<String> typeOf(String source, String name) {
+    try {
+      String local = TypeChecker.checkModule(source).get(name);
+      if (local != null) {
+        return Optional.of(local);
+      }
+    } catch (RuntimeException ignored) {
+      // fall back to the stdlib signatures even when the document doesn't type-check
+    }
+    var scheme = pl.matsuo.elm.types.Signatures.globals().get(name);
+    return scheme == null ? Optional.empty() : Optional.of(pl.matsuo.elm.types.Types.show(scheme.body()));
+  }
+
+  /** An inlay hint: a 0-based position and the text to show there (e.g. {@code ": Int -> Int"}). */
+  public record InlayHint(int line, int character, String label) {}
+
+  /**
+   * Inlay hints for the document: the inferred type of each top-level value that lacks an explicit
+   * annotation, shown just after its name — the editor's quiet "here's what I inferred". (The LSP
+   * has the real Hindley–Milner checker, so these are genuine inferred types.)
+   */
+  public List<InlayHint> inlayHints(String source) {
+    List<InlayHint> out = new ArrayList<>();
+    Module module;
+    Map<String, String> types;
+    try {
+      module = Parser.parseModule(source);
+      types = TypeChecker.checkModule(source);
+    } catch (RuntimeException e) {
+      return out;
+    }
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v
+          && v.annotation().isEmpty()
+          && !v.name().equals("main")
+          && types.containsKey(v.name())) {
+        int line = Math.max(0, v.pos().line() - 1);
+        int character = Math.max(0, v.pos().col() - 1) + v.name().length();
+        out.add(new InlayHint(line, character, " : " + types.get(v.name())));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Signature help at a 0-based cursor: the type of the function the current application is calling —
+   * the identifier after the innermost unclosed {@code (} on the line, else the line's first
+   * identifier. Returns {@code "name : Type"} when the type is known.
+   */
+  public Optional<String> signatureHelp(String source, int line0, int char0) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return Optional.empty();
+    }
+    String prefix = lines[line0].substring(0, Math.min(char0, lines[line0].length()));
+    // Start of the current application: after the binding's ` = `, the last `->`, or — taking
+    // precedence when deeper — just after the innermost unmatched `(`.
+    int start = 0;
+    int eq = prefix.lastIndexOf(" = ");
+    if (eq >= 0) {
+      start = eq + 3;
+    }
+    int arrow = prefix.lastIndexOf("-> ");
+    if (arrow + 3 > start) {
+      start = arrow + 3;
+    }
+    int open = -1; // index just after the innermost unmatched '('
+    int depth = 0;
+    for (int i = 0; i < prefix.length(); i++) {
+      char c = prefix.charAt(i);
+      if (c == '(') {
+        depth++;
+        open = i + 1;
+      } else if (c == ')') {
+        depth--;
+        if (depth < 0) {
+          depth = 0;
+        }
+        open = -1;
+      }
+    }
+    if (open > start) {
+      start = open;
+    }
+    String fn = firstIdentifier(prefix.substring(start));
+    if (fn.isEmpty()) {
+      return Optional.empty();
+    }
+    // The line being typed is usually incomplete (so the whole module wouldn't parse); type-check
+    // with it blanked, since the called function is defined elsewhere.
+    String[] cleaned = source.split("\n", -1);
+    cleaned[line0] = "";
+    return typeOf(String.join("\n", cleaned), fn).map(t -> fn + " : " + t);
+  }
+
+  /** The first (possibly qualified) identifier token in {@code s}, or "". */
+  private static String firstIdentifier(String s) {
+    int i = 0;
+    int n = s.length();
+    while (i < n && !isIdentChar(s.charAt(i))) {
+      i++;
+    }
+    int start = i;
+    while (i < n && isIdentChar(s.charAt(i))) {
+      i++;
+    }
+    String token = s.substring(start, i);
+    int dot = token.lastIndexOf('.');
+    return dot >= 0 ? token.substring(dot + 1) : token;
+  }
+
   /** A single-insertion code action: insert {@code newText} at the 0-based (line, character). */
   public record CodeAction(String title, int line, int character, String newText) {}
 
@@ -665,12 +778,14 @@ public final class LspServer {
       case "textDocument/completion" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         String uri = (String) td.get("uri");
+        String src = docs.getOrDefault(uri, "");
         List<Object> items = new ArrayList<>();
-        for (String name : complete(docs.getOrDefault(uri, ""))) {
+        for (String name : complete(src)) {
           Map<String, Object> item = new LinkedHashMap<>();
           item.put("label", name);
           // Uppercase first letter -> a constructor/type (kind 4/7); else a function (kind 3).
           item.put("kind", !name.isEmpty() && Character.isUpperCase(name.charAt(0)) ? 4L : 3L);
+          typeOf(src, name).ifPresent(t -> item.put("detail", name + " : " + t));
           items.add(item);
         }
         reply(out, id, items);
@@ -757,6 +872,42 @@ public final class LspServer {
         }
         reply(out, id, actions);
       }
+      case "textDocument/inlayHint" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String uri = (String) td.get("uri");
+        List<Object> hints = new ArrayList<>();
+        for (InlayHint h : inlayHints(docs.getOrDefault(uri, ""))) {
+          Map<String, Object> hint = new LinkedHashMap<>();
+          Map<String, Object> position = new LinkedHashMap<>();
+          position.put("line", (long) h.line());
+          position.put("character", (long) h.character());
+          hint.put("position", position);
+          hint.put("label", h.label());
+          hint.put("kind", 1L); // Type
+          hint.put("paddingLeft", true);
+          hints.add(hint);
+        }
+        reply(out, id, hints);
+      }
+      case "textDocument/signatureHelp" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        String uri = (String) td.get("uri");
+        int line = ((Number) pos.get("line")).intValue();
+        int ch = ((Number) pos.get("character")).intValue();
+        Optional<String> sig = signatureHelp(docs.getOrDefault(uri, ""), line, ch);
+        if (sig.isPresent()) {
+          Map<String, Object> signature = new LinkedHashMap<>();
+          signature.put("label", sig.get());
+          Map<String, Object> result = new LinkedHashMap<>();
+          result.put("signatures", List.of(signature));
+          result.put("activeSignature", 0L);
+          result.put("activeParameter", 0L);
+          reply(out, id, result);
+        } else {
+          reply(out, id, JsonEncode.NULL);
+        }
+      }
       case "textDocument/semanticTokens/full" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         String uri = (String) td.get("uri");
@@ -788,6 +939,10 @@ public final class LspServer {
     caps.put("documentSymbolProvider", true);
     caps.put("renameProvider", true);
     caps.put("codeActionProvider", true);
+    caps.put("inlayHintProvider", true);
+    Map<String, Object> sig = new LinkedHashMap<>();
+    sig.put("triggerCharacters", List.of(" ", "("));
+    caps.put("signatureHelpProvider", sig);
 
     Map<String, Object> legend = new LinkedHashMap<>();
     legend.put("tokenTypes", SEMANTIC_TOKEN_TYPES);

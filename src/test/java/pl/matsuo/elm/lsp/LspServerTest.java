@@ -16,6 +16,34 @@ class LspServerTest {
   private final LspServer server = new LspServer();
 
   @Test
+  void inlayHintsShowInferredTypesOfUnannotatedValues() {
+    String src = "double n = n * 2\nlabelled : Int\nlabelled = 5\nmain = double 21\n";
+    List<LspServer.InlayHint> hints = server.inlayHints(src);
+    // `double` (unannotated) gets a hint just after its name; `labelled` (annotated) does not.
+    assertTrue(hints.stream().anyMatch(h -> h.line() == 0 && h.label().contains("number -> number")),
+        hints.toString());
+    assertTrue(hints.stream().noneMatch(h -> h.label().contains("labelled")), hints.toString());
+    assertEquals(6, hints.get(0).character()); // after "double"
+  }
+
+  @Test
+  void signatureHelpReportsTheCalledFunctionsType() {
+    String src = "inc : Int -> Int\ninc x = x + 1\nmain = inc \n";
+    // Cursor right after "inc " on line 2 (0-based): the call's function is `inc`.
+    assertEquals(Optional.of("inc : Int -> Int"), server.signatureHelp(src, 2, 11));
+    // Inside parentheses, the innermost call is used.
+    String src2 = "f : Int -> Int\nf x = x\nmain = g (f \n";
+    assertEquals(Optional.of("f : Int -> Int"), server.signatureHelp(src2, 2, 12));
+  }
+
+  @Test
+  void typeOfResolvesLocalAndStdlibNames() {
+    String src = "twice n = n + n\nmain = twice 3\n";
+    assertEquals(Optional.of("number -> number"), server.typeOf(src, "twice"));
+    assertTrue(server.typeOf(src, "identity").isPresent()); // a stdlib signature
+  }
+
+  @Test
   void cleanModuleHasNoDiagnostics() {
     assertTrue(server.diagnose("main = 1 + 2\n").isEmpty());
   }
