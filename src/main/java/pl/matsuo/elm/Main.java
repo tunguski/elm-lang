@@ -213,6 +213,13 @@ public final class Main implements Runnable {
     @Option(names = "--optimize", description = "Minify the generated JavaScript.")
     boolean optimize;
 
+    @Option(
+        names = "--cache",
+        description =
+            "Incremental build-cache directory: reuse per-module compiled output, recompiling only "
+                + "changed modules.")
+    Path cache;
+
     @Option(names = "--no-check", description = "Skip the type check before compiling.")
     boolean noCheck;
 
@@ -260,12 +267,14 @@ public final class Main implements Runnable {
           System.out.println("Type error: " + msg);
           return 1;
         }
+        String bundle =
+            cache != null
+                ? JsCompiler.appBundleProjectCached(cache, arr)
+                : JsCompiler.appBundleProject(arr);
         String artifact;
         if (output.endsWith(".js")) {
-          String bundle = JsCompiler.appBundleProject(arr);
           artifact = optimize ? JsCompiler.optimize(bundle) : bundle;
         } else {
-          String bundle = JsCompiler.appBundleProject(arr);
           String js = optimize ? JsCompiler.optimize(bundle) : bundle;
           artifact =
               "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"

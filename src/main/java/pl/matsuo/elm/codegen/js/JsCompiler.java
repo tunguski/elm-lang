@@ -235,6 +235,94 @@ public final class JsCompiler {
         + "\nwindow.$start(" + mainId + ", document.getElementById('app'));\n";
   }
 
+  /**
+   * Like {@link #appBundleProject} but with an <b>incremental, content-hashed build cache</b>: each
+   * module's compiled declarations are stored under {@code cacheDir} keyed by a hash of its source
+   * plus a project "interface salt" (every module's declared/exposed names). Editing one module's
+   * body recompiles only that module — its source hash changes while the salt (names) does not, so
+   * the other modules' fragments are reused. (Adding/removing/renaming a top-level changes the salt
+   * and conservatively rebuilds all, which is sound.) Produces byte-identical output to
+   * {@link #appBundleProject}.
+   */
+  public static String appBundleProjectCached(java.nio.file.Path cacheDir, String... sources) {
+    List<Module> modules = new ArrayList<>();
+    Map<String, String> sourceByName = new HashMap<>();
+    for (String s : sources) {
+      Module m = Parser.parseModule(s);
+      modules.add(m);
+      sourceByName.put(m.name(), s);
+    }
+    Map<String, ModuleInfo> scope = buildScope(modules);
+    Module entry = entryModule(modules);
+    String salt = interfaceSalt(modules);
+    StringBuilder decls = new StringBuilder();
+    try {
+      java.nio.file.Files.createDirectories(cacheDir);
+      for (Module m : orderModules(modules)) {
+        String key = sha256(sourceByName.get(m.name()) + " " + salt);
+        java.nio.file.Path frag = cacheDir.resolve(key + ".js");
+        if (java.nio.file.Files.exists(frag)) {
+          decls.append(java.nio.file.Files.readString(frag, java.nio.charset.StandardCharsets.UTF_8));
+        } else {
+          String compiled = new JsCompiler(m, scope).declarations();
+          java.nio.file.Files.writeString(frag, compiled, java.nio.charset.StandardCharsets.UTF_8);
+          decls.append(compiled);
+        }
+      }
+    } catch (java.io.IOException e) {
+      throw new java.io.UncheckedIOException(e);
+    }
+    String mainId = "_$" + sanitizeTag(entry.name()) + "$main";
+    return JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + decls
+        + "\nwindow.$start(" + mainId + ", document.getElementById('app'));\n";
+  }
+
+  /** A salt over every module's declared/exposed names — what another module's codegen can depend
+   *  on. Bodies and types are excluded, so a body-only edit doesn't invalidate other modules. */
+  private static String interfaceSalt(List<Module> modules) {
+    List<String> ifaces = new ArrayList<>();
+    for (Module m : modules) {
+      StringBuilder b = new StringBuilder(m.name()).append('|');
+      b.append(m.exposing().open() ? "*" : m.exposing().names()).append('|');
+      List<String> decls = new ArrayList<>();
+      for (Decl d : m.decls()) {
+        switch (d) {
+          case Decl.Value v -> decls.add("v:" + v.name());
+          case Decl.Port p -> decls.add("p:" + p.name());
+          case Decl.TypeAlias ta -> decls.add("a:" + ta.name() + "/" + ta.params().size());
+          case Decl.Union u -> {
+            StringBuilder u2 = new StringBuilder("u:" + u.name());
+            for (Decl.Union.Variant variant : u.variants()) {
+              u2.append(',').append(variant.name()).append('/').append(variant.args().size());
+            }
+            decls.add(u2.toString());
+          }
+          default -> {}
+        }
+      }
+      java.util.Collections.sort(decls);
+      b.append(String.join(";", decls));
+      ifaces.add(b.toString());
+    }
+    java.util.Collections.sort(ifaces);
+    return sha256(String.join("\n", ifaces));
+  }
+
+  /** Hex SHA-256 of a string (the cache key / interface salt). */
+  private static String sha256(String s) {
+    try {
+      byte[] h = java.security.MessageDigest.getInstance("SHA-256")
+          .digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      StringBuilder hex = new StringBuilder(h.length * 2);
+      for (byte b : h) {
+        hex.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+      }
+      return hex.toString();
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
   /** A full HTML page hosting {@link #appBundleProject}. */
   public static String htmlPageProject(String driver, String... sources) {
     return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
