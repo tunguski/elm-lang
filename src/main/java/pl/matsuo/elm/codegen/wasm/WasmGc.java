@@ -21,10 +21,12 @@ import pl.matsuo.elm.types.Types;
 /**
  * A second WebAssembly backend that uses the <b>WasmGC</b> proposal — host-garbage-collected
  * {@code struct} references — instead of the linear-memory bump allocator of {@link WasmCompiler}.
- * A cons-list is a GC struct {@code {head : i64, tail : (ref null $cons)}}, so building and
+ * A cons-list is a GC struct {@code {head : E, tail : (ref null self)}} (one cons type per element
+ * type {@code E}), so building and
  * discarding lists is reclaimed by the engine's collector with no manual memory management.
  *
- * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float}, {@code List Int},
+ * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float}, <b>lists of any
+ * supported element</b> ({@code List Int}/{@code List Float}/{@code List} of tuples/records/lists),
  * <b>tuples</b>, <b>closed records</b> and <b>nullary custom types</b>: integer and floating-point
  * arithmetic and comparisons ({@code Float} is an {@code f64}, with {@code /} and {@code f64}
  * compares), {@code if}, {@code let} (including {@code let (a, b) = …}), top-level functions and
@@ -43,8 +45,6 @@ public final class WasmGc {
 
   private static final int I64 = 0x7E;
   private static final int F64 = 0x7C;
-  // The cons struct is type index 0; a list value has type (ref null 0): bytes 0x63 0x00.
-  private static final int[] LISTREF = {0x63, 0x00};
 
   private WasmGc() {}
 
@@ -52,16 +52,23 @@ public final class WasmGc {
   private record Func(String name, List<String> params, List<W> paramTypes, W result, Expr body) {}
 
   /** A wasm value type in the supported subset: a scalar (i64/f64) or a reference to a GC struct
-   * type (the cons list is struct 0; each distinct tuple shape gets its own struct type). */
+   * type. Each distinct tuple/record shape and each distinct list element type gets its own struct. */
   private sealed interface W permits Sca, Ref {}
 
   private record Sca(int valtype) implements W {} // I64 or F64
 
   private record Ref(int typeIndex) implements W {} // (ref null typeIndex)
 
+  /** A GC struct definition: a cons cell {@code {head : E, tail : (ref null self)}} for {@code
+   * List E}, or a plain struct (a tuple/record's fields). */
+  private sealed interface StructDef permits ConsDef, PlainDef {}
+
+  private record ConsDef(W head) implements StructDef {}
+
+  private record PlainDef(List<W> fields) implements StructDef {}
+
   private static final W INT = new Sca(I64);
   private static final W FLOAT = new Sca(F64);
-  private static final W LIST = new Ref(0); // the cons struct is always type 0
 
   /** Compiles a module's monomorphic Int/List-Int functions to a WasmGC binary. */
   public static byte[] module(String source) {
@@ -127,7 +134,7 @@ public final class WasmGc {
   private static W wOf(Ty t, Tuples tuples) {
     Ty p = Types.prune(t);
     if (p instanceof Ty.Con c && c.name().equals("List")) {
-      return LIST;
+      return new Ref(tuples.consIndexOf(wOf(listElem(c), tuples)));
     }
     if (p instanceof Ty.Con c && c.name().equals("Float")) {
       return FLOAT;
@@ -153,6 +160,12 @@ public final class WasmGc {
         "type " + Types.show(p) + " (WasmGC backend handles Int/Bool/Float, tuples, records and List Int)");
   }
 
+  /** The element type of a {@code List E} (defaulting to {@code Int} when the element is unresolved,
+   * e.g. an empty list literal, matching the monomorphic subset's default). */
+  private static Ty listElem(Ty.Con listCon) {
+    return listCon.args().isEmpty() ? new Ty.Con("Int", List.of()) : listCon.args().get(0);
+  }
+
   /** A record's field names in canonical (sorted) order, matching the struct's field layout. */
   private static List<String> sortedFields(Ty.Record rec) {
     List<String> names = new ArrayList<>(rec.fields().keySet());
@@ -172,7 +185,7 @@ public final class WasmGc {
    */
   private static final class Tuples {
     private final java.util.LinkedHashMap<String, Integer> indexByKey = new java.util.LinkedHashMap<>();
-    private final List<List<W>> shapes = new ArrayList<>();
+    private final List<StructDef> shapes = new ArrayList<>();
     // Nullary ("enum") custom types: each is represented as an i64 tag (the variant's index).
     private final java.util.Set<String> enumTypes = new java.util.HashSet<>();
     private final Map<String, Long> ctorTag = new HashMap<>();
@@ -194,10 +207,14 @@ public final class WasmGc {
       return ctorTag.get(ctor);
     }
 
-    /** Recursively registers every tuple and record shape inside a type. */
+    /** Recursively registers every list, tuple and record shape inside a type (innermost first). */
     void registerAll(Ty t) {
       Ty p = Types.prune(t);
       switch (p) {
+        case Ty.Con c when c.name().equals("List") -> {
+          registerAll(listElem(c));
+          consIndexOf(wOf(listElem(c), this));
+        }
         case Ty.Tuple tup -> {
           tup.items().forEach(this::registerAll);
           indexOf(tup);
@@ -215,6 +232,11 @@ public final class WasmGc {
       }
     }
 
+    /** The struct type index for a {@code List E} cons cell with the given element type. */
+    int consIndexOf(W head) {
+      return register("L" + keyOf(List.of(head)), new ConsDef(head));
+    }
+
     /** The struct type index for a tuple shape (registering it if new — nested tuples must already
      * be registered, which the {@link #registerAll} pre-pass guarantees). */
     int indexOf(Ty.Tuple tup) {
@@ -222,12 +244,12 @@ public final class WasmGc {
       for (Ty it : tup.items()) {
         fields.add(wOf(it, this));
       }
-      return register("T" + keyOf(fields), fields);
+      return register("T" + keyOf(fields), new PlainDef(fields));
     }
 
     /** The struct type index for a record shape (fields in sorted-name order, like the linear-memory
-     * backend), registering it if new. Records and tuples share the struct space but never collide
-     * (their keys are prefixed), so a record's field-by-index access stays well defined. */
+     * backend), registering it if new. Lists/records/tuples share the struct space but never collide
+     * (their keys are prefixed), so field-by-index access stays well defined. */
     int recordIndexOf(Ty.Record rec) {
       List<W> fields = new ArrayList<>();
       StringBuilder names = new StringBuilder("R");
@@ -235,21 +257,21 @@ public final class WasmGc {
         names.append(name).append(':');
         fields.add(wOf(rec.fields().get(name), this));
       }
-      return register(names + keyOf(fields), fields);
+      return register(names + keyOf(fields), new PlainDef(fields));
     }
 
-    private int register(String key, List<W> fields) {
+    private int register(String key, StructDef def) {
       Integer existing = indexByKey.get(key);
       if (existing != null) {
         return existing;
       }
-      int idx = 1 + indexByKey.size(); // cons is type 0
+      int idx = indexByKey.size();
       indexByKey.put(key, idx);
-      shapes.add(fields);
+      shapes.add(def);
       return idx;
     }
 
-    List<List<W>> shapes() {
+    List<StructDef> shapes() {
       return shapes;
     }
 
@@ -393,7 +415,7 @@ public final class WasmGc {
             throw unsupported("variable " + v.name());
           }
         }
-        case Expr.ListLit l -> emitList(l.items(), 0);
+        case Expr.ListLit l -> emitList(l.items(), 0, tupleIndex(nodeType(l)));
         case Expr.Tuple tup -> {
           for (Expr item : tup.items()) {
             gen(item);
@@ -509,12 +531,12 @@ public final class WasmGc {
 
     private void binOp(Expr.BinOp b) {
       if (b.op().equals("::")) {
-        // struct.new $cons (head:i64, tail:list)
+        // struct.new $cons (head : E, tail : (ref null self)) — the cons type for this list.
         gen(b.left());
         gen(b.right());
         code.write(0xFB);
         code.write(0x00);
-        leb(code, 0); // type 0 = $cons
+        leb(code, tupleIndex(nodeType(b)));
         return;
       }
       switch (b.op()) {
@@ -612,17 +634,17 @@ public final class WasmGc {
       code.write(0xA7);
     }
 
-    private void emitList(List<Expr> items, int i) {
+    private void emitList(List<Expr> items, int i, int consIndex) {
       if (i >= items.size()) {
         code.write(0xD0); // ref.null
-        leb(code, 0); // heaptype $cons
+        leb(code, consIndex); // heaptype: this list's cons type
         return;
       }
       gen(items.get(i));
-      emitList(items, i + 1);
+      emitList(items, i + 1, consIndex);
       code.write(0xFB);
       code.write(0x00);
-      leb(code, 0); // struct.new $cons
+      leb(code, consIndex); // struct.new
     }
 
     /** Tail-position compilation: a direct call becomes {@code return_call} (deep recursion is
@@ -814,7 +836,11 @@ public final class WasmGc {
       if (nilBody == null || consBody == null) {
         throw unsupported("case without both [] and :: branches");
       }
-      int s = freshLocal("$scrut" + code.size(), LIST);
+      // The scrutinee's cons type and element type (the head's wasm type).
+      Ty scrutTy = Types.prune(nodeType(c.scrutinee()));
+      int ci = tupleIndex(scrutTy);
+      W elemW = scrutTy instanceof Ty.Con lc ? wOf(listElem(lc), tuples) : INT;
+      int s = freshLocal("$scrut" + code.size(), new Ref(ci));
       gen(c.scrutinee());
       code.write(0x21);
       leb(code, s);
@@ -827,24 +853,24 @@ public final class WasmGc {
       body.accept(nilBody);
       code.write(0x05);
       if (consHead instanceof Pattern.Var hv) {
-        int h = freshLocal(hv.name(), INT);
+        int h = freshLocal(hv.name(), elemW);
         code.write(0x20);
         leb(code, s);
         code.write(0xFB);
         code.write(0x02);
-        leb(code, 0);
-        leb(code, 0); // struct.get $cons 0 (head)
+        leb(code, ci);
+        leb(code, 0); // struct.get cons 0 (head)
         code.write(0x21);
         leb(code, h);
       }
       if (consTail instanceof Pattern.Var tv) {
-        int t = freshLocal(tv.name(), LIST);
+        int t = freshLocal(tv.name(), new Ref(ci));
         code.write(0x20);
         leb(code, s);
         code.write(0xFB);
         code.write(0x02);
-        leb(code, 0);
-        leb(code, 1); // struct.get $cons 1 (tail)
+        leb(code, ci);
+        leb(code, 1); // struct.get cons 1 (tail)
         code.write(0x21);
         leb(code, t);
       }
@@ -894,9 +920,10 @@ public final class WasmGc {
       funcResult.put(funcList.get(i).name(), funcList.get(i).result());
     }
 
-    // Struct types occupy indices 0..(structCount-1): the cons list is 0, tuple shapes are 1..T.
-    // Function signature types come after them.
-    int structCount = 1 + tuples.count();
+    // Struct types occupy indices 0..(structCount-1): list cons cells, tuples and records, in
+    // registration order. Function signature types come after them.
+    List<StructDef> structs = tuples.shapes();
+    int structCount = structs.size();
     List<Func> sigOrder = new ArrayList<>();
     Map<String, Integer> sigIndex = new LinkedHashMap<>();
     for (Func f : funcList) {
@@ -910,25 +937,32 @@ public final class WasmGc {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     out.writeBytes(new byte[] {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00});
 
-    // Type section: one rec group holding the cons struct (type 0) and every tuple struct
-    // (types 1..T), then one functype per distinct signature.
+    // Type section: one rec group with every struct (so self/mutually-referential cons cells and
+    // nested tuples/records resolve), then one functype per distinct signature.
     ByteArrayOutputStream types = new ByteArrayOutputStream();
-    leb(types, 1 + sigOrder.size()); // total type definitions (the rec group counts as one)
-    types.write(0x4E);
-    leb(types, structCount); // rec group: cons + tuple structs
-    types.write(0x5F); // struct (cons)
-    leb(types, 2); // 2 fields
-    types.write(I64);
-    types.write(0x00); // head : i64 (const)
-    types.write(LISTREF[0]);
-    types.write(LISTREF[1]);
-    types.write(0x00); // tail : (ref null $cons) (const)
-    for (List<W> shape : tuples.shapes()) {
-      types.write(0x5F); // struct (tuple)
-      leb(types, shape.size());
-      for (W w : shape) {
-        writeType(types, w);
-        types.write(0x00); // immutable field
+    int recGroups = structCount > 0 ? 1 : 0;
+    leb(types, recGroups + sigOrder.size());
+    if (structCount > 0) {
+      types.write(0x4E);
+      leb(types, structCount);
+      for (int i = 0; i < structCount; i++) {
+        StructDef def = structs.get(i);
+        if (def instanceof ConsDef cd) {
+          types.write(0x5F); // struct
+          leb(types, 2);
+          writeType(types, cd.head());
+          types.write(0x00); // head : E (const)
+          types.write(0x63);
+          sleb(types, i); // tail : (ref null self)
+          types.write(0x00);
+        } else if (def instanceof PlainDef pd) {
+          types.write(0x5F);
+          leb(types, pd.fields().size());
+          for (W w : pd.fields()) {
+            writeType(types, w);
+            types.write(0x00); // immutable field
+          }
+        }
       }
     }
     for (Func f : sigOrder) {

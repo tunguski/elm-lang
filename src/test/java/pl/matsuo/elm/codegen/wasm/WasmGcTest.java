@@ -141,6 +141,36 @@ class WasmGcTest {
   }
 
   @Test
+  void listsOfNonIntElements() throws Exception {
+    // The cons cell's head type now follows the element type, so lists of Float, tuples and lists
+    // (nested) all compile to their own GC struct shapes.
+    agrees(
+        """
+        sum xs = case xs of
+            [] -> 0.0
+            h :: t -> h + sum t
+        main = sum [ 1.5, 2.5, 3.0 ]
+        """); // 7
+    agrees("main = case 1.5 :: 2.5 :: [] of\n    [] -> 0.0\n    h :: _ -> h\n"); // 1.5
+    agrees(
+        """
+        main = case [ ( 1, 2 ), ( 3, 4 ) ] of
+            [] -> 0
+            h :: _ -> Tuple.first h + Tuple.second h
+        """); // 3
+    agrees(
+        """
+        first xs = case xs of
+            [] -> 0
+            h :: _ -> h
+        firstRow xss = case xss of
+            [] -> 0
+            row :: _ -> first row
+        main = firstRow [ [ 7, 8 ], [ 9 ] ]
+        """); // 7
+  }
+
+  @Test
   void sumsAConsListBuiltOnTheGcHeap() throws Exception {
     agrees(
         """
