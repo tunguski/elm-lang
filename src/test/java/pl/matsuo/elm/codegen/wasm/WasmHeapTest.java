@@ -113,6 +113,22 @@ class WasmHeapTest {
   void standardLibraryMaybe() throws Exception {
     agrees("main = Maybe.withDefault 0 (Maybe.map (\\x -> x + 1) (Just 41))\n"); // 42
     agrees("main = Maybe.withDefault 7 Nothing\n"); // 7
+    agrees("main = Maybe.withDefault 0 (Maybe.andThen (\\x -> Just (x * 2)) (Just 21))\n"); // 42
+    agrees("main = Result.withDefault 0 (Result.map (\\x -> x + 1) (Ok 41))\n"); // 42
+  }
+
+  @Test
+  void expandedListPrelude() throws Exception {
+    agrees("main = List.sum (List.take 3 (List.range 1 10))\n"); // 1+2+3 = 6
+    agrees("main = List.sum (List.drop 7 (List.range 1 10))\n"); // 8+9+10 = 27
+    agrees("main = List.sum (List.repeat 4 5)\n"); // 20
+    agrees("main = List.product (List.range 1 5)\n"); // 120
+    agrees("main = List.length (List.concat [ [ 1, 2 ], [ 3 ], [ 4, 5 ] ])\n"); // 5
+    agrees("main = List.sum (List.concatMap (\\x -> [ x, x ]) (List.range 1 3))\n"); // 12
+    agrees("main = List.sum (List.map2 (\\a b -> a * b) [ 1, 2, 3 ] [ 4, 5, 6 ])\n"); // 4+10+18 = 32
+    agrees("main = if List.all (\\n -> n > 0) (List.range 1 5) then 1 else 0\n"); // 1
+    agrees("main = if List.any (\\n -> n > 4) (List.range 1 5) then 1 else 0\n"); // 1
+    agrees("main = if List.isEmpty (List.drop 9 (List.range 1 3)) then 100 else 0\n"); // 100
   }
 
   @Test

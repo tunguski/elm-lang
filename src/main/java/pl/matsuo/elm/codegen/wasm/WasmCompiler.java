@@ -115,15 +115,41 @@ public final class WasmCompiler {
           [] -> b
           h :: t -> h :: listAppend t b
       listReverse xs = listFoldl (\\h acc -> h :: acc) [] xs
+      listConcat xss = listFoldr listAppend [] xss
+      listConcatMap f xs = listFoldr (\\x acc -> listAppend (f x) acc) [] xs
+      listIsEmpty xs = case xs of
+          [] -> True
+          h :: t -> False
+      listTake n xs = if n <= 0 then [] else case xs of
+          [] -> []
+          h :: t -> h :: listTake (n - 1) t
+      listDrop n xs = if n <= 0 then xs else case xs of
+          [] -> []
+          h :: t -> listDrop (n - 1) t
+      listRepeat n x = if n <= 0 then [] else x :: listRepeat (n - 1) x
+      listProduct xs = listFoldl (\\x acc -> x * acc) 1 xs
+      listAll pred xs = listFoldl (\\x acc -> acc && pred x) True xs
+      listAny pred xs = listFoldl (\\x acc -> acc || pred x) False xs
+      listMap2 f xs ys = case xs of
+          [] -> []
+          hx :: tx -> case ys of
+              [] -> []
+              hy :: ty -> f hx hy :: listMap2 f tx ty
       maybeWithDefault d m = case m of
           Just x -> x
           Nothing -> d
       maybeMap f m = case m of
           Just x -> Just (f x)
           Nothing -> Nothing
+      maybeAndThen f m = case m of
+          Just x -> f x
+          Nothing -> Nothing
       resultWithDefault d r = case r of
           Ok x -> x
           Err e -> d
+      resultMap f r = case r of
+          Ok x -> Ok (f x)
+          Err e -> Err e
       identity x = x
       always a b = a
       """;
@@ -140,9 +166,21 @@ public final class WasmCompiler {
           Map.entry("List.range", "listRange"),
           Map.entry("List.append", "listAppend"),
           Map.entry("List.reverse", "listReverse"),
+          Map.entry("List.concat", "listConcat"),
+          Map.entry("List.concatMap", "listConcatMap"),
+          Map.entry("List.isEmpty", "listIsEmpty"),
+          Map.entry("List.take", "listTake"),
+          Map.entry("List.drop", "listDrop"),
+          Map.entry("List.repeat", "listRepeat"),
+          Map.entry("List.product", "listProduct"),
+          Map.entry("List.all", "listAll"),
+          Map.entry("List.any", "listAny"),
+          Map.entry("List.map2", "listMap2"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
           Map.entry("Maybe.map", "maybeMap"),
+          Map.entry("Maybe.andThen", "maybeAndThen"),
           Map.entry("Result.withDefault", "resultWithDefault"),
+          Map.entry("Result.map", "resultMap"),
           Map.entry("Basics.identity", "identity"),
           Map.entry("Basics.always", "always"));
 
