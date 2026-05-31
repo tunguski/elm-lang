@@ -572,6 +572,34 @@ class JsBackendTest {
   }
 
   @Test
+  void editorEncodesJson() {
+    // Json.Encode in the editor: object / int / bool / list / encode produce a compact JSON string.
+    String src =
+        "main = Encode.encode 0 (Encode.object "
+            + "[ ( \"n\", Encode.int 42 ), ( \"ok\", Encode.bool True ), ( \"xs\", Encode.list Encode.int [ 1, 2 ] ) ])\n";
+    String out =
+        editorScript(
+            src,
+            "var mv = _$Eval$mainValue(files);"
+                + "process.stdout.write(mv.$==='Ok' ? _$Eval$renderValue(mv._[0]) : ('ERR '+mv._[0]));");
+    assertTrue(out.contains("\\\"n\\\":42") || out.contains("\"n\":42"), out);
+    assertTrue(out.contains("\"ok\":true"), out);
+    assertTrue(out.contains("\"xs\":[1,2]"), out);
+  }
+
+  @Test
+  void editorDecodesWithMap5() {
+    // The decoder runtime handles any mapN arity; map5 over five fields sums them.
+    String src =
+        editorDecoderProgram(
+            "map5 (\\a b c d e -> a + b + c + d + e) (field \"a\" int) (field \"b\" int) (field \"c\" int) (field \"d\" int) (field \"e\" int)",
+            "Result Http.Error Int",
+            "Ok n -> ( String.fromInt n, Cmd.none )");
+    String out = editorScript(src, jsonDriver("{\\\"a\\\":1,\\\"b\\\":2,\\\"c\\\":3,\\\"d\\\":4,\\\"e\\\":5}"));
+    assertTrue(out.contains("15"), out);
+  }
+
+  @Test
   void editorDecodesNullable() {
     // `nullable int` yields Nothing for a JSON null (and Just n otherwise).
     String src =

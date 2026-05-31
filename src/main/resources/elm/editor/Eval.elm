@@ -26,7 +26,8 @@ builtins =
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
-        ++ [ "field", "map2", "map3", "map4", "succeed", "list", "andThen", "oneOf", "nullable" ]
+        ++ [ "field", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "succeed", "list", "andThen", "oneOf", "nullable" ]
+        ++ [ "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object", "Encode.list", "Encode.encode" ]
         ++ playgroundNames
 
 
@@ -70,7 +71,7 @@ arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
-    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable" ] then
+    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable", "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object" ] then
         1
 
     else if List.member name [ "toX", "toY", "degrees" ] then
@@ -84,6 +85,18 @@ arity name =
 
     else if name == "map4" then
         5
+
+    else if name == "map5" then
+        6
+
+    else if name == "map6" then
+        7
+
+    else if name == "map7" then
+        8
+
+    else if name == "map8" then
+        9
 
     else if List.member name htmlStringAttrs || List.member name htmlBoolAttrs then
         1
@@ -124,6 +137,9 @@ evalExpr globals env expr =
 
                             else if name == "e" then
                                 Ok (VNum e)
+
+                            else if name == "Encode.null" then
+                                Ok (VCtor "Null" [])
 
                             else if List.member name [ "string", "int", "float", "bool" ] then
                                 -- Json.Decode primitive decoders (exposed unqualified by the quotes
@@ -573,6 +589,18 @@ runBuiltin globals name args =
             ( "map4", [ f, a, b, c, d ] ) ->
                 Ok (VCtor "Dec.map" [ f, a, b, c, d ])
 
+            ( "map5", [ f, a, b, c, d, e ] ) ->
+                Ok (VCtor "Dec.map" [ f, a, b, c, d, e ])
+
+            ( "map6", [ f, a, b, c, d, e, g ] ) ->
+                Ok (VCtor "Dec.map" [ f, a, b, c, d, e, g ])
+
+            ( "map7", [ f, a, b, c, d, e, g, h ] ) ->
+                Ok (VCtor "Dec.map" [ f, a, b, c, d, e, g, h ])
+
+            ( "map8", [ f, a, b, c, d, e, g, h, i ] ) ->
+                Ok (VCtor "Dec.map" [ f, a, b, c, d, e, g, h, i ])
+
             ( "list", [ dec ] ) ->
                 Ok (VCtor "Dec.list" [ dec ])
 
@@ -584,6 +612,27 @@ runBuiltin globals name args =
 
             ( "nullable", [ dec ] ) ->
                 Ok (VCtor "Dec.nullable" [ dec ])
+
+            ( "Encode.int", [ v ] ) ->
+                Ok v
+
+            ( "Encode.float", [ v ] ) ->
+                Ok v
+
+            ( "Encode.string", [ v ] ) ->
+                Ok v
+
+            ( "Encode.bool", [ v ] ) ->
+                Ok v
+
+            ( "Encode.object", [ pairs ] ) ->
+                Ok (encodeObject pairs)
+
+            ( "Encode.list", [ f, xs ] ) ->
+                encodeList globals f xs
+
+            ( "Encode.encode", [ _, value ] ) ->
+                Ok (VStr (jsonEncode value))
 
             _ ->
                 Err ("bad arguments to " ++ name)
@@ -1394,6 +1443,87 @@ applyAll globals f vals =
 
         v :: rest ->
             applyValue globals f v |> Result.andThen (\f2 -> applyAll globals f2 rest)
+
+
+{-| `Json.Encode.object`: a list of `( key, value )` tuples becomes a `VRecord`. -}
+encodeObject : Value -> Value
+encodeObject pairs =
+    case pairs of
+        VList items ->
+            VRecord (List.filterMap pairToField items)
+
+        _ ->
+            pairs
+
+
+pairToField : Value -> Maybe ( String, Value )
+pairToField v =
+    case v of
+        VTup [ VStr k, val ] ->
+            Just ( k, val )
+
+        _ ->
+            Nothing
+
+
+{-| `Json.Encode.list f xs`: encode each element with `f`, collecting a `VList`. -}
+encodeList : Globals -> Value -> Value -> Result String Value
+encodeList globals f xs =
+    case xs of
+        VList items ->
+            encodeEach globals f items []
+
+        _ ->
+            Err "Encode.list expects a list"
+
+
+encodeEach : Globals -> Value -> List Value -> List Value -> Result String Value
+encodeEach globals f items acc =
+    case items of
+        [] ->
+            Ok (VList (List.reverse acc))
+
+        x :: rest ->
+            applyValue globals f x |> Result.andThen (\v -> encodeEach globals f rest (v :: acc))
+
+
+{-| Serialises an encoded `Value` to a compact JSON string (`Json.Encode.encode`). -}
+jsonEncode : Value -> String
+jsonEncode v =
+    case v of
+        VStr s ->
+            "\"" ++ jsonEscape s ++ "\""
+
+        VBool b ->
+            if b then
+                "true"
+
+            else
+                "false"
+
+        VNum n ->
+            if n == toFloat (round n) then
+                String.fromInt (round n)
+
+            else
+                String.fromFloat n
+
+        VCtor "Null" [] ->
+            "null"
+
+        VList items ->
+            "[" ++ String.join "," (List.map jsonEncode items) ++ "]"
+
+        VRecord fields ->
+            "{" ++ String.join "," (List.map (\( k, val ) -> "\"" ++ jsonEscape k ++ "\":" ++ jsonEncode val) fields) ++ "}"
+
+        _ ->
+            "null"
+
+
+jsonEscape : String -> String
+jsonEscape s =
+    s |> String.replace "\\" "\\\\" |> String.replace "\"" "\\\""
 
 
 {-| A small JSON parser producing an interpreted `Value` (object→VRecord, array→VList, …). -}
