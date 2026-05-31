@@ -430,6 +430,11 @@ public final class Main implements Runnable {
         description = "After the run, report which top-level functions of the test files were exercised.")
     boolean coverage;
 
+    @Option(
+        names = "--report",
+        description = "Output format: console (default), tap, junit, json.")
+    String report = "console";
+
     @Override
     public Integer call() throws IOException {
       List<String> sources = new ArrayList<>();
@@ -438,7 +443,7 @@ public final class Main implements Runnable {
       }
       var result =
           pl.matsuo.elm.test.TestRunner.run(
-              sources, new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter, coverage));
+              sources, new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter, coverage, report));
       System.out.print(result.report());
       return result.exitCode();
     }

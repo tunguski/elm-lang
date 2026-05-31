@@ -31,15 +31,31 @@ public final class TestRunner {
   }
 
   /** Run options: how many random inputs each {@code fuzz} test gets, the seed that makes those
-   * inputs reproducible, an optional case-insensitive substring filter on a test's full path, and
-   * whether to report which top-level functions of the test files the suite exercised. */
-  public record Options(int fuzzRuns, long seed, String filter, boolean coverage) {
-    public static final Options DEFAULTS = new Options(100, 0x5eedL, null, false);
+   * inputs reproducible, an optional case-insensitive substring filter on a test's full path,
+   * whether to report which top-level functions of the test files the suite exercised, and the
+   * report format ({@code "console"} / {@code "tap"} / {@code "junit"} / {@code "json"}). */
+  public record Options(int fuzzRuns, long seed, String filter, boolean coverage, String report) {
+    public static final Options DEFAULTS = new Options(100, 0x5eedL, null, false, "console");
 
     public Options(int fuzzRuns, long seed, String filter) {
-      this(fuzzRuns, seed, filter, false);
+      this(fuzzRuns, seed, filter, false, "console");
+    }
+
+    public Options(int fuzzRuns, long seed, String filter, boolean coverage) {
+      this(fuzzRuns, seed, filter, coverage, "console");
     }
   }
+
+  /** One test's outcome. */
+  private enum Outcome {
+    PASS,
+    FAIL,
+    SKIP
+  }
+
+  /** A single test result: its full path, outcome, an optional failure message and an optional
+   * detail (e.g. a fuzz test's run count). */
+  private record Case(String name, Outcome outcome, String message, String detail) {}
 
   private static final String TEST_LIB = Resources.read("/elm/lib/Test.elm");
   private static final String EXPECT_LIB = Resources.read("/elm/lib/Expect.elm");
@@ -68,8 +84,7 @@ public final class TestRunner {
       project = Project.load(all.toArray(new String[0]));
     }
 
-    StringBuilder report = new StringBuilder();
-    int[] counts = {0, 0, 0}; // passed, failed, skipped
+    List<Case> cases = new ArrayList<>();
     long start = System.nanoTime();
     for (String src : userSources) {
       Module m = Parser.parseModule(src);
@@ -82,35 +97,31 @@ public final class TestRunner {
             continue; // not evaluable in isolation — not a test value
           }
           if (val instanceof ElmData t && isTest(t)) {
-            walk("", t, report, counts, opts);
+            walk("", t, cases, opts);
           }
         }
       }
     }
     long ms = (System.nanoTime() - start) / 1_000_000;
-    report
-        .append("\n")
-        .append(counts[0] + counts[1])
-        .append(" tests, ")
-        .append(counts[0])
-        .append(" passed, ")
-        .append(counts[1])
-        .append(" failed");
-    if (counts[2] > 0) {
-      report.append(", ").append(counts[2]).append(" skipped");
-    }
-    report.append(" (in ").append(ms).append(" ms)\n");
-    if (opts.coverage()) {
-      report.append("\nCoverage (test-file functions):\n").append(project.coverageReport());
-    }
-    return new Result(counts[0], counts[1], counts[2], report.toString());
+    int passed = (int) cases.stream().filter(c -> c.outcome() == Outcome.PASS).count();
+    int failed = (int) cases.stream().filter(c -> c.outcome() == Outcome.FAIL).count();
+    int skipped = (int) cases.stream().filter(c -> c.outcome() == Outcome.SKIP).count();
+    String coverage = opts.coverage() ? project.coverageReport() : null;
+    String report =
+        switch (opts.report()) {
+          case "tap" -> tap(cases);
+          case "junit" -> junit(cases, ms);
+          case "json" -> json(cases);
+          default -> console(cases, passed, failed, skipped, ms, coverage);
+        };
+    return new Result(passed, failed, skipped, report);
   }
 
   private static boolean isTest(ElmData d) {
     return d.ctor().equals("UnitTest") || d.ctor().equals("Labeled") || d.ctor().equals("FuzzTest");
   }
 
-  private static void walk(String prefix, ElmData t, StringBuilder report, int[] counts, Options opts) {
+  private static void walk(String prefix, ElmData t, List<Case> cases, Options opts) {
     switch (t.ctor()) {
       case "Labeled" -> {
         String label = String.valueOf(Thunk.resolve(t.arg(0)));
@@ -118,7 +129,7 @@ public final class TestRunner {
         if (Thunk.resolve(t.arg(1)) instanceof ElmList kids) {
           for (Object kid : kids.toJava()) {
             if (Thunk.resolve(kid) instanceof ElmData kt) {
-              walk(p, kt, report, counts, opts);
+              walk(p, kt, cases, opts);
             }
           }
         }
@@ -126,22 +137,22 @@ public final class TestRunner {
       case "UnitTest" -> {
         String desc = String.valueOf(Thunk.resolve(t.arg(0)));
         if (filteredOut(prefix + desc, opts)) {
-          counts[2]++;
+          cases.add(new Case(prefix + desc, Outcome.SKIP, null, null));
           return;
         }
         Object expectation;
         try {
           expectation = Thunk.resolve(Apply.apply(Thunk.resolve(t.arg(1)), ElmUnit.INSTANCE));
         } catch (RuntimeException e) {
-          fail(prefix, desc, "error: " + e.getMessage(), report, counts);
+          cases.add(new Case(prefix + desc, Outcome.FAIL, "error: " + e.getMessage(), null));
           return;
         }
-        record(prefix, desc, expectation, report, counts);
+        cases.add(record(prefix + desc, expectation));
       }
       case "FuzzTest" -> {
         String desc = String.valueOf(Thunk.resolve(t.arg(0)));
         if (filteredOut(prefix + desc, opts)) {
-          counts[2]++;
+          cases.add(new Case(prefix + desc, Outcome.SKIP, null, null));
           return;
         }
         Object body = Thunk.resolve(t.arg(1)); // Int -> Expectation
@@ -153,7 +164,7 @@ public final class TestRunner {
           try {
             expectation = Thunk.resolve(Apply.apply(body, seed));
           } catch (RuntimeException e) {
-            fail(prefix, desc, "error: " + e.getMessage(), report, counts);
+            cases.add(new Case(prefix + desc, Outcome.FAIL, "error: " + e.getMessage(), null));
             return;
           }
           if (!(expectation instanceof ElmData ed && ed.ctor().equals("Pass"))) {
@@ -161,12 +172,11 @@ public final class TestRunner {
                 expectation instanceof ElmData ed && ed.args().length > 0
                     ? String.valueOf(Thunk.resolve(ed.arg(0)))
                     : "failed";
-            fail(prefix, desc + " (fuzz)", reason, report, counts);
+            cases.add(new Case(prefix + desc + " (fuzz)", Outcome.FAIL, reason, null));
             return;
           }
         }
-        counts[0]++;
-        report.append("✓ ").append(prefix).append(desc).append(" (").append(opts.fuzzRuns()).append(" passed)\n");
+        cases.add(new Case(prefix + desc, Outcome.PASS, null, opts.fuzzRuns() + " passed"));
       }
       default -> {}
     }
@@ -178,30 +188,114 @@ public final class TestRunner {
         && !fullPath.toLowerCase().contains(opts.filter().toLowerCase());
   }
 
-  /** Records a resolved {@code Expectation} (Pass / Fail message) as a pass or a located failure. */
-  private static void record(
-      String prefix, String desc, Object expectation, StringBuilder report, int[] counts) {
+  /** Turns a resolved {@code Expectation} (Pass / Fail message) into a pass or failure case. */
+  private static Case record(String name, Object expectation) {
     if (expectation instanceof ElmData ed && ed.ctor().equals("Pass")) {
-      counts[0]++;
-      report.append("✓ ").append(prefix).append(desc).append("\n");
-    } else {
-      String reason =
-          expectation instanceof ElmData ed && ed.args().length > 0
-              ? String.valueOf(Thunk.resolve(ed.arg(0)))
-              : "failed";
-      fail(prefix, desc, reason, report, counts);
+      return new Case(name, Outcome.PASS, null, null);
     }
+    String reason =
+        expectation instanceof ElmData ed && ed.args().length > 0
+            ? String.valueOf(Thunk.resolve(ed.arg(0)))
+            : "failed";
+    return new Case(name, Outcome.FAIL, reason, null);
   }
 
-  private static void fail(
-      String prefix, String desc, String reason, StringBuilder report, int[] counts) {
-    counts[1]++;
-    report
-        .append("✗ ")
-        .append(prefix)
-        .append(desc)
-        .append("\n    ")
-        .append(reason.replace("\n", "\n    "))
-        .append("\n");
+  // --- reporters ---------------------------------------------------------
+
+  private static String console(
+      List<Case> cases, int passed, int failed, int skipped, long ms, String coverage) {
+    StringBuilder b = new StringBuilder();
+    for (Case c : cases) {
+      if (c.outcome() == Outcome.SKIP) {
+        continue;
+      }
+      if (c.outcome() == Outcome.PASS) {
+        b.append("✓ ").append(c.name());
+        if (c.detail() != null) {
+          b.append(" (").append(c.detail()).append(")");
+        }
+        b.append("\n");
+      } else {
+        b.append("✗ ").append(c.name()).append("\n    ")
+            .append(c.message().replace("\n", "\n    ")).append("\n");
+      }
+    }
+    b.append("\n").append(passed + failed).append(" tests, ").append(passed).append(" passed, ")
+        .append(failed).append(" failed");
+    if (skipped > 0) {
+      b.append(", ").append(skipped).append(" skipped");
+    }
+    b.append(" (in ").append(ms).append(" ms)\n");
+    if (coverage != null) {
+      b.append("\nCoverage (test-file functions):\n").append(coverage);
+    }
+    return b.toString();
+  }
+
+  /** Test Anything Protocol (skips counted as `ok … # SKIP`). */
+  private static String tap(List<Case> cases) {
+    StringBuilder b = new StringBuilder("TAP version 13\n1..").append(cases.size()).append("\n");
+    for (int i = 0; i < cases.size(); i++) {
+      Case c = cases.get(i);
+      int n = i + 1;
+      switch (c.outcome()) {
+        case PASS -> b.append("ok ").append(n).append(" - ").append(c.name()).append("\n");
+        case SKIP -> b.append("ok ").append(n).append(" - ").append(c.name()).append(" # SKIP\n");
+        case FAIL ->
+            b.append("not ok ").append(n).append(" - ").append(c.name()).append("\n")
+                .append("  ---\n  message: ").append(c.message().replace("\n", " ")).append("\n  ...\n");
+      }
+    }
+    return b.toString();
+  }
+
+  /** JUnit XML (a single <testsuite>), for CI ingestion. */
+  private static String junit(List<Case> cases, long ms) {
+    long failed = cases.stream().filter(c -> c.outcome() == Outcome.FAIL).count();
+    long skipped = cases.stream().filter(c -> c.outcome() == Outcome.SKIP).count();
+    StringBuilder b = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    b.append("<testsuite name=\"elm-test\" tests=\"").append(cases.size()).append("\" failures=\"")
+        .append(failed).append("\" skipped=\"").append(skipped).append("\" time=\"")
+        .append(ms / 1000.0).append("\">\n");
+    for (Case c : cases) {
+      b.append("  <testcase name=\"").append(xml(c.name())).append("\">");
+      if (c.outcome() == Outcome.FAIL) {
+        b.append("<failure>").append(xml(c.message())).append("</failure>");
+      } else if (c.outcome() == Outcome.SKIP) {
+        b.append("<skipped/>");
+      }
+      b.append("</testcase>\n");
+    }
+    return b.append("</testsuite>\n").toString();
+  }
+
+  /** A compact JSON object: counts plus a per-test array. */
+  private static String json(List<Case> cases) {
+    StringBuilder b = new StringBuilder("{\"tests\":[");
+    for (int i = 0; i < cases.size(); i++) {
+      Case c = cases.get(i);
+      if (i > 0) {
+        b.append(",");
+      }
+      b.append("{\"name\":\"").append(jsonStr(c.name())).append("\",\"status\":\"")
+          .append(c.outcome().name().toLowerCase()).append("\"");
+      if (c.message() != null) {
+        b.append(",\"message\":\"").append(jsonStr(c.message())).append("\"");
+      }
+      b.append("}");
+    }
+    long pass = cases.stream().filter(c -> c.outcome() == Outcome.PASS).count();
+    long fail = cases.stream().filter(c -> c.outcome() == Outcome.FAIL).count();
+    long skip = cases.stream().filter(c -> c.outcome() == Outcome.SKIP).count();
+    return b.append("],\"passed\":").append(pass).append(",\"failed\":").append(fail)
+        .append(",\"skipped\":").append(skip).append("}\n").toString();
+  }
+
+  private static String xml(String s) {
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+  }
+
+  private static String jsonStr(String s) {
+    return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\t", "\\t");
   }
 }

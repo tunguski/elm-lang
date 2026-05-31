@@ -127,6 +127,33 @@ class TestRunnerTest {
   }
 
   @Test
+  void machineReadableReporters() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (describe, test)
+        suite =
+            describe "demo"
+                [ test "ok" (\\_ -> Expect.equal 2 (1 + 1))
+                , test "bad" (\\_ -> Expect.equal 5 (1 + 1))
+                ]
+        """;
+    String tap = TestRunner.run(List.of(src), new TestRunner.Options(100, 0L, null, false, "tap")).report();
+    assertTrue(tap.startsWith("TAP version 13"), tap);
+    assertTrue(tap.contains("ok 1 - demo › ok"), tap);
+    assertTrue(tap.contains("not ok 2 - demo › bad"), tap);
+
+    String junit = TestRunner.run(List.of(src), new TestRunner.Options(100, 0L, null, false, "junit")).report();
+    assertTrue(junit.contains("<testsuite") && junit.contains("tests=\"2\"") && junit.contains("failures=\"1\""), junit);
+    assertTrue(junit.contains("<failure>"), junit);
+
+    String json = TestRunner.run(List.of(src), new TestRunner.Options(100, 0L, null, false, "json")).report();
+    assertTrue(json.contains("\"passed\":1") && json.contains("\"failed\":1"), json);
+    assertTrue(json.contains("\"status\":\"fail\""), json);
+  }
+
+  @Test
   void noTestsIsACleanPass() {
     TestRunner.Result r = TestRunner.run(List.of("module M exposing (..)\nanswer = 42\n"));
     assertEquals(0, r.passed());
