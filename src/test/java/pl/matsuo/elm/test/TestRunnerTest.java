@@ -33,11 +33,12 @@ class TestRunnerTest {
         import Test exposing (fuzz)
         suite = fuzz Fuzz.int "all ints are positive" (\\n -> Expect.greaterThan 0 n)
         """;
-    TestRunner.Result r = TestRunner.run(List.of(src));
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(100, 1234L, null));
     assertEquals(0, r.passed(), r.report());
     assertEquals(1, r.failed(), r.report());
     assertEquals(1, r.exitCode());
     assertTrue(r.report().contains("Given "), r.report()); // shows the counterexample
+    assertTrue(r.report().contains("reproduce with --seed 1234"), r.report()); // reproducible
   }
 
   @Test

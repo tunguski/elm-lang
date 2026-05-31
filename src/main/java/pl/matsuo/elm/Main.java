@@ -482,17 +482,33 @@ public final class Main implements Runnable {
         description = "Output format: console (default), tap, junit, json.")
     String report = "console";
 
+    @Option(names = "--watch", description = "Re-run the suite whenever a test file changes (Ctrl-C to stop).")
+    boolean watch;
+
     @Override
-    public Integer call() throws IOException {
-      List<String> sources = new ArrayList<>();
-      for (Path p : files) {
-        sources.add(readElmSource(p));
+    public Integer call() throws IOException, InterruptedException {
+      if (watch) {
+        pl.matsuo.elm.util.FileWatcher.watch(files, 300, () -> runOnce(false));
+        return 0;
       }
-      var result =
-          pl.matsuo.elm.test.TestRunner.run(
-              sources, new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter, coverage, report));
-      System.out.print(result.report());
-      return result.exitCode();
+      return runOnce(true);
+    }
+
+    private int runOnce(boolean returnCode) {
+      try {
+        List<String> sources = new ArrayList<>();
+        for (Path p : files) {
+          sources.add(readElmSource(p));
+        }
+        var result =
+            pl.matsuo.elm.test.TestRunner.run(
+                sources, new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter, coverage, report));
+        System.out.print(result.report());
+        return result.exitCode();
+      } catch (IOException e) {
+        System.out.println("Error: " + e.getMessage());
+        return 1;
+      }
     }
   }
 

@@ -172,6 +172,9 @@ public final class TestRunner {
                 expectation instanceof ElmData ed && ed.args().length > 0
                     ? String.valueOf(Thunk.resolve(ed.arg(0)))
                     : "failed";
+            // The whole run is deterministic from the master seed, so re-running with it reproduces
+            // this failure (at run i+1 of N).
+            reason += " (reproduce with --seed " + opts.seed() + ")";
             cases.add(new Case(prefix + desc + " (fuzz)", Outcome.FAIL, reason, null));
             return;
           }
