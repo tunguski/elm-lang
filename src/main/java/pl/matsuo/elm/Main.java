@@ -371,6 +371,7 @@ public final class Main implements Runnable {
         "",
         "The script's `main : Posix.Io` describes effects in continuation-passing style:",
         "print, readLine, readFile, writeFile, getArgs, exit, done (see the bundled Posix module).",
+        "The Bash module adds structured shell commands: ls, find, grep, wc, mkdir, rm, cp, mv, env.",
       })
   static final class Script implements Callable<Integer> {
     @Parameters(index = "0", description = "The script .elm file (its `main : Posix.Io`).")
@@ -383,7 +384,8 @@ public final class Main implements Runnable {
     public Integer call() throws IOException {
       String userSource = readElmSource(file);
       String posix = pl.matsuo.elm.util.Resources.read("/elm/lib/Posix.elm");
-      Object main = pl.matsuo.elm.interp.Project.load(userSource, posix).main();
+      String bash = pl.matsuo.elm.util.Resources.read("/elm/lib/Bash.elm");
+      Object main = pl.matsuo.elm.interp.Project.load(userSource, posix, bash).main();
       return pl.matsuo.elm.script.ScriptRunner.run(
           main,
           scriptArgs == null ? List.of() : scriptArgs,

@@ -85,6 +85,134 @@ public final class ScriptRunner {
           }
           cur = Thunk.resolve(Apply.apply(d.arg(1), result));
         }
+        case "Ls" -> {
+          Object result;
+          try (var entries = Files.list(Path.of(str(d.arg(0))))) {
+            List<Object> items =
+                entries
+                    .sorted(java.util.Comparator.comparing(p -> p.getFileName().toString()))
+                    .map(p -> (Object) entry(p))
+                    .toList();
+            result = ok(ElmList.fromJava(items));
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Walk" -> {
+          Object result;
+          try (var paths = Files.walk(Path.of(str(d.arg(0))))) {
+            List<Object> items =
+                paths
+                    .sorted(java.util.Comparator.comparing(Path::toString))
+                    .map(p -> (Object) entry(p))
+                    .toList();
+            result = ok(ElmList.fromJava(items));
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Grep" -> {
+          String pattern = str(d.arg(0));
+          Object result;
+          try {
+            List<String> lines = Files.readAllLines(Path.of(str(d.arg(1))), StandardCharsets.UTF_8);
+            List<Object> matches = new java.util.ArrayList<>();
+            for (int i = 0; i < lines.size(); i++) {
+              if (lines.get(i).contains(pattern)) {
+                matches.add(match(i + 1L, lines.get(i)));
+              }
+            }
+            result = ok(ElmList.fromJava(matches));
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(2), result));
+        }
+        case "Wc" -> {
+          Object result;
+          try {
+            String text = Files.readString(Path.of(str(d.arg(0))), StandardCharsets.UTF_8);
+            long lines = text.isEmpty() ? 0 : text.lines().count();
+            long words = text.isBlank() ? 0 : text.trim().split("\\s+").length;
+            long chars = text.codePointCount(0, text.length());
+            result = ok(counts(lines, words, chars));
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Pwd" -> {
+          String dir = Path.of("").toAbsolutePath().toString();
+          cur = Thunk.resolve(Apply.apply(d.arg(0), dir));
+        }
+        case "Mkdir" -> {
+          String path = str(d.arg(0));
+          Object result;
+          try {
+            Files.createDirectories(Path.of(path));
+            result = ok(path);
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Rm" -> {
+          String path = str(d.arg(0));
+          Object result;
+          try {
+            deleteRecursively(Path.of(path));
+            result = ok(path);
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(1), result));
+        }
+        case "Cp" -> {
+          String dest = str(d.arg(1));
+          Object result;
+          try {
+            Files.copy(
+                Path.of(str(d.arg(0))),
+                Path.of(dest),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            result = ok(dest);
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(2), result));
+        }
+        case "Mv" -> {
+          String dest = str(d.arg(1));
+          Object result;
+          try {
+            Files.move(
+                Path.of(str(d.arg(0))),
+                Path.of(dest),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            result = ok(dest);
+          } catch (IOException | RuntimeException e) {
+            result = err(message(e));
+          }
+          cur = Thunk.resolve(Apply.apply(d.arg(2), result));
+        }
+        case "EnvAll" -> {
+          List<Object> pairs =
+              System.getenv().entrySet().stream()
+                  .sorted(java.util.Map.Entry.comparingByKey())
+                  .map(
+                      e ->
+                          (Object)
+                              new pl.matsuo.elm.runtime.ElmTuple(
+                                  new Object[] {e.getKey(), e.getValue()}))
+                  .toList();
+          cur = Thunk.resolve(Apply.apply(d.arg(0), ElmList.fromJava(pairs)));
+        }
+        case "Which" -> {
+          Object found = which(str(d.arg(0)));
+          cur = Thunk.resolve(Apply.apply(d.arg(1), found));
+        }
         case "Exit" -> {
           return (int) ((Number) Thunk.resolve(d.arg(0))).longValue();
         }
@@ -106,5 +234,78 @@ public final class ScriptRunner {
 
   private static ElmData err(String msg) {
     return new ElmData("Err", new Object[] {msg});
+  }
+
+  private static String message(Exception e) {
+    return e.getMessage() == null ? e.toString() : e.getMessage();
+  }
+
+  /** Builds a {@code Posix.Entry} record from a path, reading its metadata (lenient on errors). */
+  private static pl.matsuo.elm.runtime.ElmRecord entry(Path p) {
+    boolean isDir = Files.isDirectory(p);
+    long size = 0;
+    long modified = 0;
+    try {
+      size = Files.isRegularFile(p) ? Files.size(p) : 0;
+      modified = Files.getLastModifiedTime(p).toMillis();
+    } catch (IOException ignored) {
+      // Metadata may be unreadable (e.g. a vanished file); report zeroes rather than failing.
+    }
+    Path name = p.getFileName();
+    java.util.Map<String, Object> fields = new java.util.LinkedHashMap<>();
+    fields.put("name", name == null ? p.toString() : name.toString());
+    fields.put("path", p.toString());
+    fields.put("isDir", isDir);
+    fields.put("size", size);
+    fields.put("modified", modified);
+    return new pl.matsuo.elm.runtime.ElmRecord(fields);
+  }
+
+  /** Builds a {@code Posix.Match} record (1-based line number + line text). */
+  private static pl.matsuo.elm.runtime.ElmRecord match(long lineNumber, String line) {
+    java.util.Map<String, Object> fields = new java.util.LinkedHashMap<>();
+    fields.put("lineNumber", lineNumber);
+    fields.put("line", line);
+    return new pl.matsuo.elm.runtime.ElmRecord(fields);
+  }
+
+  /** Builds a {@code Posix.Counts} record. */
+  private static pl.matsuo.elm.runtime.ElmRecord counts(long lines, long words, long chars) {
+    java.util.Map<String, Object> fields = new java.util.LinkedHashMap<>();
+    fields.put("lines", lines);
+    fields.put("words", words);
+    fields.put("chars", chars);
+    return new pl.matsuo.elm.runtime.ElmRecord(fields);
+  }
+
+  /** Deletes a file, or a directory and its contents (children first), like {@code rm -r}. */
+  private static void deleteRecursively(Path root) throws IOException {
+    if (Files.isDirectory(root)) {
+      try (var children = Files.list(root)) {
+        for (Path child : children.toList()) {
+          deleteRecursively(child);
+        }
+      }
+    }
+    Files.deleteIfExists(root);
+  }
+
+  /** Looks up an executable on {@code PATH}, returning {@code Just absolutePath} or {@code Nothing}. */
+  private static ElmData which(String name) {
+    String path = System.getenv("PATH");
+    if (path != null) {
+      String[] exts = System.getProperty("os.name", "").toLowerCase().contains("win")
+          ? new String[] {"", ".exe", ".bat", ".cmd"}
+          : new String[] {""};
+      for (String dir : path.split(java.io.File.pathSeparator)) {
+        for (String ext : exts) {
+          Path candidate = Path.of(dir, name + ext);
+          if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+            return new ElmData("Just", new Object[] {candidate.toString()});
+          }
+        }
+      }
+    }
+    return new ElmData("Nothing", new Object[0]);
   }
 }
