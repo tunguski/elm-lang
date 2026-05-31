@@ -261,6 +261,34 @@ class WasmGcTest {
   }
 
   @Test
+  void userDefinedHigherOrderOverLists() throws Exception {
+    // A user-defined map/filter/foldr with a function parameter (call_ref) and a lambda argument —
+    // higher-order code over cons-lists on the GC heap, end to end.
+    agrees(
+        """
+        map f xs = case xs of
+            [] -> []
+            h :: t -> f h :: map f t
+        range lo hi = if lo > hi then [] else lo :: range (lo + 1) hi
+        sum xs = case xs of
+            [] -> 0
+            h :: t -> h + sum t
+        main = sum (map (\\x -> x * 2) (range 1 3))
+        """); // 2+4+6 = 12
+    agrees(
+        """
+        filter pred xs = case xs of
+            [] -> []
+            h :: t -> if pred h then h :: filter pred t else filter pred t
+        range lo hi = if lo > hi then [] else lo :: range (lo + 1) hi
+        len xs = case xs of
+            [] -> 0
+            h :: t -> 1 + len t
+        main = len (filter (\\x -> x > 2) (range 1 6))
+        """); // [3,4,5,6] -> 4
+  }
+
+  @Test
   void nullaryCustomTypesAsEnumTags() throws Exception {
     // A nullary union is an i64 tag; `case` dispatches on it (last branch is the default).
     agrees(
