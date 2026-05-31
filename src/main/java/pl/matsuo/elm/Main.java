@@ -56,6 +56,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Eval.class,
       Main.Script.class,
       Main.Serve.class,
+      Main.Bundle.class,
       Main.TestCmd.class,
       Main.Lint.class,
       Main.Docs.class,
@@ -441,6 +442,85 @@ public final class Main implements Runnable {
       Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));
       Thread.currentThread().join(); // block until the process is interrupted
       return 0;
+    }
+  }
+
+  @Command(
+      name = "bundle",
+      description =
+          "Compile a script or server into a standalone, self-contained executable JAR (the Elm "
+              + "source and the interpreter embedded) that runs anywhere with `java -jar`, no project "
+              + "files needed. With --native, also attempts a GraalVM native binary.",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm bundle script wordcount.elm -o wc    # wc.jar  -> java -jar wc.jar README.md",
+        "  elm bundle server my-api.elm --port 8080 # my-api.jar -> java -jar my-api.jar",
+        "  elm bundle script wordcount.elm --native  # also try a native binary (needs GraalVM)",
+        "",
+        "The JAR is the reliable standalone artifact. Native compilation is best-effort: it needs a",
+        "GraalVM native-image and isn't possible from inside an already-compiled elm binary.",
+      })
+  static final class Bundle implements Callable<Integer> {
+    @Parameters(index = "0", description = "What to bundle: 'script' or 'server'.")
+    String kind;
+
+    @Parameters(index = "1", description = "The .elm file (a script's `main`, or a server's `handle`/`main`).")
+    Path file;
+
+    @Option(
+        names = {"-o", "--output"},
+        description = "Output base path (default: the .elm file's base name).")
+    Path output;
+
+    @Option(names = "--port", description = "Port baked into a bundled server (default 8080).")
+    int port = 8080;
+
+    @Option(
+        names = "--native",
+        description = "Also compile a native binary with GraalVM native-image (best-effort).")
+    boolean nativeBinary;
+
+    @Override
+    public Integer call() throws IOException, InterruptedException {
+      if (!kind.equals("script") && !kind.equals("server")) {
+        System.err.println("bundle expects 'script' or 'server', got: " + kind);
+        return 2;
+      }
+      String source = readElmSource(file);
+      String base =
+          output != null ? output.toString() : file.getFileName().toString().replaceFirst("\\.elm$", "");
+      Path jar = Path.of(base + ".jar");
+      pl.matsuo.elm.bundle.Bundler.buildJar(source, kind, port, jar);
+      System.out.println("Wrote executable JAR " + jar + " — run it with: java -jar " + jar);
+      if (!nativeBinary) {
+        return 0;
+      }
+      if (pl.matsuo.elm.bundle.Bundler.runningAsNativeImage()) {
+        System.err.println(
+            "--native is unavailable from inside a compiled elm binary; run it on a GraalVM JDK.");
+        return 1;
+      }
+      var nativeImage = pl.matsuo.elm.bundle.Bundler.findNativeImage();
+      if (nativeImage.isEmpty()) {
+        System.err.println(
+            "GraalVM native-image was not found (set GRAALVM_HOME or put it on PATH); the JAR is ready.");
+        return 1;
+      }
+      boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+      Path binary = Path.of(base + (windows ? ".exe" : ""));
+      System.out.println("Compiling " + binary + " with native-image (this can take a minute)…");
+      int code = pl.matsuo.elm.bundle.Bundler.compileNative(nativeImage.get(), jar, binary);
+      if (code == 0) {
+        System.out.println("Wrote native binary " + binary);
+      } else {
+        System.err.println(
+            "native-image failed (exit "
+                + code
+                + "); the executable JAR "
+                + jar
+                + " is still usable with java -jar.");
+      }
+      return code;
     }
   }
 
