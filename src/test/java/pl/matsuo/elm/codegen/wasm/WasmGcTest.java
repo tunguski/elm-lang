@@ -261,6 +261,29 @@ class WasmGcTest {
   }
 
   @Test
+  void multiArgClosuresAndCurrying() throws Exception {
+    // A multi-argument function value applied to all its arguments (peeled one at a time).
+    agrees("apply2 f x y = f x y\nmain = apply2 (\\a b -> a + b) 3 4\n"); // 7
+    // A multi-argument lambda applied directly.
+    agrees("main = (\\a b -> a + b) 3 4\n"); // 7
+    // A higher-order function whose function parameter takes two arguments.
+    agrees(
+        """
+        zipWith f xs ys = case xs of
+            [] -> []
+            xh :: xt -> case ys of
+                [] -> []
+                yh :: yt -> f xh yh :: zipWith f xt yt
+        sum xs = case xs of
+            [] -> 0
+            h :: t -> h + sum t
+        main = sum (zipWith (\\a b -> a * b) [1, 2, 3] [4, 5, 6])
+        """); // 4+10+18 = 32
+    // A returned (curried) closure applied later.
+    agrees("adder a = \\b -> a + b\nmain = (adder 10) 5\n"); // 15
+  }
+
+  @Test
   void capturingLambdasAsClosures() throws Exception {
     // A lambda that closes over an enclosing parameter is lifted to a function taking its captures
     // as struct fields; the closure value carries them and the body reads them via struct.get.

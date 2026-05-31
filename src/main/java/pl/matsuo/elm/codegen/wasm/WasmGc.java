@@ -355,6 +355,20 @@ public final class WasmGc {
     switch (e) {
       case Expr.Lambda lam -> {
         Ty lt = nodeTypes.get(lam) == null ? null : Types.prune(nodeTypes.get(lam));
+        if (lam.params().size() > 1 && lt != null) {
+          // Desugar `\a b … -> e` to nested unary lambdas `\a -> \b -> … -> e` (typing each one from
+          // the arrow chain), then lift those; map the original lambda to the outer closure plan.
+          Expr desugared = lam.body();
+          for (int i = lam.params().size() - 1; i >= 0; i--) {
+            desugared = new Expr.Lambda(List.of(lam.params().get(i)), desugared, lam.pos());
+            nodeTypes.put(desugared, resultType(lt, i));
+          }
+          collectLambdas(desugared, topLevel, nodeTypes, tuples, funcs, lifted, counter);
+          if (lifted.containsKey((Expr.Lambda) desugared)) {
+            lifted.put(lam, lifted.get((Expr.Lambda) desugared));
+          }
+          return;
+        }
         if (lam.params().size() == 1 && lam.params().get(0) instanceof Pattern.Var pv
             && lt instanceof Ty.Arrow arr) {
           // Lift the unary lambda to a top-level function `lam(env, x)`. Its free locals (anything not
@@ -800,6 +814,12 @@ public final class WasmGc {
       return ((ClosBaseDef) shapes.get(baseIndex)).ccIndex();
     }
 
+    /** The result type a closure base returns when applied (the cc functype's result). For a curried
+     * value this is itself a {@code (ref closureBase)} until the last argument is supplied. */
+    W closureResult(int baseIndex) {
+      return ((FuncDef) shapes.get(closureCc(baseIndex))).result();
+    }
+
     /** A subtype of {@code baseIndex} carrying a lambda's {@code captures}, registering it if new. */
     int closureVariantIndex(int baseIndex, List<W> captures) {
       return register(
@@ -1034,7 +1054,10 @@ public final class WasmGc {
             code.write(0x00); // struct.new $base
             leb(code, base);
           } else if (funcs.containsKey(v.name())) {
-            throw unsupported("passing a multi-argument function as a value (currying is not yet on WasmGC)");
+            throw unsupported(
+                "passing the multi-argument top-level function `" + v.name()
+                    + "` by name as a value — wrap it in a lambda instead, e.g. (\\x y -> "
+                    + v.name() + " x y)");
           } else {
             throw unsupported("variable " + v.name());
           }
@@ -1452,9 +1475,11 @@ public final class WasmGc {
 
     private void app(Expr.App app, boolean tail) {
       List<Expr> args = new ArrayList<>();
+      List<Expr> appNodes = new ArrayList<>(); // appNodes.get(i) = head applied through args.get(i)
       Expr head = app;
       while (head instanceof Expr.App a) {
         args.add(0, a.arg());
+        appNodes.add(0, a);
         head = a.fn();
       }
       // Tuple.first / Tuple.second on a pair: struct.get on the tuple's struct type.
@@ -1510,12 +1535,43 @@ public final class WasmGc {
         leb(code, funcs.get(v.name())[0]);
         return;
       }
-      // Applying a function VALUE to one argument — a function-typed local (a parameter), an
-      // immediately-applied lambda, or a top-level function passed as a value. The value is a
-      // closure `(ref $base)`; the calling convention is `(env, arg) -> res`. Evaluate the closure
-      // into a local, then push (env=closure, arg, fn=struct.get $base 0) and call_ref $cc.
-      if (args.size() == 1
-          && !(head instanceof Expr.Var hv && funcs.containsKey(hv.name()))
+      // Over-application of a named function: `(adder 10) 5` flattens to `adder 10 5` (arity 1, but
+      // 2 args). Direct-call the first `n` args to get a closure, then apply the rest by peeling.
+      if (head instanceof Expr.Var v && funcs.containsKey(v.name())
+          && funcs.get(v.name())[1] < args.size()) {
+        int n = funcs.get(v.name())[1];
+        for (int i = 0; i < n; i++) {
+          gen(args.get(i));
+        }
+        code.write(0x10); // call (not a tail call — more applications follow)
+        leb(code, funcs.get(v.name())[0]);
+        int base = ((Ref) wOf(nodeType(appNodes.get(n - 1)), tuples)).typeIndex();
+        int cl = freshLocal("$cl" + code.size(), new Ref(base));
+        setLocal(cl);
+        for (int i = n; i < args.size(); i++) {
+          boolean last = i == args.size() - 1;
+          get(cl);
+          gen(args.get(i));
+          get(cl);
+          code.write(0xFB);
+          code.write(0x02);
+          leb(code, base);
+          leb(code, 0);
+          code.write(last && tail ? 0x15 : 0x14);
+          leb(code, tuples.closureCc(base));
+          if (!last) {
+            base = ((Ref) tuples.closureResult(base)).typeIndex();
+            cl = freshLocal("$cl" + code.size(), new Ref(base));
+            setLocal(cl);
+          }
+        }
+        return;
+      }
+      // Applying a function VALUE to one or more arguments — a function-typed local (a parameter), an
+      // immediately-applied lambda, or a partially-applied/closure-valued expression. The value is a
+      // closure `(ref $base)` with calling convention `(env, arg) -> res`; for several arguments we
+      // peel one at a time (each call returns the next closure) — i.e. real currying.
+      if (!(head instanceof Expr.Var hv && funcs.containsKey(hv.name()))
           && nodeTypes.containsKey(head)
           && wOf(nodeType(head), tuples) instanceof Ref r
           && tuples.isClosureBase(r.typeIndex())) {
@@ -1523,15 +1579,24 @@ public final class WasmGc {
         int cl = freshLocal("$cl" + code.size(), new Ref(base));
         gen(head);
         setLocal(cl);
-        get(cl); // env (the closure itself)
-        gen(args.get(0)); // arg
-        get(cl);
-        code.write(0xFB);
-        code.write(0x02); // struct.get $base 0 -> the funcref
-        leb(code, base);
-        leb(code, 0);
-        code.write(tail ? 0x15 : 0x14); // return_call_ref / call_ref
-        leb(code, tuples.closureCc(base));
+        for (int i = 0; i < args.size(); i++) {
+          boolean last = i == args.size() - 1;
+          get(cl); // env (the current closure)
+          gen(args.get(i)); // arg
+          get(cl);
+          code.write(0xFB);
+          code.write(0x02); // struct.get $base 0 -> the funcref
+          leb(code, base);
+          leb(code, 0);
+          code.write(last && tail ? 0x15 : 0x14); // return_call_ref / call_ref
+          leb(code, tuples.closureCc(base));
+          if (!last) {
+            // The result is the next closure in the chain; stash it and continue with its base.
+            base = ((Ref) tuples.closureResult(base)).typeIndex();
+            cl = freshLocal("$cl" + code.size(), new Ref(base));
+            setLocal(cl);
+          }
+        }
         return;
       }
       // Multi-argument application of a function value (currying) is not yet on WasmGC.
