@@ -248,24 +248,59 @@ public final class WasmCompiler {
    * WASM backend can join the recursive benchmark and differential tests.
    */
   public static byte[] moduleFromSource(String source) {
-    pl.matsuo.elm.ast.Module module = pl.matsuo.elm.parser.Parser.parseModule(source);
+    return compileModules(List.of(pl.matsuo.elm.parser.Parser.parseModule(source)), wantsPrelude(source));
+  }
+
+  /**
+   * Compiles a whole project — the entry module plus its (local or installed-package) dependency
+   * modules — to one wasm binary. The modules' top-level functions are merged into a single
+   * compilation unit (by simple name, the entry's first), so a cross-module call like {@code
+   * Util.square} resolves to the compiled {@code square} (qualifiers are dropped at codegen). This is
+   * what lets the WASM backend run code that imports other modules / installed packages.
+   */
+  public static byte[] moduleFromSources(List<String> sources) {
+    List<pl.matsuo.elm.ast.Module> modules = new ArrayList<>();
+    boolean prelude = false;
+    for (String s : sources) {
+      modules.add(pl.matsuo.elm.parser.Parser.parseModule(s));
+      prelude |= wantsPrelude(s);
+    }
+    return compileModules(modules, prelude);
+  }
+
+  /** Whether a source refers to a prelude (List/Maybe/Result/Basics) qualified name. */
+  private static boolean wantsPrelude(String source) {
+    return source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
+        || source.contains("Basics.");
+  }
+
+  private static byte[] compileModules(List<pl.matsuo.elm.ast.Module> modules, boolean wantPrelude) {
     List<Func> funcs = new ArrayList<>();
     // Custom-type constructors: each variant gets a tag (its index in the union) and an arity, so a
     // value `Ctor a b` is a heap cell {tag, a, b} and a `case` dispatches on the loaded tag word.
     Map<String, Integer> ctorTag = new HashMap<>();
     Map<String, Integer> ctorArity = new HashMap<>();
     registerBuiltinCtors(ctorTag, ctorArity); // Maybe/Result work without a user declaration
-    for (Decl d : module.decls()) {
+    // Merge every module's declarations into one unit (the entry module is first; later duplicates of
+    // a name are dropped, so the entry's definitions win).
+    List<Decl> decls = new ArrayList<>();
+    List<pl.matsuo.elm.ast.Module.Import> imports = new ArrayList<>();
+    for (pl.matsuo.elm.ast.Module m : modules) {
+      decls.addAll(m.decls());
+      imports.addAll(m.imports());
+    }
+    for (Decl d : decls) {
       if (d instanceof Decl.Union u) {
         for (int i = 0; i < u.variants().size(); i++) {
           Decl.Union.Variant variant = u.variants().get(i);
-          ctorTag.put(variant.name(), i);
-          ctorArity.put(variant.name(), variant.args().size());
+          ctorTag.putIfAbsent(variant.name(), i);
+          ctorArity.putIfAbsent(variant.name(), variant.args().size());
         }
       }
     }
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Value v) {
+    Set<String> defined = new HashSet<>();
+    for (Decl d : decls) {
+      if (d instanceof Decl.Value v && defined.add(v.name())) {
         List<String> params = new ArrayList<>();
         for (Pattern p : v.params()) {
           if (p instanceof Pattern.Var pv) {
@@ -277,6 +312,11 @@ public final class WasmCompiler {
         funcs.add(new Func(v.name(), params, v.body()));
       }
     }
+    // One synthetic module holding the merged declarations, for cross-module type inference.
+    pl.matsuo.elm.ast.Module module =
+        new pl.matsuo.elm.ast.Module(
+            "Main", pl.matsuo.elm.ast.Module.Exposing.ALL, imports, decls,
+            new pl.matsuo.elm.error.Position(1, 1, 0));
     // Per-expression inferred types power the type-directed codegen for records (and strings): the
     // compiler walks the same Expr instances, so an IdentityHashMap keyed by expression resolves
     // field layouts and operator overloads. Best-effort — if inference can't type the module we just
@@ -289,11 +329,9 @@ public final class WasmCompiler {
     } catch (RuntimeException e) {
       nodeTypes = Map.of();
     }
-    // Prepend the standard-library prelude (List/Maybe/Result helpers) when the module refers to it,
-    // so those qualified names resolve to compiled functions. Gated by a cheap textual check to keep
-    // unrelated modules (e.g. the numeric benchmark) lean.
-    if (source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
-        || source.contains("Basics.")) {
+    // Prepend the standard-library prelude (List/Maybe/Result helpers) when a module refers to it,
+    // so those qualified names resolve to compiled functions. Gated to keep unrelated modules lean.
+    if (wantPrelude) {
       for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(WASM_PRELUDE).decls()) {
         if (d instanceof Decl.Value v && !names(funcs).contains(v.name())) {
           List<String> params = new ArrayList<>();

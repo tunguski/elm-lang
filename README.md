@@ -370,7 +370,9 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
   (only a prelude of `List`/`Maybe`/`Result` helpers compiles — most `String`, `Dict`, `Set`,
   `Array` and `Regex` operations are absent on this backend; the interpreter, bytecode VM and **JS
   backend** do have `Dict`/`Set`/`Array`), or returning compound values to the host as anything but
-  an opaque heap pointer. `++`/`==` require operands statically typed (no fully
+  an opaque heap pointer. It **does** compile **multi-module projects** (`moduleFromSources` merges a
+  module with its local/package dependency modules), though this isn't yet wired to a `make --backend
+  wasm` CLI path. `++`/`==` require operands statically typed (no fully
   polymorphic `==`). Loading installed **package sources** is not wired up for this backend.
 - **WasmGC backend** — does **not** yet support: **closures / higher-order functions** (so
   `List.map`, `foldl`, lambdas don't compile here — they run on the linear-memory backend or JS);
@@ -381,7 +383,8 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
 - **Packages / registry** — `elm install` resolves and downloads from a static-file registry
   (`--from`) or the public `package.elm-lang.org` (`--elm`), and the interpreter/type-checker/JS
   backend compile installed modules; but there is **no checksum verification**, **no
-  test-dependencies**, and the **WASM backends can't load package sources**. See
+  test-dependencies**, and the **WasmGC backend can't load package sources** (the linear-memory WASM
+  backend now compiles multi-module projects via `moduleFromSources`). See
   [Packages & dependencies](#packages--dependencies).
 
 **Type system**

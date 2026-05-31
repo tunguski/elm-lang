@@ -53,6 +53,41 @@ class WasmHeapTest {
     assertEquals(expected, runMain(source), source);
   }
 
+  /** Compiles a multi-module project to one wasm binary, runs `main`, and returns the i64 result. */
+  private String runMainProject(java.util.List<String> sources) throws Exception {
+    Path wasm = Files.createTempFile("elm-proj-", ".wasm");
+    Files.write(wasm, WasmCompiler.moduleFromSources(sources));
+    Path js = Files.createTempFile("elm-proj-run-", ".js");
+    Files.writeString(
+        js,
+        "const fs=require('fs');"
+            + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
+            + "process.stdout.write(r.instance.exports.main().toString());"
+            + "}).catch(e=>{console.error(e);process.exit(1);});",
+        StandardCharsets.UTF_8);
+    Process p = new ProcessBuilder("node", js.toString(), wasm.toString()).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    p.waitFor(30, TimeUnit.SECONDS);
+    Files.deleteIfExists(wasm);
+    Files.deleteIfExists(js);
+    if (p.exitValue() != 0) {
+      throw new IllegalStateException("node/wasm failed: " + err);
+    }
+    return out;
+  }
+
+  @Test
+  void compilesAMultiModuleProject() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // The entry module calls a function defined in another module (as an installed package would be):
+    // the merged unit resolves `Util.square` to the compiled `square`.
+    String util = "module Util exposing (square)\nsquare n = n * n\n";
+    String main =
+        "module Main exposing (main)\nimport Util exposing (square)\nmain = Util.square 7 + square 3\n";
+    assertEquals("58", runMainProject(java.util.List.of(main, util))); // 49 + 9
+  }
+
   @Test
   void scalarReducingLoopKeepsMemoryBounded() throws Exception {
     assumeTrue(NODE, "node not available");
