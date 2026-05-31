@@ -53,6 +53,28 @@ import pl.matsuo.elm.types.Types;
  * record parameters have no fixed struct layout, and closures remain on the linear-memory backend —
  * extending this one to them, and finishing the {@code String} API (code-point-aware length, more
  * ops), is future work.
+ *
+ * <h2>Closures / first-class functions (future work)</h2>
+ *
+ * Node's V8 supports the function-references proposal ({@code call_ref}, typed {@code (ref $functype)},
+ * {@code ref.func}), so the engine is not the blocker — the design is:
+ *
+ * <ul>
+ *   <li>A function value is a GC struct {@code { funcref : (ref $ft), captures… }} where {@code $ft}
+ *       is the closure-calling functype {@code (env, args…) -> result}; a top-level function passed by
+ *       name needs no captures (just {@code ref.func}).
+ *   <li>Each lambda is lambda-lifted to a top-level function taking its captured environment followed
+ *       by its own parameters; the {@code Lambda} expression builds the closure struct.
+ *   <li>Applying a function value emits {@code struct.get} of the funcref then {@code call_ref $ft};
+ *       currying wraps an under-applied call as a new closure.
+ * </ul>
+ *
+ * The one real obstacle is <b>type-index assignment</b>: struct indices are fixed in the pre-pass
+ * (the {@code Tuples} registry) but functype indices are currently assigned later in {@code assemble()}.
+ * {@code wOf(Ty.Arrow)} needs a stable functype index during the pre-pass, so the functype registry
+ * must move into {@code Tuples} (indices after the structs) and {@code assemble()} must read from it.
+ * That refactor — not the wasm encoding — is the bulk of the work, which is why higher-order code on
+ * this backend currently reports "unsupported" rather than risk a fragile half-implementation.
  */
 public final class WasmGc {
 
@@ -1070,7 +1092,11 @@ public final class WasmGc {
         leb(code, funcs.get(v.name())[0]);
         return;
       }
-      throw unsupported("application of " + (head instanceof Expr.Var v ? v.name() : "expression"));
+      // Applying a function VALUE (a local of arrow type, or a partially-applied / lambda result) would
+      // need closures: see the class doc's "Closures" design note. Node supports call_ref; the blocker
+      // is the type-index unification, not the engine.
+      throw unsupported("application of " + (head instanceof Expr.Var v ? v.name() : "expression")
+          + " (first-class functions / closures are not yet on WasmGC — use the interpreter, JS or the linear-memory WASM backend)");
     }
 
     /** Dispatches a {@code case} to the tuple, enum, boxed-ADT or list compiler. */
