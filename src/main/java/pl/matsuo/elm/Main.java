@@ -405,10 +405,25 @@ public final class Main implements Runnable {
         "  suite = describe \"math\" [ test \"adds\" (\\_ -> Expect.equal 4 (2 + 2)) ]).",
         "Property tests draw random inputs from `Fuzz` and report a counterexample:",
         "  fuzz Fuzz.int \"self-inverts\" (\\n -> Expect.equal n (negate (negate n))).",
+        "",
+        "  elm test tests/MathTests.elm --filter addition --fuzz 1000 --seed 42",
       })
   static final class TestCmd implements Callable<Integer> {
     @Parameters(arity = "1..*", description = "Test .elm files.")
     List<Path> files;
+
+    @Option(names = "--fuzz", description = "Random inputs per fuzz test (default 100).")
+    int fuzz = 100;
+
+    @Option(
+        names = "--seed",
+        description = "Seed for fuzz inputs, for reproducible runs (default: fixed).")
+    long seed = 0x5eedL;
+
+    @Option(
+        names = "--filter",
+        description = "Only run tests whose full path contains this text (case-insensitive).")
+    String filter;
 
     @Override
     public Integer call() throws IOException {
@@ -416,7 +431,9 @@ public final class Main implements Runnable {
       for (Path p : files) {
         sources.add(readElmSource(p));
       }
-      var result = pl.matsuo.elm.test.TestRunner.run(sources);
+      var result =
+          pl.matsuo.elm.test.TestRunner.run(
+              sources, new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter));
       System.out.print(result.report());
       return result.exitCode();
     }

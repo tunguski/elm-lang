@@ -24,21 +24,29 @@ public final class TestRunner {
   private TestRunner() {}
 
   /** The outcome of a run: counts and a human-readable report; non-zero exit iff something failed. */
-  public record Result(int passed, int failed, String report) {
+  public record Result(int passed, int failed, int skipped, String report) {
     public int exitCode() {
       return failed == 0 ? 0 : 1;
     }
+  }
+
+  /** Run options: how many random inputs each {@code fuzz} test gets, the seed that makes those
+   * inputs reproducible, and an optional case-insensitive substring filter on a test's full path. */
+  public record Options(int fuzzRuns, long seed, String filter) {
+    public static final Options DEFAULTS = new Options(100, 0x5eedL, null);
   }
 
   private static final String TEST_LIB = Resources.read("/elm/lib/Test.elm");
   private static final String EXPECT_LIB = Resources.read("/elm/lib/Expect.elm");
   private static final String FUZZ_LIB = Resources.read("/elm/lib/Fuzz.elm");
 
-  /** How many random inputs a `fuzz` test is replayed over. */
-  private static final int FUZZ_RUNS = 100;
+  /** Runs every top-level {@code Test} value found in {@code userSources} with default options. */
+  public static Result run(List<String> userSources) {
+    return run(userSources, Options.DEFAULTS);
+  }
 
   /** Runs every top-level {@code Test} value found in {@code userSources}. */
-  public static Result run(List<String> userSources) {
+  public static Result run(List<String> userSources, Options opts) {
     List<String> all = new ArrayList<>(userSources);
     all.add(TEST_LIB);
     all.add(EXPECT_LIB);
@@ -46,7 +54,8 @@ public final class TestRunner {
     Project project = Project.load(all.toArray(new String[0]));
 
     StringBuilder report = new StringBuilder();
-    int[] counts = {0, 0}; // passed, failed
+    int[] counts = {0, 0, 0}; // passed, failed, skipped
+    long start = System.nanoTime();
     for (String src : userSources) {
       Module m = Parser.parseModule(src);
       for (Decl d : m.decls()) {
@@ -58,11 +67,12 @@ public final class TestRunner {
             continue; // not evaluable in isolation — not a test value
           }
           if (val instanceof ElmData t && isTest(t)) {
-            walk("", t, report, counts);
+            walk("", t, report, counts, opts);
           }
         }
       }
     }
+    long ms = (System.nanoTime() - start) / 1_000_000;
     report
         .append("\n")
         .append(counts[0] + counts[1])
@@ -70,15 +80,19 @@ public final class TestRunner {
         .append(counts[0])
         .append(" passed, ")
         .append(counts[1])
-        .append(" failed\n");
-    return new Result(counts[0], counts[1], report.toString());
+        .append(" failed");
+    if (counts[2] > 0) {
+      report.append(", ").append(counts[2]).append(" skipped");
+    }
+    report.append(" (in ").append(ms).append(" ms)\n");
+    return new Result(counts[0], counts[1], counts[2], report.toString());
   }
 
   private static boolean isTest(ElmData d) {
     return d.ctor().equals("UnitTest") || d.ctor().equals("Labeled") || d.ctor().equals("FuzzTest");
   }
 
-  private static void walk(String prefix, ElmData t, StringBuilder report, int[] counts) {
+  private static void walk(String prefix, ElmData t, StringBuilder report, int[] counts, Options opts) {
     switch (t.ctor()) {
       case "Labeled" -> {
         String label = String.valueOf(Thunk.resolve(t.arg(0)));
@@ -86,13 +100,17 @@ public final class TestRunner {
         if (Thunk.resolve(t.arg(1)) instanceof ElmList kids) {
           for (Object kid : kids.toJava()) {
             if (Thunk.resolve(kid) instanceof ElmData kt) {
-              walk(p, kt, report, counts);
+              walk(p, kt, report, counts, opts);
             }
           }
         }
       }
       case "UnitTest" -> {
         String desc = String.valueOf(Thunk.resolve(t.arg(0)));
+        if (filteredOut(prefix + desc, opts)) {
+          counts[2]++;
+          return;
+        }
         Object expectation;
         try {
           expectation = Thunk.resolve(Apply.apply(Thunk.resolve(t.arg(1)), ElmUnit.INSTANCE));
@@ -104,10 +122,14 @@ public final class TestRunner {
       }
       case "FuzzTest" -> {
         String desc = String.valueOf(Thunk.resolve(t.arg(0)));
+        if (filteredOut(prefix + desc, opts)) {
+          counts[2]++;
+          return;
+        }
         Object body = Thunk.resolve(t.arg(1)); // Int -> Expectation
         // Replay the property over many deterministic seeds; report the first failing input.
-        java.util.Random seeds = new java.util.Random(0x5eed);
-        for (int i = 0; i < FUZZ_RUNS; i++) {
+        java.util.Random seeds = new java.util.Random(opts.seed());
+        for (int i = 0; i < opts.fuzzRuns(); i++) {
           long seed = seeds.nextInt(); // a 32-bit Elm Int the Fuzzer scrambles
           Object expectation;
           try {
@@ -126,10 +148,16 @@ public final class TestRunner {
           }
         }
         counts[0]++;
-        report.append("✓ ").append(prefix).append(desc).append(" (").append(FUZZ_RUNS).append(" passed)\n");
+        report.append("✓ ").append(prefix).append(desc).append(" (").append(opts.fuzzRuns()).append(" passed)\n");
       }
       default -> {}
     }
+  }
+
+  /** Whether a test's full path fails the (case-insensitive substring) filter, if one is set. */
+  private static boolean filteredOut(String fullPath, Options opts) {
+    return opts.filter() != null
+        && !fullPath.toLowerCase().contains(opts.filter().toLowerCase());
   }
 
   /** Records a resolved {@code Expectation} (Pass / Fail message) as a pass or a located failure. */

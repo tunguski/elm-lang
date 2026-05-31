@@ -82,6 +82,32 @@ class TestRunnerTest {
   }
 
   @Test
+  void filterRunsOnlyMatchingTestsAndSkipsTheRest() {
+    String suite = Resources.read("/elm/demos/example-test.elm");
+    TestRunner.Result r =
+        TestRunner.run(List.of(suite), new TestRunner.Options(100, 0x5eedL, "addition"));
+    assertEquals(1, r.passed(), r.report()); // only "addition" runs
+    assertEquals(0, r.failed(), r.report());
+    assertTrue(r.skipped() > 0, r.report()); // the rest are skipped
+    assertTrue(r.report().contains("skipped"), r.report());
+  }
+
+  @Test
+  void fuzzRunCountIsConfigurable() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (fuzz)
+        suite = fuzz Fuzz.int "identity" (\\n -> Expect.equal n n)
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(7, 1L, null));
+    assertEquals(1, r.passed(), r.report());
+    assertTrue(r.report().contains("(7 passed)"), r.report()); // honored the --fuzz count
+  }
+
+  @Test
   void noTestsIsACleanPass() {
     TestRunner.Result r = TestRunner.run(List.of("module M exposing (..)\nanswer = 42\n"));
     assertEquals(0, r.passed());
