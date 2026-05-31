@@ -12,7 +12,8 @@ implements:
   workspace root is indexed).
 - **Workspace symbols** — search top-level symbols across the whole project (`Ctrl+T`).
 - **Call hierarchy** — incoming and outgoing calls of a function, across modules.
-- **Completion** — module-local names plus the bundled standard library.
+- **Completion** — module-local names plus the bundled standard library; after `Module.` the
+  module's members, after a `record.` its field names.
 - **Document symbols** (outline), **document highlight** (every occurrence of the symbol under the
   cursor), **inlay hints** (inferred signatures), **signature help**, **code lenses** (reference
   counts per definition), and **semantic tokens** for highlighting (with a TextMate grammar as a

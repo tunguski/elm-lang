@@ -387,6 +387,23 @@ class LspServerTest {
     assertTrue(rs.stream().noneMatch(r -> r.title().startsWith("Inline")), rs.toString());
   }
 
+  @Test
+  void completionAfterAModuleQualifierOffersItsMembers() {
+    // After `List.` the stdlib members of List are offered as bare suffixes (not "List.map").
+    String src = "main =\n    List.\n";
+    var labels = server.complete(src, 1, 9); // cursor right after `List.`
+    assertTrue(labels.contains("map") && labels.contains("filter"), labels.toString());
+    assertTrue(labels.stream().noneMatch(l -> l.contains(".")), "members are bare: " + labels);
+  }
+
+  @Test
+  void completionAfterARecordReceiverOffersFieldNames() {
+    String src =
+        "type alias Model = { count : Int, name : String }\nview m =\n    m.\n";
+    var labels = server.complete(src, 2, 6); // after `m.`
+    assertTrue(labels.contains("count") && labels.contains("name"), labels.toString());
+  }
+
   // --- non-exhaustive case warnings -------------------------------------
 
   @Test

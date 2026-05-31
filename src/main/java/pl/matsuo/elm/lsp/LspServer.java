@@ -491,6 +491,80 @@ public final class LspServer {
     return new ArrayList<>(names);
   }
 
+  /**
+   * Context-aware completion at a 0-based cursor. After {@code Module.} (or an import alias) it offers
+   * that module's members (stdlib qualified names or a workspace module's top-level names) as bare
+   * suffixes; after a lowercase {@code receiver.} it offers record field names declared in the
+   * module's record type aliases. Otherwise it falls back to {@link #complete(String)}.
+   */
+  public List<String> complete(String source, int line0, int char0) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return complete(source);
+    }
+    String before = lines[line0].substring(0, Math.min(Math.max(char0, 0), lines[line0].length()));
+    int start = before.length();
+    while (start > 0 && (isIdentChar(before.charAt(start - 1)) || before.charAt(start - 1) == '.')) {
+      start--;
+    }
+    String tok = before.substring(start);
+    int dot = tok.lastIndexOf('.');
+    if (dot < 0) {
+      return complete(source); // no qualifier — the full name list
+    }
+    // The cursor line (e.g. `m.` / `List.`) is mid-edit and won't parse; replace the incomplete token
+    // with a placeholder literal (keeping indentation) so the surrounding declaration — and the rest
+    // of the module's imports and type aliases — still parse for context.
+    String[] sanitized = lines.clone();
+    sanitized[line0] =
+        before.substring(0, start) + "0" + lines[line0].substring(Math.min(char0, lines[line0].length()));
+    String parseable = String.join("\n", sanitized);
+    String qualifier = tok.substring(0, dot);
+    if (!qualifier.isEmpty() && Character.isUpperCase(qualifier.charAt(0))) {
+      return new ArrayList<>(qualifiedMembers(parseable, qualifier)); // Module. / alias.
+    }
+    return new ArrayList<>(recordFieldNames(parseable)); // receiver. -> record fields
+  }
+
+  /** Member names exported by the module a qualifier names (resolving an import alias): stdlib
+   * qualified names with that prefix, plus any workspace module's top-level declarations. */
+  private java.util.Set<String> qualifiedMembers(String source, String qualifier) {
+    String real = resolveModuleAlias(source, qualifier);
+    java.util.TreeSet<String> out = new java.util.TreeSet<>();
+    String prefix = real + ".";
+    for (String key : pl.matsuo.elm.types.Signatures.globals().keySet()) {
+      if (key.startsWith(prefix)) {
+        out.add(key.substring(prefix.length()));
+      }
+    }
+    for (String doc : docs.values()) {
+      if (moduleName(doc).equals(real)) {
+        for (Symbol s : documentSymbols(doc)) {
+          out.add(s.name());
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Field names declared in the module's record type aliases (the record-field vocabulary). */
+  private java.util.Set<String> recordFieldNames(String source) {
+    java.util.TreeSet<String> out = new java.util.TreeSet<>();
+    try {
+      for (Decl d : Parser.parseModule(source).decls()) {
+        if (d instanceof Decl.TypeAlias ta
+            && ta.type() instanceof pl.matsuo.elm.ast.Type.Record r) {
+          for (pl.matsuo.elm.ast.Type.Record.Field f : r.fields()) {
+            out.add(f.name());
+          }
+        }
+      }
+    } catch (RuntimeException ignored) {
+      // none while the document doesn't parse
+    }
+    return out;
+  }
+
   /** The module's own top-level value/type/constructor names (for sorting them ahead of the stdlib). */
   private java.util.Set<String> localNames(String source) {
     java.util.Set<String> names = new java.util.HashSet<>();
@@ -1538,8 +1612,16 @@ public final class LspServer {
         String uri = (String) td.get("uri");
         String src = docs.getOrDefault(uri, "");
         java.util.Set<String> local = localNames(src);
+        List<String> labels;
+        if (params.get("position") instanceof Map<?, ?> pos
+            && pos.get("line") instanceof Number ln
+            && pos.get("character") instanceof Number cn) {
+          labels = complete(src, ln.intValue(), cn.intValue());
+        } else {
+          labels = complete(src);
+        }
         List<Object> items = new ArrayList<>();
-        for (String name : complete(src)) {
+        for (String name : labels) {
           Map<String, Object> item = new LinkedHashMap<>();
           item.put("label", name);
           // Uppercase first letter -> a constructor/type (kind 4/7); else a function (kind 3).
@@ -1832,7 +1914,9 @@ public final class LspServer {
     caps.put("textDocumentSync", 1L); // full document sync
     caps.put("hoverProvider", true);
     caps.put("definitionProvider", true);
-    caps.put("completionProvider", new LinkedHashMap<>()); // no trigger characters
+    Map<String, Object> completion = new LinkedHashMap<>();
+    completion.put("triggerCharacters", List.of(".")); // re-query after a qualifier/field dot
+    caps.put("completionProvider", completion);
     caps.put("referencesProvider", true);
     caps.put("documentHighlightProvider", true);
     caps.put("documentSymbolProvider", true);

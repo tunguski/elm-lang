@@ -26,7 +26,7 @@ heuristics.
 | Go to definition | `textDocument/definition` | Resolves locally and **across the workspace** (and through qualified imports). |
 | Find references | `textDocument/references` | Workspace-wide. |
 | Rename | `textDocument/rename` | Rewrites every occurrence, across modules. |
-| Completion | `textDocument/completion` | Module-local names + the bundled standard library, with inferred-type detail. |
+| Completion | `textDocument/completion` | Module-local names + the bundled standard library, with inferred-type detail. After `Module.` offers that module's members; after a `record.` offers field names (trigger character `.`). |
 | Document symbols | `textDocument/documentSymbol` | Outline of a file's top-level declarations. |
 | Workspace symbols | `workspace/symbol` | Search top-level symbols across **all** indexed files (e.g. VS Code `Ctrl+T`). |
 | Call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls` | Who calls a function, and what it calls — across modules (qualified and unqualified). |
