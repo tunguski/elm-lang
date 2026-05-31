@@ -4,15 +4,23 @@ A thin VS Code client for the language server built into the [tunguski/elm-lang]
 toolchain. It launches `java -jar elm.jar lsp` over stdio and surfaces everything the server
 implements:
 
-- **Diagnostics** — parse and type errors (Hindley–Milner), including **multi-error** reports, on
-  open and as you type.
+- **Diagnostics** — parse and type errors (Hindley–Milner), including **multi-error** reports, plus
+  **warnings** (unused imports, private definitions, parameters and `let` bindings), on open and as
+  you type.
 - **Hover** — the inferred type of the definition under the cursor.
 - **Go to definition / Find references / Rename** — workspace-wide (every `.elm` file under the
   workspace root is indexed).
+- **Workspace symbols** — search top-level symbols across the whole project (`Ctrl+T`).
 - **Completion** — module-local names plus the bundled standard library.
-- **Document symbols** (outline), **inlay hints** (inferred signatures), **signature help**, and
-  **semantic tokens** for highlighting (with a TextMate grammar as a fallback).
+- **Document symbols** (outline), **document highlight** (every occurrence of the symbol under the
+  cursor), **inlay hints** (inferred signatures), **signature help**, **code lenses** (reference
+  counts per definition), and **semantic tokens** for highlighting (with a TextMate grammar as a
+  fallback).
+- **Code actions** — quick-fixes (add type annotation, fill missing `case` branches, remove/add/
+  organize imports) and an **"Extract to function"** refactor (free locals become parameters).
 - **Formatting** — elm-format-style; **format-on-save** is enabled by default for `.elm` files.
+
+See [docs/lsp.md](../../docs/lsp.md) for the full capability list and protocol details.
 
 ## Prerequisites
 

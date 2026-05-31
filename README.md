@@ -20,9 +20,11 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    lambdas lambda-lifted), with **tail calls** compiled to `return_call` so recursive loops run at
    any depth, so recursive list/ADT, float, string, record, higher-order and curried code compile
    and run anywhere `WebAssembly` does. A second, **WasmGC** code path (`WasmGc`)
-   compiles the Int/`Float`/`List Int`/tuple/enum subset to host-garbage-collected `struct` references
-   — cons-lists and tuples with no linear memory and no manual reclamation, collected by the engine
-   (`Float` is a native `f64`; nullary custom types are i64 tags).
+   compiles a broad subset to host-garbage-collected `struct`/`array` references — with no linear
+   memory and no manual reclamation — covering `Int`/`Bool`/`Float`, `String`, lists of any element,
+   tuples, closed records, nullary and **argument-carrying custom types** (including recursive ones)
+   and **polymorphic** custom types (monomorphised to their use). Closures and the built-in
+   `Maybe`/`Result` remain on the linear-memory path.
 
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions — extended to a fifth path, the **WasmGC**
@@ -101,7 +103,7 @@ Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -j
 | `bump <old.elm> <new.elm> [version]` | Propose the next version from the API change since a baseline. |
 | `coverage <file.elm> [--value NAME]` | Run a definition and report which top-level definitions executed. |
 | `repl` | Interactive REPL: expressions, persistent `x = …` definitions, multi-line input, and `:type`, `:load <file.elm>` (bring a module's definitions into scope), `:history`, `:reset`. |
-| `lsp` | Language server over stdio: diagnostics (errors **and warnings**: unused imports, unused private definitions, parameters and `let` bindings), hover, completion (with inferred-type detail), **inlay type hints**, **signature help**, document symbols, code actions (add type annotation, fill missing case branches, remove/add/organize imports), an **"extract to function"** refactor (a selected expression becomes a fresh top-level function, its free locals lifted to parameters), **code lenses** (reference counts per definition), **document formatting** (elm-format style), **document highlight** (every occurrence of the symbol under the cursor), semantic-token highlighting, **workspace symbol search**, and **workspace-wide** go-to-definition, find-references and rename across modules. A ready-to-run **[VS Code client](editor/vscode/)** wraps it (with format-on-save). |
+| `lsp` | Language server over stdio: diagnostics (errors **and warnings**: unused imports, unused private definitions, parameters and `let` bindings), hover, completion (with inferred-type detail), **inlay type hints**, **signature help**, document symbols, code actions (add type annotation, fill missing case branches, remove/add/organize imports), an **"extract to function"** refactor (a selected expression becomes a fresh top-level function, its free locals lifted to parameters), **code lenses** (reference counts per definition), **document formatting** (elm-format style), **document highlight** (every occurrence of the symbol under the cursor), semantic-token highlighting, **workspace symbol search**, and **workspace-wide** go-to-definition, find-references and rename across modules. A ready-to-run **[VS Code client](editor/vscode/)** wraps it (with format-on-save). See **[docs/lsp.md](docs/lsp.md)** for the full capability list, editor setup (VS Code / Neovim / generic) and protocol notes. |
 | `script <file.elm> [args…]` | Run an Elm file as a POSIX-style CLI script (the bundled `Posix` module). |
 | `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
 | `reactor [dir] [--port N]` | Dev server: compiles each `.elm` module to a live page on the fly and hot-reloads the browser when a source file changes; a compile or **located type error** (excerpt + caret) is shown as a styled overlay that disappears once fixed. |
