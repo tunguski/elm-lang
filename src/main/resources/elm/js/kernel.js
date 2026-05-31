@@ -197,6 +197,8 @@ var $rt = {
   'List.minimum': function(xs){ var a=$listToArray(xs); return a.length?$data('Just',[a.reduce(function(m,x){return $cmp(x,m)<0?x:m;})]):$data('Nothing',[]); },
   'List.sortWith': function(f){ return function(xs){ return $list($listToArray(xs).slice().sort(function(a,b){ return $ordToInt(f(a)(b)); })); }; },
   'List.intersperse': function(sep){ return function(xs){ var a=$listToArray(xs),o=[]; for(var i=0;i<a.length;i++){ if(i>0)o.push(sep); o.push(a[i]); } return $list(o); }; },
+  'List.partition': function(f){ return function(xs){ var yes=[],no=[]; $listToArray(xs).forEach(function(x){ (f(x)?yes:no).push(x); }); return $tuple([$list(yes),$list(no)]); }; },
+  'List.unzip': function(xs){ var a=[],b=[]; $listToArray(xs).forEach(function(p){ a.push(p.vs[0]); b.push(p.vs[1]); }); return $tuple([$list(a),$list(b)]); },
   'List.sum': function(xs){ return $listToArray(xs).reduce(function(a,b){return a+b;},0); },
   'List.product': function(xs){ return $listToArray(xs).reduce(function(a,b){return a*b;},1); },
   'List.range': function(lo){ return function(hi){ var out=[]; for(var i=lo;i<=hi;i++) out.push(i); return $list(out); }; },

@@ -126,6 +126,9 @@ public final class Signatures {
     g("List.reverse", "List a -> List a");
     g("List.member", "a -> List a -> Bool");
     g("List.append", "List a -> List a -> List a");
+    g("List.partition", "(a -> Bool) -> List a -> ( List a, List a )");
+    g("List.unzip", "List ( a, b ) -> ( List a, List b )");
+    g("List.intersperse", "a -> List a -> List a");
     g("List.concat", "List (List a) -> List a");
     g("List.concatMap", "(a -> List b) -> List a -> List b");
     g("List.filterMap", "(a -> Maybe b) -> List a -> List b");

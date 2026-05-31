@@ -859,6 +859,36 @@ public final class Prelude {
       }
       return ElmList.fromJava(out);
     });
+    fn("List.partition", 2, a -> {
+      List<Object> yes = new ArrayList<>();
+      List<Object> no = new ArrayList<>();
+      for (Object x : javaList(a[1])) {
+        ((Boolean) Apply.apply(a[0], x) ? yes : no).add(x);
+      }
+      return new ElmTuple(new Object[] {ElmList.fromJava(yes), ElmList.fromJava(no)});
+    });
+    fn("List.unzip", 1, a -> {
+      List<Object> firsts = new ArrayList<>();
+      List<Object> seconds = new ArrayList<>();
+      for (Object pair : javaList(a[0])) {
+        ElmTuple t = (ElmTuple) pair;
+        firsts.add(t.get(0));
+        seconds.add(t.get(1));
+      }
+      return new ElmTuple(new Object[] {ElmList.fromJava(firsts), ElmList.fromJava(seconds)});
+    });
+    fn("List.intersperse", 2, a -> {
+      List<Object> out = new ArrayList<>();
+      boolean first = true;
+      for (Object x : javaList(a[1])) {
+        if (!first) {
+          out.add(a[0]);
+        }
+        out.add(x);
+        first = false;
+      }
+      return ElmList.fromJava(out);
+    });
     fn("List.foldl", 3, a -> {
       Object acc = a[1];
       for (Object x : javaList(a[2])) {

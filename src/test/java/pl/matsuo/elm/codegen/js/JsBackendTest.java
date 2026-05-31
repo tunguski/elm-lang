@@ -111,6 +111,14 @@ class JsBackendTest {
   }
 
   @Test
+  void listPartitionUnzipIntersperseAgreeAcrossBackends() {
+    same("List.partition (\\n -> n > 2) [ 1, 2, 3, 4 ]");
+    same("List.unzip [ ( 1, \"a\" ), ( 2, \"b\" ) ]");
+    same("List.intersperse 0 [ 1, 2, 3 ]");
+    same("List.intersperse 0 []");
+  }
+
+  @Test
   void bitwiseModuleAgreesAcrossBackends() {
     same("Bitwise.and 12 10");
     same("Bitwise.or 12 10");
