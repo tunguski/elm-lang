@@ -60,6 +60,15 @@ public final class LspServer {
     }
     try {
       TypeChecker.checkModule(source);
+    } catch (pl.matsuo.elm.error.ElmTypeErrors errs) {
+      // Multi-error recovery: surface one diagnostic per independent type error.
+      for (ElmTypeError e : errs.errors) {
+        if (e.position != null) {
+          out.add(at(e.position, e.rawMessage() + (e.hint != null ? " — " + e.hint : "")));
+        } else {
+          out.add(new Diagnostic(0, 0, 1, e.rawMessage()));
+        }
+      }
     } catch (ElmTypeError e) {
       if (e.position != null) {
         out.add(at(e.position, e.rawMessage() + (e.hint != null ? " — " + e.hint : "")));

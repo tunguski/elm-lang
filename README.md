@@ -144,6 +144,11 @@ in the style of Algorithm W. Highlights:
   `number`/`comparable`/`appendable` constraints, …), field-by-field **record mismatches** with a
   **"Did you mean `field`?"** suggestion for a misspelled field, and **"Did you mean …?"** for
   misspelled names. The LSP surfaces the same diagnostics in-editor.
+- **Multi-error recovery**: a failed top-level definition is bound to a fresh polymorphic type and
+  inference carries on, so one pass reports *every* independent type error (in source order) rather
+  than stopping at the first — and a clean caller of a broken definition isn't flagged with a
+  cascade error. The CLI prints them as one `Found N type errors:` report; the LSP publishes a
+  separate diagnostic per error.
 - **Multi-module/project** checking (`check a.elm b.elm …`) across module boundaries.
 - Catches `1 + "a"`, a non-`Bool` `if`, `\f -> f f`, unknown names, etc.
 

@@ -7,6 +7,7 @@ import java.util.Map;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.error.ElmTypeError;
+import pl.matsuo.elm.error.ElmTypeErrors;
 import pl.matsuo.elm.parser.Parser;
 
 /** Entry point for type inference. */
@@ -36,6 +37,8 @@ public final class TypeChecker {
       Map<String, String> result = new LinkedHashMap<>();
       schemes.forEach((name, scheme) -> result.put(name, Types.show(scheme.body())));
       return result;
+    } catch (ElmTypeErrors errs) {
+      throw combine(source, errs);
     } catch (ElmTypeError err) {
       throw locate(source, err);
     }
@@ -56,10 +59,28 @@ public final class TypeChecker {
       Map<String, String> result = new LinkedHashMap<>();
       schemes.forEach((name, scheme) -> result.put(name, Types.show(scheme.body())));
       return result;
-    } catch (ElmTypeError err) {
+    } catch (ElmTypeErrors errs) {
       // Line numbers are per-module; attach against the entry (last) source as a best effort.
+      throw combine(sources[sources.length - 1], errs);
+    } catch (ElmTypeError err) {
       throw locate(sources[sources.length - 1], err);
     }
+  }
+
+  /** Locates every error in a multi-error result and joins them into one Elm-style report. The
+   * returned exception keeps the individual (bare, located) errors in {@link ElmTypeErrors#errors}
+   * so callers like the LSP can place one diagnostic per error. */
+  static ElmTypeErrors combine(String source, ElmTypeErrors errs) {
+    StringBuilder b = new StringBuilder();
+    b.append("Found ").append(errs.errors.size()).append(" type errors:\n");
+    for (int i = 0; i < errs.errors.size(); i++) {
+      b.append("\n");
+      if (i > 0) {
+        b.append("─".repeat(50)).append("\n\n");
+      }
+      b.append(locate(source, errs.errors.get(i)).getMessage()).append("\n");
+    }
+    return new ElmTypeErrors(b.toString(), errs.errors);
   }
 
   /** Rebuilds an error with an Elm-style source excerpt, a caret under the offending code and a hint. */

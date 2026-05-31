@@ -190,10 +190,16 @@ public final class Infer {
     }
     TypeEnv env = TypeEnv.root(globals);
     Map<String, Scheme> result = new LinkedHashMap<>();
+    // Error recovery: instead of aborting on the first bad definition, record its error, bind it to
+    // a fresh polymorphic type and carry on, so one pass reports every independent mistake. A group
+    // that depends on a failed one stays permissive (its dependency unifies with anything), which
+    // avoids spurious cascade errors.
+    List<ElmTypeError> errors = new ArrayList<>();
     for (List<String> group : sccOrder(values)) {
       int outer = level;
       level++;
       Map<String, Ty> placeholders = new LinkedHashMap<>();
+      java.util.Set<String> failed = new java.util.HashSet<>();
       TypeEnv rec = env;
       for (String name : group) {
         Ty ph = fresh();
@@ -211,17 +217,30 @@ public final class Infer {
               v.params().isEmpty() ? infer(rec, v.body()) : inferLambda(rec, v.params(), v.body());
           Unify.unify(ph, rhs);
         } catch (ElmTypeError e) {
-          throw e.at(v.pos(), hintFor(e));
+          errors.add(e.at(v.pos(), hintFor(e)));
+          failed.add(name);
         }
       }
       level = outer;
       for (String name : group) {
-        Scheme s = Types.generalize(Types.prune(placeholders.get(name)), outer);
+        // A failed definition is generalized as `∀a. a` so dependents type-check against anything.
+        Ty ty = failed.contains(name) ? new Ty.Var(outer + 1, Ty.Constraint.NONE) : Types.prune(placeholders.get(name));
+        Scheme s = Types.generalize(ty, outer);
         result.put(name, s);
         env = env.extend(name, s); // visible (generalized) to later groups
       }
     }
     result.putAll(ports); // ports are values too; expose their declared types
+    if (!errors.isEmpty()) {
+      // Report in source order (SCC order is dependency order), so the list reads top-to-bottom.
+      errors.sort(
+          java.util.Comparator.comparingInt(
+                  (ElmTypeError e) -> e.position == null ? 0 : e.position.line())
+              .thenComparingInt(e -> e.position == null ? 0 : e.position.col()));
+      throw errors.size() == 1
+          ? errors.get(0)
+          : new pl.matsuo.elm.error.ElmTypeErrors(errors.get(0).rawMessage(), errors);
+    }
     return result;
   }
 

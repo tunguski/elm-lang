@@ -119,6 +119,46 @@ class ModuleCheckTest {
   }
 
   @Test
+  void reportsEveryIndependentTypeError() {
+    // Three unrelated bad definitions: inference must recover after each and report all of them,
+    // in source order, rather than stopping at the first.
+    pl.matsuo.elm.error.ElmTypeErrors e =
+        assertThrows(
+            pl.matsuo.elm.error.ElmTypeErrors.class,
+            () ->
+                TypeChecker.checkModule(
+                    """
+                    a = "x" + 1
+                    b = String.length 5
+                    c = 2 + "y"
+                    """));
+    assertEquals(3, e.errors.size(), e.getMessage());
+    assertEquals(1, e.errors.get(0).position.line(), e.getMessage());
+    assertEquals(2, e.errors.get(1).position.line(), e.getMessage());
+    assertEquals(3, e.errors.get(2).position.line(), e.getMessage());
+    assertTrue(e.getMessage().contains("Found 3 type errors:"), e.getMessage());
+  }
+
+  @Test
+  void recoversFromAFailedDefinitionWithoutCascading() {
+    // `bad` fails, but `good` (which does not depend on it) still type-checks, and the failed
+    // definition does not produce a spurious second error in its (clean) caller.
+    pl.matsuo.elm.error.ElmTypeErrors e =
+        assertThrows(
+            pl.matsuo.elm.error.ElmTypeErrors.class,
+            () ->
+                TypeChecker.checkModule(
+                    """
+                    bad = "x" + 1
+                    user = bad ++ "!"
+                    other = String.length 5
+                    """));
+    // Only the two genuinely-wrong definitions are reported; `user` (which uses the recovered
+    // `bad`) is not flagged.
+    assertEquals(2, e.errors.size(), e.getMessage());
+  }
+
+  @Test
   void multipleRecordUpdatesTerminate() {
     // Regression: unifying several open records that update distinct fields of the same value used
     // to route empty rows through fresh `{ | r }` records and loop forever. It must now converge.
