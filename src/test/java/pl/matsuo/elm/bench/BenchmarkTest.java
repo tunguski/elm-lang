@@ -18,11 +18,13 @@ class BenchmarkTest {
     assertTrue(report.contains("fib(30) = 832040"), report);
     assertTrue(report.contains("Truffle interpreter"), report);
     assertTrue(report.contains("Bytecode VM"), report);
-    // The JS and WASM backends are timed too when Node is available (it is on CI).
+    // The JS, WASM and WasmGC backends are timed too when Node is available (it is on CI).
     assertTrue(
-        (report.contains("JavaScript (Node)") && report.contains("WebAssembly (Node)"))
+        (report.contains("JavaScript (Node)")
+                && report.contains("WebAssembly (Node)")
+                && report.contains("WasmGC (Node)"))
             || !nodeAvailable(),
-        "JS and WASM rows should appear when Node is installed:\n" + report);
+        "JS, WASM and WasmGC rows should appear when Node is installed:\n" + report);
   }
 
   private static boolean nodeAvailable() {

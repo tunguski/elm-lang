@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
 import pl.matsuo.elm.codegen.js.JsCompiler;
 import pl.matsuo.elm.codegen.wasm.WasmCompiler;
+import pl.matsuo.elm.codegen.wasm.WasmGc;
 import pl.matsuo.elm.interp.Apply;
 import pl.matsuo.elm.interp.Interpreter;
 
@@ -42,6 +43,7 @@ public final class Benchmark {
     double[] bytecode = time(() -> Apply.apply(bcFib, fibN), warmup, measured);
     double[] js = timeJs(fibN, warmup, measured); // null if Node is unavailable
     double[] wasm = timeWasm(fibN, warmup, measured);
+    double[] wasmGc = timeWasmGc(fibN, warmup, measured);
 
     StringBuilder sb = new StringBuilder();
     sb.append("Benchmark: fib(").append(fibN).append(") = ").append(interpResult)
@@ -54,6 +56,9 @@ public final class Benchmark {
     }
     if (wasm != null) {
       report(sb, "WebAssembly (Node)", wasm);
+    }
+    if (wasmGc != null) {
+      report(sb, "WasmGC (Node)", wasmGc);
     }
     sb.append(String.format(
         "%nWarm: Truffle interpreter is %.2fx the bytecode VM "
@@ -77,23 +82,38 @@ public final class Benchmark {
     if (wasm != null) {
       out.put("WebAssembly (Node)", wasm[1]);
     }
+    double[] wasmGc = timeWasmGc(fibN, warmup, measured);
+    if (wasmGc != null) {
+      out.put("WasmGC (Node)", wasmGc[1]);
+    }
     return out;
+  }
+
+  /** Warm timing of the WasmGC backend (host-GC structs, run under Node), or null if unavailable. */
+  public static double[] timeWasmGc(long fibN, int warmup, int measured) {
+    return timeWasmModule(WasmGc.module(SOURCE), "fib", fibN, warmup, measured);
   }
 
   /** Warm timing of the WASM backend (compiled fib, run under Node), or null if unavailable. */
   public static double[] timeWasm(long fibN, int warmup, int measured) {
+    return timeWasmModule(WasmCompiler.moduleFromSource(SOURCE), "fib", fibN, warmup, measured);
+  }
+
+  /** Instantiates a wasm module under Node, times {@code func(fibN)} cold then warm (best of
+   * {@code measured}), and returns {cold ms, warm ms} — or null if Node/instantiation is unavailable. */
+  private static double[] timeWasmModule(byte[] module, String func, long fibN, int warmup, int measured) {
     try {
       Path wasm = Files.createTempFile("elm-bench-", ".wasm");
-      Files.write(wasm, WasmCompiler.moduleFromSource(SOURCE));
+      Files.write(wasm, module);
       Path js = Files.createTempFile("elm-bench-", ".js");
       Files.writeString(
           js,
           "const fs=require('fs');"
               + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
-              + "const fib=r.instance.exports.fib,N=" + fibN + "n;"
-              + "let t=process.hrtime.bigint();fib(N);let cold=Number(process.hrtime.bigint()-t)/1e6;"
-              + "for(let i=1;i<" + warmup + ";i++)fib(N);"
-              + "let best=Infinity;for(let j=0;j<" + measured + ";j++){let s=process.hrtime.bigint();fib(N);"
+              + "const f=r.instance.exports." + func + ",N=" + fibN + "n;"
+              + "let t=process.hrtime.bigint();f(N);let cold=Number(process.hrtime.bigint()-t)/1e6;"
+              + "for(let i=1;i<" + warmup + ";i++)f(N);"
+              + "let best=Infinity;for(let j=0;j<" + measured + ";j++){let s=process.hrtime.bigint();f(N);"
               + "let ms=Number(process.hrtime.bigint()-s)/1e6;if(ms<best)best=ms;}"
               + "process.stdout.write(cold+' '+best);}).catch(e=>{process.exit(1);});",
           StandardCharsets.UTF_8);

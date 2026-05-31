@@ -24,7 +24,11 @@ public final class VM {
 
   public static Object run(Chunk chunk, Scope initialScope, RuntimeEnv env) {
     List<Instr> code = chunk.code();
-    Deque<Object> stack = new ArrayDeque<>();
+    // Operand stack as a plain array: control flow within a chunk is forward-only (recursion spawns a
+    // fresh VM.run), so the depth never exceeds the instruction count — one allocation, no boxing of
+    // the Deque's nodes, no growth checks.
+    Object[] stack = new Object[code.size() + 1];
+    int sp = 0;
     Deque<Scope> scopes = new ArrayDeque<>();
     Scope scope = initialScope;
     Object scrut = null;
@@ -33,107 +37,105 @@ public final class VM {
     while (true) {
       Instr in = code.get(ip++);
       switch (in.op()) {
-        case PUSH_CONST -> stack.push(in.operand());
+        case PUSH_CONST -> stack[sp++] = in.operand();
         case PUSH_VAR -> {
           String n = (String) in.operand();
           Object v = scope.lookup(n);
-          stack.push(v != null ? v : env.resolveGlobal(n));
+          stack[sp++] = v != null ? v : env.resolveGlobal(n);
         }
         case PUSH_QUAL -> {
           String[] q = (String[]) in.operand();
-          stack.push(env.resolveQualified(q[0], q[1]));
+          stack[sp++] = env.resolveQualified(q[0], q[1]);
         }
-        case PUSH_CTOR -> stack.push(env.constructorValue((String) in.operand()));
-        case PUSH_OPFUNC -> stack.push(Operators.asFunction((String) in.operand()));
+        case PUSH_CTOR -> stack[sp++] = env.constructorValue((String) in.operand());
+        case PUSH_OPFUNC -> stack[sp++] = Operators.asFunction((String) in.operand());
         case PUSH_ACCESSOR -> {
           String f = (String) in.operand();
-          stack.push(new Builtin("." + f, 1, a -> ((ElmRecord) a[0]).get(f)));
+          stack[sp++] = new Builtin("." + f, 1, a -> ((ElmRecord) a[0]).get(f));
         }
         case MAKE_LIST -> {
           int n = in.arg();
-          Object[] tmp = new Object[n];
-          for (int i = n - 1; i >= 0; i--) {
-            tmp[i] = stack.pop();
-          }
           ElmList list = ElmList.NIL;
-          for (int i = n - 1; i >= 0; i--) {
-            list = ElmList.cons(tmp[i], list);
+          for (int i = 0; i < n; i++) {
+            list = ElmList.cons(stack[--sp], list); // top of stack is the last element
           }
-          stack.push(list);
+          stack[sp++] = list;
         }
         case MAKE_TUPLE -> {
           int n = in.arg();
           Object[] vs = new Object[n];
           for (int i = n - 1; i >= 0; i--) {
-            vs[i] = stack.pop();
+            vs[i] = stack[--sp];
           }
-          stack.push(new ElmTuple(vs));
+          stack[sp++] = new ElmTuple(vs);
         }
         case MAKE_RECORD -> {
           String[] names = (String[]) in.operand();
           Object[] vals = new Object[names.length];
           for (int i = names.length - 1; i >= 0; i--) {
-            vals[i] = stack.pop();
+            vals[i] = stack[--sp];
           }
           Map<String, Object> m = new LinkedHashMap<>();
           for (int i = 0; i < names.length; i++) {
             m.put(names[i], vals[i]);
           }
-          stack.push(new ElmRecord(m));
+          stack[sp++] = new ElmRecord(m);
         }
         case RECORD_UPDATE -> {
           String[] names = (String[]) in.operand();
           Object[] vals = new Object[names.length];
           for (int i = names.length - 1; i >= 0; i--) {
-            vals[i] = stack.pop();
+            vals[i] = stack[--sp];
           }
-          ElmRecord base = (ElmRecord) stack.pop();
+          ElmRecord base = (ElmRecord) stack[--sp];
           Map<String, Object> upd = new LinkedHashMap<>();
           for (int i = 0; i < names.length; i++) {
             upd.put(names[i], vals[i]);
           }
-          stack.push(base.withAll(upd));
+          stack[sp++] = base.withAll(upd);
         }
         case ACCESS -> {
-          ElmRecord rec = (ElmRecord) stack.pop();
-          stack.push(rec.get((String) in.operand()));
+          ElmRecord rec = (ElmRecord) stack[--sp];
+          stack[sp++] = rec.get((String) in.operand());
         }
         case APPLY -> {
-          Object arg = stack.pop();
-          Object fn = stack.pop();
-          stack.push(Apply.apply(fn, arg));
+          Object arg = stack[--sp];
+          Object fn = stack[--sp];
+          stack[sp++] = Apply.apply(fn, arg);
         }
         case BINOP -> {
-          Object r = stack.pop();
-          Object l = stack.pop();
-          stack.push(Operators.binary((String) in.operand(), l, r));
+          Object r = stack[--sp];
+          Object l = stack[--sp];
+          stack[sp++] = Operators.binary((String) in.operand(), l, r);
         }
-        case NEGATE -> stack.push(Operators.negate(stack.pop()));
+        case NEGATE -> {
+          stack[sp - 1] = Operators.negate(stack[sp - 1]);
+        }
         case JUMP -> ip = in.arg();
         case JUMP_IF_FALSE -> {
-          if (!(Boolean) stack.pop()) {
+          if (!(Boolean) stack[--sp]) {
             ip = in.arg();
           }
         }
-        case MAKE_CLOSURE -> stack.push(new BytecodeClosure((Chunk) in.operand(), scope, env));
+        case MAKE_CLOSURE -> stack[sp++] = new BytecodeClosure((Chunk) in.operand(), scope, env);
         case PUSH_SCOPE -> {
           scopes.push(scope);
           scope = scope.child();
         }
         case POP_SCOPE -> scope = scopes.pop();
-        case SET_SCRUT -> scrut = stack.pop();
+        case SET_SCRUT -> scrut = stack[--sp];
         case MATCH -> {
           if (!PatternMatcher.match((Pattern) in.operand(), scrut, scope)) {
             ip = in.arg();
           }
         }
         case BIND_PAT -> {
-          Object v = stack.pop();
+          Object v = stack[--sp];
           PatternMatcher.match((Pattern) in.operand(), v, scope);
         }
         case ERROR -> throw new ElmRuntimeError((String) in.operand());
         case RETURN -> {
-          return stack.pop();
+          return stack[--sp];
         }
       }
     }
