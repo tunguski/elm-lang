@@ -35,8 +35,13 @@ import pl.matsuo.elm.types.TypeChecker;
  */
 public final class LspServer {
 
-  /** A diagnostic at a 0-based (line, character) range. */
-  public record Diagnostic(int line, int startChar, int endChar, String message) {}
+  /** A diagnostic at a 0-based (line, character) range. {@code severity} is the LSP severity
+   * (1 = error, 2 = warning); the 4-arg form defaults to an error. */
+  public record Diagnostic(int line, int startChar, int endChar, String message, int severity) {
+    public Diagnostic(int line, int startChar, int endChar, String message) {
+      this(line, startChar, endChar, message, 1);
+    }
+  }
 
   /** A workspace location: the document URI and a 0-based (line, character). */
   public record Location(String uri, int line, int character) {}
@@ -78,7 +83,68 @@ public final class LspServer {
     } catch (RuntimeException ignored) {
       // best-effort: a checker limitation shouldn't crash the server
     }
+    out.addAll(unusedImportWarnings(source, module));
     return out;
+  }
+
+  /**
+   * Warns about imports nothing in the module uses: an {@code import M [as A]} whose qualified
+   * prefix never appears, or an {@code exposing (a, b, …)} name never referenced. Conservative — a
+   * name that appears anywhere outside the import lines (even in a comment) counts as used, so this
+   * never wrongly flags a live import. {@code exposing (..)} is left alone (its names are unknown).
+   */
+  List<Diagnostic> unusedImportWarnings(String source, Module module) {
+    List<Diagnostic> out = new ArrayList<>();
+    // Everything outside the `import …` lines — where a real use would appear.
+    String[] lines = source.split("\n", -1);
+    StringBuilder body = new StringBuilder();
+    for (String line : lines) {
+      if (!line.stripLeading().startsWith("import ")) {
+        body.append(line).append('\n');
+      }
+    }
+    String rest = body.toString();
+    for (Module.Import imp : module.imports()) {
+      int line = Math.max(0, imp.pos().line() - 1);
+      if (imp.exposing().open()) {
+        // `exposing (..)` — can't tell which names are used; only check the qualified prefix.
+        String prefix = imp.alias().orElse(imp.module());
+        if (!usesQualified(rest, prefix) && !usesAnyName(rest, imp.module())) {
+          out.add(new Diagnostic(line, 0, 1, "Unused import: nothing from `" + imp.module() + "` is used.", 2));
+        }
+        continue;
+      }
+      if (imp.exposing().names().isEmpty()) {
+        // Qualified-only import: used iff `M.`/`A.` appears.
+        String prefix = imp.alias().orElse(imp.module());
+        if (!usesQualified(rest, prefix)) {
+          out.add(new Diagnostic(line, 0, 1, "Unused import: `" + imp.module() + "` is never used.", 2));
+        }
+        continue;
+      }
+      for (String name : imp.exposing().names()) {
+        // A type/operator exposed as `(Type(..))` or `((<|))` — keep just the bare name to search.
+        String bare = name.replaceAll("\\(\\.\\.\\)$", "").replaceAll("[()]", "");
+        if (!bare.isEmpty() && !usesAnyName(rest, bare)) {
+          out.add(new Diagnostic(line, 0, 1, "Unused import: `" + bare + "` from `" + imp.module() + "` is never used.", 2));
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Whether {@code name} appears as a whole identifier in {@code text}. */
+  private static boolean usesAnyName(String text, String name) {
+    return java.util.regex.Pattern.compile("(?<![\\w.])" + java.util.regex.Pattern.quote(name) + "\\b")
+        .matcher(text)
+        .find();
+  }
+
+  /** Whether a qualified reference {@code prefix.something} appears in {@code text}. */
+  private static boolean usesQualified(String text, String prefix) {
+    return java.util.regex.Pattern.compile("(?<![\\w.])" + java.util.regex.Pattern.quote(prefix) + "\\.")
+        .matcher(text)
+        .find();
   }
 
   /** The elm-format-style reformatting of the source, or empty if it is unparseable or already
@@ -1075,7 +1141,7 @@ public final class LspServer {
       Map<String, Object> range = range(d.line(), d.startChar(), d.endChar());
       Map<String, Object> diag = new LinkedHashMap<>();
       diag.put("range", range);
-      diag.put("severity", 1L); // Error
+      diag.put("severity", (long) d.severity()); // 1 = Error, 2 = Warning
       diag.put("source", "elm-lang");
       diag.put("message", d.message());
       diags.add(diag);

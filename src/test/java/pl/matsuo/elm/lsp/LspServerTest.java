@@ -152,6 +152,29 @@ class LspServerTest {
   }
 
   @Test
+  void warnsAboutAnUnusedQualifiedImport() {
+    var diags = server.diagnose("module M exposing (main)\nimport Set\nmain = 1\n");
+    assertTrue(
+        diags.stream().anyMatch(d -> d.severity() == 2 && d.message().contains("Set")),
+        diags.toString());
+  }
+
+  @Test
+  void warnsAboutAnUnusedExposedNameButNotAUsedOne() {
+    var diags =
+        server.diagnose(
+            "module M exposing (main)\nimport String exposing (length, toUpper)\nmain = length \"hi\"\n");
+    assertTrue(diags.stream().anyMatch(d -> d.message().contains("toUpper")), diags.toString());
+    assertTrue(diags.stream().noneMatch(d -> d.message().contains("`length`")), diags.toString());
+  }
+
+  @Test
+  void doesNotWarnAboutAUsedImport() {
+    var diags = server.diagnose("module M exposing (main)\nimport Set\nmain = Set.size Set.empty\n");
+    assertTrue(diags.stream().noneMatch(d -> d.severity() == 2), diags.toString());
+  }
+
+  @Test
   void initializeAdvertisesCapabilitiesOverJsonRpc() throws Exception {
     String body =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
