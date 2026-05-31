@@ -88,64 +88,85 @@ invocation (e.g. `./elm.sh eval "List.range 1 5"`); it compiles the project firs
 ### CLI commands
 
 Run any of these as `elm <command>` via the [`elm.sh`](elm.sh) wrapper, `java -jar target/elm.jar
-<command>`, or the native binary. Pass `--help` to any command for full options.
+<command>`, or the native binary. The tables below give a one-line summary of each; **pass `--help`
+to any command for its full options.**
+
+**Compile & run**
 
 | Command | What it does |
 |---|---|
-| `run <file.elm> [--value NAME] [--backend interp\|bytecode] [--watch] [--no-check]` | Evaluate a definition (default `main`) and print it; Html/programs render to HTML. Type-checks first. |
-| `eval "<expr>" [--backend interp\|bytecode]` | Evaluate a single expression. |
-| `make <file.elm…> [--project DIR] [-o out.html\|out.js] [--optimize] [--cache DIR] [--watch] [--no-check]` | Compile to a deployable HTML page or JS bundle; `--project` pulls in an `elm.json`'s local + installed-dependency sources; `--cache` reuses per-module compiled output (recompiling only changed modules); `--optimize` tree-shakes (dropping unreachable declarations **and unused kernel runtime entries**) + minifies, and reports the size saving. |
-| `js <file.elm> [--min] [--map]` | Emit JavaScript (optionally minified, with an inline column-level source map). |
-| `wasm <file.elm…> [-o out.wasm] [--project DIR]` | Compile a project's numeric/list/record/string functions to a WebAssembly binary (linear-memory backend; merges the entry module with its imported/local/package modules). |
+| `run <file.elm>` | Evaluate a definition (default `main`) and print it; programs/Html render to HTML. Options: `--value NAME`, `--backend interp\|bytecode`, `--watch`, `--no-check`. |
+| `eval "<expr>"` | Evaluate a single expression (`--backend interp\|bytecode`). |
+| `make <file.elm…>` | Compile to a deployable HTML page or JS bundle (`-o`). `--project` pulls in an `elm.json`'s sources; `--cache` recompiles only changed modules; `--optimize` tree-shakes + minifies and reports the saving. |
+| `js <file.elm>` | Emit JavaScript; `--min` minifies, `--map` adds an inline source map. |
+| `wasm <file.elm…>` | Compile a project's numeric/list/record/string functions to a WebAssembly binary (linear-memory backend; `-o`, `--project`). |
+
+**Check, test & quality**
+
+| Command | What it does |
+|---|---|
 | `check <file.elm> [more.elm…]` | Type-check a module or a multi-module project. |
-| `test <file.elm…> [--fuzz N] [--seed S] [--filter TEXT] [--coverage] [--report FMT]` | Run `Test` suites (bundled `Test`/`Expect`/`Fuzz`): unit and **property (`fuzz`)** tests; reports pass/fail/skipped with timing and the failing fuzz input, non-zero exit on failure. `--fuzz` sets inputs per property, `--seed` makes them reproducible (a failing property prints the exact `--seed` to replay), `--watch` re-runs on file change, `--filter` runs only matching tests, `--coverage` reports which test-file functions ran, `--report` chooses the output (`console`/`tap`/`junit`/`json`) for CI. |
-| `format <file.elm> [--write \| --check \| --project]` | Format (elm-format style); `--check` gates CI. |
+| `test <file.elm…>` | Run `Test`/`Expect`/`Fuzz` suites — unit and property (`fuzz`) tests, non-zero exit on failure. `--fuzz N`, `--seed S` (reproducible; printed on failure), `--filter`, `--coverage`, `--watch`, `--report console\|tap\|junit\|json`. |
+| `format <file.elm>` | Format (elm-format style): `--write`, `--check` (gates CI), `--project`. |
 | `lint <file.elm…>` | Report leftover `Debug.*` and unused definitions (non-zero exit on findings). |
-| `docs <file.elm> [--json\|--html]` / `docs --pkg author/name [--pkg-version V] [--elm URL]` | Generate API docs from a local module's doc comments + inferred types — Markdown, structured `docs.json`, or a **self-contained, searchable HTML page** (`--html`) — **or fetch a published package's `docs.json`** from the registry (default the public package.elm-lang.org; latest version unless pinned). |
-| `diff <old.elm> <new.elm>` | Compare two versions of a module's public API → the semver magnitude (MAJOR/MINOR/PATCH) and the changes. |
+| `coverage <file.elm>` | Run a definition and report which top-level definitions executed (`--value`). |
+
+**Docs & packages**
+
+| Command | What it does |
+|---|---|
+| `docs <file.elm>` | API docs from a module's doc comments + inferred types: Markdown, `--json` (`docs.json`), or a searchable `--html` page. `docs --pkg author/name` fetches a published package's `docs.json` from the registry. |
+| `diff <old.elm> <new.elm>` | Compare a module's public API across versions → semver magnitude (MAJOR/MINOR/PATCH) and the changes. |
 | `bump <old.elm> <new.elm> [version]` | Propose the next version from the API change since a baseline. |
-| `coverage <file.elm> [--value NAME]` | Run a definition and report which top-level definitions executed. |
-| `repl` | Interactive REPL: expressions, persistent `x = …` definitions, multi-line input, and `:type`, `:info`/`:doc <name>` (a name's type + source), `:load <file.elm>` (bring a module's definitions into scope), `:history`, `:reset`. |
-| `lsp` | Language server over stdio: diagnostics (errors — including **non-exhaustive `case`** with all missing constructors named — **and warnings**: unused imports, unused private definitions, parameters and `let` bindings), hover, completion (with inferred-type detail), **inlay type hints**, **signature help**, document symbols, code actions (add type annotation, fill missing case branches, remove/add/organize imports), **"extract to function"** and **"inline"** refactors (a selected expression becomes a fresh top-level function with its free locals lifted to parameters; inline does the reverse), **call hierarchy** (incoming/outgoing calls across modules), **code lenses** (reference counts per definition), **document formatting** (elm-format style), **document highlight** (every occurrence of the symbol under the cursor), semantic-token highlighting, **workspace symbol search**, and **workspace-wide** go-to-definition, find-references and rename across modules. A ready-to-run **[VS Code client](editor/vscode/)** wraps it (with format-on-save). See **[docs/lsp.md](docs/lsp.md)** for the full capability list, editor setup (VS Code / Neovim / generic) and protocol notes. |
-| `script <file.elm> [args…]` | Run an Elm file as a POSIX-style CLI script (the bundled `Posix` module). |
-| `server <file.elm> [--port N] [--static DIR]` | Serve HTTP from an Elm handler (stateless `handle` or stateful `Server.Program`). |
-| `reactor [dir] [--port N]` | Dev server: a browsable module index, compiles each `.elm` module to a live page on the fly, and **pushes** a reload to the browser the instant a source file changes (Server-Sent Events, falling back to polling); a compile or **located type error** (excerpt + caret) is shown as a styled overlay that disappears once fixed. |
+| `install <author/name>` | Add a package to `elm.json`, re-solve dependencies and download its sources (`--elm` = public package.elm-lang.org; `--registry`, `--from`). |
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
 | `init [dir]` | Scaffold `elm.json` + `src/`. |
-| `install <author/name> [--registry DIR] [--from URL] [--elm [URL]]` | Add a package to `elm.json`, re-solve dependencies, and download its sources into the cache (`--elm` = the public package.elm-lang.org registry) so it compiles and runs. |
-| `bench [fibN]` | Benchmark all **five** backends (interpreter, bytecode VM, JS, linear-memory WASM, WasmGC) on `fib`, plus list-fold and record-update workloads (a backend that can't compile a workload shows `n/a`). |
+
+**Serve & ship**
+
+| Command | What it does |
+|---|---|
+| `script <file.elm> [args…]` | Run an Elm file as a POSIX-style CLI script (bundled `Posix` + structured-shell `Bash` modules). |
+| `server <file.elm>` | Serve HTTP from an Elm handler — stateless `handle` or stateful `Server.Program` (`--port`, `--static DIR`). |
+| `bundle script\|server <file.elm>` | Compile a script or server into a self-contained executable JAR that runs with `java -jar`, no project files (`-o`, `--port`). `--native` also attempts a GraalVM native binary. |
+| `reactor [dir]` | Dev server: a browsable module index, on-the-fly compile of each `.elm` to a live page, and live reload pushed on file change (SSE, polling fallback); compile/type errors show as an overlay (`--port`). |
+
+**Interactive & tooling**
+
+| Command | What it does |
+|---|---|
+| `repl` | REPL: expressions, persistent `x = …` definitions, multi-line input, and `:type`, `:info`/`:doc <name>`, `:load <file.elm>`, `:history`, `:reset`. |
+| `lsp` | Language server over stdio (diagnostics, hover, completion, inlay hints, signature help, code actions, extract/inline refactors, call hierarchy, code lenses, rename, …). A ready-to-run **[VS Code client](editor/vscode/)** wraps it; see **[docs/lsp.md](docs/lsp.md)** for the full list and editor setup. |
+| `bench [fibN]` | Benchmark all **five** backends (interpreter, bytecode VM, JS, linear-memory WASM, WasmGC) on `fib`, list-fold and record-update. |
 | `site <examplesDir> <Playground.elm> <outDir> [docsDir]` | Generate the static example gallery (optionally rendering Markdown docs). |
 
 The compiled TEA runtime also ships a **time-travel debugger**: append `?debug` to a page URL for a
 step-back/forward overlay; `window.$app` exposes `history()`, `goto(i)`, `live()`, `messages()` and
-`replay(log)` (deterministic re-fold of a recorded message log). The gallery includes a
-[JS-vs-WASM page](https://tunguski.github.io/elm-lang/backends.html), an interactive
-[playground](https://tunguski.github.io/elm-lang/playground.html), a live
-[TodoMVC](https://tunguski.github.io/elm-lang/todomvc.html), and a reusable
-[editor](https://tunguski.github.io/elm-lang/editor.html) that **fetches the example files over HTTP
-at startup** (every gallery example plus its own demos, served as raw `.elm` under `examples/`) and
-runs each selected file's `main` live in the browser — static views, computed values, and interactive
-`Browser.sandbox`/`Browser.element` apps with `onClick`/`onInput`, tuples, `List`/`Maybe` helpers and
-opaque `Cmd`/`Sub`, all via a from-scratch Elm interpreter written in Elm (itself a `Browser.element`
-app using `Http`). Its lexer/parser handle `--` line comments, the pipe/compose operators
-(`|>`, `<|`, `>>`, `<<`, desugared to application/lambdas), multi-binding `let`, record `type alias`
-constructors (`Point 3 4`), negative literals in argument position (`zigzag -2 …`), the common
-`Html.Attributes` (`placeholder`, `type_`, `value`, `class`, `href`, …) and `Svg`/`Svg.Attributes`
-(so the **shapes** and **clock** examples render as inline SVG), `String.*`, `Time` (UTC), `Basics`
-math (`cos`/`sin`/`pi`/`toFloat`/…), and a built-in **`elm-playground`** (`picture` and `animation`,
-with the shape constructors, colours and transforms rendered to SVG) — enough that every pure-Html /
-TEA / SVG / `picture` / `animation` example from the elm-lang.org gallery parses and renders. It also
-runs **effects live**: `Random.generate` (sampled from a seed the editor advances — so **numbers**
-rolls a die and **cards** draws on click), `Time.every` subscriptions (wired to a real tick — so
-the **clock** ticks), `elm-playground`'s interactive **`game`** (a keyboard + animation-frame
-loop, so **turtle**/**keyboard**/**mario** move with the arrow keys; tuple-pattern parameters like
-`view computer (x, y) = …` are desugared so they parse), and **`Http.get`** (the editor issues a real
-request and feeds the response back, so the **book** loads live via `Http.expectString` and **quotes**
-via `Http.expectJson` — a small `Json.Decode` of `field`/`string`/`int`/`map2..map4` runs against the
-parsed body). It also has a **time-travel debugger**: every message the running app dispatches is
-recorded, and a scrubber re-renders any earlier model (dispatching from a past state continues
-history from there). Examples that need WebGL or `File` effect runtimes parse but fall outside this
-teaching-subset interpreter.
+`replay(log)` (deterministic re-fold of a recorded message log).
+
+#### The in-browser editor
+
+The gallery includes a reusable [editor](https://tunguski.github.io/elm-lang/editor.html) — a
+from-scratch Elm interpreter **written in Elm** (itself a `Browser.element` app) that fetches the
+example files over HTTP at startup and runs each selected file's `main` live in the browser:
+
+- **Renders** pure-Html / TEA apps (`Browser.sandbox`/`element` with `onClick`/`onInput`), inline
+  **SVG** (the *shapes* and *clock* examples), and a built-in **`elm-playground`** (`picture` and
+  `animation`, shapes/colours/transforms drawn to SVG).
+- **Runs effects live**: `Random.generate` (seeded — *numbers* rolls a die, *cards* draws on click),
+  `Time.every` (the *clock* ticks), playground **`game`** with the arrow keys (*turtle*/*keyboard*/
+  *mario*), and **`Http.get`** with `expectString`/`expectJson` (*book* and *quotes* load live).
+- Its lexer/parser handle `--` comments, the pipe/compose operators, multi-binding `let`, record
+  `type alias` constructors, negative literals in argument position, and a broad slice of `String`,
+  `List`, `Maybe`, `Time` and `Basics`.
+- Has **syntax highlighting** and a **time-travel debugger** (every dispatched message is recorded; a
+  scrubber re-renders any earlier model).
+- **WebGL** programs parse and show a scene preview (entity count); the actual GPU rendering is done
+  by the JS backend. `File`-effect runtimes are likewise outside this teaching-subset interpreter.
+
+Other gallery highlights: a [JS-vs-WASM page](https://tunguski.github.io/elm-lang/backends.html), an
+interactive [playground](https://tunguski.github.io/elm-lang/playground.html), and a live
+[TodoMVC](https://tunguski.github.io/elm-lang/todomvc.html).
 
 ## Type inference
 
