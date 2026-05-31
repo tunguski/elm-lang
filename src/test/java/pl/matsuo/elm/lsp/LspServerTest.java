@@ -175,6 +175,29 @@ class LspServerTest {
   }
 
   @Test
+  void codeActionRemovesAnUnusedImport() {
+    String src = "module M exposing (main)\nimport Set\nmain = 1\n";
+    var actions = server.codeActions(src, 1); // cursor on the `import Set` line
+    var remove =
+        actions.stream().filter(a -> a.title().equals("Remove unused import")).findFirst();
+    assertTrue(remove.isPresent(), actions.toString());
+    // Deletes the whole line (line 1, col 0) through the start of the next line.
+    assertEquals("", remove.get().newText());
+    assertEquals(1, remove.get().line());
+    assertEquals(2, remove.get().endLine());
+  }
+
+  @Test
+  void codeActionAddsAMissingQualifiedImport() {
+    // `Set.empty` is used but `Set` isn't imported; offer to add the import.
+    String src = "module M exposing (main)\nmain = Set.size Set.empty\n";
+    var actions = server.codeActions(src, 1);
+    var add = actions.stream().filter(a -> a.title().equals("import Set")).findFirst();
+    assertTrue(add.isPresent(), actions.toString());
+    assertTrue(add.get().newText().contains("import Set"), add.get().newText());
+  }
+
+  @Test
   void initializeAdvertisesCapabilitiesOverJsonRpc() throws Exception {
     String body =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";

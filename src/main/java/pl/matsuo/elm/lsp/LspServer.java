@@ -399,8 +399,14 @@ public final class LspServer {
     return dot >= 0 ? token.substring(dot + 1) : token;
   }
 
-  /** A single-insertion code action: insert {@code newText} at the 0-based (line, character). */
-  public record CodeAction(String title, int line, int character, String newText) {}
+  /** A code action that replaces the 0-based range [(line, character), (endLine, endChar)] with
+   * {@code newText}. The 4-arg form is a zero-width insertion at (line, character). */
+  public record CodeAction(
+      String title, int line, int character, int endLine, int endChar, String newText) {
+    public CodeAction(String title, int line, int character, String newText) {
+      this(title, line, character, line, character, newText);
+    }
+  }
 
   /**
    * Code actions available at the 0-based cursor line: "Add type annotation" for a top-level value
@@ -417,7 +423,46 @@ public final class LspServer {
     }
     addTypeAnnotationAction(source, module, line0, out);
     fillCaseBranchesAction(module, line0, out);
+    removeUnusedImportAction(source, module, line0, out);
+    addMissingImportAction(source, module, line0, out);
     return out;
+  }
+
+  /** "Remove unused import" when the cursor is on an import line nothing in the module uses. */
+  private void removeUnusedImportAction(String source, Module module, int line0, List<CodeAction> out) {
+    for (Diagnostic d : unusedImportWarnings(source, module)) {
+      if (d.line() == line0) {
+        // Delete the whole import line (from its start to the start of the next line).
+        out.add(new CodeAction("Remove unused import", line0, 0, line0 + 1, 0, ""));
+        return;
+      }
+    }
+  }
+
+  /** "import M" when the cursor line refers to a qualified `M.name` whose module isn't imported. */
+  private void addMissingImportAction(String source, Module module, int line0, List<CodeAction> out) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return;
+    }
+    java.util.Set<String> imported = new java.util.HashSet<>();
+    int lastImportLine = 0;
+    for (Module.Import imp : module.imports()) {
+      imported.add(imp.module());
+      imp.alias().ifPresent(imported::add);
+      lastImportLine = Math.max(lastImportLine, imp.pos().line() - 1);
+    }
+    java.util.regex.Matcher m =
+        java.util.regex.Pattern.compile("(?<![\\w.])([A-Z][A-Za-z0-9_]*(?:\\.[A-Z][A-Za-z0-9_]*)*)\\.[a-z]")
+            .matcher(lines[line0]);
+    java.util.Set<String> offered = new java.util.HashSet<>();
+    while (m.find()) {
+      String mod = m.group(1);
+      if (!imported.contains(mod) && offered.add(mod)) {
+        // Insert the import after the last existing import (or at the top).
+        out.add(new CodeAction("import " + mod, lastImportLine + 1, 0, "import " + mod + "\n"));
+      }
+    }
   }
 
   private void addTypeAnnotationAction(String source, Module module, int line0, List<CodeAction> out) {
@@ -964,8 +1009,11 @@ public final class LspServer {
         int line = ((Number) start.get("line")).intValue();
         List<Object> actions = new ArrayList<>();
         for (CodeAction a : codeActions(docs.getOrDefault(uri, ""), line)) {
+          Map<String, Object> r = new LinkedHashMap<>();
+          r.put("start", point(a.line(), a.character()));
+          r.put("end", point(a.endLine(), a.endChar()));
           Map<String, Object> edit = new LinkedHashMap<>();
-          edit.put("range", range(a.line(), a.character(), a.character()));
+          edit.put("range", r);
           edit.put("newText", a.newText());
           Map<String, Object> changes = new LinkedHashMap<>();
           changes.put(uri, List.of(edit));
