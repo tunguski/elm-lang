@@ -17,11 +17,14 @@ public final class ElmJson {
   private final Map<String, Object> root; // the raw parsed object, kept so unknown fields survive
   private final Map<String, Version> direct;
   private final Map<String, Version> indirect;
+  private final Map<String, Version> testDeps; // direct + indirect test-dependencies
 
-  private ElmJson(Map<String, Object> root, Map<String, Version> direct, Map<String, Version> indirect) {
+  private ElmJson(Map<String, Object> root, Map<String, Version> direct, Map<String, Version> indirect,
+      Map<String, Version> testDeps) {
     this.root = root;
     this.direct = direct;
     this.indirect = indirect;
+    this.testDeps = testDeps;
   }
 
   /** Parses an application {@code elm.json}; throws if it isn't an {@code "application"} project. */
@@ -38,10 +41,15 @@ public final class ElmJson {
     }
     Map<String, Object> deps =
         map.get("dependencies") instanceof Map<?, ?> d ? (Map<String, Object>) d : Map.of();
+    Map<String, Object> testDeps =
+        map.get("test-dependencies") instanceof Map<?, ?> t ? (Map<String, Object>) t : Map.of();
+    Map<String, Version> tests = new TreeMap<>(parseVersions(testDeps.get("indirect")));
+    tests.putAll(parseVersions(testDeps.get("direct")));
     return new ElmJson(
         map,
         parseVersions(deps.get("direct")),
-        parseVersions(deps.get("indirect")));
+        parseVersions(deps.get("indirect")),
+        tests);
   }
 
   @SuppressWarnings("unchecked")
@@ -76,6 +84,19 @@ public final class ElmJson {
   public Map<String, Version> all() {
     Map<String, Version> out = new TreeMap<>(indirect);
     out.putAll(direct);
+    return out;
+  }
+
+  /** The {@code test-dependencies} (direct + indirect) — available to {@code elm test} but not to a
+   * normal build. */
+  public Map<String, Version> testDependencies() {
+    return testDeps;
+  }
+
+  /** Every dependency available when running tests: the regular ones plus test-dependencies. */
+  public Map<String, Version> allWithTests() {
+    Map<String, Version> out = all();
+    out.putAll(testDeps);
     return out;
   }
 

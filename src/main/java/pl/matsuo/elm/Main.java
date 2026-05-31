@@ -72,6 +72,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Install.class,
       Main.Diff.class,
       Main.Bump.class,
+      Main.Publish.class,
       Main.Reactor.class,
       CommandLine.HelpCommand.class,
     })
@@ -673,6 +674,47 @@ public final class Main implements Runnable {
       var next =
           pl.matsuo.elm.pkg.ApiDiff.bump(pl.matsuo.elm.pkg.Version.parse(current), diff.magnitude());
       System.out.println(diff.magnitude() + " change: " + current + " -> " + next);
+      return 0;
+    }
+  }
+
+  @Command(
+      name = "publish",
+      description = "Dry-run publish checks: type-check, generate docs, and (with --bump-from) the next version.",
+      footerHeading = "%nExample:%n",
+      footer = {"  elm publish src/Main.elm --bump-from prev/Main.elm --from-version 1.2.0"})
+  static final class Publish implements Callable<Integer> {
+    @Parameters(index = "0", description = "The .elm module to publish.")
+    Path file;
+
+    @Option(names = "--bump-from", description = "A baseline .elm of the previously published API; reports the semver bump.")
+    Path bumpFrom;
+
+    @Option(names = "--from-version", description = "Current published version, used with --bump-from (default 1.0.0).")
+    String fromVersion = "1.0.0";
+
+    @Override
+    public Integer call() throws IOException {
+      String source = Files.readString(file);
+      try {
+        pl.matsuo.elm.types.TypeChecker.checkModule(source);
+      } catch (ElmTypeError e) {
+        System.out.println("x type error: " + e.getMessage());
+        return 1;
+      }
+      System.out.println("ok type-checks");
+      var api = pl.matsuo.elm.doc.ApiDocs.of(source);
+      int entries = api.values().size() + api.unions().size() + api.aliases().size();
+      System.out.println("ok docs.json: " + entries + " exposed entr" + (entries == 1 ? "y" : "ies"));
+      if (bumpFrom != null) {
+        var diff =
+            pl.matsuo.elm.pkg.ApiDiff.compare(
+                pl.matsuo.elm.doc.ApiDocs.of(Files.readString(bumpFrom)), api);
+        var next =
+            pl.matsuo.elm.pkg.ApiDiff.bump(pl.matsuo.elm.pkg.Version.parse(fromVersion), diff.magnitude());
+        System.out.println("-> " + diff.magnitude() + " change: " + fromVersion + " -> " + next);
+      }
+      System.out.println("Dry run OK - ready to publish.");
       return 0;
     }
   }

@@ -387,8 +387,10 @@ programs or effects. Run interactive/effectful programs on the interpreter or JS
 - **Packages / registry** — `elm install` resolves and downloads from a static-file registry
   (`--from`) or the public `package.elm-lang.org` (`--elm`), and the interpreter/type-checker/JS
   backend compile installed modules; but there is **no checksum verification**, **no
-  test-dependencies**, and the **WasmGC backend can't load package sources** (the linear-memory WASM
-  backend now compiles multi-module projects via `moduleFromSources`). See
+  the **WasmGC backend can't load package sources** (the linear-memory WASM backend now compiles
+  multi-module projects via `moduleFromSources`). Fetched zipballs **are** checksum-verified when the
+  registry's `hash` is a standard digest (sha-256/sha-1), `test-dependencies` are parsed, and
+  `elm publish` runs dry-run checks (type-check + docs + semver bump). See
   [Packages & dependencies](#packages--dependencies).
 
 **Type system**

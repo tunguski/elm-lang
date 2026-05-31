@@ -208,6 +208,26 @@ class MainCliTest {
   }
 
   @Test
+  void publishDryRunChecksDocsAndBump() throws Exception {
+    Path oldApi = tempElm("module M exposing (inc)\ninc x = x + 1\n");
+    Path newApi = tempElm("module M exposing (inc, dec)\ninc x = x + 1\ndec x = x - 1\n");
+    Result r = invoke("publish", newApi.toString(), "--bump-from", oldApi.toString(), "--from-version", "1.0.0");
+    assertTrue(r.code() == 0, r.out() + r.err());
+    assertTrue(r.out().contains("type-checks"), r.out());
+    assertTrue(r.out().contains("exposed entr"), r.out());
+    assertTrue(r.out().contains("MINOR change: 1.0.0 -> 1.1.0"), r.out()); // adding `dec` is MINOR
+    assertTrue(r.out().contains("ready to publish"), r.out());
+  }
+
+  @Test
+  void publishDryRunFailsOnTypeError() throws Exception {
+    Path bad = tempElm("module M exposing (x)\nx = 1 + \"oops\"\n");
+    Result r = invoke("publish", bad.toString());
+    assertTrue(r.code() == 1, r.out());
+    assertTrue(r.out().contains("type error"), r.out());
+  }
+
+  @Test
   void checkReportsNonExhaustiveCaseListingAllMissingConstructors() throws Exception {
     Path f =
         tempElm(

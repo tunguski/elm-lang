@@ -48,7 +48,37 @@ public final class ElmPackageFetcher {
     if (zip == null) {
       throw new IOException("could not download " + zipUrl);
     }
+    Object hash = ((java.util.Map<String, Object>) ep).get("hash");
+    if (hash instanceof String h) {
+      verifyChecksum(zip, h, pkg, version);
+    }
     unpack(zip, dest);
+  }
+
+  /** Verifies the downloaded zipball against the endpoint's {@code hash} when it is a standard hex
+   * digest (sha-256 = 64 hex chars, sha-1 = 40), throwing on a mismatch. A non-standard hash (e.g.
+   * Elm's own content-hash scheme) is left unverified rather than wrongly rejected. */
+  private static void verifyChecksum(byte[] zip, String expected, String pkg, Version version)
+      throws IOException {
+    String e = expected.trim().toLowerCase();
+    String algorithm = e.matches("[0-9a-f]{64}") ? "SHA-256" : (e.matches("[0-9a-f]{40}") ? "SHA-1" : null);
+    if (algorithm == null) {
+      return; // not a recognised digest — don't risk a false rejection
+    }
+    try {
+      byte[] digest = java.security.MessageDigest.getInstance(algorithm).digest(zip);
+      StringBuilder hex = new StringBuilder(digest.length * 2);
+      for (byte b : digest) {
+        hex.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+      }
+      if (!hex.toString().equals(e)) {
+        throw new IOException(
+            "checksum mismatch for " + pkg + " " + version + " (" + algorithm + "): expected " + e
+                + " but got " + hex);
+      }
+    } catch (java.security.NoSuchAlgorithmException ex) {
+      // every JRE has SHA-1/SHA-256; if somehow absent, skip verification
+    }
   }
 
   /** Unpacks a GitHub-style source zip (single top-level dir) into {@code dest}. */

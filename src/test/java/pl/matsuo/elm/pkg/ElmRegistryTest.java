@@ -50,6 +50,19 @@ class ElmRegistryTest {
     return bytes.toByteArray();
   }
 
+  private static String sha256(byte[] data) {
+    try {
+      byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(data);
+      StringBuilder hex = new StringBuilder();
+      for (byte b : d) {
+        hex.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+      }
+      return hex.toString();
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   private void serve() throws IOException {
     byte[] zip = sourceZip();
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -63,7 +76,8 @@ class ElmRegistryTest {
           } else if (path.equals("/packages/acme/strings/1.0.0/elm.json")) {
             body = "{ \"type\": \"package\", \"dependencies\": {} }".getBytes(StandardCharsets.UTF_8);
           } else if (path.equals("/packages/acme/strings/1.0.0/endpoint.json")) {
-            body = ("{ \"url\": \"" + base + "/zip\", \"hash\": \"abc\" }").getBytes(StandardCharsets.UTF_8);
+            // A real sha-256 of the zipball, so the fetcher's checksum verification runs and passes.
+            body = ("{ \"url\": \"" + base + "/zip\", \"hash\": \"" + sha256(zip) + "\" }").getBytes(StandardCharsets.UTF_8);
           } else if (path.equals("/packages/acme/strings/1.0.0/docs.json")) {
             body = "[{\"name\":\"Acme.Strings\",\"comment\":\"\",\"values\":[{\"name\":\"shout\",\"comment\":\"\",\"type\":\"String -> String\"}]}]".getBytes(StandardCharsets.UTF_8);
           } else if (path.equals("/zip")) {
