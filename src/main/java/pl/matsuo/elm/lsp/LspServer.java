@@ -577,6 +577,111 @@ public final class LspServer {
     fillCaseBranchesAction(module, line0, out);
     removeUnusedImportAction(source, module, line0, out);
     addMissingImportAction(source, module, line0, out);
+    organizeImportsAction(source, module, line0, out);
+    return out;
+  }
+
+  /** "Organize imports" (offered on an import line): rewrites the import block sorted by module, with
+   * each {@code exposing} list sorted and its unused names dropped, and fully-unused imports removed. */
+  private void organizeImportsAction(String source, Module module, int line0, List<CodeAction> out) {
+    if (module.imports().isEmpty()) {
+      return;
+    }
+    int first = Integer.MAX_VALUE;
+    int last = -1;
+    for (Module.Import imp : module.imports()) {
+      first = Math.min(first, imp.pos().line() - 1);
+      last = Math.max(last, imp.pos().line() - 1);
+    }
+    if (line0 < first || line0 > last) {
+      return; // only offer when the cursor is in the import block
+    }
+    String body = nonImportBody(source);
+    List<String> rebuilt = new ArrayList<>();
+    module.imports().stream()
+        .sorted(java.util.Comparator.comparing(Module.Import::module))
+        .forEach(
+            imp -> {
+              String prefix = imp.alias().orElse(imp.module());
+              if (imp.exposing().open()) {
+                if (usesQualified(body, prefix) || usesAnyName(body, imp.module())) {
+                  rebuilt.add(renderImport(imp, imp.exposing().names()));
+                }
+              } else if (imp.exposing().names().isEmpty()) {
+                if (usesQualified(body, prefix)) {
+                  rebuilt.add(renderImport(imp, List.of()));
+                }
+              } else {
+                List<String> kept = new ArrayList<>();
+                for (String name : imp.exposing().names()) {
+                  String bare = name.replaceAll("\\(\\.\\.\\)$", "").replaceAll("[()]", "");
+                  if (bare.isEmpty() || usesAnyName(body, bare)) {
+                    kept.add(name);
+                  }
+                }
+                kept.sort(String::compareTo);
+                // Keep the import if any name survives, or its qualified prefix is used.
+                if (!kept.isEmpty() || usesQualified(body, prefix)) {
+                  rebuilt.add(renderImport(imp, kept));
+                }
+              }
+            });
+    String[] lines = source.split("\n", -1);
+    StringBuilder current = new StringBuilder();
+    for (int i = first; i <= last; i++) {
+      current.append(lines[i]).append("\n");
+    }
+    String replacement = String.join("\n", rebuilt) + (rebuilt.isEmpty() ? "" : "\n");
+    if (!replacement.equals(current.toString())) {
+      out.add(new CodeAction("Organize imports", first, 0, last + 1, 0, replacement));
+    }
+  }
+
+  /** The source with its `import …` lines removed — where a real use of an imported name appears. */
+  private static String nonImportBody(String source) {
+    StringBuilder b = new StringBuilder();
+    for (String line : source.split("\n", -1)) {
+      if (!line.stripLeading().startsWith("import ")) {
+        b.append(line).append('\n');
+      }
+    }
+    return b.toString();
+  }
+
+  /** Renders one canonical import line from its module/alias and the (already-filtered) exposed names. */
+  private static String renderImport(Module.Import imp, List<String> names) {
+    StringBuilder b = new StringBuilder("import ").append(imp.module());
+    imp.alias().ifPresent(a -> b.append(" as ").append(a));
+    if (imp.exposing().open()) {
+      b.append(" exposing (..)");
+    } else if (!names.isEmpty()) {
+      b.append(" exposing (").append(String.join(", ", names)).append(")");
+    }
+    return b.toString();
+  }
+
+  /** A code lens: a 0-based position and the title to show (e.g. "2 references"). */
+  public record CodeLens(int line, int character, String title) {}
+
+  /** One lens per top-level definition, showing how many times it is referenced in the document. */
+  public List<CodeLens> codeLenses(String source) {
+    List<CodeLens> out = new ArrayList<>();
+    Module module;
+    try {
+      module = Parser.parseModule(source);
+    } catch (RuntimeException e) {
+      return out;
+    }
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v) {
+        int uses = Math.max(0, occurrences(source, v.name()).size() - 1); // minus the definition
+        out.add(
+            new CodeLens(
+                Math.max(0, v.pos().line() - 1),
+                Math.max(0, v.pos().col() - 1),
+                uses + (uses == 1 ? " reference" : " references")));
+      }
+    }
     return out;
   }
 
@@ -1090,6 +1195,21 @@ public final class LspServer {
         }
         reply(out, id, symbols);
       }
+      case "textDocument/codeLens" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String uri = (String) td.get("uri");
+        List<Object> lenses = new ArrayList<>();
+        for (CodeLens cl : codeLenses(docs.getOrDefault(uri, ""))) {
+          Map<String, Object> cmd = new LinkedHashMap<>();
+          cmd.put("title", cl.title());
+          cmd.put("command", "");
+          Map<String, Object> lens = new LinkedHashMap<>();
+          lens.put("range", range(cl.line(), cl.character(), cl.character() + 1));
+          lens.put("command", cmd);
+          lenses.add(lens);
+        }
+        reply(out, id, lenses);
+      }
       case "textDocument/documentHighlight" -> {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         Map<String, Object> pos = (Map<String, Object>) params.get("position");
@@ -1265,6 +1385,7 @@ public final class LspServer {
     caps.put("referencesProvider", true);
     caps.put("documentHighlightProvider", true);
     caps.put("documentSymbolProvider", true);
+    caps.put("codeLensProvider", new LinkedHashMap<>());
     caps.put("renameProvider", true);
     caps.put("codeActionProvider", true);
     caps.put("documentFormattingProvider", true);

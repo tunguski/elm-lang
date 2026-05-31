@@ -221,6 +221,29 @@ class LspServerTest {
   }
 
   @Test
+  void organizeImportsSortsAndDropsUnused() {
+    String src =
+        "module M exposing (main)\nimport Set\nimport Dict exposing (get, insert)\nmain = Dict.get 1 (insert 2 3 Dict.empty)\n";
+    var actions = server.codeActions(src, 1); // cursor on an import line
+    var organize = actions.stream().filter(a -> a.title().equals("Organize imports")).findFirst();
+    assertTrue(organize.isPresent(), actions.toString());
+    String text = organize.get().newText();
+    // Dict (used) sorts first and keeps only `insert` (get is unused as a bare name — Dict.get is
+    // qualified); Set (entirely unused) is dropped.
+    assertTrue(text.contains("import Dict exposing (insert)"), text);
+    assertFalse(text.contains("import Set"), text);
+    assertTrue(text.indexOf("import Dict") >= 0, text);
+  }
+
+  @Test
+  void codeLensCountsReferences() {
+    var lenses = server.codeLenses("module M exposing (main)\ninc n = n + 1\nmain = inc (inc 1)\n");
+    var incLens = lenses.stream().filter(l -> l.line() == 1).findFirst();
+    assertTrue(incLens.isPresent(), lenses.toString());
+    assertTrue(incLens.get().title().contains("2 references"), incLens.get().title());
+  }
+
+  @Test
   void initializeAdvertisesCapabilitiesOverJsonRpc() throws Exception {
     String body =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
