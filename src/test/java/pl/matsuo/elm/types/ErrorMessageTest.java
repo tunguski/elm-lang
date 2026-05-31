@@ -32,6 +32,28 @@ class ErrorMessageTest {
   }
 
   @Test
+  void misspelledVariableSuggestsTheRightName() {
+    // An unknown name close to one in scope gets a did-you-mean hint.
+    String m = error("greeting = \"hi\"\nmain = greteing\n").getMessage();
+    assertTrue(m.contains("Unknown name"), m);
+    assertTrue(m.contains("Did you mean `greeting`?"), m);
+  }
+
+  @Test
+  void misspelledStdlibCallSuggestsTheQualifiedName() {
+    // A typo of a qualified stdlib function suggests it (matched on the final segment).
+    String m = error("main = List.lenght [ 1, 2, 3 ]\n").getMessage();
+    assertTrue(m.contains("Did you mean") && m.contains("length"), m);
+  }
+
+  @Test
+  void misspelledConstructorInAPatternSuggestsTheRightName() {
+    String src = "main =\n    case Just 1 of\n        Jist x -> x\n        Nothing -> 0\n";
+    String m = error(src).getMessage();
+    assertTrue(m.contains("Did you mean `Just`?"), m);
+  }
+
+  @Test
   void misspelledRecordFieldSuggestsTheRightName() {
     String src =
         """
