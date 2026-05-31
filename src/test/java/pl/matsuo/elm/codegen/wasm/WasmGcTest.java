@@ -205,6 +205,44 @@ class WasmGcTest {
   }
 
   @Test
+  void builtinMaybeCompiles() throws Exception {
+    // Maybe is predeclared as a boxed union when Just/Nothing are used; monomorphised to Maybe Int.
+    agrees(
+        """
+        toMaybe b = if b then Just 42 else Nothing
+        unwrap m = case m of
+            Just x -> x
+            Nothing -> 0
+        main = unwrap (toMaybe True) + unwrap (toMaybe False)
+        """); // 42 + 0 = 42
+  }
+
+  @Test
+  void builtinResultCompiles() throws Exception {
+    agrees(
+        """
+        attempt ok = if ok then Ok 15 else Err 7
+        value r = case r of
+            Ok x -> x
+            Err e -> e
+        main = value (attempt True) + value (attempt False)
+        """); // 15 + 7 = 22
+  }
+
+  @Test
+  void builtinMaybeAtStringPayload() throws Exception {
+    // Maybe instantiated at String: Just's field is a string-array reference.
+    agrees(
+        """
+        pick b = if b then Just "hello" else Nothing
+        size m = case m of
+            Just s -> String.length s
+            Nothing -> 0
+        main = size (pick True)
+        """); // 5
+  }
+
+  @Test
   void nullaryCustomTypesAsEnumTags() throws Exception {
     // A nullary union is an i64 tag; `case` dispatches on it (last branch is the default).
     agrees(

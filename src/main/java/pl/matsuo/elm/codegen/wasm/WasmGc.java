@@ -11,6 +11,7 @@ import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Pattern;
 import pl.matsuo.elm.error.ElmRuntimeError;
+import pl.matsuo.elm.error.Position;
 import pl.matsuo.elm.parser.Parser;
 import pl.matsuo.elm.types.Infer;
 import pl.matsuo.elm.types.Scheme;
@@ -46,11 +47,12 @@ import pl.matsuo.elm.types.Types;
  * are <b>monomorphised</b>: each constructor's field wasm types are read from how it is applied in
  * the module ({@code Wrap 5} fixes the field to an {@code i64}, {@code Wrap "x"} to a string ref,
  * {@code Wrap [1]} to a cons-list ref), so a union used at a single instantiation compiles; a union
- * used at two representations in one module has no single layout and is reported unsupported.
- * <b>Row-polymorphic</b> (open) record parameters have no fixed struct layout, and closures (and the
- * built-in {@code Maybe}/{@code Result}, which aren't predeclared here) remain on the linear-memory
- * backend — extending this one to them, and finishing the {@code String} API (code-point-aware
- * length, more ops), is future work.
+ * used at two representations in one module has no single layout and is reported unsupported. The
+ * built-in {@code Maybe}/{@code Result} are predeclared when used, so {@code Just}/{@code Nothing}/
+ * {@code Ok}/{@code Err} compile through the same boxed-union path. <b>Row-polymorphic</b> (open)
+ * record parameters have no fixed struct layout, and closures remain on the linear-memory backend —
+ * extending this one to them, and finishing the {@code String} API (code-point-aware length, more
+ * ops), is future work.
  */
 public final class WasmGc {
 
@@ -100,14 +102,15 @@ public final class WasmGc {
     // Pre-pass: register every tuple shape (innermost first) so it has a stable struct type index
     // before any function body is compiled.
     Tuples tuples = new Tuples();
+    // The unions to compile: those declared in the module, plus the built-in `Maybe`/`Result` when
+    // the program uses their constructors (so `Just`/`Nothing`/`Ok`/`Err` compile like a user union).
+    List<Decl.Union> unions = effectiveUnions(module, nodeTypes);
     // Classify unions: all-nullary -> i64-tagged enum; otherwise -> a boxed ADT (base + subtypes).
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Union u) {
-        if (u.variants().stream().allMatch(v -> v.args().isEmpty())) {
-          tuples.registerEnum(u.name(), u.variants().stream().map(Decl.Union.Variant::name).toList());
-        } else {
-          tuples.markBoxed(u.name()); // mark all boxed first so recursive arg types resolve
-        }
+    for (Decl.Union u : unions) {
+      if (u.variants().stream().allMatch(v -> v.args().isEmpty())) {
+        tuples.registerEnum(u.name(), u.variants().stream().map(Decl.Union.Variant::name).toList());
+      } else {
+        tuples.markBoxed(u.name()); // mark all boxed first so recursive arg types resolve
       }
     }
     // Concrete field layouts for (possibly polymorphic) boxed constructors, read from how they are
@@ -115,11 +118,11 @@ public final class WasmGc {
     // an i64; at `Just "x"` it fixes it to a string ref. This monomorphises polymorphic unions
     // (`Maybe a` / `Result e a` / user unions) to their single concrete instantiation in the module.
     Map<String, List<W>> inferredCtorFields =
-        inferredConstructorFields(module, nodeTypes, tuples);
+        inferredConstructorFields(unions, nodeTypes, tuples);
     // Now register each boxed constructor's subtype (its argument wasm types): the inferred concrete
     // layout when the constructor is applied somewhere, else its declared (concrete) surface types.
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Union u && tuples.isBoxed(u.name())) {
+    for (Decl.Union u : unions) {
+      if (tuples.isBoxed(u.name())) {
         List<Decl.Union.Variant> vs = u.variants();
         for (int i = 0; i < vs.size(); i++) {
           List<W> argFields = inferredCtorFields.get(vs.get(i).name());
@@ -261,10 +264,10 @@ public final class WasmGc {
    * representations in the same module has no single layout, so that is reported as unsupported.
    */
   private static Map<String, List<W>> inferredConstructorFields(
-      Module module, Map<Expr, Ty> nodeTypes, Tuples tuples) {
+      List<Decl.Union> unions, Map<Expr, Ty> nodeTypes, Tuples tuples) {
     Map<String, Integer> arity = new HashMap<>();
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Union u && tuples.isBoxed(u.name())) {
+    for (Decl.Union u : unions) {
+      if (tuples.isBoxed(u.name())) {
         for (Decl.Union.Variant va : u.variants()) {
           arity.put(va.name(), va.args().size());
         }
@@ -309,6 +312,53 @@ public final class WasmGc {
       }
     }
     return out;
+  }
+
+  /**
+   * The unions to compile: every union the module declares, plus the built-in {@code Maybe a} /
+   * {@code Result e a} when the program uses their constructors (and doesn't shadow them with its
+   * own declaration). They are predeclared so {@code Just}/{@code Nothing}/{@code Ok}/{@code Err}
+   * compile like any other boxed (and monomorphised) custom type.
+   */
+  private static List<Decl.Union> effectiveUnions(Module module, Map<Expr, Ty> nodeTypes) {
+    List<Decl.Union> unions = new ArrayList<>();
+    java.util.Set<String> declared = new java.util.HashSet<>();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Union u) {
+        unions.add(u);
+        declared.add(u.name());
+      }
+    }
+    java.util.Set<String> usedCtors = new java.util.HashSet<>();
+    for (Expr e : nodeTypes.keySet()) {
+      if (e instanceof Expr.Ctor ct) {
+        usedCtors.add(ct.name());
+      }
+    }
+    if (!declared.contains("Maybe") && (usedCtors.contains("Just") || usedCtors.contains("Nothing"))) {
+      unions.add(builtinUnion("Maybe", List.of("a"), "Just", "a", "Nothing", null));
+    }
+    if (!declared.contains("Result") && (usedCtors.contains("Ok") || usedCtors.contains("Err"))) {
+      unions.add(builtinUnion("Result", List.of("e", "a"), "Ok", "a", "Err", "e"));
+    }
+    return unions;
+  }
+
+  /** A two-variant built-in union {@code type Name params = C1 t1 | C2 t2} (a null payload type
+   *  means a nullary variant). Surface arg types are type variables — the actual field layout comes
+   *  from {@link #inferredConstructorFields}, since the program always applies these constructors. */
+  private static Decl.Union builtinUnion(
+      String name, List<String> params, String c1, String t1, String c2, String t2) {
+    Position p = new Position(0, 0, 0);
+    List<pl.matsuo.elm.ast.Type> a1 =
+        t1 == null ? List.of() : List.of(new pl.matsuo.elm.ast.Type.Var(t1));
+    List<pl.matsuo.elm.ast.Type> a2 =
+        t2 == null ? List.of() : List.of(new pl.matsuo.elm.ast.Type.Var(t2));
+    return new Decl.Union(
+        name,
+        params,
+        List.of(new Decl.Union.Variant(c1, a1), new Decl.Union.Variant(c2, a2)),
+        p);
   }
 
   /**
