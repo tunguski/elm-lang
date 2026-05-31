@@ -14,7 +14,7 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 
 import Browser
 import Eval exposing (appInit, appUpdate, appView, applyHandler, hasApp, lookup, mainValue, renderValue)
-import Html exposing (Html, button, div, h1, h3, input, li, node, p, pre, text, textarea, ul)
+import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
 import Http
@@ -195,24 +195,66 @@ hasFile name files =
 
 view : Model -> Html Msg
 view model =
-    div [ style "font-family" "system-ui, sans-serif", style "max-width" "1000px", style "margin" "20px auto", style "color" "#0f1720" ]
-        [ h1 [] [ text "Elm-in-Elm playground" ]
-        , p [] [ text "Pick an example on the left, edit it, and the result of its main runs live on the right." ]
-        , div [ style "display" "flex", style "gap" "16px", style "align-items" "flex-start" ]
+    div
+        [ style "font-family" "system-ui, -apple-system, Segoe UI, sans-serif"
+        , style "min-height" "100vh"
+        , style "background" "#eef1f4"
+        , style "color" "#0f1720"
+        , style "margin" "0"
+        ]
+        [ div
+            [ style "background" "#1f2933"
+            , style "color" "#e6edf3"
+            , style "padding" "14px 24px"
+            , style "display" "flex"
+            , style "align-items" "baseline"
+            , style "gap" "12px"
+            ]
+            [ span [ style "font-size" "20px", style "font-weight" "700" ] [ text "Elm-in-Elm playground" ]
+            , span [ style "color" "#9fb3c8", style "font-size" "13px" ]
+                [ text "edit a file on the left; its main runs live on the right" ]
+            ]
+        , div
+            [ style "display" "flex"
+            , style "gap" "16px"
+            , style "align-items" "flex-start"
+            , style "max-width" "1080px"
+            , style "margin" "20px auto"
+            , style "padding" "0 16px"
+            ]
             [ fileSidebar model
-            , div [ style "flex" "2" ]
-                [ h3 [] [ text model.selected ]
-                , textarea
-                    [ onInput EditSource
-                    , value (lookup model.selected model.files |> Maybe.withDefault "")
-                    , style "width" "100%"
-                    , style "height" "280px"
-                    , style "font-family" "monospace"
-                    , style "font-size" "13px"
-                    , style "padding" "10px"
-                    , style "box-sizing" "border-box"
+            , div [ style "flex" "2", style "min-width" "0" ]
+                [ div
+                    [ style "border-radius" "10px"
+                    , style "overflow" "hidden"
+                    , style "box-shadow" "0 4px 14px rgba(0,0,0,0.08)"
                     ]
-                    []
+                    [ div
+                        [ style "background" "#0f1720"
+                        , style "color" "#9fb3c8"
+                        , style "font-family" "monospace"
+                        , style "font-size" "12px"
+                        , style "padding" "8px 14px"
+                        ]
+                        [ text model.selected ]
+                    , textarea
+                        [ onInput EditSource
+                        , value (lookup model.selected model.files |> Maybe.withDefault "")
+                        , style "width" "100%"
+                        , style "height" "300px"
+                        , style "font-family" "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+                        , style "font-size" "13px"
+                        , style "line-height" "1.5"
+                        , style "padding" "14px"
+                        , style "box-sizing" "border-box"
+                        , style "border" "none"
+                        , style "background" "#0f1720"
+                        , style "color" "#e6edf3"
+                        , style "outline" "none"
+                        , style "resize" "vertical"
+                        ]
+                        []
+                    ]
                 , mainPane model
                 ]
             ]
@@ -221,13 +263,41 @@ view model =
 
 fileSidebar : Model -> Html Msg
 fileSidebar model =
-    div [ style "flex" "1", style "min-width" "180px" ]
-        [ h3 [] [ text "Files" ]
-        , ul [ style "list-style" "none", style "padding" "0", style "margin" "0" ]
+    div
+        [ style "flex" "1"
+        , style "min-width" "200px"
+        , style "max-width" "240px"
+        , style "background" "#fff"
+        , style "border-radius" "10px"
+        , style "padding" "12px"
+        , style "box-shadow" "0 4px 14px rgba(0,0,0,0.08)"
+        ]
+        [ div [ style "font-size" "12px", style "font-weight" "700", style "color" "#52606d", style "text-transform" "uppercase", style "letter-spacing" "0.05em", style "margin-bottom" "8px" ]
+            [ text "Files" ]
+        , ul [ style "list-style" "none", style "padding" "0", style "margin" "0", style "max-height" "60vh", style "overflow" "auto" ]
             (List.map (fileRow model.selected) model.files)
-        , div [ style "display" "flex", style "gap" "4px", style "margin-top" "8px" ]
-            [ input [ placeholder "New.elm", value model.newName, onInput SetNewName, style "flex" "1", style "min-width" "0" ] []
-            , button [ onClick AddFile ] [ text "+" ]
+        , div [ style "display" "flex", style "gap" "4px", style "margin-top" "10px" ]
+            [ input
+                [ placeholder "New.elm"
+                , value model.newName
+                , onInput SetNewName
+                , style "flex" "1"
+                , style "min-width" "0"
+                , style "padding" "6px 8px"
+                , style "border" "1px solid #d0d7de"
+                , style "border-radius" "6px"
+                ]
+                []
+            , button
+                [ onClick AddFile
+                , style "border" "none"
+                , style "background" "#3a7bd5"
+                , style "color" "#fff"
+                , style "border-radius" "6px"
+                , style "padding" "0 12px"
+                , style "cursor" "pointer"
+                ]
+                [ text "+" ]
             ]
         ]
 
@@ -237,29 +307,52 @@ fileRow selected file =
     let
         name =
             Tuple.first file
+
+        active =
+            name == selected
     in
     li [ style "display" "flex", style "align-items" "center", style "gap" "4px", style "margin" "2px 0" ]
         [ button
             [ onClick (SelectFile name)
             , style "flex" "1"
             , style "text-align" "left"
+            , style "border" "none"
+            , style "border-radius" "6px"
+            , style "padding" "7px 10px"
+            , style "font-size" "13px"
+            , style "cursor" "pointer"
             , style "font-weight"
-                (if name == selected then
-                    "bold"
+                (if active then
+                    "600"
 
                  else
-                    "normal"
+                    "400"
+                )
+            , style "color"
+                (if active then
+                    "#fff"
+
+                 else
+                    "#3e4c59"
                 )
             , style "background"
-                (if name == selected then
-                    "#dbeeff"
+                (if active then
+                    "#3a7bd5"
 
                  else
-                    "#f4f4f4"
+                    "#f0f3f6"
                 )
             ]
             [ text name ]
-        , button [ onClick (RemoveFile name), style "color" "#a00" ] [ text "x" ]
+        , button
+            [ onClick (RemoveFile name)
+            , style "border" "none"
+            , style "background" "none"
+            , style "color" "#cc9a9a"
+            , style "cursor" "pointer"
+            , style "font-size" "16px"
+            ]
+            [ text "x" ]
         ]
 
 
@@ -267,10 +360,11 @@ fileRow selected file =
 value, or a plain value as text. -}
 mainPane : Model -> Html Msg
 mainPane model =
-    div [ style "margin-top" "12px" ]
-        [ h3 [ style "margin" "0 0 6px 0" ] [ text "Result" ]
+    div [ style "margin-top" "14px" ]
+        [ div [ style "font-size" "12px", style "font-weight" "700", style "color" "#52606d", style "text-transform" "uppercase", style "letter-spacing" "0.05em", style "margin-bottom" "6px" ]
+            [ text "Result" ]
         , div
-            [ style "border" "1px solid #d0d7de", style "border-radius" "8px", style "padding" "14px", style "background" "#fff" ]
+            [ style "border" "1px solid #d0d7de", style "border-radius" "10px", style "padding" "16px", style "background" "#fff", style "box-shadow" "0 4px 14px rgba(0,0,0,0.06)" ]
             [ if hasApp (selectedFile model) then
                 liveApp model
 
