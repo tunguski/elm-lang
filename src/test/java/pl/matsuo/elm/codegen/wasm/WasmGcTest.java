@@ -78,6 +78,51 @@ class WasmGcTest {
   }
 
   @Test
+  void tuplesConstructAndProject() throws Exception {
+    // A pair built as a GC struct, with Tuple.first / Tuple.second projecting its fields.
+    agrees("pair = ( 3 + 4, 10 * 2 )\nmain = Tuple.first pair + Tuple.second pair\n"); // 27
+    agrees("main = Tuple.second ( 1, 99 )\n"); // 99
+  }
+
+  @Test
+  void tupleDestructuringInLetAndCase() throws Exception {
+    agrees("main = let ( a, b ) = ( 5, 6 ) in a * b\n"); // 30
+    agrees("swapSum t = case t of\n    ( a, b ) -> b - a\nmain = swapSum ( 2, 9 )\n"); // 7
+  }
+
+  @Test
+  void tupleAcrossFunctionsAndConditionals() throws Exception {
+    // A tuple returned from a function, chosen by an `if`, then projected.
+    agrees(
+        """
+        choose flag = if flag then ( 1, 2 ) else ( 3, 4 )
+        main = Tuple.first (choose False) + Tuple.second (choose True)
+        """); // 3 + 2 = 5
+  }
+
+  @Test
+  void nullaryCustomTypesAsEnumTags() throws Exception {
+    // A nullary union is an i64 tag; `case` dispatches on it (last branch is the default).
+    agrees(
+        """
+        type Color = Red | Green | Blue
+        rank c = case c of
+            Red -> 1
+            Green -> 2
+            Blue -> 3
+        main = rank Green + rank Blue
+        """); // 2 + 3 = 5
+    agrees(
+        """
+        type Light = On | Off
+        toInt l = case l of
+            On -> 1
+            Off -> 0
+        main = toInt On
+        """); // 1
+  }
+
+  @Test
   void sumsAConsListBuiltOnTheGcHeap() throws Exception {
     agrees(
         """

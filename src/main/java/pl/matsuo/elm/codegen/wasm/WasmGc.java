@@ -24,14 +24,17 @@ import pl.matsuo.elm.types.Types;
  * A cons-list is a GC struct {@code {head : i64, tail : (ref null $cons)}}, so building and
  * discarding lists is reclaimed by the engine's collector with no manual memory management.
  *
- * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float} and {@code List Int}:
- * integer and floating-point arithmetic and comparisons ({@code Float} is an {@code f64}, with
- * {@code /} and {@code f64} compares), {@code if}, {@code let}, top-level functions and recursion,
- * list literals and {@code ::}, and a {@code case} over {@code []} / {@code head :: tail}. Each
- * function's parameter and result wasm types come from Hindley–Milner inference (so an {@code Int}
- * is an {@code i64}, a {@code Float} an {@code f64}, and a {@code List Int} a struct reference).
- * Records, custom types, closures, strings and other list element types remain on the linear-memory
- * backend — extending this one to them is future work.
+ * <p>The supported subset is monomorphic {@code Int}/{@code Bool}/{@code Float}, {@code List Int},
+ * <b>tuples</b> and <b>nullary custom types</b>: integer and floating-point arithmetic and
+ * comparisons ({@code Float} is an {@code f64}, with {@code /} and {@code f64} compares), {@code if},
+ * {@code let} (including {@code let (a, b) = …}), top-level functions and recursion, list literals
+ * and {@code ::}, tuple construction with {@code Tuple.first}/{@code Tuple.second} and tuple-pattern
+ * {@code case}, and a {@code case} over {@code []} / {@code head :: tail} or a nullary union. Each
+ * function's parameter and result wasm types come from Hindley–Milner inference: an {@code Int} (and
+ * a nullary custom type, as its variant tag) is an {@code i64}, a {@code Float} an {@code f64}, a
+ * {@code List Int} the cons struct, and each tuple shape its own GC struct. Records, <b>argument-
+ * carrying</b> custom types, closures and strings remain on the linear-memory backend — extending
+ * this one to them (which needs boxing or struct subtyping) is future work.
  */
 public final class WasmGc {
 
@@ -45,12 +48,17 @@ public final class WasmGc {
   /** A compiled function: name, parameter (name,type) pairs, result type and body. */
   private record Func(String name, List<String> params, List<W> paramTypes, W result, Expr body) {}
 
-  /** A wasm value type in the supported subset. */
-  private enum W {
-    INT, // i64
-    FLOAT, // f64
-    LIST // (ref null $cons)
-  }
+  /** A wasm value type in the supported subset: a scalar (i64/f64) or a reference to a GC struct
+   * type (the cons list is struct 0; each distinct tuple shape gets its own struct type). */
+  private sealed interface W permits Sca, Ref {}
+
+  private record Sca(int valtype) implements W {} // I64 or F64
+
+  private record Ref(int typeIndex) implements W {} // (ref null typeIndex)
+
+  private static final W INT = new Sca(I64);
+  private static final W FLOAT = new Sca(F64);
+  private static final W LIST = new Ref(0); // the cons struct is always type 0
 
   /** Compiles a module's monomorphic Int/List-Int functions to a WasmGC binary. */
   public static byte[] module(String source) {
@@ -58,6 +66,22 @@ public final class WasmGc {
     Infer infer = new Infer();
     Map<String, Scheme> schemes = infer.inferModule(module, Signatures.globals());
     Map<Expr, Ty> nodeTypes = infer.nodeTypes();
+
+    // Pre-pass: register every tuple shape (innermost first) so it has a stable struct type index
+    // before any function body is compiled.
+    Tuples tuples = new Tuples();
+    // Register all-nullary unions as i64-tagged enums.
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Union u && u.variants().stream().allMatch(v -> v.args().isEmpty())) {
+        tuples.registerEnum(u.name(), u.variants().stream().map(Decl.Union.Variant::name).toList());
+      }
+    }
+    for (Scheme s : schemes.values()) {
+      tuples.registerAll(s.body());
+    }
+    for (Ty t : nodeTypes.values()) {
+      tuples.registerAll(t);
+    }
 
     List<Func> funcs = new ArrayList<>();
     for (Decl d : module.decls()) {
@@ -70,12 +94,13 @@ public final class WasmGc {
             throw unsupported("non-variable parameter");
           }
           params.add(pv.name());
-          paramTypes.add(wOf(arrowParam(t, paramTypes.size())));
+          paramTypes.add(wOf(arrowParam(t, paramTypes.size()), tuples));
         }
-        funcs.add(new Func(v.name(), params, paramTypes, wOf(resultType(t, params.size())), v.body()));
+        funcs.add(
+            new Func(v.name(), params, paramTypes, wOf(resultType(t, params.size()), tuples), v.body()));
       }
     }
-    return assemble(funcs, nodeTypes);
+    return assemble(funcs, nodeTypes, tuples);
   }
 
   /** The i-th parameter type of an arrow chain. */
@@ -96,28 +121,121 @@ public final class WasmGc {
     return cur;
   }
 
-  private static W wOf(Ty t) {
+  private static W wOf(Ty t, Tuples tuples) {
     Ty p = Types.prune(t);
     if (p instanceof Ty.Con c && c.name().equals("List")) {
-      return W.LIST;
+      return LIST;
     }
     if (p instanceof Ty.Con c && c.name().equals("Float")) {
-      return W.FLOAT;
+      return FLOAT;
     }
     if (p instanceof Ty.Con c && (c.name().equals("Int") || c.name().equals("Bool"))) {
-      return W.INT;
+      return INT;
+    }
+    if (p instanceof Ty.Con c && tuples.isEnum(c.name())) {
+      return INT; // a nullary custom type is an i64 tag
+    }
+    if (p instanceof Ty.Tuple tup) {
+      return new Ref(tuples.indexOf(tup));
     }
     // An unresolved type variable — a `number` (defaults to Int) or a polymorphic element — is
-    // represented as an i64 in this monomorphic Int/List-Int subset.
+    // represented as an i64 in this monomorphic subset.
     if (p instanceof Ty.Var) {
-      return W.INT;
+      return INT;
     }
     throw unsupported(
-        "type " + Types.show(p) + " (WasmGC backend handles Int/Bool/Float and List Int)");
+        "type " + Types.show(p) + " (WasmGC backend handles Int/Bool/Float, tuples and List Int)");
   }
 
   static ElmRuntimeError unsupported(String what) {
     return new ElmRuntimeError("WasmGC backend does not support " + what);
+  }
+
+  /**
+   * The distinct tuple shapes a module uses, each assigned a GC struct type index (the cons list is
+   * type 0, tuples are 1..T, function signatures come after). A pre-pass registers every tuple that
+   * appears in a signature or inferred sub-expression type, innermost first, so that nested tuples
+   * always have a lower index than the tuples that contain them.
+   */
+  private static final class Tuples {
+    private final java.util.LinkedHashMap<String, Integer> indexByKey = new java.util.LinkedHashMap<>();
+    private final List<List<W>> shapes = new ArrayList<>();
+    // Nullary ("enum") custom types: each is represented as an i64 tag (the variant's index).
+    private final java.util.Set<String> enumTypes = new java.util.HashSet<>();
+    private final Map<String, Long> ctorTag = new HashMap<>();
+
+    /** Registers an all-nullary union as an enum whose constructors are i64 tags 0,1,2,…. */
+    void registerEnum(String typeName, List<String> ctorsInOrder) {
+      enumTypes.add(typeName);
+      for (int i = 0; i < ctorsInOrder.size(); i++) {
+        ctorTag.put(ctorsInOrder.get(i), (long) i);
+      }
+    }
+
+    boolean isEnum(String typeName) {
+      return enumTypes.contains(typeName);
+    }
+
+    /** The i64 tag of a nullary constructor, or {@code null} if it isn't an enum constructor. */
+    Long tagOf(String ctor) {
+      return ctorTag.get(ctor);
+    }
+
+    /** Recursively registers every tuple shape inside a type. */
+    void registerAll(Ty t) {
+      Ty p = Types.prune(t);
+      switch (p) {
+        case Ty.Tuple tup -> {
+          tup.items().forEach(this::registerAll);
+          indexOf(tup);
+        }
+        case Ty.Arrow a -> {
+          registerAll(a.from());
+          registerAll(a.to());
+        }
+        case Ty.Con c -> c.args().forEach(this::registerAll);
+        default -> {}
+      }
+    }
+
+    /** The struct type index for a tuple shape (registering it if new — nested tuples must already
+     * be registered, which the {@link #registerAll} pre-pass guarantees). */
+    int indexOf(Ty.Tuple tup) {
+      List<W> fields = new ArrayList<>();
+      for (Ty it : tup.items()) {
+        fields.add(wOf(it, this));
+      }
+      String key = keyOf(fields);
+      Integer existing = indexByKey.get(key);
+      if (existing != null) {
+        return existing;
+      }
+      int idx = 1 + indexByKey.size(); // cons is type 0
+      indexByKey.put(key, idx);
+      shapes.add(fields);
+      return idx;
+    }
+
+    List<List<W>> shapes() {
+      return shapes;
+    }
+
+    int count() {
+      return shapes.size();
+    }
+
+    private static String keyOf(List<W> fields) {
+      StringBuilder b = new StringBuilder();
+      for (W w : fields) {
+        if (w instanceof Sca s) {
+          b.append(s.valtype() == I64 ? 'i' : 'f');
+        } else if (w instanceof Ref r) {
+          b.append('r').append(r.typeIndex());
+        }
+        b.append(',');
+      }
+      return b.toString();
+    }
   }
 
   // --- per-function code generation --------------------------------------
@@ -126,17 +244,19 @@ public final class WasmGc {
     private final Map<String, int[]> funcs; // name -> {index, arity}
     private final Map<String, W> funcResult; // name -> result type
     private final Map<Expr, Ty> nodeTypes;
+    private final Tuples tuples;
     private final Map<String, Integer> locals = new HashMap<>();
     private final Map<String, W> localTypes = new HashMap<>();
     private final List<W> extraLocals = new ArrayList<>(); // beyond params
     private final int numParams;
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
 
-    Gen(Map<String, int[]> funcs, Map<String, W> funcResult, Map<Expr, Ty> nodeTypes,
+    Gen(Map<String, int[]> funcs, Map<String, W> funcResult, Map<Expr, Ty> nodeTypes, Tuples tuples,
         List<String> params, List<W> paramTypes) {
       this.funcs = funcs;
       this.funcResult = funcResult;
       this.nodeTypes = nodeTypes;
+      this.tuples = tuples;
       this.numParams = params.size();
       for (int i = 0; i < params.size(); i++) {
         locals.put(params.get(i), i);
@@ -178,6 +298,18 @@ public final class WasmGc {
           code.write(0x42);
           sleb(code, lit.value());
         }
+        case Expr.Ctor c when c.name().equals("True") -> {
+          code.write(0x42);
+          sleb(code, 1); // Bool is an i64 (1/0) in value position
+        }
+        case Expr.Ctor c when c.name().equals("False") -> {
+          code.write(0x42);
+          sleb(code, 0);
+        }
+        case Expr.Ctor c when tuples.tagOf(c.name()) != null -> {
+          code.write(0x42);
+          sleb(code, tuples.tagOf(c.name())); // a nullary custom-type constructor is its i64 tag
+        }
         case Expr.FloatLit lit -> emitF64(lit.value());
         case Expr.Negate n -> {
           if (isFloat(n)) {
@@ -194,7 +326,7 @@ public final class WasmGc {
         case Expr.If iff -> {
           boolGen(iff.cond());
           code.write(0x04); // if
-          writeType(code, wOf(nodeType(iff))); // result type (i64 or list ref)
+          writeType(code, wOf(nodeType(iff), tuples)); // result type (i64 or list ref)
           gen(iff.thenBranch());
           code.write(0x05);
           gen(iff.elseBranch());
@@ -203,11 +335,13 @@ public final class WasmGc {
         case Expr.Let let -> {
           for (Decl d : let.defs()) {
             if (d instanceof Decl.Value v && v.params().isEmpty()) {
-              W w = wOf(nodeType(v.body()));
+              W w = wOf(nodeType(v.body()), tuples);
               int idx = freshLocal(v.name(), w);
               gen(v.body());
               code.write(0x21);
               leb(code, idx);
+            } else if (d instanceof Decl.Destructure de && de.pattern() instanceof Pattern.Tuple) {
+              bindTuplePattern((Pattern.Tuple) de.pattern(), de.body());
             } else {
               throw unsupported("let with parameters");
             }
@@ -227,10 +361,27 @@ public final class WasmGc {
           }
         }
         case Expr.ListLit l -> emitList(l.items(), 0);
+        case Expr.Tuple tup -> {
+          for (Expr item : tup.items()) {
+            gen(item);
+          }
+          code.write(0xFB);
+          code.write(0x00);
+          leb(code, tupleIndex(nodeType(tup))); // struct.new $tupleN
+        }
         case Expr.App app -> app(app, false);
-        case Expr.Case c -> listCase(c, this::gen);
+        case Expr.Case c -> caseExpr(c, this::gen);
         default -> throw unsupported(e.getClass().getSimpleName());
       }
+    }
+
+    /** The struct type index of a tuple-typed expression. */
+    private int tupleIndex(Ty t) {
+      W w = wOf(t, tuples);
+      if (w instanceof Ref r) {
+        return r.typeIndex();
+      }
+      throw unsupported("a tuple operation on a non-tuple");
     }
 
     private void binOp(Expr.BinOp b) {
@@ -358,7 +509,7 @@ public final class WasmGc {
         case Expr.If iff -> {
           boolGen(iff.cond());
           code.write(0x04);
-          writeType(code, wOf(nodeType(iff)));
+          writeType(code, wOf(nodeType(iff), tuples));
           tailGen(iff.thenBranch());
           code.write(0x05);
           tailGen(iff.elseBranch());
@@ -367,18 +518,20 @@ public final class WasmGc {
         case Expr.Let let -> {
           for (Decl d : let.defs()) {
             if (d instanceof Decl.Value v && v.params().isEmpty()) {
-              W w = wOf(nodeType(v.body()));
+              W w = wOf(nodeType(v.body()), tuples);
               int idx = freshLocal(v.name(), w);
               gen(v.body());
               code.write(0x21);
               leb(code, idx);
+            } else if (d instanceof Decl.Destructure de && de.pattern() instanceof Pattern.Tuple) {
+              bindTuplePattern((Pattern.Tuple) de.pattern(), de.body());
             } else {
               throw unsupported("let with parameters");
             }
           }
           tailGen(let.body());
         }
-        case Expr.Case c -> listCase(c, this::tailGen);
+        case Expr.Case c -> caseExpr(c, this::tailGen);
         case Expr.App app -> app(app, true);
         default -> gen(e);
       }
@@ -391,6 +544,18 @@ public final class WasmGc {
         args.add(0, a.arg());
         head = a.fn();
       }
+      // Tuple.first / Tuple.second on a pair: struct.get on the tuple's struct type.
+      if (head instanceof Expr.Var v
+          && "Tuple".equals(v.module())
+          && (v.name().equals("first") || v.name().equals("second"))
+          && args.size() == 1) {
+        gen(args.get(0));
+        code.write(0xFB);
+        code.write(0x02); // struct.get
+        leb(code, tupleIndex(nodeType(args.get(0))));
+        leb(code, v.name().equals("first") ? 0 : 1);
+        return;
+      }
       if (head instanceof Expr.Var v && funcs.containsKey(v.name()) && funcs.get(v.name())[1] == args.size()) {
         for (Expr arg : args) {
           gen(arg);
@@ -400,6 +565,99 @@ public final class WasmGc {
         return;
       }
       throw unsupported("application of " + (head instanceof Expr.Var v ? v.name() : "expression"));
+    }
+
+    /** Dispatches a {@code case} to the tuple, enum or list compiler based on its branch patterns. */
+    private void caseExpr(Expr.Case c, java.util.function.Consumer<Expr> body) {
+      if (c.branches().stream().anyMatch(br -> br.pattern() instanceof Pattern.Tuple)) {
+        tupleCase(c, body);
+      } else if (c.branches().stream()
+          .anyMatch(br -> br.pattern() instanceof Pattern.Ctor ct && tuples.tagOf(ct.name()) != null)) {
+        enumCase(c, body);
+      } else {
+        listCase(c, body);
+      }
+    }
+
+    /** A {@code case} over a nullary custom type: a chain of {@code i64.eq} tests on the tag, with a
+     *  trailing wildcard/last branch as the default. */
+    private void enumCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
+      int s = freshLocal("$tag" + code.size(), INT);
+      gen(c.scrutinee());
+      code.write(0x21);
+      leb(code, s);
+      W result = wOf(nodeType(c), tuples);
+      List<Expr.Case.Branch> branches = c.branches();
+      emitEnumChain(branches, 0, s, result, body);
+    }
+
+    private void emitEnumChain(
+        List<Expr.Case.Branch> branches, int i, int s, W result,
+        java.util.function.Consumer<Expr> body) {
+      Expr.Case.Branch br = branches.get(i);
+      boolean last = i == branches.size() - 1;
+      // A wildcard, a var, or the final branch acts as the default (no test needed).
+      boolean isDefault =
+          last
+              || br.pattern() instanceof Pattern.Wildcard
+              || br.pattern() instanceof Pattern.Var;
+      if (isDefault) {
+        body.accept(br.body());
+        return;
+      }
+      Long tag = tuples.tagOf(((Pattern.Ctor) br.pattern()).name());
+      if (tag == null) {
+        throw unsupported("a non-nullary constructor pattern in a case");
+      }
+      code.write(0x20);
+      leb(code, s);
+      code.write(0x42);
+      sleb(code, tag);
+      code.write(0x51); // i64.eq
+      code.write(0x04); // if
+      writeType(code, result);
+      body.accept(br.body());
+      code.write(0x05); // else
+      emitEnumChain(branches, i + 1, s, result, body);
+      code.write(0x0B);
+    }
+
+    /** A {@code case} whose single branch destructures a tuple: bind each field, then the body. */
+    private void tupleCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
+      if (c.branches().size() != 1 || !(c.branches().get(0).pattern() instanceof Pattern.Tuple tp)) {
+        throw unsupported("a tuple case with more than one branch");
+      }
+      bindTupleInto(tp, nodeType(c.scrutinee()), c.scrutinee());
+      body.accept(c.branches().get(0).body());
+    }
+
+    /** Evaluates a tuple expression and binds each component of a tuple pattern to a fresh local. */
+    private void bindTuplePattern(Pattern.Tuple tp, Expr value) {
+      bindTupleInto(tp, nodeType(value), value);
+    }
+
+    private void bindTupleInto(Pattern.Tuple tp, Ty tupleTy, Expr value) {
+      int ti = tupleIndex(tupleTy);
+      int scrut = freshLocal("$tup" + code.size(), new Ref(ti));
+      gen(value);
+      code.write(0x21);
+      leb(code, scrut);
+      List<Ty> items = ((Ty.Tuple) Types.prune(tupleTy)).items();
+      for (int i = 0; i < tp.items().size(); i++) {
+        if (tp.items().get(i) instanceof Pattern.Var pv) {
+          int idx = freshLocal(pv.name(), wOf(items.get(i), tuples));
+          code.write(0x20);
+          leb(code, scrut);
+          code.write(0xFB);
+          code.write(0x02); // struct.get
+          leb(code, ti);
+          leb(code, i);
+          code.write(0x21);
+          leb(code, idx);
+        } else if (!(tp.items().get(i) instanceof Pattern.Wildcard)) {
+          throw unsupported("a nested pattern in a tuple destructure");
+        }
+      }
     }
 
     /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
@@ -423,7 +681,7 @@ public final class WasmGc {
       if (nilBody == null || consBody == null) {
         throw unsupported("case without both [] and :: branches");
       }
-      int s = freshLocal("$scrut" + code.size(), W.LIST);
+      int s = freshLocal("$scrut" + code.size(), LIST);
       gen(c.scrutinee());
       code.write(0x21);
       leb(code, s);
@@ -432,11 +690,11 @@ public final class WasmGc {
       leb(code, s);
       code.write(0xD1); // ref.is_null
       code.write(0x04);
-      writeType(code, wOf(nodeType(c))); // result type
+      writeType(code, wOf(nodeType(c), tuples)); // result type
       body.accept(nilBody);
       code.write(0x05);
       if (consHead instanceof Pattern.Var hv) {
-        int h = freshLocal(hv.name(), W.INT);
+        int h = freshLocal(hv.name(), INT);
         code.write(0x20);
         leb(code, s);
         code.write(0xFB);
@@ -447,7 +705,7 @@ public final class WasmGc {
         leb(code, h);
       }
       if (consTail instanceof Pattern.Var tv) {
-        int t = freshLocal(tv.name(), W.LIST);
+        int t = freshLocal(tv.name(), LIST);
         code.write(0x20);
         leb(code, s);
         code.write(0xFB);
@@ -471,7 +729,7 @@ public final class WasmGc {
 
     /** Whether the expression's inferred type is {@code Float} (so it uses f64 ops). */
     private boolean isFloat(Expr e) {
-      return wOf(nodeType(e)) == W.FLOAT;
+      return wOf(nodeType(e), tuples).equals(FLOAT);
     }
 
     /** Emits {@code f64.const} followed by the 8-byte little-endian IEEE-754 encoding. */
@@ -485,19 +743,17 @@ public final class WasmGc {
   }
 
   private static void writeType(ByteArrayOutputStream out, W w) {
-    if (w == W.INT) {
-      out.write(I64);
-    } else if (w == W.FLOAT) {
-      out.write(F64);
-    } else {
-      out.write(LISTREF[0]);
-      out.write(LISTREF[1]);
+    if (w instanceof Sca s) {
+      out.write(s.valtype());
+    } else if (w instanceof Ref r) {
+      out.write(0x63); // (ref null <typeIndex>)
+      sleb(out, r.typeIndex());
     }
   }
 
   // --- module assembly ----------------------------------------------------
 
-  private static byte[] assemble(List<Func> funcList, Map<Expr, Ty> nodeTypes) {
+  private static byte[] assemble(List<Func> funcList, Map<Expr, Ty> nodeTypes, Tuples tuples) {
     Map<String, int[]> table = new HashMap<>();
     Map<String, W> funcResult = new HashMap<>();
     for (int i = 0; i < funcList.size(); i++) {
@@ -505,13 +761,15 @@ public final class WasmGc {
       funcResult.put(funcList.get(i).name(), funcList.get(i).result());
     }
 
-    // Distinct function signatures -> type indices (after the cons struct, which is type 0).
+    // Struct types occupy indices 0..(structCount-1): the cons list is 0, tuple shapes are 1..T.
+    // Function signature types come after them.
+    int structCount = 1 + tuples.count();
     List<Func> sigOrder = new ArrayList<>();
     Map<String, Integer> sigIndex = new LinkedHashMap<>();
     for (Func f : funcList) {
       String sig = sigKey(f);
       if (!sigIndex.containsKey(sig)) {
-        sigIndex.put(sig, sigIndex.size() + 1); // +1: type 0 is the cons struct
+        sigIndex.put(sig, structCount + sigIndex.size());
         sigOrder.add(f);
       }
     }
@@ -519,18 +777,27 @@ public final class WasmGc {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     out.writeBytes(new byte[] {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00});
 
-    // Type section: rec group with the cons struct (type 0), then one functype per signature.
+    // Type section: one rec group holding the cons struct (type 0) and every tuple struct
+    // (types 1..T), then one functype per distinct signature.
     ByteArrayOutputStream types = new ByteArrayOutputStream();
     leb(types, 1 + sigOrder.size()); // total type definitions (the rec group counts as one)
     types.write(0x4E);
-    leb(types, 1); // rec group of 1
-    types.write(0x5F); // struct
+    leb(types, structCount); // rec group: cons + tuple structs
+    types.write(0x5F); // struct (cons)
     leb(types, 2); // 2 fields
     types.write(I64);
     types.write(0x00); // head : i64 (const)
     types.write(LISTREF[0]);
     types.write(LISTREF[1]);
     types.write(0x00); // tail : (ref null $cons) (const)
+    for (List<W> shape : tuples.shapes()) {
+      types.write(0x5F); // struct (tuple)
+      leb(types, shape.size());
+      for (W w : shape) {
+        writeType(types, w);
+        types.write(0x00); // immutable field
+      }
+    }
     for (Func f : sigOrder) {
       types.write(0x60);
       leb(types, f.paramTypes().size());
@@ -569,7 +836,8 @@ public final class WasmGc {
     leb(code, funcList.size());
     for (Func f : funcList) {
       code.writeBytes(
-          new Gen(table, funcResult, nodeTypes, f.params(), f.paramTypes()).compile(f.body()));
+          new Gen(table, funcResult, nodeTypes, tuples, f.params(), f.paramTypes())
+              .compile(f.body()));
     }
     section(out, 10, code);
     return out.toByteArray();
