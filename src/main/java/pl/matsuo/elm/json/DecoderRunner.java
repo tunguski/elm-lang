@@ -61,7 +61,8 @@ public final class DecoderRunner {
         }
         List<Object> out = new ArrayList<>();
         for (Object item : arr) {
-          ElmData r = run(d.arg(1), item);
+          // Json.Decode.list carries the element decoder as its single argument (arg 0).
+          ElmData r = run(d.arg(0), item);
           if (r.ctor().equals("Err")) {
             return r;
           }

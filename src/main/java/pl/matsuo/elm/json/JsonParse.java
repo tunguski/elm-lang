@@ -13,8 +13,10 @@ import pl.matsuo.elm.error.ElmRuntimeError;
  */
 public final class JsonParse {
 
-  /** Sentinel for JSON {@code null} (distinct from a missing field / Java null). */
-  public static final Object NULL = new Object();
+  /** Sentinel for JSON {@code null} (distinct from a missing field / Java null). Shared with
+   * {@link JsonEncode#NULL} so a parsed tree re-serializes correctly (parse→serialize round-trips
+   * {@code null} instead of leaking an opaque Object). */
+  public static final Object NULL = JsonEncode.NULL;
 
   private final String src;
   private int pos = 0;
