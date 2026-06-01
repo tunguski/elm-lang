@@ -152,7 +152,14 @@ public final class WasmGc {
 
   /** Compiles a module's monomorphic Int/List-Int functions to a WasmGC binary. */
   public static byte[] module(String source) {
-    Module module = Parser.parseModule(source);
+    Module parsed = Parser.parseModule(source);
+    Module module =
+        new Module(
+            parsed.name(),
+            parsed.exposing(),
+            parsed.imports(),
+            pl.matsuo.elm.opt.ConstantFold.foldDecls(parsed.decls()),
+            parsed.pos());
     Infer infer = new Infer();
     Map<String, Scheme> schemes = infer.inferModule(module, Signatures.globals());
     Map<Expr, Ty> nodeTypes = infer.nodeTypes();

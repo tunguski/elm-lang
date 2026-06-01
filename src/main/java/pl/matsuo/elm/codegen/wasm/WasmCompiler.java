@@ -237,7 +237,7 @@ public final class WasmCompiler {
   public static byte[] module(List<Expr> expressions) {
     List<Func> funcs = new ArrayList<>();
     for (int i = 0; i < expressions.size(); i++) {
-      funcs.add(new Func("f" + i, List.of(), expressions.get(i)));
+      funcs.add(new Func("f" + i, List.of(), pl.matsuo.elm.opt.ConstantFold.fold(expressions.get(i))));
     }
     return assemble(funcs, Map.of(), Map.of(), Map.of(), Map.of());
   }
@@ -248,7 +248,12 @@ public final class WasmCompiler {
    * WASM backend can join the recursive benchmark and differential tests.
    */
   public static byte[] moduleFromSource(String source) {
-    return compileModules(List.of(pl.matsuo.elm.parser.Parser.parseModule(source)), wantsPrelude(source));
+    pl.matsuo.elm.ast.Module parsed = pl.matsuo.elm.parser.Parser.parseModule(source);
+    pl.matsuo.elm.ast.Module folded =
+        new pl.matsuo.elm.ast.Module(
+            parsed.name(), parsed.exposing(), parsed.imports(),
+            pl.matsuo.elm.opt.ConstantFold.foldDecls(parsed.decls()), parsed.pos());
+    return compileModules(List.of(folded), wantsPrelude(source));
   }
 
   /**

@@ -54,6 +54,14 @@ public final class JsCompiler {
   }
 
   private JsCompiler(Module module, Map<String, ModuleInfo> project) {
+    // Constant-fold every declaration body before codegen (smaller, faster output).
+    module =
+        new Module(
+            module.name(),
+            module.exposing(),
+            module.imports(),
+            pl.matsuo.elm.opt.ConstantFold.foldDecls(module.decls()),
+            module.pos());
     this.module = module;
     this.project = project;
     this.currentModule = module.name();
@@ -581,7 +589,7 @@ public final class JsCompiler {
             List.of(),
             new pl.matsuo.elm.error.Position(1, 1, 0));
     JsCompiler c = new JsCompiler(empty);
-    String e = c.compile(Parser.parseExpression(expression));
+    String e = c.compile(pl.matsuo.elm.opt.ConstantFold.fold(Parser.parseExpression(expression)));
     return JsRuntime.SOURCE + "\nprocess.stdout.write($show((" + e + ")));\n";
   }
 
@@ -642,7 +650,7 @@ public final class JsCompiler {
     StringBuilder sb = new StringBuilder(JsRuntime.SOURCE).append("\nvar $out=[];\n");
     for (String expr : expressions) {
       sb.append("$out.push($show((")
-          .append(c.compile(Parser.parseExpression(expr)))
+          .append(c.compile(pl.matsuo.elm.opt.ConstantFold.fold(Parser.parseExpression(expr))))
           .append(")));\n");
     }
     return sb.append("process.stdout.write($out.join(\"\\n\"));\n").toString();

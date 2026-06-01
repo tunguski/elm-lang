@@ -222,7 +222,11 @@ public final class Interpreter {
 
   /** Compiles and evaluates an expression against this module's environment. */
   public Object evalExpr(String expression) {
-    Expr expr = Parser.parseExpression(expression);
+    return evalExpr(Parser.parseExpression(expression));
+  }
+
+  /** Compiles and evaluates an already-parsed expression against this module's environment. */
+  public Object evalExpr(Expr expr) {
     return compiler.compile(expr).execute(rootScope);
   }
 }
