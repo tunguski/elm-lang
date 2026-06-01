@@ -95,6 +95,56 @@ class JsBackendTest {
     assertEquals("200000", runNode(program));
   }
 
+  /** A `let`-bound recursive function is tail-call optimised too (parity with the interpreter and
+   * bytecode VM): a million-deep recursion runs as a loop rather than overflowing. */
+  @Test
+  void letBoundSelfTailRecursionRunsAsALoop() {
+    String src =
+        """
+        module M exposing (run)
+        run : Int
+        run =
+            let
+                go n acc =
+                    if n == 0 then
+                        acc
+
+                    else
+                        go (n - 1) (acc + 1)
+            in
+            go 1000000 0
+        """;
+    String program =
+        JsCompiler.declarationsScript(src) + "\nprocess.stdout.write(String(_$run));\n";
+    assertTrue(program.contains("continue $tco"), "let-bound tail recursion compiled to a loop");
+    assertEquals("1000000", runNode(program));
+  }
+
+  /** A binding that shadows the function name must NOT be mistaken for a self-tail-call. */
+  @Test
+  void tailCallDetectionRespectsShadowing() {
+    String src =
+        """
+        module M exposing (run)
+        apply2 : (Int -> Int) -> Int
+        apply2 f =
+            let
+                g = \\x -> x + 1
+            in
+            case f of
+                apply2 ->
+                    apply2 (apply2 0)
+        run : Int
+        run = apply2 (\\x -> x + 5)
+        """;
+    String program =
+        JsCompiler.declarationsScript(src) + "\nprocess.stdout.write(String(_$run));\n";
+    // `apply2` inside the case is the bound pattern variable (the passed function), not the
+    // top-level function: applying it twice to 0 gives (0+5)+5 = 10. A misfired self-tail-call
+    // would instead loop/throw, so 10 confirms shadowing is respected.
+    assertEquals("10", runNode(program));
+  }
+
   @Test
   void arithmeticAndOperators() {
     same("1 + 2 * 3");

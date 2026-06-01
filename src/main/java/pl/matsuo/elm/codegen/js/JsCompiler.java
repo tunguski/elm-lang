@@ -1007,13 +1007,18 @@ public final class JsCompiler {
   }
 
   /**
-   * Compiles a named top-level function. If its body calls itself in tail position at full arity, it
-   * is emitted as a {@code while(true)} loop that reassigns the parameters and {@code continue}s —
-   * self-tail-call optimisation, so e.g. a tail-recursive sum over a million elements runs in
-   * constant JS stack space instead of overflowing. Otherwise it is a plain curried arrow chain.
+   * Compiles a named function (top-level or {@code let}-bound). If its body calls itself in tail
+   * position at full arity, it is emitted as a {@code while(true)} loop that reassigns the parameters
+   * and {@code continue}s — self-tail-call optimisation, so a tail-recursive sum over a million
+   * elements runs in constant JS stack space instead of overflowing. Otherwise it is a plain curried
+   * arrow chain. Detection bails out wherever the name is shadowed (by a parameter, or a nested
+   * {@code let}/{@code case} binding), so a different binding of the same name is never mistaken for
+   * the recursive call.
    */
   private String compileNamedFunction(String elmName, List<Pattern> params, Expr body) {
-    if (params.isEmpty() || !isSelfTailRecursive(elmName, params.size(), body)) {
+    if (params.isEmpty()
+        || paramsBindName(params, elmName)
+        || !isSelfTailRecursive(elmName, params.size(), body)) {
       return compileLambda(params, body);
     }
     List<String> binds = new ArrayList<>();
@@ -1056,13 +1061,15 @@ public final class JsCompiler {
     if (args.size() != arity || !(cur instanceof Expr.Var v) || !v.name().equals(elmName)) {
       return null;
     }
+    // The head is the function name, unqualified or qualified with the current module. Shadowing is
+    // ruled out by the callers (compileNamedFunction / the guards below) before we get here.
     String realModule = v.module() == null ? null : aliases.getOrDefault(v.module(), v.module());
-    boolean refersToSelf =
-        (v.module() == null && !isLocal(elmName)) || currentModule.equals(realModule);
+    boolean refersToSelf = v.module() == null || currentModule.equals(realModule);
     return refersToSelf ? args : null;
   }
 
-  /** Whether the function's body reaches a saturated self-call in tail position. */
+  /** Whether the function's body reaches a saturated self-call in tail position — stopping at any
+   * nested binding that shadows the name. */
   private boolean isSelfTailRecursive(String elmName, int arity, Expr e) {
     if (selfCallArgs(e, elmName, arity) != null) {
       return true;
@@ -1072,10 +1079,47 @@ public final class JsCompiler {
           isSelfTailRecursive(elmName, arity, iff.thenBranch())
               || isSelfTailRecursive(elmName, arity, iff.elseBranch());
       case Expr.Case c ->
-          c.branches().stream().anyMatch(br -> isSelfTailRecursive(elmName, arity, br.body()));
-      case Expr.Let let -> isSelfTailRecursive(elmName, arity, let.body());
+          c.branches().stream()
+              .anyMatch(
+                  br ->
+                      !patternBindsName(br.pattern(), elmName)
+                          && isSelfTailRecursive(elmName, arity, br.body()));
+      case Expr.Let let ->
+          !letBindsName(let, elmName) && isSelfTailRecursive(elmName, arity, let.body());
       default -> false;
     };
+  }
+
+  /** Whether any of a function's parameters binds {@code name}. */
+  private boolean paramsBindName(List<Pattern> params, String name) {
+    Set<String> bound = new HashSet<>();
+    for (Pattern p : params) {
+      collectNames(p, bound);
+    }
+    return bound.contains(name);
+  }
+
+  /** Whether a {@code let} binds {@code name} (so an inner reference is not the outer self). */
+  private boolean letBindsName(Expr.Let let, String name) {
+    for (Decl d : let.defs()) {
+      if (d instanceof Decl.Value v && v.name().equals(name)) {
+        return true;
+      }
+      if (d instanceof Decl.Destructure de) {
+        Set<String> bound = new HashSet<>();
+        collectNames(de.pattern(), bound);
+        if (bound.contains(name)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private boolean patternBindsName(Pattern p, String name) {
+    Set<String> bound = new HashSet<>();
+    collectNames(p, bound);
+    return bound.contains(name);
   }
 
   /** Emits the body of a tail-recursive function as loop statements: a tail self-call reassigns the
@@ -1115,13 +1159,18 @@ public final class JsCompiler {
           String cond = conds.isEmpty() ? "true" : String.join(" && ", conds);
           out.append("if(").append(cond).append("){").append(String.join("", binds));
           localFrames.push(names);
-          emitTail(br.body(), elmName, arg, out);
+          // If the branch's pattern shadows the function name, its body can't be a self-tail-call.
+          if (patternBindsName(br.pattern(), elmName)) {
+            out.append("return ").append(compile(br.body())).append(";");
+          } else {
+            emitTail(br.body(), elmName, arg, out);
+          }
           localFrames.pop();
           out.append("}");
         }
         out.append("throw new Error('non-exhaustive pattern');");
       }
-      case Expr.Let let -> {
+      case Expr.Let let when !letBindsName(let, elmName) -> {
         Set<String> names = new HashSet<>();
         for (Decl d : let.defs()) {
           if (d instanceof Decl.Value v) {
@@ -1134,7 +1183,9 @@ public final class JsCompiler {
         for (Decl d : let.defs()) {
           if (d instanceof Decl.Value v) {
             String rhs =
-                v.params().isEmpty() ? compile(v.body()) : compileLambda(v.params(), v.body());
+                v.params().isEmpty()
+                    ? compile(v.body())
+                    : compileNamedFunction(v.name(), v.params(), v.body());
             out.append("var ").append(jsVar(v.name())).append("=").append(rhs).append(";");
           } else if (d instanceof Decl.Destructure de) {
             String t = "$d" + (counter++);
@@ -1164,7 +1215,11 @@ public final class JsCompiler {
     StringBuilder stmts = new StringBuilder();
     for (Decl d : let.defs()) {
       if (d instanceof Decl.Value v) {
-        String rhs = v.params().isEmpty() ? compile(v.body()) : compileLambda(v.params(), v.body());
+        // A let-bound function gets self-tail-call optimisation too (like top-level functions).
+        String rhs =
+            v.params().isEmpty()
+                ? compile(v.body())
+                : compileNamedFunction(v.name(), v.params(), v.body());
         stmts.append("var ").append(jsVar(v.name())).append("=").append(rhs).append(";");
       } else if (d instanceof Decl.Destructure de) {
         String tmp = "$d" + (counter++);
