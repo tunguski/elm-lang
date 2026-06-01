@@ -113,6 +113,14 @@ class ErrorMessageTest {
   }
 
   @Test
+  void accessingAMissingRecordFieldSuggestsTheRightOne() {
+    String m = error("main = { name = 1, age = 2 }.naem\n").getMessage();
+    assertTrue(m.contains("no field `naem`"), m);
+    assertTrue(m.contains("Did you mean `name`?"), m);
+    assertTrue(m.contains("It has:") && m.contains("age"), m); // lists the actual fields
+  }
+
+  @Test
   void overApplicationHintsAboutArgumentCount() {
     // `not` takes one argument but is given two — a function/non-function mismatch with a hint.
     String src = "main = not True False\n";

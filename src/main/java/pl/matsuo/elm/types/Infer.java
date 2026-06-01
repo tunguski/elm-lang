@@ -589,7 +589,19 @@ public final class Infer {
       case Expr.RecordAccess a -> {
         Ty target = infer(env, a.target());
         Ty result = fresh();
-        Unify.unify(target, new Ty.Record(Map.of(a.field(), result), fresh()));
+        try {
+          Unify.unify(target, new Ty.Record(Map.of(a.field(), result), fresh()));
+        } catch (ElmTypeError ex) {
+          Ty pruned = Types.prune(target);
+          if (pruned instanceof Ty.Record rec && rec.tail() == null && !rec.fields().containsKey(a.field())) {
+            String suggestion = pl.matsuo.elm.util.Suggest.closest(a.field(), rec.fields().keySet());
+            throw new ElmTypeError(
+                "This record has no field `" + a.field() + "`."
+                    + (suggestion != null ? " Did you mean `" + suggestion + "`?" : "")
+                    + " It has: " + String.join(", ", rec.fields().keySet()) + ".");
+          }
+          throw ex;
+        }
         yield result;
       }
       case Expr.Accessor a -> {
