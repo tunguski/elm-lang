@@ -183,7 +183,7 @@ public final class SiteGenerator {
     copyResource("/elm/css/gallery.css", "styles.css");
     copyResource("/elm/css/page.css", "page.css");
     copyResource("/elm/css/docs.css", "docs.css");
-    copyResource("/elm/js/gallery.js", "gallery.js");
+    copyResource("/elm/js/theme.js", "theme.js"); // shared light/dark theme + top-right toggle
   }
 
   private void copyResource(String resource, String name) throws IOException {
@@ -248,7 +248,8 @@ public final class SiteGenerator {
             "<body><div id=\"app\"></div>\n",
             "<body><div class=\"layout\">"
                 + nav
-                + "<div id=\"app\" class=\"content\"></div></div>\n<script src=\"nav.js\"></script>\n");
+                + "<div id=\"app\" class=\"content\"></div></div>\n"
+                + "<script src=\"nav.js\"></script>\n<script src=\"theme.js\"></script>\n");
   }
 
   private void run() throws IOException {

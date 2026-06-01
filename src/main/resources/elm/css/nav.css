@@ -89,3 +89,59 @@ body {
     padding-bottom: 12px;
   }
 }
+
+/* ---- Dark theme (toggled by theme.js via [data-theme=dark]) -------------------------------------
+   The sidebar is dark in both themes; these rules darken the page chrome (body, prose, code, tables)
+   on the wrapper/doc/backends/playground/app pages. The gallery index has its own dark rules in
+   styles.css. nav.css is linked last, so these win over the light page.css/docs.css defaults. */
+[data-theme=dark] {
+  color-scheme: dark;
+}
+[data-theme=dark] body {
+  background: #0f1720;
+  color: #cdd9e5;
+}
+[data-theme=dark] main,
+[data-theme=dark] .content {
+  color: #cdd9e5;
+}
+[data-theme=dark] h1,
+[data-theme=dark] h2,
+[data-theme=dark] h3,
+[data-theme=dark] h4 {
+  color: #e6edf3;
+  border-color: #1b2733;
+}
+[data-theme=dark] a {
+  color: #7cc0ee;
+}
+[data-theme=dark] code {
+  background: #1b2535;
+  color: #e6edf3;
+}
+[data-theme=dark] pre {
+  background: #0b1118;
+}
+[data-theme=dark] th {
+  background: #1b2535;
+  color: #cdd9e5;
+}
+[data-theme=dark] th,
+[data-theme=dark] td {
+  border-color: #27384a;
+}
+[data-theme=dark] tr:nth-child(even) td {
+  background: #141e2a;
+}
+[data-theme=dark] blockquote {
+  background: #13202c;
+  color: #cdd9e5;
+}
+[data-theme=dark] footer {
+  color: #7c8b99;
+  border-color: #1b2733;
+}
+[data-theme=dark] .demo iframe {
+  background: #0b1118;
+  border-color: #27384a;
+}

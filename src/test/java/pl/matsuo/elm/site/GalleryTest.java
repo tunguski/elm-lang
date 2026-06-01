@@ -48,20 +48,21 @@ class GalleryTest {
         "a card links its wrapper page and embeds the compiled demo as a thumbnail");
     assertTrue(index.contains(">Hello</strong>"), "the card shows the example title");
     assertTrue(index.contains("href=\"styles.css\""), "links the static stylesheet");
-    assertTrue(index.contains("<script src=\"gallery.js\"></script>"), "links the static gallery script");
-    assertTrue(index.contains("id=\"search\""), "has a search box");
-    assertTrue(index.contains("id=\"theme-toggle\""), "has a theme toggle");
-    assertTrue(index.contains("data-name=\"hello\""), "cards carry a searchable name");
+    assertTrue(index.contains("<script src=\"theme.js\"></script>"), "links the shared theme script");
+    // The examples search bar was removed; the theme toggle is now a shared top-right button.
+    assertFalse(index.contains("id=\"search\""), "no examples search box");
+    assertFalse(index.contains("class=\"controls\""), "no controls bar");
     // The script/CSS are NOT inlined into the index — they're static files.
     assertFalse(index.contains("localStorage"), "the theme script is a static file, not inlined");
 
-    // The stylesheets and script are static resource files copied in by the Java side.
+    // The stylesheets and theme script are static resource files copied in by the Java side.
     String css = Files.readString(out.resolve("styles.css"), StandardCharsets.UTF_8);
     assertTrue(css.contains(".card"), "gallery stylesheet copied in");
     assertTrue(css.contains("prefers-color-scheme: dark"), "dark mode honours the OS preference");
     assertTrue(css.contains("[data-theme=dark]"), "dark mode also has an explicit toggle");
-    String js = Files.readString(out.resolve("gallery.js"), StandardCharsets.UTF_8);
-    assertTrue(js.contains("localStorage.getItem('theme')"), "the theme/search behaviour is in gallery.js");
+    String js = Files.readString(out.resolve("theme.js"), StandardCharsets.UTF_8);
+    assertTrue(js.contains("data-theme") && js.contains("theme-toggle"),
+        "the shared theme behaviour + top-right toggle is in theme.js");
 
     // The per-example wrapper pages are Elm-generated (template) and link the static page.css.
     String wrapper = Files.readString(out.resolve("hello.html"), StandardCharsets.UTF_8);

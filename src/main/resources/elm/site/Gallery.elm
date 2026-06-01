@@ -133,6 +133,7 @@ wrapperHtml nav e source =
 </main>
 </div>
 <script src="nav.js"></script>
+<script src="theme.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
@@ -200,6 +201,7 @@ docPageHtml nav title body =
 </main>
 </div>
 <script src="nav.js"></script>
+<script src="theme.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
@@ -225,10 +227,9 @@ indexPage rows =
         "elm-lang — example gallery"
         ([ raw """<link rel="stylesheet" href="styles.css">"""
          , raw (hero rows)
-         , raw controls
          ]
             ++ List.map categorySection (groupByCategory examples)
-            ++ [ raw footer, raw """<script src="gallery.js"></script>""" ]
+            ++ [ raw footer, raw """<script src="theme.js"></script>""" ]
         )
 
 
@@ -288,12 +289,6 @@ statOf rows =
 
         [] ->
             ( 0, 0 )
-
-
-{-| The search box and the dark/light theme toggle (driven by gallery.js). -}
-controls : String
-controls =
-    """<div class="controls"><input id="search" type="search" placeholder="Search examples…" aria-label="Search examples"><button id="theme-toggle" type="button" aria-label="Toggle dark mode">🌓 Theme</button></div>"""
 
 
 {-| One category as a titled grid of cards. -}
