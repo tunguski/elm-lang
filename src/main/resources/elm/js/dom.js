@@ -212,6 +212,9 @@
   $rt['Dict.update']=function(k){ return function(f){ return function(d){ var o=Object.assign({},d._[0]); var cur=o[$k(k)]; var mb=f(cur?$data('Just',[cur.vs[1]]):$data('Nothing',[])); if(mb.$==='Just'){ o[$k(k)]=$tuple([k,mb._[0]]); } else { delete o[$k(k)]; } return $data('$Dict',[o]); }; }; };
   $rt['Dict.map']=function(f){ return function(d){ var o={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; o[kk]=$tuple([p.vs[0], f(p.vs[0])(p.vs[1])]); }); return $data('$Dict',[o]); }; };
   $rt['Dict.foldl']=function(f){ return function(acc){ return function(d){ var o=d._[0]; Object.keys(o).sort().forEach(function(kk){ acc=f(o[kk].vs[0])(o[kk].vs[1])(acc); }); return acc; }; }; };
+  // Json.Encode.dict/set over dom's Dict/Set representation (kernel.js's versions assume the other one).
+  $rt['Json.Encode.dict']=function(toKey){ return function(toVal){ return function(d){ var o={},src=d._[0]; Object.keys(src).sort().forEach(function(kk){ o[toKey(src[kk].vs[0])]=toVal(src[kk].vs[1]); }); return o; }; }; };
+  $rt['Json.Encode.set']=function(toVal){ return function(s){ var o=s._[0]; return Object.keys(o).sort().map(function(kk){ return toVal(o[kk]); }); }; };
 
   // ---- Math.Vector2/3/4 (plain JS arrays) and Math.Matrix4 (column-major Float32Array) ----
   function v3(x,y,z){ return [x,y,z]; }

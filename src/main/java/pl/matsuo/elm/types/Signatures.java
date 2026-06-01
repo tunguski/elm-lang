@@ -383,6 +383,8 @@ public final class Signatures {
     g("Json.Encode.null", "Value");
     g("Json.Encode.list", "(a -> Value) -> List a -> Value");
     g("Json.Encode.object", "List ( String, Value ) -> Value");
+    g("Json.Encode.dict", "(k -> String) -> (v -> Value) -> Dict k v -> Value");
+    g("Json.Encode.set", "(a -> Value) -> Set a -> Value");
     g("Json.Encode.encode", "Int -> Value -> String");
 
     g("Url.fromString", "String -> Maybe Url");

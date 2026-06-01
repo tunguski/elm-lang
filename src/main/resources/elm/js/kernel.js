@@ -325,4 +325,6 @@ $rt['Json.Encode.bool']=function(b){ return b; };
 $rt['Json.Encode.null']=null;
 $rt['Json.Encode.list']=function(f){ return function(xs){ return $listToArray(xs).map(function(x){ return f(x); }); }; };
 $rt['Json.Encode.object']=function(pairs){ var o={}; $listToArray(pairs).forEach(function(p){ o[p.vs[0]]=p.vs[1]; }); return o; };
+$rt['Json.Encode.dict']=function(toKey){ return function(toVal){ return function(d){ var o={}; d.a.forEach(function(e){ o[toKey(e[0])]=toVal(e[1]); }); return o; }; }; };
+$rt['Json.Encode.set']=function(toVal){ return function(s){ return s.a.map(function(x){ return toVal(x); }); }; };
 $rt['Json.Encode.encode']=function(indent){ return function(v){ return JSON.stringify(v, null, indent); }; };

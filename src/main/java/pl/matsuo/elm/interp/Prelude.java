@@ -796,6 +796,22 @@ public final class Prelude {
       }
       return d("$Json", map);
     });
+    fn("Json.Encode.dict", 3, a -> {
+      // dict toKey toValue : a JSON object, keyed by `toKey` and valued by `toValue`.
+      java.util.LinkedHashMap<String, Object> map = new java.util.LinkedHashMap<>();
+      for (Map.Entry<Object, Object> e : asDict(a[2]).entries().entrySet()) {
+        map.put((String) Apply.apply(a[0], e.getKey()), jsonTree(Apply.apply(a[1], e.getValue())));
+      }
+      return d("$Json", map);
+    });
+    fn("Json.Encode.set", 2, a -> {
+      // set toValue : a JSON array of the set's elements (in order).
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      for (Object x : asSet(a[1]).elements()) {
+        out.add(jsonTree(Apply.apply(a[0], x)));
+      }
+      return d("$Json", out);
+    });
     fn("Json.Encode.encode", 2, a ->
         pl.matsuo.elm.json.JsonEncode.serialize(jsonTree(a[1]), (int) (long) (Long) a[0]));
 

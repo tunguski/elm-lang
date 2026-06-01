@@ -215,6 +215,13 @@ class JsBackendTest {
   }
 
   @Test
+  void jsonEncodeDictAndSetAgreeAcrossBackends() {
+    same("Json.Encode.encode 0 (Json.Encode.dict identity Json.Encode.int "
+        + "(Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ]))");
+    same("Json.Encode.encode 0 (Json.Encode.set Json.Encode.int (Set.fromList [ 3, 1, 2 ]))");
+  }
+
+  @Test
   void maybeResultDictSetFoldAdditionsAgreeAcrossBackends() {
     same("Maybe.map3 (\\a b c -> a + b + c) (Just 1) (Just 2) (Just 3)");
     same("Maybe.map3 (\\a b c -> a + b + c) (Just 1) Nothing (Just 3)"); // Nothing
