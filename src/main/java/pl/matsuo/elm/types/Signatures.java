@@ -320,6 +320,10 @@ public final class Signatures {
     g("Random.pair", "Generator a -> Generator b -> Generator ( a, b )");
     g("Random.map", "(a -> b) -> Generator a -> Generator b");
     g("Random.map2", "(a -> b -> c) -> Generator a -> Generator b -> Generator c");
+    g("Random.map3", "(a -> b -> c -> d) -> Generator a -> Generator b -> Generator c -> Generator d");
+    g("Random.map4", "(a -> b -> c -> d -> e) -> Generator a -> Generator b -> Generator c -> Generator d -> Generator e");
+    g("Random.map5", "(a -> b -> c -> d -> e -> f) -> Generator a -> Generator b -> Generator c -> Generator d -> Generator e -> Generator f");
+    g("Random.weighted", "( Float, a ) -> List ( Float, a ) -> Generator a");
     g("Random.constant", "a -> Generator a");
     g("Random.andThen", "(a -> Generator b) -> Generator a -> Generator b");
     g("Random.initialSeed", "Int -> Seed");

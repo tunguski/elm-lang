@@ -1,6 +1,7 @@
 package pl.matsuo.elm.interp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +39,21 @@ class RandomSeedTest {
         eval(
             "Tuple.first (Random.step (Random.int 1 1000000) (Random.initialSeed 1))"
                 + " /= Tuple.first (Random.step (Random.int 1 1000000) (Random.initialSeed 2))"));
+  }
+
+  @Test
+  void map3AndWeightedStepDeterministically() {
+    // map3 combines three generators; stepping is pure (same seed -> same value).
+    String m3 =
+        "Tuple.first (Random.step (Random.map3 (\\a b c -> a + b + c)"
+            + " (Random.int 1 6) (Random.int 1 6) (Random.int 1 6)) (Random.initialSeed 3))";
+    assertEquals(eval(m3), eval(m3), "map3 stepping is reproducible");
+    // weighted picks from (weight, value) pairs; reproducible for a fixed seed.
+    String w =
+        "Tuple.first (Random.step (Random.weighted ( 1, \"a\" ) [ ( 1, \"b\" ), ( 1, \"c\" ) ])"
+            + " (Random.initialSeed 8))";
+    assertEquals(eval(w), eval(w), "weighted stepping is reproducible");
+    assertTrue(eval(w).matches("[abc]"), eval(w)); // one of the choices (top-level string, unquoted)
   }
 
   @Test

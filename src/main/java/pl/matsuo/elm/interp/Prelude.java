@@ -495,6 +495,10 @@ public final class Prelude {
     fn("Random.constant", 1, a -> d("$Gen_Const", a[0]));
     fn("Random.map", 2, a -> d("$Gen_Map", a[0], a[1]));
     fn("Random.map2", 3, a -> d("$Gen_Map2", a[0], a[1], a[2]));
+    fn("Random.map3", 4, a -> d("$Gen_Map3", a[0], a[1], a[2], a[3]));
+    fn("Random.map4", 5, a -> d("$Gen_Map4", a[0], a[1], a[2], a[3], a[4]));
+    fn("Random.map5", 6, a -> d("$Gen_Map5", a[0], a[1], a[2], a[3], a[4], a[5]));
+    fn("Random.weighted", 2, a -> d("$Gen_Weighted", a[0], a[1]));
     fn("Random.andThen", 2, a -> d("$Gen_AndThen", a[0], a[1]));
     // Pure seeded randomness: a Seed is $Seed[state]; step runs a generator deterministically.
     BUILTINS.put("Random.independentSeed", d("$Gen_IndependentSeed"));
@@ -875,6 +879,19 @@ public final class Prelude {
     return z ^ (z >>> 31);
   }
 
+  /** Flattens a weighted generator's first pair + rest list into parallel (abs-weight, value) lists. */
+  private static void collectWeighted(
+      Object first, Object rest, List<double[]> weights, List<Object> values) {
+    ElmTuple f = (ElmTuple) Thunk.resolve(first);
+    weights.add(new double[] {Math.abs(((Number) Thunk.resolve(f.get(0))).doubleValue())});
+    values.add(f.get(1));
+    for (Object t : ((ElmList) Thunk.resolve(rest)).toJava()) {
+      ElmTuple tt = (ElmTuple) Thunk.resolve(t);
+      weights.add(new double[] {Math.abs(((Number) Thunk.resolve(tt.get(0))).doubleValue())});
+      values.add(tt.get(1));
+    }
+  }
+
   /** Runs {@code gen} from state {@code seed}, returning {@code [value, newState(Long)]}. */
   private static Object[] stepGen(Object gen, long seed) {
     ElmData g = (ElmData) Thunk.resolve(gen);
@@ -928,6 +945,45 @@ public final class Prelude {
         Object[] a = stepGen(g.arg(1), seed);
         Object[] b = stepGen(g.arg(2), (Long) a[1]);
         return new Object[] {Apply.applyAll(g.arg(0), a[0], b[0]), b[1]};
+      }
+      case "$Gen_Map3" -> {
+        Object[] a = stepGen(g.arg(1), seed);
+        Object[] b = stepGen(g.arg(2), (Long) a[1]);
+        Object[] c = stepGen(g.arg(3), (Long) b[1]);
+        return new Object[] {Apply.applyAll(g.arg(0), a[0], b[0], c[0]), c[1]};
+      }
+      case "$Gen_Map4" -> {
+        Object[] a = stepGen(g.arg(1), seed);
+        Object[] b = stepGen(g.arg(2), (Long) a[1]);
+        Object[] c = stepGen(g.arg(3), (Long) b[1]);
+        Object[] e = stepGen(g.arg(4), (Long) c[1]);
+        return new Object[] {Apply.applyAll(g.arg(0), a[0], b[0], c[0], e[0]), e[1]};
+      }
+      case "$Gen_Map5" -> {
+        Object[] a = stepGen(g.arg(1), seed);
+        Object[] b = stepGen(g.arg(2), (Long) a[1]);
+        Object[] c = stepGen(g.arg(3), (Long) b[1]);
+        Object[] e = stepGen(g.arg(4), (Long) c[1]);
+        Object[] f = stepGen(g.arg(5), (Long) e[1]);
+        return new Object[] {Apply.applyAll(g.arg(0), a[0], b[0], c[0], e[0], f[0]), f[1]};
+      }
+      case "$Gen_Weighted" -> {
+        long s = advance(seed);
+        List<double[]> weights = new java.util.ArrayList<>();
+        List<Object> values = new java.util.ArrayList<>();
+        collectWeighted(g.arg(0), g.arg(1), weights, values);
+        double total = 0;
+        for (double[] w : weights) {
+          total += w[0];
+        }
+        double r = ((s >>> 11) * (1.0 / (1L << 53))) * total;
+        for (int i = 0; i < values.size(); i++) {
+          r -= weights.get(i)[0];
+          if (r <= 0) {
+            return new Object[] {values.get(i), s};
+          }
+        }
+        return new Object[] {values.get(values.size() - 1), s};
       }
       case "$Gen_AndThen" -> {
         Object[] r = stepGen(g.arg(1), seed);

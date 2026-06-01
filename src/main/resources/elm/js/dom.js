@@ -112,6 +112,8 @@
   $rt['Random.map']=function(f){ return function(g){ return $gen(function(){ return f(g._[0]()); }); }; };
   $rt['Random.map2']=function(f){ return function(g1){ return function(g2){ return $gen(function(){ return f(g1._[0]())(g2._[0]()); }); }; }; };
   $rt['Random.map3']=function(f){ return function(g1){ return function(g2){ return function(g3){ return $gen(function(){ return f(g1._[0]())(g2._[0]())(g3._[0]()); }); }; }; }; };
+  $rt['Random.map4']=function(f){ return function(g1){ return function(g2){ return function(g3){ return function(g4){ return $gen(function(){ return f(g1._[0]())(g2._[0]())(g3._[0]())(g4._[0]()); }); }; }; }; }; };
+  $rt['Random.map5']=function(f){ return function(g1){ return function(g2){ return function(g3){ return function(g4){ return function(g5){ return $gen(function(){ return f(g1._[0]())(g2._[0]())(g3._[0]())(g4._[0]())(g5._[0]()); }); }; }; }; }; }; };
   $rt['Random.andThen']=function(f){ return function(g){ return $gen(function(){ return f(g._[0]())._[0](); }); }; };
   $rt['Random.generate']=function(toMsg){ return function(g){ return $cmd(function(d){ d(toMsg(g._[0]())); }); }; };
   // Pure seeded randomness: a Seed is $Seed[state]; step runs the generator against a seeded PRNG.

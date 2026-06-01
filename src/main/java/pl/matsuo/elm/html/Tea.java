@@ -346,6 +346,31 @@ public final class Tea {
       case "$Gen_Const" -> g.arg(0);
       case "$Gen_Map" -> Apply.apply(g.arg(0), runGen(g.arg(1)));
       case "$Gen_Map2" -> Apply.applyAll(g.arg(0), runGen(g.arg(1)), runGen(g.arg(2)));
+      case "$Gen_Map3" ->
+          Apply.applyAll(g.arg(0), runGen(g.arg(1)), runGen(g.arg(2)), runGen(g.arg(3)));
+      case "$Gen_Map4" ->
+          Apply.applyAll(g.arg(0), runGen(g.arg(1)), runGen(g.arg(2)), runGen(g.arg(3)), runGen(g.arg(4)));
+      case "$Gen_Map5" ->
+          Apply.applyAll(g.arg(0), runGen(g.arg(1)), runGen(g.arg(2)), runGen(g.arg(3)), runGen(g.arg(4)), runGen(g.arg(5)));
+      case "$Gen_Weighted" -> {
+        List<Object> all = new ArrayList<>();
+        all.add(g.arg(0));
+        all.addAll(((ElmList) g.arg(1)).toJava());
+        double total = 0;
+        for (Object t : all) {
+          total += Math.abs(((Number) ((ElmTuple) t).get(0)).doubleValue());
+        }
+        double r = nextDouble() * total;
+        Object chosen = ((ElmTuple) all.get(all.size() - 1)).get(1);
+        for (Object t : all) {
+          r -= Math.abs(((Number) ((ElmTuple) t).get(0)).doubleValue());
+          if (r <= 0) {
+            chosen = ((ElmTuple) t).get(1);
+            break;
+          }
+        }
+        yield chosen;
+      }
       case "$Gen_AndThen" -> runGen(Apply.apply(g.arg(0), runGen(g.arg(1))));
       default -> throw new ElmRuntimeError("Unsupported generator: " + g.ctor());
     };
