@@ -222,6 +222,22 @@ class LspServerTest {
   }
 
   @Test
+  void codeActionCreatesAMissingDefinition() {
+    // `helper` is referenced but never defined; offer to stub it at the end of the module.
+    String src = "module M exposing (main)\nmain = helper 1\n";
+    var actions = server.codeActions(src, 1); // cursor on the line referencing `helper`
+    var create =
+        actions.stream().filter(a -> a.title().equals("Create function `helper`")).findFirst();
+    assertTrue(create.isPresent(), actions.toString());
+    assertTrue(create.get().newText().contains("helper =\n    Debug.todo"), create.get().newText());
+    // No such action once `helper` is defined.
+    assertTrue(
+        server.codeActions(src + "helper n = n\n", 1).stream()
+            .noneMatch(a -> a.title().startsWith("Create function")),
+        "a defined name is not offered for creation");
+  }
+
+  @Test
   void codeActionAddsAMissingQualifiedImport() {
     // `Set.empty` is used but `Set` isn't imported; offer to add the import.
     String src = "module M exposing (main)\nmain = Set.size Set.empty\n";

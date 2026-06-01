@@ -683,9 +683,33 @@ public final class LspServer {
     fillCaseBranchesAction(module, line0, out);
     removeUnusedImportAction(source, module, line0, out);
     removeUnusedDefinitionAction(source, module, line0, out);
+    createMissingDefinitionAction(source, line0, out);
     addMissingImportAction(source, module, line0, out);
     organizeImportsAction(source, module, line0, out);
     return out;
+  }
+
+  /**
+   * "Create function `x`" when the cursor line references an unknown unqualified name (per the type
+   * checker's "Unknown name" diagnostic): appends a stub {@code x = Debug.todo "…"} at the end of the
+   * module so you can fill it in.
+   */
+  private void createMissingDefinitionAction(String source, int line0, List<CodeAction> out) {
+    String[] lines = source.split("\n", -1);
+    java.util.Set<String> offered = new java.util.HashSet<>();
+    for (Diagnostic d : diagnose(source)) {
+      if (d.line() != line0 || !d.message().startsWith("Unknown name: ")) {
+        continue;
+      }
+      java.util.regex.Matcher m =
+          java.util.regex.Pattern.compile("^Unknown name: ([a-z][A-Za-z0-9_]*)\\b")
+              .matcher(d.message());
+      if (m.find() && offered.add(m.group(1))) {
+        String name = m.group(1);
+        String stub = "\n\n" + name + " =\n    Debug.todo \"TODO: implement " + name + "\"\n";
+        out.add(new CodeAction("Create function `" + name + "`", lines.length, 0, stub));
+      }
+    }
   }
 
   /**
