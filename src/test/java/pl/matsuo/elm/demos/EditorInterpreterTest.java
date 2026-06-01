@@ -29,6 +29,7 @@ class EditorInterpreterTest {
     "/elm/editor/Parser.elm",
     "/elm/editor/Eval.elm",
     "/elm/editor/Highlight.elm",
+    "/elm/editor/Assist.elm",
     "/elm/editor/Main.elm",
   };
 
@@ -339,6 +340,56 @@ class EditorInterpreterTest {
 
   private static boolean hasClassWith(List<ElmTuple> segs, String cls, String text) {
     return segs.stream().anyMatch(s -> cls.equals(s.get(0)) && text.equals(s.get(1)));
+  }
+
+  /** Calls `Assist.completions : String -> String -> List String`, resolving each element. */
+  private List<String> completions(String source, String prefix) {
+    Object r = Apply.applyAll(EDITOR.value("Assist", "completions"), source, prefix);
+    List<String> out = new ArrayList<>();
+    for (Object o : ((ElmList) r).toJava()) {
+      out.add(String.valueOf(pl.matsuo.elm.interp.Thunk.resolve(o)));
+    }
+    return out;
+  }
+
+  @Test
+  void autocompleteSuggestsKeywordsBuiltinsAndBufferIdentifiers() {
+    // From a buffer that defines `mapper`, typing "map" offers the in-buffer identifier.
+    assertTrue(completions("mapper xs = negate xs\nother = 1", "map").contains("mapper"),
+        completions("mapper xs = negate xs\nother = 1", "map").toString());
+
+    // Qualified built-ins complete on their module prefix (completion is case-sensitive).
+    List<String> qualified = completions("x = 1", "List.");
+    assertTrue(qualified.contains("List.map") && qualified.contains("List.filter"), qualified.toString());
+
+    // Keyword completion, and the prefix itself is never echoed back.
+    assertTrue(completions("x = 1", "ca").contains("case"), "case keyword");
+    assertTrue(completions("x = 1", "case").isEmpty(), "exact match isn't re-offered");
+
+    // An empty prefix yields nothing (no popup on every keystroke).
+    assertTrue(completions("anything = 1", "").isEmpty(), "empty prefix → no suggestions");
+  }
+
+  @Test
+  void autocompleteExtractsTheWordAtTheCaret() {
+    // wordAt source offset -> the (qualified) identifier ending at the caret (offset is an Elm Int).
+    String src = "main = List.ma";
+    assertEquals("List.ma",
+        Show.plain(Apply.applyAll(EDITOR.value("Assist", "wordAt"), src, (long) src.length())));
+    // Caret right after a non-identifier char -> empty word.
+    assertEquals("", Show.plain(Apply.applyAll(EDITOR.value("Assist", "wordAt"), "a + ", 4L)));
+  }
+
+  @Test
+  void squiggleLocatesAnOffendingIdentifier() {
+    // The error "undefined variable: nope" should point at `nope` on line 1 (0-based), column 8.
+    String src = "x = 1\ny = nope + x";
+    String loc = Show.plain(Apply.applyAll(EDITOR.value("Assist", "squiggleFor"), src, "nope"));
+    assertTrue(loc.contains("line = 1"), loc);
+    assertTrue(loc.contains("column = 4"), loc);
+    assertTrue(loc.contains("length = 4"), loc);
+    // A name that doesn't occur as a whole word isn't located (no false squiggle inside `nope`).
+    assertEquals("Nothing", Show.plain(Apply.applyAll(EDITOR.value("Assist", "squiggleFor"), src, "op")));
   }
 
   @Test
