@@ -239,7 +239,7 @@ public final class WasmCompiler {
     for (int i = 0; i < expressions.size(); i++) {
       funcs.add(new Func("f" + i, List.of(), expressions.get(i)));
     }
-    return assemble(funcs, Map.of(), Map.of());
+    return assemble(funcs, Map.of(), Map.of(), Map.of(), Map.of());
   }
 
   /**
@@ -1934,11 +1934,6 @@ public final class WasmCompiler {
   }
 
   // --- module assembly ----------------------------------------------------
-
-  private static byte[] assemble(
-      List<Func> funcList, Map<String, Integer> ctorTag, Map<String, Integer> ctorArity) {
-    return assemble(funcList, ctorTag, ctorArity, Map.of(), Map.of());
-  }
 
   private static byte[] assemble(
       List<Func> funcList,

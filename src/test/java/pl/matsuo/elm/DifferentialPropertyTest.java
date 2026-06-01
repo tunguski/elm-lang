@@ -280,17 +280,19 @@ class DifferentialPropertyTest {
   }
 
   @Test
-  void closuresAgreeAcrossInterpBytecodeJsAndWasmGc() throws Exception {
-    // Fuzzes first-class functions (multi-arg lambdas, currying, higher-order application) across the
-    // four backends that support them. Guards this session's WasmGC closure/currying work. (The
-    // linear-memory WASM backend has no closures yet, so it's excluded here.)
+  void closuresAgreeAcrossAllFiveBackends() throws Exception {
+    // Fuzzes first-class functions (multi-arg lambdas, currying, higher-order application) across all
+    // five backends — interpreter, bytecode VM, JS, linear-memory WASM and WasmGC — which all support
+    // closures. Guards this session's WasmGC closure/currying work and the linear-memory closures.
     Gen gen = new Gen(20260601L);
     gen.closureSafe = true;
     List<String> exprs = new ArrayList<>();
+    List<Expr> parsed = new ArrayList<>();
     StringBuilder module = new StringBuilder();
     for (int i = 0; i < 80; i++) {
       String e = gen.expr(4);
       exprs.add(e);
+      parsed.add(Parser.parseExpression(e));
       module.append("f").append(i).append(" = ").append(e).append("\n");
     }
 
@@ -305,6 +307,13 @@ class DifferentialPropertyTest {
       String[] r = js.split("\n", -1);
       for (int i = 0; i < exprs.size(); i++) {
         assertEquals(interp.get(i), r[i], "JS: " + exprs.get(i));
+      }
+    }
+    // Linear-memory WASM via the whole-module path (which lifts lambdas, giving closures/currying).
+    List<String> wasm = runWasm(WasmCompiler.moduleFromSource(module.toString()), exprs.size());
+    if (wasm != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), wasm.get(i), "linear WASM: " + exprs.get(i));
       }
     }
     List<String> gc = runWasm(WasmGc.module(module.toString()), exprs.size());
