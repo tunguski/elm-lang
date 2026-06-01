@@ -705,6 +705,9 @@ runBuiltin globals name args =
             ( "Task.perform", [ toMsg, task ] ) ->
                 Ok (VCtor "Cmd.task" [ toMsg, task ])
 
+            ( "Task.attempt", [ toMsg, task ] ) ->
+                Ok (VCtor "Cmd.taskAttempt" [ toMsg, task ])
+
             ( "field", [ VStr name2, decoder ] ) ->
                 Ok (VCtor "Dec.field" [ VStr name2, decoder ])
 
@@ -1911,11 +1914,61 @@ file)` delivers the content. Returns `Nothing` for other commands. -}
 taskResult : List ( String, String ) -> Value -> Maybe (Result String Value)
 taskResult files cmd =
     case cmd of
-        VCtor "Cmd.task" [ toMsg, VCtor "Task.value" [ v ] ] ->
-            Just (applyMsgIn files toMsg v)
+        VCtor "Cmd.task" [ toMsg, task ] ->
+            -- Task.perform: apply toMsg to the task's resolved value.
+            Maybe.map (\v -> applyMsgIn files toMsg v) (taskValueOf task)
+
+        VCtor "Cmd.taskAttempt" [ toMsg, task ] ->
+            -- Task.attempt: apply toMsg to `Ok value` (the editor's tasks never fail).
+            Maybe.map (\v -> applyMsgIn files toMsg (VCtor "Ok" [ v ])) (taskValueOf task)
 
         _ ->
             Nothing
+
+
+{-| Resolves the opaque tasks the editor knows how to run to their success value: a held `Task.value`
+(e.g. File.toString), the browser viewport (Browser.Dom.getViewport, with a sensible fixed size), or
+a WebGL texture load (kept as its url-carrying value so the GL bridge can load the image). -}
+taskValueOf : Value -> Maybe Value
+taskValueOf task =
+    case task of
+        VCtor "Task.value" [ v ] ->
+            Just v
+
+        VBuiltin "Dom.getViewport" _ ->
+            Just viewportValue
+
+        VCtor "Dom.getViewport" _ ->
+            Just viewportValue
+
+        VBuiltin "Texture.load" args ->
+            Just (VCtor "Texture.load" args)
+
+        VCtor "Texture.load" args ->
+            Just (VCtor "Texture.load" args)
+
+        VBuiltin "WebGL.Texture.load" args ->
+            Just (VCtor "Texture.load" args)
+
+        VBuiltin "Texture.loadWith" args ->
+            Just (VCtor "Texture.load" (List.drop 1 args))
+
+        _ ->
+            Nothing
+
+
+{-| The editor's stand-in for `Browser.Dom.getViewport`: a viewport record at a fixed preview size
+(the interpreter can't read the real DOM size), enough for size-driven programs like Thwomp to run. -}
+viewportValue : Value
+viewportValue =
+    let
+        box =
+            VRecord [ ( "x", VNum 0 ), ( "y", VNum 0 ), ( "width", VNum 500 ), ( "height", VNum 500 ) ]
+
+        size =
+            VRecord [ ( "width", VNum 500 ), ( "height", VNum 500 ) ]
+    in
+    VRecord [ ( "scene", size ), ( "viewport", box ) ]
 
 
 {-| Builds the message to dispatch when an HTTP request finishes. For `expectString` it is

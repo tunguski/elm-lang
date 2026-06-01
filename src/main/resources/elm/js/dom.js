@@ -350,11 +350,32 @@
   // compiled to $data); this converts a list of `WebGL.entity` values into real GL entities so the
   // renderer above draws them — letting the editor render WebGL live, which typed Elm can't bridge.
   function $vList(v){ return (v && v._) ? $listToArray(v._[0]) : []; }
+  // Textures the editor's interpreter resolved from `Texture.load url`: cached per-url Image wrapped
+  // as a $Texture. The image loads async, so clear the uploaded GL texture on load to force a
+  // re-upload on the next frame (animated WebGL scenes redraw every frame).
+  var $glTexCache = {};
+  function $glTexture(url){
+    if ($glTexCache[url]) return $glTexCache[url];
+    var img = new Image();
+    if (/^https?:/.test(url)) img.crossOrigin = 'anonymous';
+    var t = $data('$Texture', [img]);
+    img.onload = function(){ t.$tex = null; };
+    img.src = url;
+    $glTexCache[url] = t;
+    return t;
+  }
   function $glScalar(v){
     if (!v || !v.$) return 0;
     if (v.$ === 'VNum') return v._[0];
     if (v.$ === 'VCtor' || v.$ === 'VBuiltin'){
-      var name = v._[0], args = $listToArray(v._[1]).map($glScalar);
+      var name = v._[0];
+      // A WebGL texture the editor resolved from `Texture.load url` (kept as a url-carrying value):
+      // load the image so it can be sampled, before mapping the args through $glScalar.
+      if (name === 'Texture.load' || name === 'WebGL.Texture.load'){
+        var raw = $listToArray(v._[1])[0];
+        return $glTexture(raw && raw._ ? raw._[0] : '');
+      }
+      var args = $listToArray(v._[1]).map($glScalar);
       if (name === 'vec2' || name === 'vec3' || name === 'vec4') return args;
       if (name.indexOf('Mat4.') === 0){
         var fn = $rt['Math.Matrix4.' + name.slice(5)];
