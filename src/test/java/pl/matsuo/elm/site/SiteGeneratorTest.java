@@ -80,6 +80,18 @@ class SiteGeneratorTest {
   }
 
   @Test
+  void rtsGamePageIsCompiledAndLinked() throws IOException {
+    Path out = generate();
+    // The multi-module RTS game compiles to one live, standalone page.
+    String page = Files.readString(out.resolve("rts.html"), StandardCharsets.UTF_8);
+    assertTrue(page.contains("$start"), "rts.html is the compiled JS bundle");
+    assertTrue(page.contains("RTS Mini"), "rts.html contains the game");
+    assertTrue(
+        Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8).contains("rts.html"),
+        "index links the RTS game");
+  }
+
+  @Test
   void playgroundPageEmbedsBothBackends() throws IOException {
     Path out = generate();
     String page = Files.readString(out.resolve("playground.html"), StandardCharsets.UTF_8);

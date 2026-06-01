@@ -129,8 +129,9 @@ public final class SiteGenerator {
     writeExampleSources();
     writeTodoMvcPage();
     writeEditorPage();
+    boolean rts = writeRtsPage();
     List<DocPage> docs = writeDocPages();
-    writeIndex(built, docs);
+    writeIndex(built, docs, rts);
     System.out.println("Site written to " + outDir.toAbsolutePath());
     for (Built b : built) {
       System.out.printf("  %-16s %-22s %s%n", b.example.slug(), b.method.label, b.note);
@@ -648,6 +649,34 @@ public final class SiteGenerator {
         StandardCharsets.UTF_8);
   }
 
+  /** The RTS game's frontend modules (relative to the repo root, where the gallery is generated). */
+  private static final String[] RTS_MODULES = {
+    "examples/rts/Model.elm",
+    "examples/rts/Logic.elm",
+    "examples/rts/View.elm",
+    "examples/rts/Main.elm",
+  };
+
+  /**
+   * Compiles the multi-module RTS Mini game (examples/rts) to a single live page that runs entirely
+   * in the browser — no backend needed. Returns whether the page was written (the example may be
+   * absent in some checkouts). The whole game model/logic/view is the JS-compiled output.
+   */
+  private boolean writeRtsPage() throws IOException {
+    for (String m : RTS_MODULES) {
+      if (!Files.exists(Path.of(m))) {
+        return false;
+      }
+    }
+    String[] sources = new String[RTS_MODULES.length];
+    for (int i = 0; i < RTS_MODULES.length; i++) {
+      sources[i] = Files.readString(Path.of(RTS_MODULES[i]), StandardCharsets.UTF_8);
+    }
+    Files.writeString(
+        outDir.resolve("rts.html"), JsCompiler.htmlPageProject(null, sources), StandardCharsets.UTF_8);
+    return true;
+  }
+
   /** Numeric functions for the interactive playground (single Int argument each). */
   private static final String PLAYGROUND_SRC =
       """
@@ -763,7 +792,7 @@ public final class SiteGenerator {
 
   private static final String BACKENDS_STYLE = style("/elm/css/backends.css");
 
-  private void writeIndex(List<Built> built, List<DocPage> docs) throws IOException {
+  private void writeIndex(List<Built> built, List<DocPage> docs, boolean rts) throws IOException {
     StringBuilder cards = new StringBuilder();
     String currentCategory = null;
     for (Built b : built) {
@@ -825,7 +854,7 @@ public final class SiteGenerator {
           <a href="backends.html">JS vs WASM &#8594;</a> ·
           <a href="playground.html">Playground &#8594;</a> ·
           <a href="todomvc.html">TodoMVC &#8594;</a> ·
-          <a href="editor.html">Elm-in-Elm editor &#8594;</a> ·%DOCS%
+          <a href="editor.html">Elm-in-Elm editor &#8594;</a> ·%RTS%%DOCS%
           <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></p>
         </header>
         <main>
@@ -837,6 +866,7 @@ public final class SiteGenerator {
         """
             .replace("%STYLE%", INDEX_STYLE)
             .replace("%CARDS%", cards.toString())
+            .replace("%RTS%", rts ? "\n          <a href=\"rts.html\">RTS Mini game &#8594;</a> ·" : "")
             .replace("%DOCS%", docLinks.toString())
             .replace("%LIVE%", Long.toString(live))
             .replace("%TOTAL%", Integer.toString(built.size()));

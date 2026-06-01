@@ -119,6 +119,12 @@ hud : Model -> Html Msg
 hud model =
     div [ HA.style "min-width" "240px", HA.style "display" "flex", HA.style "flex-direction" "column", HA.style "gap" "8px" ]
         [ div [ HA.style "font-size" "20px", HA.style "font-weight" "700" ] [ text "RTS Mini" ]
+        , div
+            [ HA.style "font-size" "11px"
+            , HA.style "color" "#64748b"
+            , HA.style "margin-top" "-4px"
+            ]
+            [ text "Standalone — runs entirely in your browser, no server needed." ]
         , resourceRow "Gold" model.gold "#facc15"
         , resourceRow "Wood" model.wood "#84cc16"
         , div [ HA.style "color" "#94a3b8", HA.style "font-size" "12px" ] [ text ("Tick " ++ String.fromInt model.tick) ]
