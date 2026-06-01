@@ -12,18 +12,22 @@ import pl.matsuo.elm.util.Resources;
 class UrlParserTest {
 
   private static final String PARSER = Resources.read("/elm/lib/Url/Parser.elm");
+  private static final String QUERY = Resources.read("/elm/lib/Url/Parser/Query.elm");
 
   private static final String SRC =
       """
-      module Main exposing (home, user42, postHello, unknown)
+      module Main exposing (home, user42, postHello, unknown, searchElm, searchNone, docTop)
 
       import Url
       import Url.Parser exposing (..)
+      import Url.Parser.Query as Query
 
       type Route
           = Home
           | User Int
           | Post String
+          | Search (Maybe String)
+          | Doc (Maybe String)
 
       route : Parser (Route -> a) a
       route =
@@ -31,6 +35,8 @@ class UrlParserTest {
               [ map Home top
               , map User (s "user" </> int)
               , map Post (s "post" </> string)
+              , map Search (s "search" <?> Query.string "q")
+              , map Doc (s "doc" </> fragment identity)
               ]
 
       run : String -> Maybe Route
@@ -46,10 +52,13 @@ class UrlParserTest {
       user42 = run "/user/42"
       postHello = run "/post/hello"
       unknown = run "/nope/nope"
+      searchElm = run "/search?q=elm"
+      searchNone = run "/search"
+      docTop = run "/doc#section-1"
       """;
 
   private static String value(String name) {
-    return Show.plain(Project.load(SRC, PARSER).value("Main", name));
+    return Show.plain(Project.load(SRC, PARSER, QUERY).value("Main", name));
   }
 
   @Test
@@ -70,5 +79,16 @@ class UrlParserTest {
   @Test
   void unmatchedPathIsNothing() {
     assertEquals("Nothing", value("unknown"));
+  }
+
+  @Test
+  void readsAQueryParameter() {
+    assertEquals("Just (Search (Just \"elm\"))", value("searchElm"));
+    assertEquals("Just (Search Nothing)", value("searchNone")); // absent param -> Nothing
+  }
+
+  @Test
+  void readsTheUrlFragment() {
+    assertEquals("Just (Doc (Just \"section-1\"))", value("docTop"));
   }
 }

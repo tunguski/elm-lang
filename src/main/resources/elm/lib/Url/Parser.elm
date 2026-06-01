@@ -1,25 +1,26 @@
-module Url.Parser exposing (Parser, parse, s, int, string, map, oneOf, top, slash, (</>))
+module Url.Parser exposing (Parser, parse, s, int, string, map, oneOf, top, slash, fragment, questionMark, (</>), (<?>))
 
 {-| A small typed URL router — a subset of elm/url's `Url.Parser`. Match fixed path segments with
-`s`, capture an `Int` or `String` segment, and combine with `</>`; `parse` runs a parser against a
-record with a `path` field (a `Url`), returning `Just value` on a full match or `Nothing`.
+`s`, capture an `Int`/`String` segment, read query parameters with `<?>` (see `Url.Parser.Query`) and
+the URL `fragment`, and combine with `</>`; `parse` runs a parser against a record with `path`,
+`query` and `fragment` fields (a `Url`).
 
-    type Route = Home | User Int | Post String
+    type Route = Home | User Int | Search (Maybe String)
 
     route : Parser (Route -> a) a
     route =
         oneOf
             [ map Home top
             , map User (s "user" </> int)
-            , map Post (s "post" </> string)
+            , map Search (s "search" <?> Query.string "q")
             ]
 
-    parse route someUrl  -- Just (User 42) for "/user/42"
+    parse route someUrl  -- Just (Search (Just "elm")) for "/search?q=elm"
 
 -}
 
 
-{-| A parser that consumes path segments, turning a value of type `a` into one of type `b`. -}
+{-| A parser that consumes path segments (and query/fragment), turning an `a` into a `b`. -}
 type Parser a b
     = Parser (State a -> List (State b))
 
@@ -27,6 +28,8 @@ type Parser a b
 type alias State value =
     { visited : List String
     , unvisited : List String
+    , query : List ( String, String )
+    , frag : Maybe String
     , value : value
     }
 
@@ -40,6 +43,15 @@ slash (Parser before) (Parser after) =
 infix right 7 (</>) = slash
 
 
+{-| Attach a query parser (from `Url.Parser.Query`) to a path parser. `<?>` is the same. -}
+questionMark : Parser a (query -> b) -> (List ( String, String ) -> query) -> Parser a b
+questionMark (Parser before) queryParser =
+    Parser (\state -> List.map (\s2 -> { s2 | value = s2.value (queryParser s2.query) }) (before state))
+
+
+infix left 8 (<?>) = questionMark
+
+
 {-| Match a fixed path segment, e.g. `s "users"`. -}
 s : String -> Parser a a
 s segment =
@@ -48,7 +60,7 @@ s segment =
             case state.unvisited of
                 next :: rest ->
                     if next == segment then
-                        [ { visited = next :: state.visited, unvisited = rest, value = state.value } ]
+                        [ { state | visited = next :: state.visited, unvisited = rest } ]
 
                     else
                         []
@@ -66,7 +78,7 @@ custom toValue =
                 next :: rest ->
                     case toValue next of
                         Just v ->
-                            [ { visited = next :: state.visited, unvisited = rest, value = state.value v } ]
+                            [ { state | visited = next :: state.visited, unvisited = rest, value = state.value v } ]
 
                         Nothing ->
                             []
@@ -88,14 +100,20 @@ string =
     custom Just
 
 
+{-| Capture the URL fragment (the part after `#`), as `Maybe String`. -}
+fragment : (Maybe String -> frag) -> Parser (frag -> a) a
+fragment toFrag =
+    Parser (\state -> [ { state | value = state.value (toFrag state.frag) } ])
+
+
 {-| Transform a parser's captured values with a function (often a route constructor). -}
 map : a -> Parser a b -> Parser (b -> c) c
 map subValue (Parser parseArg) =
     Parser
         (\state ->
             List.map
-                (\inner -> { visited = inner.visited, unvisited = inner.unvisited, value = state.value inner.value })
-                (parseArg { visited = state.visited, unvisited = state.unvisited, value = subValue })
+                (\inner -> { inner | value = state.value inner.value })
+                (parseArg { state | value = subValue })
         )
 
 
@@ -111,9 +129,17 @@ top =
     Parser (\state -> [ state ])
 
 
-{-| Run a parser against a `Url` (anything with a `path` field). -}
+{-| Run a parser against a `Url` (a record with `path`, `query` and `fragment`). -}
 parse (Parser parser) url =
-    firstMatch (parser { visited = [], unvisited = prepare url.path, value = identity })
+    firstMatch
+        (parser
+            { visited = []
+            , unvisited = prepare url.path
+            , query = parseQuery url.query
+            , frag = url.fragment
+            , value = identity
+            }
+        )
 
 
 firstMatch : List (State a) -> Maybe a
@@ -163,3 +189,27 @@ dropTrailingEmpty segments =
 
         seg :: rest ->
             seg :: dropTrailingEmpty rest
+
+
+{-| Parse a `Maybe` query string ("a=1&b=2") into key/value pairs. -}
+parseQuery : Maybe String -> List ( String, String )
+parseQuery maybeQuery =
+    case maybeQuery of
+        Nothing ->
+            []
+
+        Just "" ->
+            []
+
+        Just q ->
+            List.filterMap pair (String.split "&" q)
+
+
+pair : String -> Maybe ( String, String )
+pair part =
+    case String.split "=" part of
+        key :: value :: [] ->
+            Just ( key, value )
+
+        _ ->
+            Nothing
