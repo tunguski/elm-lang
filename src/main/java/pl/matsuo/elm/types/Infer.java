@@ -609,7 +609,28 @@ public final class Infer {
         Ty fn = infer(env, app.fn());
         Ty arg = infer(env, app.arg());
         Ty result = fresh();
-        Unify.unify(fn, new Ty.Arrow(arg, result));
+        try {
+          Unify.unify(fn, new Ty.Arrow(arg, result));
+        } catch (ElmTypeError ex) {
+          // For a plain type mismatch, say which argument is wrong. (A richer message — e.g. a record
+          // "did you mean?" — is kept as-is, and applying a non-function keeps the generic hint.)
+          Ty pruned = Types.prune(fn);
+          String raw = ex.rawMessage();
+          boolean alreadySpecific =
+              raw == null
+                  || raw.startsWith("Record mismatch")
+                  || raw.contains(" argument to ")
+                  || raw.startsWith("The branches of this")
+                  || raw.startsWith("All elements of a list")
+                  || raw.startsWith("Infinite type");
+          if (pruned instanceof Ty.Arrow fa && !alreadySpecific) {
+            throw new ElmTypeError(
+                "The " + ordinal(argumentIndex(app)) + " argument to " + calleeName(app)
+                    + " is `" + Types.show(arg) + "` but " + calleeName(app) + " expects `"
+                    + Types.show(fa.from()) + "`.");
+          }
+          throw ex;
+        }
         yield result;
       }
       case Expr.BinOp b -> {
@@ -642,6 +663,41 @@ public final class Infer {
       case Expr.Lambda l -> inferLambda(env, l.params(), l.body());
       case Expr.Let let -> inferLet(env, let);
       case Expr.Case c -> inferCase(env, c);
+    };
+  }
+
+  /** The 1-based position of {@code app}'s argument in its call spine ({@code f a b}: b is 2nd). */
+  private static int argumentIndex(Expr.App app) {
+    int index = 1;
+    Expr head = app.fn();
+    while (head instanceof Expr.App inner) {
+      index++;
+      head = inner.fn();
+    }
+    return index;
+  }
+
+  /** The called function, as "`name`" if it is a plain variable/constructor, else "this function". */
+  private static String calleeName(Expr.App app) {
+    Expr head = app.fn();
+    while (head instanceof Expr.App inner) {
+      head = inner.fn();
+    }
+    if (head instanceof Expr.Var v) {
+      return "`" + (v.module() == null ? v.name() : v.module() + "." + v.name()) + "`";
+    }
+    if (head instanceof Expr.Ctor c) {
+      return "`" + (c.module() == null ? c.name() : c.module() + "." + c.name()) + "`";
+    }
+    return "this function";
+  }
+
+  private static String ordinal(int n) {
+    return switch (n) {
+      case 1 -> "1st";
+      case 2 -> "2nd";
+      case 3 -> "3rd";
+      default -> n + "th";
     };
   }
 
@@ -791,6 +847,9 @@ public final class Infer {
     if (m.startsWith("The branches of this `if`") || m.startsWith("The branches of this `case`")) {
       return "Every branch must produce the same type, since the expression has one type no matter"
           + " which branch is taken.";
+    }
+    if (m.contains(" argument to ")) {
+      return "Check the argument's type — and that the function's arguments are in the right order.";
     }
     boolean hasInt = m.contains("Int"), hasFloat = m.contains("Float"), hasStr = m.contains("String");
     if (hasStr && (m.contains("number") || hasInt || hasFloat)) {

@@ -97,6 +97,22 @@ class ErrorMessageTest {
   }
 
   @Test
+  void wrongArgumentTypeNamesThePositionAndCallee() {
+    // List.repeat : Int -> a -> List a; passing a String where the count (Int) goes.
+    String m = error("main = List.repeat \"x\" 0\n").getMessage();
+    assertTrue(m.contains("1st argument to `List.repeat`"), m);
+    assertTrue(m.contains("String") && m.contains("Int"), m);
+    assertTrue(m.contains("Hint:") && m.contains("right order"), m);
+  }
+
+  @Test
+  void wrongSecondArgumentNamesItsPosition() {
+    // List.member : a -> List a -> Bool; the 2nd argument should be a List, not an Int.
+    String m = error("main = List.member 1 2\n").getMessage();
+    assertTrue(m.contains("2nd argument to `List.member`"), m);
+  }
+
+  @Test
   void overApplicationHintsAboutArgumentCount() {
     // `not` takes one argument but is given two — a function/non-function mismatch with a hint.
     String src = "main = not True False\n";
