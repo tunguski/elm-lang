@@ -628,9 +628,16 @@ public final class Infer {
       }
       case Expr.If iff -> {
         Unify.unify(Ty.BOOL, infer(env, iff.cond()));
-        Ty t = infer(env, iff.thenBranch());
-        Unify.unify(t, infer(env, iff.elseBranch()));
-        yield t;
+        Ty thenTy = infer(env, iff.thenBranch());
+        Ty elseTy = infer(env, iff.elseBranch());
+        try {
+          Unify.unify(thenTy, elseTy);
+        } catch (ElmTypeError ex) {
+          throw new ElmTypeError(
+              "The branches of this `if` must have the same type, but the `then` branch is `"
+                  + Types.show(thenTy) + "` and the `else` branch is `" + Types.show(elseTy) + "`.");
+        }
+        yield thenTy;
       }
       case Expr.Lambda l -> inferLambda(env, l.params(), l.body());
       case Expr.Let let -> inferLet(env, let);
@@ -696,11 +703,21 @@ public final class Infer {
   private Ty inferCase(TypeEnv env, Expr.Case c) {
     Ty scrut = infer(env, c.scrutinee());
     Ty result = fresh();
+    int index = 0;
     for (Expr.Case.Branch branch : c.branches()) {
+      index++;
       Map<String, Ty> binds = new LinkedHashMap<>();
       Ty pat = inferPattern(env, branch.pattern(), binds);
       Unify.unify(pat, scrut);
-      Unify.unify(result, infer(extendMono(env, binds), branch.body()));
+      Ty bodyTy = infer(extendMono(env, binds), branch.body());
+      try {
+        Unify.unify(result, bodyTy);
+      } catch (ElmTypeError ex) {
+        throw new ElmTypeError(
+            "The branches of this `case` must all have the same type, but branch " + index
+                + " is `" + Types.show(bodyTy) + "` while earlier branches are `"
+                + Types.show(result) + "`.");
+      }
     }
     new Exhaustiveness(unionCtors, ctorUnion, ctorArity).check(c);
     return result;
@@ -770,6 +787,10 @@ public final class Infer {
     if (m.startsWith("All elements of a list")) {
       return "A list holds values of a single type. To combine different shapes, wrap them in a custom"
           + " type, or use a tuple/record for a fixed-size collection.";
+    }
+    if (m.startsWith("The branches of this `if`") || m.startsWith("The branches of this `case`")) {
+      return "Every branch must produce the same type, since the expression has one type no matter"
+          + " which branch is taken.";
     }
     boolean hasInt = m.contains("Int"), hasFloat = m.contains("Float"), hasStr = m.contains("String");
     if (hasStr && (m.contains("number") || hasInt || hasFloat)) {

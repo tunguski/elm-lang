@@ -81,6 +81,22 @@ class ErrorMessageTest {
   }
 
   @Test
+  void ifBranchesMustAgreeReportsBranchContext() {
+    String m = error("main = if True then 1 else \"two\"\n").getMessage();
+    assertTrue(m.contains("branches of this `if` must have the same type"), m);
+    assertTrue(m.contains("then") && m.contains("else"), m);
+    assertTrue(m.contains("Hint:") && m.contains("same type"), m);
+  }
+
+  @Test
+  void caseBranchesMustAgreeReportsWhichBranchDiffers() {
+    String src = "main =\n    case 1 of\n        0 -> \"zero\"\n        _ -> 1\n";
+    String m = error(src).getMessage();
+    assertTrue(m.contains("branches of this `case` must all have the same type"), m);
+    assertTrue(m.contains("branch 2"), m);
+  }
+
+  @Test
   void overApplicationHintsAboutArgumentCount() {
     // `not` takes one argument but is given two — a function/non-function mismatch with a hint.
     String src = "main = not True False\n";
