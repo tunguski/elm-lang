@@ -684,7 +684,7 @@ public final class JsCompiler {
           values.put(v.name(), v);
         } else {
           sb.append("var ").append(topLevelId(v.name())).append(" = ")
-              .append(compileLambda(v.params(), v.body())).append(";\n");
+              .append(compileNamedFunction(v.name(), v.params(), v.body())).append(";\n");
           recordMapping(v.name(), v.pos(), v.body());
         }
       }
@@ -1004,6 +1004,151 @@ public final class JsCompiler {
       sb = new StringBuilder(arg[i] + "=>" + sb);
     }
     return "(" + sb + ")";
+  }
+
+  /**
+   * Compiles a named top-level function. If its body calls itself in tail position at full arity, it
+   * is emitted as a {@code while(true)} loop that reassigns the parameters and {@code continue}s —
+   * self-tail-call optimisation, so e.g. a tail-recursive sum over a million elements runs in
+   * constant JS stack space instead of overflowing. Otherwise it is a plain curried arrow chain.
+   */
+  private String compileNamedFunction(String elmName, List<Pattern> params, Expr body) {
+    if (params.isEmpty() || !isSelfTailRecursive(elmName, params.size(), body)) {
+      return compileLambda(params, body);
+    }
+    List<String> binds = new ArrayList<>();
+    Set<String> names = new HashSet<>();
+    String[] arg = new String[params.size()];
+    for (int i = 0; i < params.size(); i++) {
+      Pattern p = params.get(i);
+      if (p instanceof Pattern.Var v) {
+        arg[i] = jsVar(v.name());
+        names.add(v.name());
+      } else if (p instanceof Pattern.Wildcard) {
+        arg[i] = "$p" + i;
+      } else {
+        arg[i] = "$p" + i;
+        patBinds(p, "$p" + i, binds, names);
+      }
+    }
+    localFrames.push(names);
+    StringBuilder loop = new StringBuilder();
+    emitTail(body, elmName, arg, loop);
+    localFrames.pop();
+    // Pattern binds re-run at the loop top so they reflect the reassigned parameters each iteration.
+    String inner = "{$tco: while(true){" + String.join("", binds) + loop + "}}";
+    StringBuilder sb = new StringBuilder(inner);
+    for (int i = params.size() - 1; i >= 0; i--) {
+      sb = new StringBuilder(arg[i] + "=>" + sb);
+    }
+    return "(" + sb + ")";
+  }
+
+  /** If {@code e} is a saturated application of the function named {@code elmName} (arity args, head
+   * an unqualified or current-module reference to it), returns the argument expressions; else null. */
+  private List<Expr> selfCallArgs(Expr e, String elmName, int arity) {
+    List<Expr> args = new ArrayList<>();
+    Expr cur = e;
+    while (cur instanceof Expr.App app) {
+      args.add(0, app.arg());
+      cur = app.fn();
+    }
+    if (args.size() != arity || !(cur instanceof Expr.Var v) || !v.name().equals(elmName)) {
+      return null;
+    }
+    String realModule = v.module() == null ? null : aliases.getOrDefault(v.module(), v.module());
+    boolean refersToSelf =
+        (v.module() == null && !isLocal(elmName)) || currentModule.equals(realModule);
+    return refersToSelf ? args : null;
+  }
+
+  /** Whether the function's body reaches a saturated self-call in tail position. */
+  private boolean isSelfTailRecursive(String elmName, int arity, Expr e) {
+    if (selfCallArgs(e, elmName, arity) != null) {
+      return true;
+    }
+    return switch (e) {
+      case Expr.If iff ->
+          isSelfTailRecursive(elmName, arity, iff.thenBranch())
+              || isSelfTailRecursive(elmName, arity, iff.elseBranch());
+      case Expr.Case c ->
+          c.branches().stream().anyMatch(br -> isSelfTailRecursive(elmName, arity, br.body()));
+      case Expr.Let let -> isSelfTailRecursive(elmName, arity, let.body());
+      default -> false;
+    };
+  }
+
+  /** Emits the body of a tail-recursive function as loop statements: a tail self-call reassigns the
+   * parameters and {@code continue}s; if/case/let recurse into tail position; anything else returns. */
+  private void emitTail(Expr e, String elmName, String[] arg, StringBuilder out) {
+    List<Expr> selfArgs = selfCallArgs(e, elmName, arg.length);
+    if (selfArgs != null) {
+      // Evaluate every new argument into a temp first (they may read the current parameters), then
+      // reassign the parameters and loop.
+      String[] tmp = new String[arg.length];
+      for (int i = 0; i < arg.length; i++) {
+        tmp[i] = "$tc" + (counter++);
+        out.append("var ").append(tmp[i]).append("=").append(compile(selfArgs.get(i))).append(";");
+      }
+      for (int i = 0; i < arg.length; i++) {
+        out.append(arg[i]).append("=").append(tmp[i]).append(";");
+      }
+      out.append("continue $tco;");
+      return;
+    }
+    switch (e) {
+      case Expr.If iff -> {
+        out.append("if(").append(compile(iff.cond())).append("){");
+        emitTail(iff.thenBranch(), elmName, arg, out);
+        out.append("}else{");
+        emitTail(iff.elseBranch(), elmName, arg, out);
+        out.append("}");
+      }
+      case Expr.Case c -> {
+        String sv = "$s" + (counter++);
+        out.append("var ").append(sv).append("=").append(compile(c.scrutinee())).append(";");
+        for (Expr.Case.Branch br : c.branches()) {
+          List<String> conds = new ArrayList<>();
+          List<String> binds = new ArrayList<>();
+          Set<String> names = new HashSet<>();
+          matchJs(br.pattern(), sv, conds, binds, names);
+          String cond = conds.isEmpty() ? "true" : String.join(" && ", conds);
+          out.append("if(").append(cond).append("){").append(String.join("", binds));
+          localFrames.push(names);
+          emitTail(br.body(), elmName, arg, out);
+          localFrames.pop();
+          out.append("}");
+        }
+        out.append("throw new Error('non-exhaustive pattern');");
+      }
+      case Expr.Let let -> {
+        Set<String> names = new HashSet<>();
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            names.add(v.name());
+          } else if (d instanceof Decl.Destructure de) {
+            collectNames(de.pattern(), names);
+          }
+        }
+        localFrames.push(names);
+        for (Decl d : let.defs()) {
+          if (d instanceof Decl.Value v) {
+            String rhs =
+                v.params().isEmpty() ? compile(v.body()) : compileLambda(v.params(), v.body());
+            out.append("var ").append(jsVar(v.name())).append("=").append(rhs).append(";");
+          } else if (d instanceof Decl.Destructure de) {
+            String t = "$d" + (counter++);
+            out.append("var ").append(t).append("=").append(compile(de.body())).append(";");
+            List<String> binds = new ArrayList<>();
+            patBinds(de.pattern(), t, binds, new HashSet<>());
+            out.append(String.join("", binds));
+          }
+        }
+        emitTail(let.body(), elmName, arg, out);
+        localFrames.pop();
+      }
+      default -> out.append("return ").append(compile(e)).append(";");
+    }
   }
 
   private String compileLet(Expr.Let let) {

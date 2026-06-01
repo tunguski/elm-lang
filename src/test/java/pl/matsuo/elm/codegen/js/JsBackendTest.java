@@ -49,6 +49,52 @@ class JsBackendTest {
     assertEquals(expected, actual, "expression: " + elmExpression);
   }
 
+  /** A self-tail-recursive function must run in constant JS stack space (loop, not deep recursion):
+   * a million-deep recursion would blow Node's call stack without the optimisation. */
+  @Test
+  void selfTailRecursionRunsAsALoop() {
+    String src =
+        """
+        module M exposing (run)
+        sumTo : Int -> Int -> Int
+        sumTo n acc =
+            if n == 0 then
+                acc
+            else
+                sumTo (n - 1) (acc + n)
+        run : Int
+        run = sumTo 1000000 0
+        """;
+    String program =
+        JsCompiler.declarationsScript(src) + "\nprocess.stdout.write(String(_$run));\n";
+    // The if-based tail call is compiled to a while/continue loop.
+    assertTrue(program.contains("while(true)") && program.contains("continue $tco"),
+        "tail-recursive function compiled to a loop");
+    assertEquals("500000500000", runNode(program));
+  }
+
+  /** Tail recursion through a `case` (the common list-walk shape) is also looped, not stacked. */
+  @Test
+  void caseTailRecursionRunsAsALoop() {
+    String src =
+        """
+        module M exposing (run)
+        len : List a -> Int -> Int
+        len xs acc =
+            case xs of
+                [] ->
+                    acc
+                _ :: rest ->
+                    len rest (acc + 1)
+        run : Int
+        run = len (List.range 1 200000) 0
+        """;
+    String program =
+        JsCompiler.declarationsScript(src) + "\nprocess.stdout.write(String(_$run));\n";
+    assertTrue(program.contains("continue $tco"), "case tail call compiled to a loop");
+    assertEquals("200000", runNode(program));
+  }
+
   @Test
   void arithmeticAndOperators() {
     same("1 + 2 * 3");
