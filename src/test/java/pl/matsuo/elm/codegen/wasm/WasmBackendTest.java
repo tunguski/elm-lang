@@ -63,6 +63,19 @@ class WasmBackendTest {
     assertEquals(Show.plain(Interpreter.eval(expr)), runWasm(List.of(expr)).get(0), expr);
   }
 
+  /** The binary carries a "name" custom section so disassembly/traces show readable function names. */
+  @Test
+  void emitsANameSectionWithFunctionNames() throws Exception {
+    byte[] binary =
+        WasmCompiler.moduleFromSource(
+            "module M exposing (sum)\nsum : Int -> Int -> Int\nsum a b = a + b");
+    String text = new String(binary, StandardCharsets.ISO_8859_1);
+    // The custom section name itself, the module name, a user function and a native runtime function.
+    org.junit.jupiter.api.Assertions.assertTrue(text.contains("name"), "custom section name present");
+    org.junit.jupiter.api.Assertions.assertTrue(text.contains("sum"), "user function named");
+    org.junit.jupiter.api.Assertions.assertTrue(text.contains("$apply"), "runtime function named");
+  }
+
   @Test
   void arithmetic() throws Exception {
     same("1 + 2 * 3");

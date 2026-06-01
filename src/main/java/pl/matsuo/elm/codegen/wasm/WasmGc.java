@@ -2128,6 +2128,13 @@ public final class WasmGc {
               .compile(f.body()));
     }
     section(out, 10, code);
+
+    // Name section (custom): function indices -> Elm names, for readable disassembly / traces.
+    List<String> funcNames = new ArrayList<>();
+    for (Func f : funcList) {
+      funcNames.add(f.name());
+    }
+    WasmCompiler.nameSection(out, funcNames);
     return out.toByteArray();
   }
 

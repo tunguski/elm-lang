@@ -2084,7 +2084,47 @@ public final class WasmCompiler {
       code.writeBytes(n.entry());
     }
     section(out, 10, code);
+
+    // Name section (custom, id 0): maps function indices back to their Elm names so disassemblers
+    // and stack traces show `mySum` / `$apply` instead of `func[7]`. Index space is user funcs
+    // 0..U-1 then the natives, matching the code section above.
+    List<String> funcNames = new ArrayList<>();
+    for (Func f : funcList) {
+      funcNames.add(f.name());
+    }
+    for (Native n : natives) {
+      funcNames.add(n.name());
+    }
+    nameSection(out, funcNames);
     return out.toByteArray();
+  }
+
+  /** Emits the WebAssembly "name" custom section: a module name plus a function-name map. */
+  static void nameSection(ByteArrayOutputStream out, List<String> funcNames) {
+    ByteArrayOutputStream content = new ByteArrayOutputStream();
+    name(content, "name"); // custom section name
+
+    // Subsection 0: module name.
+    ByteArrayOutputStream moduleName = new ByteArrayOutputStream();
+    name(moduleName, "elm");
+    content.write(0x00);
+    leb(content, moduleName.size());
+    content.writeBytes(moduleName.toByteArray());
+
+    // Subsection 1: function names (idx -> name).
+    ByteArrayOutputStream funcs = new ByteArrayOutputStream();
+    leb(funcs, funcNames.size());
+    for (int i = 0; i < funcNames.size(); i++) {
+      leb(funcs, i);
+      name(funcs, funcNames.get(i));
+    }
+    content.write(0x01);
+    leb(content, funcs.size());
+    content.writeBytes(funcs.toByteArray());
+
+    out.write(0x00); // custom section id
+    leb(out, content.size());
+    out.writeBytes(content.toByteArray());
   }
 
   private static void section(ByteArrayOutputStream out, int id, ByteArrayOutputStream content) {
