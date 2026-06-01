@@ -284,6 +284,33 @@ class WasmGcTest {
   }
 
   @Test
+  void namedMultiArgFunctionsAsValuesAndPartials() throws Exception {
+    // A named two-argument function passed by name as a value (no lambda wrapper).
+    agrees("add a b = a + b\napply2 f x y = f x y\nmain = apply2 add 3 4\n"); // 7
+    // A named function partially applied to one argument, then completed later.
+    agrees("add a b = a + b\napply f x = f x\nmain = apply (add 10) 5\n"); // 15
+    // A partial application as a higher-order argument over a list (the classic `map (add 1)`).
+    agrees(
+        """
+        map f xs = case xs of
+            [] -> []
+            h :: t -> f h :: map f t
+        sum xs = case xs of
+            [] -> 0
+            h :: t -> h + sum t
+        add a b = a + b
+        main = sum (map (add 10) [1, 2, 3])
+        """); // 11+12+13 = 36
+    // A named three-argument function partially applied to two arguments.
+    agrees(
+        """
+        clamp3 lo hi x = if x < lo then lo else if x > hi then hi else x
+        apply f x = f x
+        main = apply (clamp3 0 5) 9
+        """); // 5
+  }
+
+  @Test
   void capturingLambdasAsClosures() throws Exception {
     // A lambda that closes over an enclosing parameter is lifted to a function taking its captures
     // as struct fields; the closure value carries them and the body reads them via struct.get.

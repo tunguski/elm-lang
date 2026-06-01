@@ -254,12 +254,112 @@ public final class WasmGc {
         collectLambdas(v.body(), topLevel, nodeTypes, tuples, funcs, liftedLambda, counter);
       }
     }
+    // Eta-expand named multi-argument functions used as a value (`List.foldl add`) or partially
+    // applied (`List.map (add 1)`) into closures: synthesise `\p… -> f args… p…`, lift it like any
+    // lambda, and remember the resulting plan so the use site builds that closure.
+    Map<String, ClosurePlan> valueClosures = new HashMap<>();
+    for (String name : valueUses) {
+      Integer ar = arity.get(name);
+      if (ar != null && ar >= 2 && schemes.containsKey(name) && !valueClosures.containsKey(name)) {
+        Expr.Lambda lam =
+            etaExpand(name, Types.prune(schemes.get(name).body()), List.of(), ar, nodeTypes, counter, p0);
+        collectLambdas(lam, topLevel, nodeTypes, tuples, funcs, liftedLambda, counter);
+        if (liftedLambda.get(lam) != null) {
+          valueClosures.put(name, liftedLambda.get(lam));
+        }
+      }
+    }
+    Map<Expr.App, ClosurePlan> partialClosures = new java.util.IdentityHashMap<>();
+    List<Expr.App> partials = new ArrayList<>();
+    for (Decl d : module.decls()) {
+      if (d instanceof Decl.Value v && schemes.containsKey(v.name())) {
+        collectPartialApps(v.body(), arity, partials);
+      }
+    }
+    for (Expr.App pa : partials) {
+      List<Expr> args = new ArrayList<>();
+      Expr head = pa;
+      while (head instanceof Expr.App a) {
+        args.add(0, a.arg());
+        head = a.fn();
+      }
+      String fn = ((Expr.Var) head).name();
+      if (schemes.containsKey(fn)) {
+        Expr.Lambda lam =
+            etaExpand(fn, Types.prune(schemes.get(fn).body()), args, arity.get(fn), nodeTypes, counter, p0);
+        collectLambdas(lam, topLevel, nodeTypes, tuples, funcs, liftedLambda, counter);
+        if (liftedLambda.get(lam) != null) {
+          partialClosures.put(pa, liftedLambda.get(lam));
+        }
+      }
+    }
+
     // All structs are now registered; register each function's own signature functype after them, so
     // functypes occupy the type indices above the structs (one shared rec group).
     for (Func f : funcs) {
       tuples.funcTypeIndex(f.paramTypes(), f.result());
     }
-    return assemble(funcs, nodeTypes, tuples, liftedLambda, wrappers);
+    return assemble(funcs, nodeTypes, tuples, liftedLambda, wrappers, valueClosures, partialClosures);
+  }
+
+  /** Builds `\p… -> f fixedArgs… p…` (nested unary lambdas) for eta-expanding a named function used
+   * as a value or partially applied; registers the synthesised nodes' types so they compile. */
+  private static Expr.Lambda etaExpand(
+      String fname, Ty fType, List<Expr> fixedArgs, int arity, Map<Expr, Ty> nodeTypes,
+      int[] counter, Position p0) {
+    int k = fixedArgs.size();
+    Expr cur = new Expr.Var(null, fname, p0);
+    nodeTypes.put(cur, fType);
+    for (int i = 0; i < k; i++) {
+      cur = new Expr.App(cur, fixedArgs.get(i), p0);
+      nodeTypes.put(cur, resultType(fType, i + 1));
+    }
+    List<String> params = new ArrayList<>();
+    for (int i = k; i < arity; i++) {
+      // Lowercase-initial (so FreeVars treats it as a capturable free var) but containing `$`
+      // (which no user identifier can), so it never collides with a program variable.
+      String pn = "eta$" + (counter[0]++);
+      params.add(pn);
+      Expr pv = new Expr.Var(null, pn, p0);
+      nodeTypes.put(pv, arrowParam(fType, i));
+      cur = new Expr.App(cur, pv, p0);
+      nodeTypes.put(cur, resultType(fType, i + 1));
+    }
+    Expr inner = cur;
+    for (int i = params.size() - 1; i >= 0; i--) {
+      Expr.Lambda lam = new Expr.Lambda(List.of(new Pattern.Var(params.get(i))), inner, p0);
+      nodeTypes.put(lam, resultType(fType, k + i));
+      inner = lam;
+    }
+    return (Expr.Lambda) inner;
+  }
+
+  /** Collects the application nodes that under-apply a named top-level function (a partial call). */
+  private static void collectPartialApps(Expr e, Map<String, Integer> arity, List<Expr.App> out) {
+    if (e instanceof Expr.App app) {
+      List<Expr> args = new ArrayList<>();
+      Expr head = app;
+      while (head instanceof Expr.App a) {
+        args.add(0, a.arg());
+        head = a.fn();
+      }
+      if (head instanceof Expr.Var v
+          && v.module() == null
+          && arity.containsKey(v.name())
+          && args.size() < arity.get(v.name())) {
+        out.add(app);
+      }
+      for (Expr arg : args) {
+        collectPartialApps(arg, arity, out);
+      }
+      if (!(head instanceof Expr.Var hv && arity.containsKey(hv.name()))) {
+        collectPartialApps(head, arity, out);
+      }
+      return;
+    }
+    for (Expr child : children(e)) {
+      collectPartialApps(child, arity, out);
+    }
   }
 
   /** Top-level functions used as a value (not as the head of a full-arity application): they need a
@@ -874,6 +974,8 @@ public final class WasmGc {
     private final Tuples tuples;
     private final Map<Expr.Lambda, ClosurePlan> lifted; // lambda -> how to build its closure value
     private final Map<String, Integer> wrappers; // top-level fn name -> its closure-wrapper func index
+    private final Map<String, ClosurePlan> valueClosures; // multi-arg fn name -> its eta closure plan
+    private final Map<Expr.App, ClosurePlan> partialClosures; // partial-call node -> its eta closure
     private final List<String> captureNames; // captured locals to bind from env (closure bodies)
     private final int captureVariant; // the closure subtype to ref.cast env to, or -1
     private final Map<String, Integer> locals = new HashMap<>();
@@ -883,13 +985,16 @@ public final class WasmGc {
     private final ByteArrayOutputStream code = new ByteArrayOutputStream();
 
     Gen(Map<String, int[]> funcs, Map<String, W> funcResult, Map<Expr, Ty> nodeTypes, Tuples tuples,
-        Map<Expr.Lambda, ClosurePlan> lifted, Map<String, Integer> wrappers, Func f) {
+        Map<Expr.Lambda, ClosurePlan> lifted, Map<String, Integer> wrappers,
+        Map<String, ClosurePlan> valueClosures, Map<Expr.App, ClosurePlan> partialClosures, Func f) {
       this.funcs = funcs;
       this.funcResult = funcResult;
       this.nodeTypes = nodeTypes;
       this.tuples = tuples;
       this.lifted = lifted;
       this.wrappers = wrappers;
+      this.valueClosures = valueClosures;
+      this.partialClosures = partialClosures;
       this.captureNames = f.captureNames();
       this.captureVariant = f.captureVariant();
       this.numParams = f.params().size();
@@ -1053,11 +1158,12 @@ public final class WasmGc {
             code.write(0xFB);
             code.write(0x00); // struct.new $base
             leb(code, base);
+          } else if (valueClosures.containsKey(v.name())) {
+            // A multi-argument top-level function used as a value: its eta-expanded closure.
+            emitClosure(valueClosures.get(v.name()));
           } else if (funcs.containsKey(v.name())) {
-            throw unsupported(
-                "passing the multi-argument top-level function `" + v.name()
-                    + "` by name as a value — wrap it in a lambda instead, e.g. (\\x y -> "
-                    + v.name() + " x y)");
+            // Reached only if a value-use wasn't pre-collected (it should have been eta-expanded).
+            throw unsupported("the function `" + v.name() + "` used as a value here");
           } else {
             throw unsupported("variable " + v.name());
           }
@@ -1088,19 +1194,23 @@ public final class WasmGc {
           if (plan == null) {
             throw unsupported("this lambda (unary lambdas with resolvable captures are supported on WasmGC)");
           }
-          // A closure value: struct.new $variant [ ref.func lifted, capture0, … ].
-          code.write(0xD2); // ref.func -> the lifted function
-          leb(code, plan.funcIndex());
-          Position p0 = new Position(0, 0, 0);
-          for (String cap : plan.captures()) {
-            gen(new Expr.Var(null, cap, p0)); // read the captured local from the enclosing scope
-          }
-          code.write(0xFB);
-          code.write(0x00); // struct.new
-          leb(code, plan.variantIndex());
+          emitClosure(plan);
         }
         default -> throw unsupported(e.getClass().getSimpleName());
       }
+    }
+
+    /** Emits a closure value: {@code struct.new $variant [ ref.func lifted, capture0, … ]}. */
+    private void emitClosure(ClosurePlan plan) {
+      code.write(0xD2); // ref.func -> the lifted function
+      leb(code, plan.funcIndex());
+      Position p0 = new Position(0, 0, 0);
+      for (String cap : plan.captures()) {
+        gen(new Expr.Var(null, cap, p0)); // read the captured local from the enclosing scope
+      }
+      code.write(0xFB);
+      code.write(0x00); // struct.new
+      leb(code, plan.variantIndex());
     }
 
     /** The struct type index of a tuple-/record-typed expression. */
@@ -1481,6 +1591,11 @@ public final class WasmGc {
         args.add(0, a.arg());
         appNodes.add(0, a);
         head = a.fn();
+      }
+      // A partial application of a named function (`add 1`): build its eta-expanded closure.
+      if (partialClosures.containsKey(app)) {
+        emitClosure(partialClosures.get(app));
+        return;
       }
       // Tuple.first / Tuple.second on a pair: struct.get on the tuple's struct type.
       if (head instanceof Expr.Var v
@@ -1882,7 +1997,8 @@ public final class WasmGc {
 
   private static byte[] assemble(
       List<Func> funcList, Map<Expr, Ty> nodeTypes, Tuples tuples,
-      Map<Expr.Lambda, ClosurePlan> lifted, Map<String, Integer> wrappers) {
+      Map<Expr.Lambda, ClosurePlan> lifted, Map<String, Integer> wrappers,
+      Map<String, ClosurePlan> valueClosures, Map<Expr.App, ClosurePlan> partialClosures) {
     Map<String, int[]> table = new HashMap<>();
     Map<String, W> funcResult = new HashMap<>();
     for (int i = 0; i < funcList.size(); i++) {
@@ -2008,7 +2124,8 @@ public final class WasmGc {
     leb(code, funcList.size());
     for (Func f : funcList) {
       code.writeBytes(
-          new Gen(table, funcResult, nodeTypes, tuples, lifted, wrappers, f).compile(f.body()));
+          new Gen(table, funcResult, nodeTypes, tuples, lifted, wrappers, valueClosures, partialClosures, f)
+              .compile(f.body()));
     }
     section(out, 10, code);
     return out.toByteArray();
