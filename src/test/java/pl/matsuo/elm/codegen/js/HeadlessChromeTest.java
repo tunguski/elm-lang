@@ -175,6 +175,32 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void keyedNodesReorderByKeyPreservingDomState() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // A keyed list of items; Flip reverses the order. Because nodes are matched by key, the DOM
+    // node for "a" is reused (its data-touched marker, set via JS, survives the reorder).
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (text)\n"
+            + "import Html.Keyed as Keyed\n"
+            + "import Html.Attributes exposing (id)\n"
+            + "type Msg = Flip\n"
+            + "main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }\n"
+            + "row k = ( k, Html.node \"li\" [ id k ] [ text k ] )\n"
+            + "view flipped =\n"
+            + "    Keyed.node \"ul\" [] (if flipped then [ row \"b\", row \"a\" ] else [ row \"a\", row \"b\" ])\n";
+    // Mark the #a node, then Flip; if its DOM node was reused, the marker is still there afterwards.
+    String driver =
+        "document.getElementById('a').setAttribute('data-kept','yes');"
+            + "window.$app.dispatch($data('Flip',[]));";
+    String dom = renderPage(JsCompiler.htmlPage(app, driver));
+    assertTrue(dom.contains("data-kept=\"yes\""), "the keyed node was reused across reorder: " + dom);
+    // After Flip, b precedes a in the DOM.
+    assertTrue(dom.indexOf("id=\"b\"") < dom.indexOf("id=\"a\""), "reordered by key: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);

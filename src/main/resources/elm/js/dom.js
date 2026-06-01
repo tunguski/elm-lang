@@ -39,6 +39,11 @@
   }
   $rt['Html.map']=function(f){ return function(v){ return $mapHtml(f, v); }; };
   $rt['Svg.map']=$rt['Html.map'];
+  // Keyed nodes: children are (key, Html) tuples; the runtime diffs them by key (see $patchKeyed).
+  $rt['Html.Keyed.node']=function(tag){ return function(attrs){ return function(kids){ return $data('$Keyed',[tag,attrs,kids]); }; }; };
+  $rt['Html.Keyed.ul']=$rt['Html.Keyed.node']('ul');
+  $rt['Html.Keyed.ol']=$rt['Html.Keyed.node']('ol');
+  $rt['Svg.Keyed.node']=$rt['Html.Keyed.node'];
   Object.keys(SVG_TAGS).forEach(function(t){ $rt['Svg.'+t]=node(t); });
   $rt['Svg.text']=function(s){ return $data('$Text',[s]); };
   var svgAttrs=['width','height','viewBox','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
@@ -453,14 +458,15 @@
   }
   window.$toDom = function(v){
     if (v.$==='$Text') return document.createTextNode(String(v._[0]));
+    if (v.$==='$Keyed') return $keyedToDom(v);
     var tag=v._[0];
     var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
     $listToArray(v._[1]).forEach(function(a){ setAttr(el,a); });
     $listToArray(v._[2]).forEach(function(k){ el.appendChild(window.$toDom(k)); });
     return el;
   };
-  // Same virtual node kind? Text vs element, and matching element tag.
-  function $sameType(a,b){ return a.$===b.$ && (a.$!=='$Node' || a._[0]===b._[0]); }
+  // Same virtual node kind? Text vs element, and matching element tag (for $Node and $Keyed).
+  function $sameType(a,b){ return a.$===b.$ && ((a.$!=='$Node' && a.$!=='$Keyed') || a._[0]===b._[0]); }
   // Diff old/new virtual nodes and patch the real DOM in place, preserving element identity
   // (and thus focus/selection on inputs) instead of rebuilding the subtree every render.
   function $patch(parent, dom, oldV, newV){
@@ -468,10 +474,37 @@
     if (newV==null){ if(dom) parent.removeChild(dom); return null; }
     if (!$sameType(oldV,newV)){ var n=window.$toDom(newV); parent.replaceChild(n,dom); return n; }
     if (newV.$==='$Text'){ var s=String(newV._[0]); if(dom.nodeValue!==s) dom.nodeValue=s; return dom; }
+    if (newV.$==='$Keyed'){ return $patchKeyed(dom, newV); }
     applyProps(dom, $listToArray(newV._[1]));
     var oldKids=$listToArray(oldV._[2]), newKids=$listToArray(newV._[2]);
     for (var i=0;i<newKids.length;i++){ $patch(dom, dom.childNodes[i]||null, oldKids[i]||null, newKids[i]); }
     for (var j=oldKids.length-1;j>=newKids.length;j--){ if(dom.childNodes[j]) dom.removeChild(dom.childNodes[j]); }
+    return dom;
+  }
+  // Builds a keyed element: children are (key, vnode) tuples; the key->dom map is stashed for diffing.
+  function $keyedToDom(v){
+    var tag=v._[0];
+    var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
+    $listToArray(v._[1]).forEach(function(a){ setAttr(el,a); });
+    el.$keyed=[];
+    $listToArray(v._[2]).forEach(function(p){ var c=window.$toDom(p.vs[1]); el.appendChild(c); el.$keyed.push([p.vs[0], p.vs[1], c]); });
+    return el;
+  }
+  // Patches a keyed element by matching children to the previous render by key, so reordered or
+  // removed items keep their DOM node (and its focus/scroll/input state) instead of being rebuilt.
+  function $patchKeyed(dom, newV){
+    applyProps(dom, $listToArray(newV._[1]));
+    var oldMap={}; (dom.$keyed||[]).forEach(function(e){ oldMap[e[0]]=e; });
+    var pairs=$listToArray(newV._[2]); var next=[];
+    pairs.forEach(function(p, i){
+      var key=p.vs[0], cv=p.vs[1], old=oldMap[key], childDom;
+      if (old){ childDom=$patch(dom, old[2], old[1], cv); delete oldMap[key]; }
+      else { childDom=window.$toDom(cv); }
+      if (dom.childNodes[i] !== childDom){ dom.insertBefore(childDom, dom.childNodes[i] || null); }
+      next.push([key, cv, childDom]);
+    });
+    while (dom.childNodes.length > pairs.length){ dom.removeChild(dom.lastChild); }
+    dom.$keyed=next;
     return dom;
   }
   window.$mount = function(program, root){

@@ -1062,6 +1062,15 @@ public final class Prelude {
     return new ElmData("$Node", new Object[] {tag, attrs, children});
   }
 
+  /** Extracts the child nodes from a keyed children list (List ( String, Html )), dropping keys. */
+  private static Object keyedChildren(Object list) {
+    List<Object> out = new ArrayList<>();
+    for (Object pair : ((ElmList) Thunk.resolve(list)).toJava()) {
+      out.add(((ElmTuple) Thunk.resolve(pair)).get(1));
+    }
+    return ElmList.fromJava(out);
+  }
+
   /** Html.map / Svg.map: rebuild a node, routing every event's message through {@code f}. */
   private static Object mapHtml(Object f, Object vnode) {
     Object v = Thunk.resolve(vnode);
@@ -1124,6 +1133,11 @@ public final class Prelude {
     fn("Html.node", 3, a -> node((String) a[0], a[1], a[2]));
     fn("Html.map", 2, a -> mapHtml(a[0], a[1]));
     fn("Svg.map", 2, a -> mapHtml(a[0], a[1]));
+    // Keyed nodes render statically like a plain element (keys matter only for the live DOM diff).
+    fn("Html.Keyed.node", 3, a -> node((String) a[0], a[1], keyedChildren(a[2])));
+    fn("Html.Keyed.ul", 2, a -> node("ul", a[0], keyedChildren(a[1])));
+    fn("Html.Keyed.ol", 2, a -> node("ol", a[0], keyedChildren(a[1])));
+    fn("Svg.Keyed.node", 3, a -> node((String) a[0], a[1], keyedChildren(a[2])));
     for (String spec : HTML_TAGS) {
       String[] nt = split(spec);
       String tag = nt[1];
