@@ -141,6 +141,25 @@ elm gen-site <file.elm> <out-dir> [--api DIR]... [--base-url URL]
 > `elm site` command builds *this project's* example gallery specifically and is not a
 > general tool.
 
+## Index page and RSS feed
+
+Two helpers build site-wide artifacts from a `List Page`:
+
+- `index : String -> String -> List Page -> Page` — a table-of-contents page linking every page by
+  title. Add it to your `site`:
+
+  ```elm
+  site = Site.index "index.html" "All articles" articles :: articles
+  ```
+
+- `feed : String -> String -> List Page -> String` — an RSS 2.0 feed (XML text), each page an
+  `<item>` with its title and a link of `baseUrl ++ page.path`. It is XML, not a `Page`, so write it
+  yourself — for example from a [script](scripting.md):
+
+  ```elm
+  writeFile "feed.xml" (Site.feed "My blog" "https://example.com/" articles) done
+  ```
+
 ## Generating pages from files on disk
 
 `gen-site` is **pure**: your `site : List Page` is data, computed without touching the filesystem.

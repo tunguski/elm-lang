@@ -14,6 +14,8 @@ module Site exposing
     , raw
     , group
     , markdown
+    , index
+    , feed
     , render
     )
 
@@ -150,6 +152,37 @@ classifyGroup group =
 
     else
         Text (String.replace "\n" " " group)
+
+
+{-| An index `Page` linking to each of the given pages (by title) — a quick table of contents. Add
+it to your `site` list:
+
+    site = index "index.html" "All articles" articles :: articles
+
+-}
+index : String -> String -> List Page -> Page
+index path title pages =
+    page path title [ links (List.map (\p -> ( p.path, p.title )) pages) ]
+
+
+{-| An RSS 2.0 feed (as XML text) for the given pages: each becomes an `<item>` with the page's title
+and a link of `baseUrl ++ page.path`. Not a `Page` (it is XML, not HTML), so write it to `feed.xml`
+yourself — e.g. from a script with `writeFile`. -}
+feed : String -> String -> List Page -> String
+feed title baseUrl pages =
+    """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>%TITLE%</title><link>%BASE%</link>%ITEMS%</channel></rss>
+"""
+        |> String.replace "%TITLE%" (escape title)
+        |> String.replace "%BASE%" (escape baseUrl)
+        |> String.replace "%ITEMS%" (String.concat (List.map (feedItem baseUrl) pages))
+
+
+feedItem : String -> Page -> String
+feedItem baseUrl p =
+    """<item><title>%T%</title><link>%L%</link></item>"""
+        |> String.replace "%T%" (escape p.title)
+        |> String.replace "%L%" (escape (baseUrl ++ p.path))
 
 
 {-| Renders a page to a complete HTML document. The stylesheet is the static `site.css` (copied in
