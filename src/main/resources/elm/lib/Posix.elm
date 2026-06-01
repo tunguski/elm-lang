@@ -32,6 +32,8 @@ module Posix exposing
     , sort
     , uniq
     , exec
+    , now
+    , randomInt
     )
 
 {-| A tiny POSIX-style I/O API for writing Elm programs that run as command-line scripts
@@ -112,6 +114,8 @@ type Io
     | SortLines String (Result String (List String) -> Io)
     | UniqLines String (Result String (List String) -> Io)
     | Exec String (List String) (Result String Proc -> Io)
+    | Now (Int -> Io)
+    | RandomInt Int Int (Int -> Io)
 
 
 {-| Print a line to stdout, then continue. -}
@@ -281,3 +285,17 @@ continuation gets a structured `Proc` (exit code, captured stdout and stderr). -
 exec : String -> List String -> (Result String Proc -> Io) -> Io
 exec =
     Exec
+
+
+{-| The current time as milliseconds since the Unix epoch, then continue with it. (Tests can pin it
+via the `ELM_SCRIPT_NOW` environment variable for reproducibility.) -}
+now : (Int -> Io) -> Io
+now =
+    Now
+
+
+{-| A pseudo-random integer in the inclusive range `lo..hi`, then continue with it. (Seed the
+generator via the `ELM_SCRIPT_SEED` environment variable for reproducible runs.) -}
+randomInt : Int -> Int -> (Int -> Io) -> Io
+randomInt =
+    RandomInt

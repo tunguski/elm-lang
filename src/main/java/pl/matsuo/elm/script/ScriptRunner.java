@@ -26,6 +26,9 @@ public final class ScriptRunner {
   /** Walks the {@code io} description to completion, returning the process exit code. */
   public static int run(Object io, List<String> args, BufferedReader in, PrintStream out) {
     Object cur = Thunk.resolve(io);
+    // Reproducible when ELM_SCRIPT_SEED is set (e.g. in tests); otherwise nondeterministic.
+    String seed = System.getenv("ELM_SCRIPT_SEED");
+    java.util.Random rng = seed == null ? new java.util.Random() : new java.util.Random(Long.parseLong(seed));
     while (true) {
       if (!(cur instanceof ElmData d)) {
         throw new ElmRuntimeError("script main must be a Posix.Io value, got: " + cur);
@@ -291,6 +294,15 @@ public final class ScriptRunner {
           }
           cur = Thunk.resolve(Apply.apply(d.arg(2), result));
         }
+        case "Now" -> {
+          cur = Thunk.resolve(Apply.apply(d.arg(0), nowMillis()));
+        }
+        case "RandomInt" -> {
+          long lo = ((Number) Thunk.resolve(d.arg(0))).longValue();
+          long hi = ((Number) Thunk.resolve(d.arg(1))).longValue();
+          long value = hi <= lo ? lo : lo + Math.floorMod(rng.nextLong(), hi - lo + 1);
+          cur = Thunk.resolve(Apply.apply(d.arg(2), value));
+        }
         case "Exit" -> {
           return (int) ((Number) Thunk.resolve(d.arg(0))).longValue();
         }
@@ -300,6 +312,12 @@ public final class ScriptRunner {
         default -> throw new ElmRuntimeError("unknown Posix.Io effect: " + d.ctor());
       }
     }
+  }
+
+  /** Current epoch millis, pinned by {@code ELM_SCRIPT_NOW} when set (for reproducible tests). */
+  private static long nowMillis() {
+    String fixed = System.getenv("ELM_SCRIPT_NOW");
+    return fixed == null ? System.currentTimeMillis() : Long.parseLong(fixed);
   }
 
   private static String str(Object o) {

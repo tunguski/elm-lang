@@ -30,6 +30,8 @@ module Bash exposing
     , getEnv
     , exit
     , done
+    , now
+    , randomInt
     )
 
 {-| Common shell commands for `elm script`, returning **structured** results instead of text you have
@@ -236,3 +238,15 @@ exit =
 done : Io
 done =
     Posix.done
+
+
+{-| Current time in milliseconds since the Unix epoch, then continue. -}
+now : (Int -> Io) -> Io
+now =
+    Posix.now
+
+
+{-| A pseudo-random integer in the inclusive range `lo..hi`, then continue. -}
+randomInt : Int -> Int -> (Int -> Io) -> Io
+randomInt =
+    Posix.randomInt

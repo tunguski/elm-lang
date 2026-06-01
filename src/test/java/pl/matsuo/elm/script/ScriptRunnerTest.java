@@ -60,6 +60,37 @@ class ScriptRunnerTest {
   }
 
   @Test
+  void scriptsCanReadTheClockAndDrawRandomness() {
+    // now: the current time is a positive number of millis.
+    Run clock =
+        runScript(
+            "module Main exposing (main)\nimport Posix exposing (..)\n"
+                + "main = now (\\ms -> print (if ms > 0 then \"clock-ok\" else \"bad\") done)",
+            List.of(),
+            "");
+    assertTrue(clock.out().contains("clock-ok"), clock.out());
+
+    // randomInt with lo == hi is deterministic.
+    Run fixed =
+        runScript(
+            "module Main exposing (main)\nimport Posix exposing (..)\n"
+                + "main = randomInt 7 7 (\\n -> print (String.fromInt n) done)",
+            List.of(),
+            "");
+    assertEquals("7", fixed.out().trim());
+
+    // randomInt stays within the inclusive range.
+    Run ranged =
+        runScript(
+            "module Main exposing (main)\nimport Posix exposing (..)\n"
+                + "main = randomInt 1 6 (\\n -> print (String.fromInt n) done)",
+            List.of(),
+            "");
+    int v = Integer.parseInt(ranged.out().trim());
+    assertTrue(v >= 1 && v <= 6, "random in range: " + v);
+  }
+
+  @Test
   void wordcountWithNoArgsExitsWithUsage() {
     Run r = runScript(WORDCOUNT, List.of(), "");
     assertEquals(2, r.code());
