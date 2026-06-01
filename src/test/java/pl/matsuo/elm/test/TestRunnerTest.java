@@ -24,7 +24,8 @@ class TestRunnerTest {
   @Test
   void fuzzTestReportsTheFailingInput() {
     // A false property: not every Int is positive. The runner must find a counterexample within its
-    // sample budget, fail, and report the offending value via the `Given …` context.
+    // sample budget, fail, and report the offending value via the `Given …` context — shrunk to the
+    // minimal failing Int, which for "> 0" is exactly 0.
     String src =
         """
         module T exposing (suite)
@@ -37,8 +38,42 @@ class TestRunnerTest {
     assertEquals(0, r.passed(), r.report());
     assertEquals(1, r.failed(), r.report());
     assertEquals(1, r.exitCode());
-    assertTrue(r.report().contains("Given "), r.report()); // shows the counterexample
+    assertTrue(r.report().contains("Given 0"), r.report()); // shrunk to the minimal counterexample
     assertTrue(r.report().contains("reproduce with --seed 1234"), r.report()); // reproducible
+  }
+
+  @Test
+  void fuzzFailuresAreShrunkToAMinimalInput() {
+    // "every Int is at most 3" fails for any n > 3; shrinking a random 9-digit failure must land on
+    // the boundary value 4 — the smallest Int that still violates the property.
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (fuzz)
+        suite = fuzz Fuzz.int "ints are at most three" (\\n -> Expect.atMost 3 n)
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(100, 99L, null));
+    assertEquals(1, r.failed(), r.report());
+    assertTrue(r.report().contains("Given 4"), r.report());
+  }
+
+  @Test
+  void fuzzShrinksListsToTheSmallestFailingList() {
+    // "every list has length <= 2" fails for longer lists; shrinking drops elements down to the
+    // minimal failing length of 3 (the elements themselves shrink toward 0 too).
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (fuzz)
+        suite = fuzz (Fuzz.list Fuzz.int) "short lists" (\\xs -> Expect.atMost 2 (List.length xs))
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(200, 7L, null));
+    assertEquals(1, r.failed(), r.report());
+    assertTrue(r.report().contains("Given [0,0,0]"), r.report()); // 3 zeros: minimal failing list
   }
 
   @Test

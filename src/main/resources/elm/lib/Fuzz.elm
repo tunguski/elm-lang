@@ -14,19 +14,24 @@ module Fuzz exposing
     )
 
 {-| Random value generators for property-based (`fuzz`) tests — a small subset of
-elm-explorations/test's `Fuzz`. A `Fuzzer a` is a deterministic function from a seed `Int` to a
-value; the `elm test` runner feeds it many seeds and fails the test on the first input that breaks
-an expectation (reporting the offending value). Compose with `map`, `pair` and `list`.
+elm-explorations/test's `Fuzz`. A `Fuzzer a` both generates values from a seed and knows how to
+*shrink* a value toward simpler ones; the `elm test` runner feeds it many seeds, and on the first
+input that breaks an expectation it shrinks that input to a minimal counterexample before reporting
+it. Compose with `map`, `pair` and `list`.
 
     Test.fuzz Fuzz.int "negate is its own inverse" <|
         \n -> Expect.equal n (negate (negate n))
+
 -}
 
 
-{-| A source of pseudo-random values of type `a`, driven by a seed. Opaque in spirit; build with the
-combinators below rather than relying on its representation. -}
+{-| A source of pseudo-random values of type `a`. `gen` turns a seed into a value; `shrink` returns
+a handful of strictly-simpler values to try when a generated value fails a test (each closer to a
+"smallest" value — 0 for numbers, `""`/`[]` for strings/lists). Build with the combinators below. -}
 type alias Fuzzer a =
-    Int -> a
+    { gen : Int -> a
+    , shrink : a -> List a
+    }
 
 
 {-| A fast deterministic scramble of a seed into a non-negative Int, so nearby seeds give unrelated
@@ -36,71 +41,190 @@ hash s =
     abs (modBy 2147483647 (s * 1103515245 + 12345))
 
 
-{-| Any Int (spread across negative and positive). -}
+{-| Any Int (spread across negative and positive); shrinks toward 0. -}
 int : Fuzzer Int
-int seed =
-    hash seed - 1073741823
+int =
+    { gen = \seed -> hash seed - 1073741823
+    , shrink = shrinkInt
+    }
 
 
-{-| An Int in the inclusive range `lo..hi`. -}
-intRange : Int -> Int -> Fuzzer Int
-intRange lo hi seed =
-    if hi <= lo then
-        lo
+shrinkInt : Int -> List Int
+shrinkInt n =
+    if n == 0 then
+        []
 
     else
-        lo + modBy (hi - lo + 1) (hash seed)
+        -- Candidates strictly closer to 0 (smallest first, so shrinking favours the simplest).
+        List.filter (\c -> abs c < abs n) [ 0, n // 2, n - sign n ]
 
 
-{-| True or False. -}
+sign : Int -> Int
+sign n =
+    if n > 0 then
+        1
+
+    else if n < 0 then
+        -1
+
+    else
+        0
+
+
+{-| An Int in the inclusive range `lo..hi`; shrinks toward `lo`. -}
+intRange : Int -> Int -> Fuzzer Int
+intRange lo hi =
+    { gen =
+        \seed ->
+            if hi <= lo then
+                lo
+
+            else
+                lo + modBy (hi - lo + 1) (hash seed)
+    , shrink = \n -> List.filter (\c -> c >= lo && c < n) [ lo, (lo + n) // 2, n - 1 ]
+    }
+
+
+{-| True or False; shrinks `True` toward `False`. -}
 bool : Fuzzer Bool
-bool seed =
-    modBy 2 (hash seed) == 0
+bool =
+    { gen = \seed -> modBy 2 (hash seed) == 0
+    , shrink =
+        \b ->
+            if b then
+                [ False ]
+
+            else
+                []
+    }
 
 
-{-| A Float in roughly `-1e6 .. 1e6` (three decimal places). -}
+{-| A Float in roughly `-1e6 .. 1e6` (three decimal places); shrinks toward 0 (and toward integers). -}
 float : Fuzzer Float
-float seed =
-    toFloat (intRange -1000000000 1000000000 seed) / 1000.0
+float =
+    { gen = \seed -> toFloat (modBy 2000000001 (hash seed) - 1000000000) / 1000.0
+    , shrink = \n -> List.filter (\c -> abs c < abs n) [ 0.0, toFloat (truncate n) ]
+    }
 
 
-{-| A Float in `0.0 .. 1.0`. -}
+{-| A Float in `0.0 .. 1.0`; shrinks toward 0. -}
 percentage : Fuzzer Float
-percentage seed =
-    toFloat (modBy 1000001 (hash seed)) / 1000000.0
+percentage =
+    { gen = \seed -> toFloat (modBy 1000001 (hash seed)) / 1000000.0
+    , shrink = \n -> List.filter (\c -> c < n) [ 0.0 ]
+    }
 
 
-{-| A lowercase ASCII letter. -}
+{-| A lowercase ASCII letter; shrinks toward `'a'`. -}
 char : Fuzzer Char
-char seed =
-    Char.fromCode (97 + modBy 26 (hash seed))
+char =
+    { gen = \seed -> Char.fromCode (97 + modBy 26 (hash seed))
+    , shrink =
+        \c ->
+            if c == 'a' then
+                []
+
+            else
+                [ 'a' ]
+    }
 
 
-{-| A short lowercase string (0..11 letters). -}
+{-| A short lowercase string (0..11 letters); shrinks toward `""` (dropping characters). -}
 string : Fuzzer String
-string seed =
-    String.fromList (List.map (\i -> char (hash (seed + i))) (List.range 1 (modBy 12 (hash seed))))
+string =
+    { gen =
+        \seed ->
+            String.fromList
+                (List.map (\i -> Char.fromCode (97 + modBy 26 (hash (seed + i))))
+                    (List.range 1 (modBy 12 (hash seed)))
+                )
+    , shrink = shrinkString
+    }
 
 
-{-| Always the given value. -}
+shrinkString : String -> List String
+shrinkString s =
+    if String.isEmpty s then
+        []
+
+    else
+        List.filter (\c -> String.length c < String.length s)
+            [ "", String.dropLeft 1 s, String.dropRight 1 s, String.left (String.length s // 2) s ]
+
+
+{-| Always the given value (does not shrink). -}
 constant : a -> Fuzzer a
-constant a _ =
-    a
+constant a =
+    { gen = \_ -> a
+    , shrink = \_ -> []
+    }
 
 
-{-| Transform every generated value. -}
+{-| Transform every generated value. The mapped fuzzer does not shrink (the function need not be
+invertible), so prefer shrinking the source fuzzer where it matters. -}
 map : (a -> b) -> Fuzzer a -> Fuzzer b
-map f fuzzer seed =
-    f (fuzzer seed)
+map f fuzzer =
+    { gen = \seed -> f (fuzzer.gen seed)
+    , shrink = \_ -> []
+    }
 
 
-{-| A pair drawn from two fuzzers (each fed a decorrelated seed). -}
+{-| A pair drawn from two fuzzers (each fed a decorrelated seed); shrinks each component in turn. -}
 pair : Fuzzer a -> Fuzzer b -> Fuzzer ( a, b )
-pair fa fb seed =
-    ( fa seed, fb (hash (seed + 7919)) )
+pair fa fb =
+    { gen = \seed -> ( fa.gen seed, fb.gen (hash (seed + 7919)) )
+    , shrink =
+        \( a, b ) ->
+            List.map (\a2 -> ( a2, b )) (fa.shrink a)
+                ++ List.map (\b2 -> ( a, b2 )) (fb.shrink b)
+    }
 
 
-{-| A list of 0..9 values from the element fuzzer. -}
+{-| A list of 0..9 values from the element fuzzer; shrinks by dropping elements and by shrinking
+each element. -}
 list : Fuzzer a -> Fuzzer (List a)
-list fuzzer seed =
-    List.map (\i -> fuzzer (hash (seed + i * 31))) (List.range 1 (modBy 10 (hash seed)))
+list fuzzer =
+    { gen =
+        \seed ->
+            List.map (\i -> fuzzer.gen (hash (seed + i * 31)))
+                (List.range 1 (modBy 10 (hash seed)))
+    , shrink =
+        \xs ->
+            case xs of
+                [] ->
+                    []
+
+                _ ->
+                    ([] :: removeEach xs) ++ shrinkEach fuzzer.shrink xs
+    }
+
+
+{-| Every way to drop one element. -}
+removeEach : List a -> List (List a)
+removeEach xs =
+    List.indexedMap (\i _ -> dropIndex i xs) xs
+
+
+dropIndex : Int -> List a -> List a
+dropIndex i xs =
+    List.take i xs ++ List.drop (i + 1) xs
+
+
+{-| Every list obtained by replacing one element with one of its shrinks. -}
+shrinkEach : (a -> List a) -> List a -> List (List a)
+shrinkEach sh xs =
+    List.concat
+        (List.indexedMap (\i x -> List.map (\x2 -> setIndex i x2 xs) (sh x)) xs)
+
+
+setIndex : Int -> a -> List a -> List a
+setIndex i v xs =
+    List.indexedMap
+        (\j x ->
+            if i == j then
+                v
+
+            else
+                x
+        )
+        xs

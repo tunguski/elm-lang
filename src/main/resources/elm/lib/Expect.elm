@@ -16,6 +16,7 @@ module Expect exposing
     , ok
     , err
     , onFail
+    , toFailure
     )
 
 {-| Expectations for the bundled test framework (a small subset of elm-explorations/test's `Expect`).
@@ -188,6 +189,18 @@ err result =
 
         Ok a ->
             Fail ("expected Err but got Ok " ++ Debug.toString a)
+
+
+{-| The failure message of an expectation, or `Nothing` if it passed. Used by `Test.fuzz` to drive
+shrinking (it needs to know whether a candidate input still fails). -}
+toFailure : Expectation -> Maybe String
+toFailure expectation =
+    case expectation of
+        Pass ->
+            Nothing
+
+        Fail message ->
+            Just message
 
 
 {-| Prepends context to an expectation's failure message (used by `Test.fuzz` to report the input);

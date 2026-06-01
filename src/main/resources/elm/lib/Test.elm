@@ -44,14 +44,62 @@ concat tests =
 
 
 {-| A property test: the runner draws many random inputs from the `Fuzzer` and fails on the first
-one that breaks the expectation, reporting the offending value. -}
+one that breaks the expectation. On failure the input is *shrunk* to a minimal counterexample (the
+fuzzer's `shrink` candidates are followed greedily for as long as they keep failing), and that
+minimal value is what gets reported — far more useful than a random 9-digit integer. -}
 fuzz : Fuzzer a -> String -> (a -> Expectation) -> Test
 fuzz fuzzer description body =
     FuzzTest description
         (\seed ->
             let
                 value =
-                    fuzzer seed
+                    fuzzer.gen seed
             in
-            Expect.onFail ("Given " ++ Debug.toString value ++ "\n\n") (body value)
+            case Expect.toFailure (body value) of
+                Nothing ->
+                    Expect.pass
+
+                Just _ ->
+                    let
+                        minimal =
+                            shrink fuzzer.shrink body value
+                    in
+                    Expect.onFail ("Given " ++ Debug.toString minimal ++ "\n\n") (body minimal)
         )
+
+
+{-| Greedily reduce a failing input to a simpler one that still fails, following the fuzzer's shrink
+candidates. Bounded so a pathological shrinker can't loop forever. -}
+shrink : (a -> List a) -> (a -> Expectation) -> a -> a
+shrink shrinker body value =
+    shrinkHelp shrinker body value 2000
+
+
+shrinkHelp : (a -> List a) -> (a -> Expectation) -> a -> Int -> a
+shrinkHelp shrinker body value budget =
+    if budget <= 0 then
+        value
+
+    else
+        case firstFailing body (shrinker value) of
+            Nothing ->
+                value
+
+            Just smaller ->
+                shrinkHelp shrinker body smaller (budget - 1)
+
+
+{-| The first candidate that still fails the test, if any. -}
+firstFailing : (a -> Expectation) -> List a -> Maybe a
+firstFailing body candidates =
+    case candidates of
+        [] ->
+            Nothing
+
+        c :: rest ->
+            case Expect.toFailure (body c) of
+                Just _ ->
+                    Just c
+
+                Nothing ->
+                    firstFailing body rest
