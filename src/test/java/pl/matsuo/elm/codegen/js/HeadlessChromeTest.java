@@ -332,6 +332,25 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void editorShowsALineNumberGutter() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    // Edit to a 3-line file; the gutter renders a numbered <div> per line. ">N</div>" only appears in
+    // the rendered DOM (the compiled bundle builds nodes via $data, not literal tags), so it's a
+    // gutter-specific check.
+    String program = "a = 1\\nb = 2\\nmain = text (String.fromInt 42)"; // 3 lines, no quotes
+    String driver = "window.$app.dispatch($data('EditAt',['" + program + "',0]));";
+    String dom = renderPage(JsCompiler.htmlPageProject(driver, modules));
+    assertTrue(dom.contains(">1</div>"), "gutter line 1: " + dom);
+    assertTrue(dom.contains(">2</div>"), "gutter line 2");
+    assertTrue(dom.contains(">3</div>"), "gutter line 3");
+    assertTrue(dom.contains("42"), "the file still renders live");
+  }
+
+  @Test
   void editorRestoresAnAutosavedSessionFromLocalStorage() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];

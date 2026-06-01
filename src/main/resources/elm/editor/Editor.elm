@@ -657,35 +657,90 @@ codeEditor : Model -> String -> Html Msg
 codeEditor model source =
     div [ style "position" "relative" ]
         [ errorRibbon model source
-        , div [ style "position" "relative", style "background" "#0f1720" ]
-            [ pre
-                (style "margin" "0"
-                    :: style "pointer-events" "none"
-                    :: style "color" (segColor "")
-                    :: codeStyles
-                )
-                (List.map renderSegment (Highlight.segments source) ++ [ text "\n" ])
-            , squiggleOverlay model source
-            , textarea
-                (onEdit
-                    :: value source
-                    :: style "position" "absolute"
-                    :: style "top" "0"
-                    :: style "left" "0"
-                    :: style "height" "100%"
-                    :: style "color" "transparent"
-                    :: style "background" "transparent"
-                    :: style "caret-color" "#e6edf3"
-                    :: style "border" "none"
-                    :: style "outline" "none"
-                    :: style "resize" "none"
-                    :: style "overflow" "hidden"
-                    :: codeStyles
-                )
-                []
-            , completionBar model
+        , div [ style "display" "flex", style "background" "#0f1720" ]
+            [ gutter model source
+            , div [ style "position" "relative", style "flex" "1", style "min-width" "0" ]
+                [ pre
+                    (style "margin" "0"
+                        :: style "pointer-events" "none"
+                        :: style "color" (segColor "")
+                        :: codeStyles
+                    )
+                    (List.map renderSegment (Highlight.segments source) ++ [ text "\n" ])
+                , squiggleOverlay model source
+                , textarea
+                    (onEdit
+                        :: value source
+                        :: style "position" "absolute"
+                        :: style "top" "0"
+                        :: style "left" "0"
+                        :: style "height" "100%"
+                        :: style "color" "transparent"
+                        :: style "background" "transparent"
+                        :: style "caret-color" "#e6edf3"
+                        :: style "border" "none"
+                        :: style "outline" "none"
+                        :: style "resize" "none"
+                        :: style "overflow" "hidden"
+                        :: codeStyles
+                    )
+                    []
+                , completionBar model
+                ]
             ]
         ]
+
+
+{-| A line-number gutter beside the code, highlighting the line the caret is on. Aligned to the code
+by sharing its font, size, line-height and top padding (long wrapped lines aside). -}
+gutter : Model -> String -> Html Msg
+gutter model source =
+    let
+        lineCount =
+            List.length (String.lines source)
+
+        current =
+            currentLine source model.caret
+    in
+    div
+        [ style "user-select" "none"
+        , style "text-align" "right"
+        , style "padding" "14px 8px 14px 12px"
+        , style "background" "#0b1118"
+        , style "color" "#5b6b7b"
+        , style "font-family" "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+        , style "font-size" "13px"
+        , style "line-height" "1.5"
+        , style "white-space" "pre"
+        ]
+        (List.map (gutterLine current) (List.range 1 lineCount))
+
+
+gutterLine : Int -> Int -> Html Msg
+gutterLine current n =
+    div
+        [ style "background"
+            (if n == current then
+                "#1b2535"
+
+             else
+                "transparent"
+            )
+        , style "color"
+            (if n == current then
+                "#e6edf3"
+
+             else
+                "#5b6b7b"
+            )
+        ]
+        [ text (String.fromInt n) ]
+
+
+{-| The 1-based line the caret sits on (one past the newlines before it). -}
+currentLine : String -> Int -> Int
+currentLine source caret =
+    1 + List.length (List.filter ((==) '\n') (String.toList (String.left caret source)))
 
 
 {-| A `<textarea>` input handler that captures both the new text and the caret offset
