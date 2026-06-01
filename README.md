@@ -139,6 +139,7 @@ to any command for its full options.**
 | `lsp` | Language server over stdio (diagnostics, hover, completion, inlay hints, signature help, code actions, extract/inline refactors, call hierarchy, code lenses, rename, …). A ready-to-run **[VS Code client](editor/vscode/)** wraps it; see **[docs/lsp.md](docs/lsp.md)** for the full list and editor setup. |
 | `bench [fibN]` | Benchmark all **five** backends (interpreter, bytecode VM, JS, linear-memory WASM, WasmGC) on `fib`, list-fold and record-update. |
 | `gen-site <file.elm> <outDir> [--api DIR]… [--base-url URL]` | Generate a static website from a `site : List Site.Page` Elm definition (pages as data, via the bundled `Site` library). See **[docs/site.md](docs/site.md)**. |
+| `build [phase] [-f build.elm]` | Run an Elm-defined build (`project : Build.Project`) through a Maven-style lifecycle (validate → compile → test → package → verify → install), with declarative multi-module projects and custom goals as plain Elm functions. See **[docs/build.md](docs/build.md)**. |
 | `site <examplesDir> <Playground.elm> <outDir> [docsDir]` | Generate the static example gallery (optionally rendering Markdown docs). |
 
 The compiled TEA runtime also ships a **time-travel debugger**: append `?debug` to a page URL for a
