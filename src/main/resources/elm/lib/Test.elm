@@ -1,4 +1,4 @@
-module Test exposing (Test, test, describe, concat, fuzz, only, skip, todo)
+module Test exposing (Test, test, describe, concat, fuzz, fuzz2, fuzz3, only, skip, todo)
 
 {-| A tiny test framework (a subset of elm-explorations/test). Build tests with `test` and group
 them with `describe`/`concat`, then expose them as a top-level `Test` value; the `elm test` runner
@@ -89,6 +89,30 @@ fuzz fuzzer description body =
                     in
                     Expect.onFail ("Given " ++ Debug.toString minimal ++ "\n\n") (body minimal)
         )
+
+
+{-| A property test over two independent fuzzed inputs (shrunk together as a pair). -}
+fuzz2 : Fuzzer a -> Fuzzer b -> String -> (a -> b -> Expectation) -> Test
+fuzz2 fa fb description body =
+    fuzz (Fuzz.pair fa fb) description (\( a, b ) -> body a b)
+
+
+{-| A property test over three independent fuzzed inputs (shrunk together as a triple). -}
+fuzz3 : Fuzzer a -> Fuzzer b -> Fuzzer c -> String -> (a -> b -> c -> Expectation) -> Test
+fuzz3 fa fb fc description body =
+    fuzz (triple fa fb fc) description (\( a, b, c ) -> body a b c)
+
+
+{-| A 3-tuple fuzzer (each component fed a decorrelated seed), shrinking one component at a time. -}
+triple : Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer ( a, b, c )
+triple fa fb fc =
+    { gen = \seed -> ( fa.gen seed, fb.gen (seed * 7919 + 1), fc.gen (seed * 104729 + 3) )
+    , shrink =
+        \( a, b, c ) ->
+            List.map (\a2 -> ( a2, b, c )) (fa.shrink a)
+                ++ List.map (\b2 -> ( a, b2, c )) (fb.shrink b)
+                ++ List.map (\c2 -> ( a, b, c2 )) (fc.shrink c)
+    }
 
 
 {-| Greedily reduce a failing input to a simpler one that still fails, following the fuzzer's shrink

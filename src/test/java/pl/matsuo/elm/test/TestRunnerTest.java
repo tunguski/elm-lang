@@ -180,6 +180,42 @@ class TestRunnerTest {
   }
 
   @Test
+  void fuzz2AndFuzz3RunMultiInputProperties() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (Test, describe, fuzz2, fuzz3)
+        suite =
+            describe "multi"
+                [ fuzz2 Fuzz.int Fuzz.int "addition commutes" (\\a b -> Expect.equal (a + b) (b + a))
+                , fuzz3 (Fuzz.intRange 0 5) (Fuzz.intRange 0 5) (Fuzz.intRange 0 5) "small sum"
+                    (\\a b c -> Expect.atMost 15 (a + b + c))
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(2, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
+  }
+
+  @Test
+  void fuzz2FailureReportsTheShrunkPair() {
+    // "a + b > 0" fails whenever a + b <= 0; the pair shrinks to the minimal (0,0).
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (fuzz2)
+        suite = fuzz2 Fuzz.int Fuzz.int "sum positive" (\\a b -> Expect.greaterThan 0 (a + b))
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(100, 1234L, null));
+    assertEquals(1, r.failed(), r.report());
+    assertTrue(r.report().contains("Given (0,0)"), r.report());
+  }
+
+  @Test
   void newFuzzCombinatorsGenerateValidInputs() {
     // oneOf, frequency, maybe, result, filter, map2 all produce values the properties below accept,
     // so a passing run exercises each generator across the sample.
