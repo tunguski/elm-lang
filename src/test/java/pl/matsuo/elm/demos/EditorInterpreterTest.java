@@ -444,6 +444,27 @@ class EditorInterpreterTest {
     assertTrue(page.contains("$start"), "the full editor (with Assist + Share wiring) bundles to JS");
   }
 
+  /**
+   * Guards the editor's message wiring against the failure mode where a {@code Msg} constructor is
+   * renamed but the (Chrome-gated) headless drivers still dispatch the old name — a break that only
+   * surfaced in full CI. The compiled bundle must contain a handler tag for every message those
+   * drivers dispatch; this test runs in the normal, no-browser tier, so the rename fails fast.
+   */
+  @Test
+  void editorBundleHandlesTheMessagesTheHeadlessDriversDispatch() {
+    String[] sources = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < sources.length; i++) {
+      sources[i] = Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    String page = JsCompiler.htmlPageProject(null, sources);
+    // The exact constructors HeadlessChromeTest dispatches via window.$app.dispatch($data('X',...)).
+    for (String ctor : new String[] {"EditAt", "Interp", "Rewind", "GotHash"}) {
+      assertTrue(
+          page.contains("'" + ctor + "'") || page.contains("\"" + ctor + "\""),
+          "compiled editor bundle has no handler for the dispatched message " + ctor);
+    }
+  }
+
   /** Calls `Share.encodeFiles`/`Share.decodeFiles` and checks they round-trip the file set. */
   @Test
   void shareEncodesAndDecodesTheFileSet() {
