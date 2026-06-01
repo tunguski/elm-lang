@@ -56,19 +56,37 @@ public final class SiteGen {
     Files.createDirectories(outDir);
     Files.writeString(outDir.resolve("site.css"), Resources.read("/elm/css/site.css"), StandardCharsets.UTF_8);
 
+    Object pagesValue = project.entryValue("site");
+    List<Object> pages = ((ElmList) pagesValue).toJava();
     List<String> paths = new ArrayList<>();
-    for (Object pageObj : ((ElmList) project.entryValue("site")).toJava()) {
+    for (Object pageObj : pages) {
       ElmRecord page = (ElmRecord) pageObj;
       String path = (String) page.get("path");
       writePage(outDir, path, (String) Apply.apply(render, page));
       paths.add(path);
     }
 
+    // Auto-generate an index.html (a table of contents) when the site doesn't define one itself.
+    if (!pages.isEmpty() && !paths.contains("index.html")) {
+      Object indexPage =
+          Apply.applyAll(project.value("Site", "index"), "index.html", "Index", pagesValue);
+      writePage(outDir, "index.html", (String) Apply.apply(render, indexPage));
+      paths.add("index.html");
+    }
+
+    // Emit an RSS feed of the pages (titled after the first page; links prefixed with baseUrl).
+    if (!pages.isEmpty()) {
+      String feedTitle = (String) ((ElmRecord) pages.get(0)).get("title");
+      String feed = (String) Apply.applyAll(project.value("Site", "feed"), feedTitle, baseUrl, pagesValue);
+      Files.writeString(outDir.resolve("feed.xml"), feed, StandardCharsets.UTF_8);
+    }
+
     if (!apiDirs.isEmpty()) {
       generateApiDocs(apiDirs, outDir, render, paths);
     }
     writeSitemap(outDir, paths, baseUrl);
-    System.out.println("Wrote " + paths.size() + " page(s) + sitemap.xml to " + outDir.toAbsolutePath());
+    System.out.println(
+        "Wrote " + paths.size() + " page(s) + sitemap.xml + feed.xml to " + outDir.toAbsolutePath());
     return 0;
   }
 

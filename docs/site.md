@@ -160,6 +160,10 @@ Two helpers build site-wide artifacts from a `List Page`:
   writeFile "feed.xml" (Site.feed "My blog" "https://example.com/" articles) done
   ```
 
+`gen-site` applies both for you: it writes a `feed.xml` of your pages, and — when your `site` has no
+`index.html` of its own — an auto table-of-contents `index.html`. So a plain `elm gen-site` already
+produces a feed and an index without any extra wiring.
+
 ## Generating pages from files on disk
 
 `gen-site` is **pure**: your `site : List Page` is data, computed without touching the filesystem.

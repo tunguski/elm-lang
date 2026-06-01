@@ -82,6 +82,28 @@ class SiteGenTest {
   }
 
   @Test
+  void emitsAnRssFeedOfThePages(@TempDir Path out) throws IOException {
+    SiteGen.generate(SITE, out, List.of(), "https://example.com/");
+    String feed = Files.readString(out.resolve("feed.xml"), StandardCharsets.UTF_8);
+    assertTrue(feed.contains("<rss version=\"2.0\">"), feed);
+    assertTrue(feed.contains("<link>https://example.com/about.html</link>"), feed);
+    assertTrue(feed.contains("<title>About</title>"), "a page becomes a feed item");
+  }
+
+  @Test
+  void autoGeneratesAnIndexWhenTheSiteHasNone(@TempDir Path out) throws IOException {
+    // A site with no index.html of its own gets an auto table-of-contents index.
+    String src =
+        "module Main exposing (site)\nimport Site exposing (..)\n"
+            + "site = [ page \"a.html\" \"Alpha\" [], page \"b.html\" \"Beta\" [] ]\n";
+    SiteGen.generate(src, out, List.of(), "");
+    assertTrue(Files.exists(out.resolve("index.html")), "auto index generated");
+    String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
+    assertTrue(index.contains("href=\"a.html\"") && index.contains("Alpha"), index);
+    assertTrue(index.contains("href=\"b.html\"") && index.contains("Beta"), index);
+  }
+
+  @Test
   void markdownBlocksRenderToHtml(@TempDir Path out) throws IOException {
     // A page built from a Markdown string via Site.markdown.
     String src =
