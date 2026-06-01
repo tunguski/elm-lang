@@ -340,7 +340,10 @@ public final class BuildRunner {
     String posix = pl.matsuo.elm.util.Resources.read("/elm/lib/Posix.elm");
     String bash = pl.matsuo.elm.util.Resources.read("/elm/lib/Bash.elm");
     String site = pl.matsuo.elm.util.Resources.read("/elm/lib/Site.elm");
-    Object main = pl.matsuo.elm.interp.Project.load(userSource, posix, bash, site).main();
+    String awk = pl.matsuo.elm.util.Resources.read("/elm/lib/Awk.elm");
+    String m4 = pl.matsuo.elm.util.Resources.read("/elm/lib/M4.elm");
+    Object main =
+        pl.matsuo.elm.interp.Project.load(userSource, posix, bash, site, awk, m4).main();
     List<String> resolved = new ArrayList<>();
     for (String a : args) {
       resolved.add(at(baseDir, a).toString());

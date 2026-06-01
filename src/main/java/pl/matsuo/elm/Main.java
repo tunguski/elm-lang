@@ -398,7 +398,10 @@ public final class Main implements Runnable {
       // Site is bundled too, so a script can read files (Posix) and render them to HTML pages
       // (Site.render) — e.g. generating a page per file in a folder, or from a JSON manifest.
       String site = pl.matsuo.elm.util.Resources.read("/elm/lib/Site.elm");
-      Object main = pl.matsuo.elm.interp.Project.load(userSource, posix, bash, site).main();
+      // Awk/M4 give scripts text-processing and macro-expansion helpers over the text they read.
+      String awk = pl.matsuo.elm.util.Resources.read("/elm/lib/Awk.elm");
+      String m4 = pl.matsuo.elm.util.Resources.read("/elm/lib/M4.elm");
+      Object main = pl.matsuo.elm.interp.Project.load(userSource, posix, bash, site, awk, m4).main();
       return pl.matsuo.elm.script.ScriptRunner.run(
           main,
           scriptArgs == null ? List.of() : scriptArgs,
