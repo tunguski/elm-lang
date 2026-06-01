@@ -157,6 +157,63 @@ class BuildRunnerTest {
   }
 
   @Test
+  void compilesAMultiFileModuleAsAProject() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-multi-");
+    Files.createDirectories(dir.resolve("src"));
+    Files.writeString(
+        dir.resolve("src/Util.elm"), "module Util exposing (greeting)\ngreeting = \"hi-there\"\n");
+    Files.writeString(
+        dir.resolve("src/Main.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nimport Util\nmain = text Util.greeting\n");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "."
+                    |> withEntry "src/Main.elm"
+                    |> withSources [ "src/Util.elm" ]
+                    |> withOutput "out"
+                ]
+        """);
+    Result r = build(dir, "compile");
+    assertEquals(0, r.code(), r.out());
+    String js = Files.readString(dir.resolve("out/app.js"), StandardCharsets.UTF_8);
+    assertTrue(js.contains("$start"), "is a runnable bundle");
+    assertTrue(js.contains("hi-there"), "the imported module was bundled in: " + r.out());
+  }
+
+  @Test
+  void perModuleBackendCompilesToWasm() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-wasm-");
+    Files.createDirectories(dir.resolve("src"));
+    Files.writeString(dir.resolve("src/Main.elm"), "module Main exposing (main)\nmain = 6 * 7\n");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "." |> withEntry "src/Main.elm" |> withOutput "out" |> withBackend Wasm ]
+        """);
+    Result r = build(dir, "compile");
+    assertEquals(0, r.code(), r.out());
+    Path wasm = dir.resolve("out/app.wasm"); // .wasm extension chosen by the backend
+    assertTrue(Files.exists(wasm), "wasm artifact written: " + r.out());
+    byte[] bytes = Files.readAllBytes(wasm);
+    assertTrue(bytes.length > 4 && bytes[0] == 0x00 && bytes[1] == 0x61, "starts with the wasm magic");
+  }
+
+  @Test
   void cleanRemovesEachModulesOutput() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-clean-");
     Files.createDirectories(dir.resolve("out"));

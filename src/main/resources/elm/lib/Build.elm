@@ -15,11 +15,14 @@ module Build exposing
     , withSources
     , withDependencies
     , withOutput
+    , withBackend
     , withGoals
     , addGoal
     , exec
     , check
+    , checkAll
     , compile
+    , compileAll
     , test
     , archive
     , copy
@@ -88,6 +91,7 @@ type alias Module =
     , sources : List String
     , dependencies : List Dependency
     , output : String
+    , backend : Backend
     , goals : List Goal
     }
 
@@ -130,8 +134,8 @@ type Backend
 any command); the rest map onto the toolchain and the filesystem. Prefer the lowercase builders. -}
 type Task
     = Run String (List String)
-    | Check String
-    | CompileModule Backend String String
+    | Check (List String)
+    | CompileModule Backend (List String) String
     | RunTests String
     | Archive String String
     | Copy String String
@@ -171,6 +175,7 @@ module_ name path =
     , sources = []
     , dependencies = []
     , output = path ++ "/build"
+    , backend = JS
     , goals = []
     }
 
@@ -206,6 +211,11 @@ withOutput output m =
     { m | output = output }
 
 
+withBackend : Backend -> Module -> Module
+withBackend backend m =
+    { m | backend = backend }
+
+
 withGoals : List Goal -> Module -> Module
 withGoals goals m =
     { m | goals = goals }
@@ -226,15 +236,28 @@ exec =
     Run
 
 
-{-| Type-check a module's entry file (failing the build on a type error). -}
+{-| Type-check a single entry file (failing the build on a type error). -}
 check : String -> Task
-check =
+check entry =
+    Check [ entry ]
+
+
+{-| Type-check a set of source files together as one project (so cross-module imports resolve). -}
+checkAll : List String -> Task
+checkAll =
     Check
 
 
-{-| Compile a module's entry file to a backend, writing the artifact to a path. -}
+{-| Compile a single entry file to a backend, writing the artifact to a path. -}
 compile : Backend -> String -> String -> Task
-compile =
+compile backend entry out =
+    CompileModule backend [ entry ] out
+
+
+{-| Compile a set of source files (the entry first) as one project to a backend. The JS and
+linear-memory WASM backends bundle all the modules; the WasmGC backend compiles the entry only. -}
+compileAll : Backend -> List String -> String -> Task
+compileAll =
     CompileModule
 
 
@@ -343,12 +366,18 @@ into `build-repo/`. Include them explicitly (`defaultGoals ++ yours`) to keep th
 own. -}
 defaultGoals : List Goal
 defaultGoals =
-    [ goal Validate "validate" (\m -> [ check m.entry ])
-    , goal Compile "compile" (\m -> [ makeDir m.output, compile JS m.entry (m.output ++ "/" ++ m.name ++ ".js") ])
+    [ goal Validate "validate" (\m -> [ checkAll (m.entry :: m.sources) ])
+    , goal Compile "compile" (\m -> [ makeDir m.output, compileAll m.backend (m.entry :: m.sources) (artifactPath m) ])
     , goal Test "test" (\m -> [ test (m.path ++ "/tests") ])
     , goal Package "package" (\m -> [ makeDir "dist", archive m.output ("dist/" ++ m.name ++ ".zip") ])
     , goal Install "install" (\m -> [ makeDir "build-repo", copy ("dist/" ++ m.name ++ ".zip") ("build-repo/" ++ m.name ++ ".zip") ])
     ]
+
+
+{-| The default compiled-artifact path for a module: `<output>/<name>.js` for JS, `.wasm` otherwise. -}
+artifactPath : Module -> String
+artifactPath m =
+    m.output ++ "/" ++ m.name ++ (if m.backend == JS then ".js" else ".wasm")
 
 
 {-| A module's goals: its own if it declares any, otherwise the defaults. -}

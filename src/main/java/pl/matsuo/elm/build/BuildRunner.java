@@ -76,9 +76,9 @@ public final class BuildRunner {
       case "Copy" -> "copy " + str(task.arg(0)) + " -> " + str(task.arg(1));
       case "Archive" -> "archive " + str(task.arg(0)) + " -> " + str(task.arg(1));
       case "Run" -> "exec " + str(task.arg(0)) + " " + String.join(" ", strings(task.arg(1)));
-      case "Check" -> "check " + str(task.arg(0));
+      case "Check" -> "check " + String.join(", ", strings(task.arg(0)));
       case "CompileModule" ->
-          "compile " + str(task.arg(1)) + " ("
+          "compile " + String.join(", ", strings(task.arg(1))) + " ("
               + str(((ElmData) Thunk.resolve(task.arg(0))).ctor()) + ") -> " + str(task.arg(2));
       case "RunTests" -> "test " + str(task.arg(0));
       default -> task.ctor();
@@ -109,10 +109,10 @@ public final class BuildRunner {
           return exec(str(task.arg(0)), strings(task.arg(1)), baseDir, out);
         }
         case "Check" -> {
-          return check(str(task.arg(0)), baseDir, out);
+          return check(strings(task.arg(0)), baseDir, out);
         }
         case "CompileModule" -> compile(str(((ElmData) Thunk.resolve(task.arg(0))).ctor()),
-            str(task.arg(1)), str(task.arg(2)), baseDir, out);
+            strings(task.arg(1)), str(task.arg(2)), baseDir, out);
         case "RunTests" -> {
           return runTests(str(task.arg(0)), baseDir, out);
         }
@@ -128,32 +128,55 @@ public final class BuildRunner {
     }
   }
 
-  /** Compiles {@code entry} to {@code target} with the named backend (JS page / wasm binary). */
-  private static void compile(String backend, String entry, String target, Path baseDir, PrintStream out)
+  /** Compiles a module's source files (entry first) to {@code target} with the named backend. The JS
+   * and linear-WASM backends bundle all the sources; WasmGC compiles the entry source only. */
+  private static void compile(String backend, List<String> entries, String target, Path baseDir, PrintStream out)
       throws IOException {
-    String source = Files.readString(at(baseDir, entry), StandardCharsets.UTF_8);
+    if (entries.isEmpty()) {
+      throw new IOException("compile: no source files");
+    }
+    List<String> sources = new ArrayList<>();
+    for (String e : entries) {
+      sources.add(Files.readString(at(baseDir, e), StandardCharsets.UTF_8));
+    }
     Path path = at(baseDir, target);
     if (path.getParent() != null) {
       Files.createDirectories(path.getParent());
     }
+    String[] arr = sources.toArray(new String[0]);
     switch (backend) {
-      case "JS" -> Files.writeString(path, JsCompiler.htmlPage(source, null), StandardCharsets.UTF_8);
-      case "Wasm" -> Files.write(path, WasmCompiler.moduleFromSource(source));
-      case "WasmGc" -> Files.write(path, WasmGc.module(source));
+      case "JS" -> {
+        String page =
+            sources.size() == 1
+                ? JsCompiler.htmlPage(arr[0], null)
+                : JsCompiler.htmlPageProject(null, arr);
+        Files.writeString(path, page, StandardCharsets.UTF_8);
+      }
+      case "Wasm" -> Files.write(path, WasmCompiler.moduleFromSources(sources));
+      case "WasmGc" -> Files.write(path, WasmGc.module(arr[0]));
       default -> throw new IllegalArgumentException("unknown backend: " + backend);
     }
-    out.println("  compiled " + entry + " (" + backend + ") -> " + target);
+    out.println("  compiled " + entries.get(0)
+        + (sources.size() > 1 ? " (+" + (sources.size() - 1) + ")" : "")
+        + " (" + backend + ") -> " + target);
   }
 
-  /** Type-checks a module's entry file, returning 0 if it checks or 1 (with the error) otherwise. */
-  private static int check(String entry, Path baseDir, PrintStream out) throws IOException {
-    String source = Files.readString(at(baseDir, entry), StandardCharsets.UTF_8);
+  /** Type-checks a module's source files together (so cross-module imports resolve), returning 0 if
+   * they check or 1 (with the error) otherwise. */
+  private static int check(List<String> entries, Path baseDir, PrintStream out) throws IOException {
+    if (entries.isEmpty()) {
+      return 0;
+    }
+    List<String> sources = new ArrayList<>();
+    for (String e : entries) {
+      sources.add(Files.readString(at(baseDir, e), StandardCharsets.UTF_8));
+    }
     try {
-      pl.matsuo.elm.types.TypeChecker.checkModule(source);
-      out.println("  ok " + entry + " type-checks");
+      pl.matsuo.elm.types.TypeChecker.checkProject(sources.toArray(new String[0]));
+      out.println("  ok " + entries.get(0) + " type-checks");
       return 0;
     } catch (pl.matsuo.elm.error.ElmTypeError e) {
-      out.println("  x type error in " + entry + ": " + message(e));
+      out.println("  x type error in " + entries.get(0) + ": " + message(e));
       return 1;
     }
   }
