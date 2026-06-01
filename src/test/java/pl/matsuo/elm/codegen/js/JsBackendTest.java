@@ -249,6 +249,20 @@ class JsBackendTest {
   }
 
   @Test
+  void numericBasicsAgreeAcrossBackends() {
+    same("clamp 0 10 15");
+    same("clamp 0 10 -3");
+    same("clamp 0 10 7");
+    same("remainderBy 4 -7"); // remainder keeps the dividend's sign (unlike modBy)
+    same("truncate 3.9");
+    same("truncate -3.9");
+    same("if isNaN (0 / 0) then 1 else 0");
+    same("if isInfinite (1 / 0) then 1 else 0");
+    same("round (degrees 180 * 1000)"); // pi*1000
+    same("round (turns 1 * 1000)"); // 2*pi*1000
+  }
+
+  @Test
   void bitwiseModuleAgreesAcrossBackends() {
     same("Bitwise.and 12 10");
     same("Bitwise.or 12 10");
