@@ -188,6 +188,29 @@ class LspServerTest {
   }
 
   @Test
+  void codeActionRemovesAnUnusedDefinition() {
+    // `helper` is private (M exposes only main) and referenced nowhere; offer to delete it, including
+    // its type annotation line.
+    String src =
+        "module M exposing (main)\n"
+            + "helper : Int\n"
+            + "helper = 42\n"
+            + "main = 1\n";
+    var actions = server.codeActions(src, 2); // cursor on the `helper = 42` line
+    var remove =
+        actions.stream().filter(a -> a.title().equals("Remove unused definition")).findFirst();
+    assertTrue(remove.isPresent(), actions.toString());
+    assertEquals("", remove.get().newText());
+    assertEquals(1, remove.get().line()); // from the annotation line
+    assertEquals(3, remove.get().endLine()); // up to the start of `main`
+    // A used definition is not offered for removal.
+    assertTrue(
+        server.codeActions(src.replace("main = 1", "main = helper"), 2).stream()
+            .noneMatch(a -> a.title().equals("Remove unused definition")),
+        "a referenced definition is not removable");
+  }
+
+  @Test
   void codeActionAddsAMissingQualifiedImport() {
     // `Set.empty` is used but `Set` isn't imported; offer to add the import.
     String src = "module M exposing (main)\nmain = Set.size Set.empty\n";

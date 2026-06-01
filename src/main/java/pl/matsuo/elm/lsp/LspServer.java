@@ -676,9 +676,45 @@ public final class LspServer {
     addTypeAnnotationAction(source, module, line0, out);
     fillCaseBranchesAction(module, line0, out);
     removeUnusedImportAction(source, module, line0, out);
+    removeUnusedDefinitionAction(source, module, line0, out);
     addMissingImportAction(source, module, line0, out);
     organizeImportsAction(source, module, line0, out);
     return out;
+  }
+
+  /**
+   * "Remove unused definition" when the cursor is on (or on the type annotation of) a private
+   * top-level value that nothing references — pairs with the unused-definition diagnostic. Deletes
+   * the definition's lines, including a preceding {@code name :} annotation and up to the start of
+   * the next top-level declaration.
+   */
+  private void removeUnusedDefinitionAction(
+      String source, Module module, int line0, List<CodeAction> out) {
+    String[] lines = source.split("\n", -1);
+    for (Diagnostic d : unusedBindingWarnings(module)) {
+      if (!d.message().startsWith("Unused definition:")) {
+        continue;
+      }
+      int startLine = d.line(); // the definition's `name … =` line (0-based)
+      // Include a directly-preceding `name :` type annotation in the deletion.
+      String name = d.message().replaceAll("^Unused definition: `([^`]+)`.*$", "$1");
+      int from = startLine;
+      if (startLine > 0 && lines[startLine - 1].trim().startsWith(name + " :")) {
+        from = startLine - 1;
+      }
+      // The definition runs until the next top-level (column-0, non-blank) line, or end of file.
+      int to = lines.length;
+      for (int i = startLine + 1; i < lines.length; i++) {
+        if (!lines[i].isEmpty() && !Character.isWhitespace(lines[i].charAt(0))) {
+          to = i;
+          break;
+        }
+      }
+      if (line0 >= from && line0 < to) {
+        out.add(new CodeAction("Remove unused definition", from, 0, to, 0, ""));
+        return;
+      }
+    }
   }
 
   /** "Organize imports" (offered on an import line): rewrites the import block sorted by module, with
