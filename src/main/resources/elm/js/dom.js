@@ -38,6 +38,7 @@
   $rt['Browser.sandbox']=function(r){ return $data('$Sandbox',[r]); };
   $rt['Browser.element']=function(r){ return $data('$Element',[r]); };
   $rt['Browser.document']=function(r){ return $data('$Document',[r]); };
+  $rt['Browser.application']=function(r){ return $data('$Application',[r]); };
   // ---- effects: Cmd / Sub / Task / Generator / Decoder kernels ----
   // A Cmd is $Cmd[run] where run(dispatch) performs the side effect; none/batch compose them.
   function $cmd(run){ return $data('$Cmd',[run]); }
@@ -116,12 +117,21 @@
   $rt['Json.Decode.lazy']=function(thunk){ return $dec(function(j){ return thunk(null)._[0](j); }); };
   $rt['Json.Decode.dict']=function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||Array.isArray(j)) return {ok:0,v:'expected an object'}; var d={$:'Dict',a:[]}; var ks=Object.keys(j); for(var i=0;i<ks.length;i++){ var x=dec._[0](j[ks[i]]); if(!x.ok) return x; d=$dictInsert(d,ks[i],x.v); } return {ok:1,v:d}; }); };
   $rt['Json.Decode.keyValuePairs']=function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||Array.isArray(j)) return {ok:0,v:'expected an object'}; var ks=Object.keys(j),r=[]; for(var i=0;i<ks.length;i++){ var x=dec._[0](j[ks[i]]); if(!x.ok) return x; r.push($tuple([ks[i],x.v])); } return {ok:1,v:$list(r)}; }); };
-  // Url / Browser.Navigation: minimal browser-backed support.
-  $rt['Url.toString']=function(u){ return (u&&u.$==='$Url') ? u._[0] : String(u); };
-  $rt['Url.fromString']=function(s){ try{ new URL(s); return $data('Just',[$data('$Url',[s])]); }catch(e){ return $data('Nothing',[]); } };
+  // Url / Browser.Navigation: an elm/url-shaped record { protocol, host, port_, path, query, fragment }.
+  function $url(href){ var u; try{ u=new URL(href, (typeof location!=='undefined'?location.href:'http://localhost/')); }catch(e){ return null; }
+    return { protocol: (u.protocol==='https:'?$data('Https',[]):$data('Http',[])), host: u.hostname,
+             port_: (u.port?$data('Just',[parseInt(u.port,10)]):$data('Nothing',[])), path: u.pathname,
+             query: (u.search?$data('Just',[u.search.slice(1)]):$data('Nothing',[])),
+             fragment: (u.hash?$data('Just',[u.hash.slice(1)]):$data('Nothing',[])) }; }
+  function $urlToString(u){ var s=(u.protocol&&u.protocol.$==='Https'?'https':'http')+'://'+u.host;
+    if(u.port_&&u.port_.$==='Just') s+=':'+u.port_._[0]; s+=u.path;
+    if(u.query&&u.query.$==='Just') s+='?'+u.query._[0]; if(u.fragment&&u.fragment.$==='Just') s+='#'+u.fragment._[0]; return s; }
+  $rt['Url.toString']=function(u){ return (u&&u.path!=null)?$urlToString(u):String(u); };
+  $rt['Url.fromString']=function(s){ var u=$url(s); return u?$data('Just',[u]):$data('Nothing',[]); };
   $rt['Browser.Navigation.load']=function(url){ return $cmd(function(d){ try{ location.href=url; }catch(e){} }); };
-  $rt['Browser.Navigation.pushUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.pushState({},'',url); }catch(e){} }); }; };
-  $rt['Browser.Navigation.replaceUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.replaceState({},'',url); }catch(e){} }); }; };
+  // pushUrl/replaceUrl change history and then notify a Browser.application's onUrlChange (if mounted).
+  $rt['Browser.Navigation.pushUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.pushState({},'',url); if(window.$onUrlChange) window.$onUrlChange(); }catch(e){} }); }; };
+  $rt['Browser.Navigation.replaceUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.replaceState({},'',url); if(window.$onUrlChange) window.$onUrlChange(); }catch(e){} }); }; };
   $rt['Browser.Navigation.back']=function(key){ return function(n){ return $cmd(function(d){ try{ history.go(-n); }catch(e){} }); }; };
   $rt['Browser.Navigation.forward']=function(key){ return function(n){ return $cmd(function(d){ try{ history.go(n); }catch(e){} }); }; };
   // getHash/setHash: a minimal permalink bridge (used by the editor's Share feature). getHash reads
@@ -426,7 +436,12 @@
   }
   window.$mount = function(program, root){
     var def = program._[0], kind = program.$, model, initCmd=null;
+    var navKey = {}; // Browser.Navigation.Key — opaque; pushUrl/replaceUrl ignore it.
     if (kind==='$Sandbox') model = def.init;
+    else if (kind==='$Application'){
+      var loc = (typeof location!=='undefined') ? location.href : 'http://localhost/';
+      var pair = def.init($unit)($url(loc))(navKey); model = pair.vs[0]; initCmd = pair.vs[1];
+    }
     else { var pair = def.init($unit); model = pair.vs[0]; initCmd = pair.vs[1]; }
     var current=null, dom=null, subs={};
     // Time-travel: a snapshot of the model after each step (index 0 = initial). viewIndex===null is
@@ -435,7 +450,10 @@
     function shownModel(){ return viewIndex===null ? model : history[viewIndex]; }
     function viewVNode(){
       var v = def.view(shownModel());
-      if (kind==='$Document'){ v = $data('$Node',['div', $nil, v.body]); }
+      if (kind==='$Document' || kind==='$Application'){
+        if (typeof document!=='undefined' && v.title!=null) document.title = v.title;
+        v = $data('$Node',['div', $nil, v.body]);
+      }
       return v;
     }
     function render(){
@@ -506,6 +524,22 @@
     };
     render(); syncSubs();
     if (initCmd) runCmd(initCmd, window.$dispatch);
+    // Browser.application: route URL changes (popstate + pushUrl/replaceUrl) and intercept link clicks.
+    if (kind==='$Application' && typeof window!=='undefined'){
+      window.$onUrlChange = function(){ if(def.onUrlChange) window.$dispatch(def.onUrlChange($url(location.href))); };
+      window.addEventListener('popstate', window.$onUrlChange);
+      document.addEventListener('click', function(e){
+        if (!def.onUrlRequest || e.defaultPrevented || e.button!==0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        var a=e.target; while(a && a.tagName!=='A') a=a.parentNode;
+        if (!a || !a.getAttribute('href') || (a.target && a.target!=='' && a.target!=='_self')) return;
+        var href=a.getAttribute('href');
+        try {
+          var u=new URL(href, location.href);
+          if (u.origin===location.origin){ e.preventDefault(); window.$dispatch(def.onUrlRequest($data('Internal',[$url(u.href)]))); }
+          else { window.$dispatch(def.onUrlRequest($data('External',[href]))); }
+        } catch(err){}
+      });
+    }
   };
   // Entry point: a static Html value is rendered directly; a Browser program is mounted.
   window.$start = function(main, root){

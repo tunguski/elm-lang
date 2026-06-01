@@ -129,6 +129,32 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void browserApplicationMountsRoutesAndSetsTitle() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // A minimal Browser.application: it mounts (Document view + title), reads the initial Url's path,
+    // and routes — dispatching the message onUrlChange produces updates the view's shown path.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (text)\n"
+            + "type Msg = Changed String | Ignore\n"
+            + "main =\n"
+            + "    Browser.application\n"
+            + "        { init = \\_ url key -> ( { path = url.path, key = key }, Cmd.none )\n"
+            + "        , view = \\m -> { title = \"Routed\", body = [ text (\"at \" ++ m.path) ] }\n"
+            + "        , update = \\msg m -> case msg of\n"
+            + "            Changed p -> ( { m | path = p }, Cmd.none )\n"
+            + "            Ignore -> ( m, Cmd.none )\n"
+            + "        , subscriptions = \\_ -> Sub.none\n"
+            + "        , onUrlChange = \\u -> Changed u.path\n"
+            + "        , onUrlRequest = \\_ -> Ignore\n"
+            + "        }\n";
+    String dom = renderInBrowser(app, "window.$app.dispatch($data('Changed',['/about']));");
+    assertTrue(dom.contains("<title>Routed</title>"), "the Document title is set: " + dom);
+    assertTrue(dom.contains("at /about"), "routing updated the view's path: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);
