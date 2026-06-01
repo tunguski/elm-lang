@@ -20,7 +20,7 @@ import File
 import Json.Decode as Decode
 import Set exposing (Set)
 import Html exposing (Html, a, button, div, input, li, node, pre, span, text, textarea, ul)
-import Html.Attributes exposing (href, placeholder, style, title, value)
+import Html.Attributes exposing (class, classList, href, placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput, onMouseDown, on)
 import Highlight
 import Assist
@@ -695,52 +695,29 @@ hasFile name files =
 pasting a shared string and pressing "Restore" replaces the session with it. Pure (no ports). -}
 shareBar : Model -> Html Msg
 shareBar model =
-    div [ style "margin-left" "auto", style "display" "flex", style "gap" "6px", style "align-items" "center" ]
-        [ button [ onClick Share, style "font-size" "12px" ] [ text "Share" ]
+    div [ class "ed-sharebar" ]
+        [ button [ onClick Share ] [ text "Share" ]
         , input
             [ value model.shareText
             , onInput ShareInput
             , placeholder "paste a shared session…"
-            , style "width" "180px"
-            , style "font-size" "12px"
+            , class "ed-share-input"
             ]
             []
-        , button [ onClick Restore, style "font-size" "12px" ] [ text "Restore" ]
+        , button [ onClick Restore ] [ text "Restore" ]
         ]
 
 
 view : Model -> Html Msg
 view model =
-    div
-        [ style "font-family" "system-ui, -apple-system, Segoe UI, sans-serif"
-        , style "height" "100vh"
-        , style "background" "#eef1f4"
-        , style "color" "#0f1720"
-        , style "margin" "0"
-        , style "display" "flex"
-        , style "flex-direction" "column"
-        ]
-        [ div
-            [ style "background" "#1f2933"
-            , style "color" "#e6edf3"
-            , style "padding" "12px 20px"
-            , style "display" "flex"
-            , style "align-items" "center"
-            , style "gap" "14px"
-            , style "flex" "0 0 auto"
-            ]
+    div [ class "ed-root" ]
+        [ div [ class "ed-header" ]
             [ backLink
-            , span [ style "font-size" "18px", style "font-weight" "700" ] [ text "Elm-in-Elm playground" ]
-            , span [ style "color" "#9fb3c8", style "font-size" "13px" ]
-                [ text "files · code · live result" ]
+            , span [ class "ed-title" ] [ text "Elm-in-Elm playground" ]
+            , span [ class "ed-tagline" ] [ text "files · code · live result" ]
             , shareBar model
             ]
-        , div
-            [ style "display" "flex"
-            , style "align-items" "stretch"
-            , style "flex" "1"
-            , style "min-height" "0"
-            ]
+        , div [ class "ed-body" ]
             [ fileSidebar model
             , codeColumn model
             , resultColumn model
@@ -752,41 +729,16 @@ view model =
 gallery's accent colour so it reads as part of the same site. -}
 backLink : Html Msg
 backLink =
-    a
-        [ href "index.html"
-        , style "color" "#5fabdc"
-        , style "text-decoration" "none"
-        , style "font-weight" "700"
-        , style "font-size" "14px"
-        , style "white-space" "nowrap"
-        , title "Back to the gallery"
-        ]
+    a [ href "index.html", class "ed-back", title "Back to the gallery" ]
         [ text "← elm-lang" ]
 
 
 {-| The middle column: the file name tab and the syntax-highlighted code editor, scrolling on its own. -}
 codeColumn : Model -> Html Msg
 codeColumn model =
-    div
-        [ style "flex" "1"
-        , style "min-width" "0"
-        , style "min-height" "0"
-        , style "overflow" "auto"
-        , style "padding" "16px"
-        ]
-        [ div
-            [ style "border-radius" "10px"
-            , style "overflow" "hidden"
-            , style "box-shadow" "0 4px 14px rgba(0,0,0,0.08)"
-            ]
-            [ div
-                [ style "background" "#0f1720"
-                , style "color" "#9fb3c8"
-                , style "font-family" "monospace"
-                , style "font-size" "12px"
-                , style "padding" "8px 14px"
-                ]
-                [ text model.selected ]
+    div [ class "ed-code-col" ]
+        [ div [ class "ed-code-card" ]
+            [ div [ class "ed-filename" ] [ text model.selected ]
             , codeEditor model (lookup model.selected model.files |> Maybe.withDefault "")
             ]
         ]
@@ -796,14 +748,7 @@ codeColumn model =
 on its own. -}
 resultColumn : Model -> Html Msg
 resultColumn model =
-    div
-        [ style "flex" "0 0 40%"
-        , style "max-width" "40%"
-        , style "min-width" "0"
-        , style "min-height" "0"
-        , style "overflow" "auto"
-        , style "padding" "16px 16px 16px 0"
-        ]
+    div [ class "ed-result-col" ]
         [ mainPane model ]
 
 
@@ -813,36 +758,15 @@ wrapping, so the highlighted text underneath stays aligned with what's typed (th
 editor technique). The `<pre>` is in normal flow and sets the height; the textarea fills it. -}
 codeEditor : Model -> String -> Html Msg
 codeEditor model source =
-    div [ style "position" "relative" ]
+    div [ class "ed-editor" ]
         [ errorRibbon model source
-        , div [ style "display" "flex", style "background" "#0f1720" ]
+        , div [ class "ed-editor-flex" ]
             [ gutter model source
-            , div [ style "position" "relative", style "flex" "1", style "min-width" "0" ]
-                [ pre
-                    (style "margin" "0"
-                        :: style "pointer-events" "none"
-                        :: style "color" (segColor "")
-                        :: codeStyles
-                    )
+            , div [ class "ed-code-area" ]
+                [ pre [ class "code-text ed-pre" ]
                     (List.map renderSegment (Highlight.segments source) ++ [ text "\n" ])
                 , squiggleOverlay model source
-                , textarea
-                    (onEdit
-                        :: value source
-                        :: style "position" "absolute"
-                        :: style "top" "0"
-                        :: style "left" "0"
-                        :: style "height" "100%"
-                        :: style "color" "transparent"
-                        :: style "background" "transparent"
-                        :: style "caret-color" "#e6edf3"
-                        :: style "border" "none"
-                        :: style "outline" "none"
-                        :: style "resize" "none"
-                        :: style "overflow" "hidden"
-                        :: codeStyles
-                    )
-                    []
+                , textarea [ onEdit, value source, class "code-text ed-textarea" ] []
                 , completionBar model
                 ]
             ]
@@ -860,38 +784,13 @@ gutter model source =
         current =
             currentLine source model.caret
     in
-    div
-        [ style "user-select" "none"
-        , style "text-align" "right"
-        , style "padding" "14px 8px 14px 12px"
-        , style "background" "#0b1118"
-        , style "color" "#5b6b7b"
-        , style "font-family" "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-        , style "font-size" "13px"
-        , style "line-height" "1.5"
-        , style "white-space" "pre"
-        ]
+    div [ class "ed-gutter" ]
         (List.map (gutterLine current) (List.range 1 lineCount))
 
 
 gutterLine : Int -> Int -> Html Msg
 gutterLine current n =
-    div
-        [ style "background"
-            (if n == current then
-                "#1b2535"
-
-             else
-                "transparent"
-            )
-        , style "color"
-            (if n == current then
-                "#e6edf3"
-
-             else
-                "#5b6b7b"
-            )
-        ]
+    div [ classList [ ( "ed-gutter-line", True ), ( "current", n == current ) ] ]
         [ text (String.fromInt n) ]
 
 
@@ -920,35 +819,13 @@ completionBar model =
         text ""
 
     else
-        div
-            [ style "position" "absolute"
-            , style "bottom" "6px"
-            , style "left" "14px"
-            , style "right" "14px"
-            , style "display" "flex"
-            , style "flex-wrap" "wrap"
-            , style "gap" "6px"
-            , style "background" "#1b2535"
-            , style "border" "1px solid #2f3e54"
-            , style "border-radius" "6px"
-            , style "padding" "6px"
-            ]
+        div [ class "ed-completion-bar" ]
             (List.map completionChip (List.take 12 model.completions))
 
 
 completionChip : String -> Html Msg
 completionChip label =
-    button
-        [ onMouseDown (AcceptCompletion label)
-        , style "background" "#243149"
-        , style "color" "#cbd5e1"
-        , style "border" "1px solid #36507a"
-        , style "border-radius" "4px"
-        , style "padding" "2px 8px"
-        , style "font-family" "monospace"
-        , style "font-size" "12px"
-        , style "cursor" "pointer"
-        ]
+    button [ onMouseDown (AcceptCompletion label), class "ed-completion-chip" ]
         [ text label ]
 
 
@@ -962,13 +839,7 @@ errorRibbon model source =
                 text ""
 
             else
-                div
-                    [ style "background" "#3a1d1d"
-                    , style "color" "#ffb4b4"
-                    , style "font-family" "monospace"
-                    , style "font-size" "12px"
-                    , style "padding" "6px 14px"
-                    ]
+                div [ class "ed-error" ]
                     [ text ("⚠ " ++ located model source ++ message) ]
 
         Ok _ ->
@@ -1020,124 +891,45 @@ squiggleOverlay model source =
                 after =
                     String.dropLeft (start + loc.length) source
             in
-            pre
-                (style "position" "absolute"
-                    :: style "top" "0"
-                    :: style "left" "0"
-                    :: style "margin" "0"
-                    :: style "pointer-events" "none"
-                    :: style "color" "transparent"
-                    :: codeStyles
-                )
+            pre [ class "code-text ed-squiggle" ]
                 [ text before
-                , span
-                    [ style "text-decoration" "underline wavy #ff5555"
-                    , style "text-decoration-skip-ink" "none"
-                    ]
-                    [ text marked ]
+                , span [ class "ed-squiggle-mark" ] [ text marked ]
                 , text after
                 ]
 
 
-{-| The font/size/padding/wrapping shared by the highlight `<pre>` and the editing `<textarea>` so
-they line up character for character. -}
-codeStyles : List (Html.Attribute Msg)
-codeStyles =
-    [ style "font-family" "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-    , style "font-size" "13px"
-    , style "line-height" "1.5"
-    , style "padding" "14px"
-    , style "box-sizing" "border-box"
-    , style "white-space" "pre-wrap"
-    , style "word-break" "break-word"
-    , style "width" "100%"
-    , style "min-height" "300px"
-    ]
-
-
 renderSegment : ( String, String ) -> Html Msg
 renderSegment ( cls, txt ) =
-    span [ style "color" (segColor cls) ] [ text txt ]
+    span [ class (segClass cls) ] [ text txt ]
 
 
-{-| The colour for each highlighter class (a dark theme; `""` is the default foreground). -}
-segColor : String -> String
-segColor cls =
-    if cls == "kw" then
-        "#c792ea"
-
-    else if cls == "type" then
-        "#82aaff"
-
-    else if cls == "num" then
-        "#f78c6c"
-
-    else if cls == "str" then
-        "#c3e88d"
-
-    else if cls == "com" then
-        "#637084"
-
-    else if cls == "op" then
-        "#89ddff"
+{-| The CSS class for each highlighter token kind (`""` is the default foreground). -}
+segClass : String -> String
+segClass cls =
+    if cls == "" then
+        "seg"
 
     else
-        "#e6edf3"
+        "seg-" ++ cls
 
 
 fileSidebar : Model -> Html Msg
 fileSidebar model =
-    div
-        [ style "flex" "0 0 220px"
-        , style "width" "220px"
-        , style "min-height" "0"
-        , style "background" "#fff"
-        , style "border-radius" "10px"
-        , style "padding" "12px"
-        , style "margin" "16px 0 16px 16px"
-        , style "overflow" "auto"
-        , style "box-shadow" "0 4px 14px rgba(0,0,0,0.08)"
-        ]
-        [ div [ style "font-size" "12px", style "font-weight" "700", style "color" "#52606d", style "text-transform" "uppercase", style "letter-spacing" "0.05em", style "margin-bottom" "8px" ]
-            [ text "Files" ]
-        , ul [ style "list-style" "none", style "padding" "0", style "margin" "0", style "max-height" "60vh", style "overflow" "auto" ]
+    div [ class "ed-files" ]
+        [ div [ class "ed-files-title" ] [ text "Files" ]
+        , ul [ class "ed-file-list" ]
             (List.map (fileRow model.selected) (List.sortBy Tuple.first model.files))
-        , div [ style "display" "flex", style "gap" "4px", style "margin-top" "10px" ]
+        , div [ class "ed-newfile-row" ]
             [ input
                 [ placeholder "New.elm"
                 , value model.newName
                 , onInput SetNewName
-                , style "flex" "1"
-                , style "min-width" "0"
-                , style "padding" "6px 8px"
-                , style "border" "1px solid #d0d7de"
-                , style "border-radius" "6px"
+                , class "ed-newfile-input"
                 ]
                 []
-            , button
-                [ onClick AddFile
-                , style "border" "none"
-                , style "background" "#3a7bd5"
-                , style "color" "#fff"
-                , style "border-radius" "6px"
-                , style "padding" "0 12px"
-                , style "cursor" "pointer"
-                ]
-                [ text "+" ]
+            , button [ onClick AddFile, class "ed-add-btn" ] [ text "+" ]
             ]
-        , button
-            [ onClick OpenFile
-            , style "margin-top" "6px"
-            , style "width" "100%"
-            , style "border" "1px solid #d0d7de"
-            , style "background" "#f6f8fa"
-            , style "color" "#24292f"
-            , style "border-radius" "6px"
-            , style "padding" "6px"
-            , style "cursor" "pointer"
-            , style "font-size" "13px"
-            ]
-            [ text "Open .elm…" ]
+        , button [ onClick OpenFile, class "ed-open-btn" ] [ text "Open .elm…" ]
         ]
 
 
@@ -1146,52 +938,14 @@ fileRow selected file =
     let
         name =
             Tuple.first file
-
-        active =
-            name == selected
     in
-    li [ style "display" "flex", style "align-items" "center", style "gap" "4px", style "margin" "2px 0" ]
+    li [ class "ed-file-row" ]
         [ button
             [ onClick (SelectFile name)
-            , style "flex" "1"
-            , style "text-align" "left"
-            , style "border" "none"
-            , style "border-radius" "6px"
-            , style "padding" "7px 10px"
-            , style "font-size" "13px"
-            , style "cursor" "pointer"
-            , style "font-weight"
-                (if active then
-                    "600"
-
-                 else
-                    "400"
-                )
-            , style "color"
-                (if active then
-                    "#fff"
-
-                 else
-                    "#3e4c59"
-                )
-            , style "background"
-                (if active then
-                    "#3a7bd5"
-
-                 else
-                    "#f0f3f6"
-                )
+            , classList [ ( "ed-file-btn", True ), ( "active", name == selected ) ]
             ]
             [ text name ]
-        , button
-            [ onClick (RemoveFile name)
-            , style "border" "none"
-            , style "background" "none"
-            , style "color" "#cc9a9a"
-            , style "cursor" "pointer"
-            , style "font-size" "16px"
-            ]
-            [ text "x" ]
+        , button [ onClick (RemoveFile name), class "ed-file-x" ] [ text "x" ]
         ]
 
 
@@ -1200,10 +954,8 @@ value, or a plain value as text. -}
 mainPane : Model -> Html Msg
 mainPane model =
     div []
-        [ div [ style "font-size" "12px", style "font-weight" "700", style "color" "#52606d", style "text-transform" "uppercase", style "letter-spacing" "0.05em", style "margin-bottom" "6px" ]
-            [ text "Result" ]
-        , div
-            [ style "border" "1px solid #d0d7de", style "border-radius" "10px", style "padding" "16px", style "background" "#fff", style "box-shadow" "0 4px 14px rgba(0,0,0,0.06)" ]
+        [ div [ class "ed-result-title" ] [ text "Result" ]
+        , div [ class "ed-result-box" ]
             [ case model.gameMem of
                 Just mem ->
                     gamePane model mem
@@ -1257,17 +1009,7 @@ debugBar model =
         text ""
 
     else
-        div
-            [ style "display" "flex"
-            , style "align-items" "center"
-            , style "gap" "8px"
-            , style "margin-bottom" "10px"
-            , style "padding" "6px 10px"
-            , style "background" "#1f2933"
-            , style "border-radius" "6px"
-            , style "color" "#cbd2d9"
-            , style "font" "12px system-ui, sans-serif"
-            ]
+        div [ class "ed-debugbar" ]
             [ span [ style "font-weight" "700" ] [ text "⏱ time travel" ]
             , Html.node "input"
                 [ Html.Attributes.attribute "type" "range"
@@ -1275,18 +1017,13 @@ debugBar model =
                 , Html.Attributes.attribute "max" (String.fromInt last)
                 , value (String.fromInt model.historyAt)
                 , onInput (\s -> Rewind (Maybe.withDefault last (String.toInt s)))
-                , style "flex" "1"
+                , class "ed-debug-range"
                 ]
                 []
             , span [] [ text ("msg " ++ String.fromInt model.historyAt ++ " / " ++ String.fromInt last) ]
             , button
                 [ onClick (Rewind last)
-                , style "border" "none"
-                , style "border-radius" "4px"
-                , style "background" (if model.historyAt == last then "#3a7bd5" else "#52606d")
-                , style "color" "#fff"
-                , style "cursor" "pointer"
-                , style "padding" "2px 8px"
+                , classList [ ( "ed-debug-live", True ), ( "active", model.historyAt == last ) ]
                 ]
                 [ text "live" ]
             ]
@@ -1302,45 +1039,18 @@ msgLogPanel model =
         text ""
 
     else
-        div
-            [ style "display" "flex"
-            , style "flex-wrap" "wrap"
-            , style "gap" "4px"
-            , style "margin-top" "10px"
-            , style "max-height" "120px"
-            , style "overflow" "auto"
-            , style "font" "11px ui-monospace, monospace"
-            ]
-            (span [ style "color" "#9aa5b1", style "font-weight" "700", style "margin-right" "4px" ] [ text "messages:" ]
+        div [ class "ed-msglog" ]
+            (span [ class "ed-msglog-label" ] [ text "messages:" ]
                 :: List.indexedMap (msgChip model) model.msgLog
             )
 
 
 msgChip : Model -> Int -> Value -> Html Msg
 msgChip model i msg =
-    let
-        isCurrent =
-            model.historyAt == i + 1
-    in
     button
         [ onClick (Rewind (i + 1))
         , title (renderValue msg)
-        , style "border" "none"
-        , style "border-radius" "4px"
-        , style "padding" "2px 6px"
-        , style "cursor" "pointer"
-        , style "max-width" "200px"
-        , style "overflow" "hidden"
-        , style "text-overflow" "ellipsis"
-        , style "white-space" "nowrap"
-        , style "background"
-            (if isCurrent then
-                "#3a7bd5"
-
-             else
-                "#323f4b"
-            )
-        , style "color" "#e4e7eb"
+        , classList [ ( "ed-msg-chip", True ), ( "active", model.historyAt == i + 1 ) ]
         ]
         [ text (String.fromInt (i + 1) ++ ". " ++ renderValue msg) ]
 
@@ -1357,7 +1067,7 @@ staticMain files =
 
 errorBox : String -> Html Msg
 errorBox e =
-    pre [ style "color" "#a00", style "margin" "0", style "white-space" "pre-wrap" ] [ text ("Error: " ++ e) ]
+    pre [ class "ed-errorbox" ] [ text ("Error: " ++ e) ]
 
 
 {-| Converts an interpreted Html `Value` tree into real `Html Msg`, wiring interpreted event handlers

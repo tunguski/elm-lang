@@ -183,6 +183,7 @@ public final class SiteGenerator {
     copyResource("/elm/css/gallery.css", "styles.css");
     copyResource("/elm/css/page.css", "page.css");
     copyResource("/elm/css/docs.css", "docs.css");
+    copyResource("/elm/css/editor.css", "editor.css"); // the editor's class-based styles
     copyResource("/elm/js/theme.js", "theme.js"); // shared light/dark theme + top-right toggle
   }
 
@@ -652,7 +653,11 @@ public final class SiteGenerator {
     Files.writeString(
         outDir.resolve("editor.html"),
         JsCompiler.htmlPageProject(null, sources)
-            .replace("</head>", "<style>html,body{margin:0;height:100%}</style></head>"),
+            .replace(
+                "</head>",
+                "<link rel=\"stylesheet\" href=\"editor.css\">"
+                    + "<style>html,body{margin:0;height:100%}</style></head>")
+            .replace("</body>", "<script src=\"theme.js\"></script></body>"),
         StandardCharsets.UTF_8);
   }
 
