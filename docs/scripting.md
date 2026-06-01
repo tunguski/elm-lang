@@ -50,6 +50,87 @@ elm script wordcount README.md docs/scripting.md
 
 The name `wordcount` resolves to the bundled demo; you can also pass any path to your own script.
 
+## Structured shell commands (the Bash module)
+
+The bundled [`Bash`](../src/main/resources/elm/lib/Bash.elm) module adds common shell commands that
+return **structured Elm values** instead of text you have to re-parse — `ls`/`find` give `Entry`
+records, `grep` gives `Match` records, `wc` gives a `Counts` record, and `exec` gives a `Proc`:
+
+| Command | Result | Like |
+|---|---|---|
+| `ls` / `find` | `List Entry` `{ name, path, isDir, size, modified }` | `ls` / `find` |
+| `grep` | `List Match` `{ lineNumber, line }` | `grep` |
+| `wc` | `Counts` `{ lines, words, chars }` | `wc` |
+| `head` / `tail` / `sort` / `uniq` | `List String` | the same |
+| `stat` | `Entry` | `stat` |
+| `du` | `Int` (bytes) | `du -s` |
+| `touch` / `mkdir` / `rm` / `cp` / `mv` | `String` (the path) | the same |
+| `pwd` / `which` / `env` | path / `Maybe path` / `List (String, String)` | the same |
+| `exec` | `Proc` `{ exitCode, stdout, stderr }` | run a process |
+
+Because the results are typed, you process them with ordinary list/record code. For example, list a
+directory and total the size of its files:
+
+```elm
+module Main exposing (main)
+
+import Bash exposing (..)
+
+main : Io
+main =
+    ls "." (\result ->
+        case result of
+            Ok entries ->
+                let
+                    files = List.filter (\e -> not e.isDir) entries
+                    total = List.foldl (\e acc -> acc + e.size) 0 files
+                in
+                print (String.fromInt (List.length files) ++ " files, " ++ String.fromInt total ++ " bytes") done
+
+            Err message ->
+                print ("error: " ++ message) (exit 1)
+    )
+```
+
+The bundled [`folderreport.elm`](../src/main/resources/elm/demos/folderreport.elm) goes further —
+it `find`s a directory recursively and prints a report from the structured entries:
+
+```sh
+elm script folderreport src/main/resources/elm/lib
+```
+
+```text
+Folder report for src/main/resources/elm/lib
+----------------------------------------
+Files:        7
+Directories:  1
+Total size:   28 KB
+
+Largest files:
+  Posix.elm (6 KB)
+  Bash.elm (5 KB)
+  Server.elm (3 KB)
+  Site.elm (3 KB)
+  Test.elm (2 KB)
+
+By extension:
+  .elm: 7
+```
+
+And `exec` runs an external process, handing back its exit code and captured output:
+
+```elm
+exec "git" [ "rev-parse", "--short", "HEAD" ] (\result ->
+    case result of
+        Ok proc -> print ("HEAD is " ++ String.trim proc.stdout) done
+        Err message -> print message (exit 1)
+)
+```
+
+```text
+HEAD is 7a6146c
+```
+
 ## How it runs
 
 The handler is pure data, so a script is trivial to test: build the `Io` value and walk it with a
