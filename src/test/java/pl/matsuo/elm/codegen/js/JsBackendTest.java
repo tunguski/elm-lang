@@ -251,6 +251,30 @@ class JsBackendTest {
   }
 
   @Test
+  void backfilledStdlibSignaturesCompileAndAgreeAcrossBackends() {
+    // Functions that previously ran in the interpreter but lacked a type scheme (so they could not
+    // be compiled): now they type-check and agree interp-vs-JS.
+    String s1 = "(Set.fromList [ 1, 2, 3 ])";
+    String s2 = "(Set.fromList [ 2, 3, 4 ])";
+    same("Set.toList (Set.union " + s1 + " " + s2 + ")");
+    same("Set.toList (Set.intersect " + s1 + " " + s2 + ")");
+    same("Set.toList (Set.diff " + s1 + " " + s2 + ")");
+    String d1 = "(Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])";
+    String d2 = "(Dict.fromList [ ( \"b\", 9 ), ( \"c\", 3 ) ])";
+    same("Dict.toList (Dict.union " + d1 + " " + d2 + ")");
+    same("Dict.toList (Dict.intersect " + d1 + " " + d2 + ")");
+    same("Dict.toList (Dict.diff " + d1 + " " + d2 + ")");
+    same("String.concat [ \"a\", \"b\", \"c\" ]");
+    same("String.fromList (List.reverse (String.toList \"abc\"))");
+    same("String.slice 1 3 \"hello\"");
+    same("String.replace \"a\" \"X\" \"banana\"");
+    same("Tuple.mapBoth (\\x -> x + 1) (\\y -> y ++ \"!\") ( 1, \"a\" )");
+    same("Array.toList (Array.slice 1 3 (Array.fromList [ 0, 1, 2, 3, 4 ]))");
+    same("Array.foldl (\\x acc -> x + acc) 0 (Array.fromList [ 1, 2, 3 ])");
+    same("List.map (\\c -> Char.isUpper c) (String.toList \"aBcD\")");
+  }
+
+  @Test
   void arrayAndListAdditionsAgreeAcrossBackends() {
     same("Array.toList (Array.filter (\\x -> x > 2) (Array.fromList [ 1, 2, 3, 4 ]))");
     same("Array.toIndexedList (Array.fromList [ \"a\", \"b\", \"c\" ])");

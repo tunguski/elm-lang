@@ -316,6 +316,7 @@ var $rt = {
   'Tuple.second': function(t){ return t.vs[1]; },
   'Tuple.mapFirst': function(f){ return function(t){ return $tuple([f(t.vs[0]), t.vs[1]]); }; },
   'Tuple.mapSecond': function(f){ return function(t){ return $tuple([t.vs[0], f(t.vs[1])]); }; },
+  'Tuple.mapBoth': function(f){ return function(g){ return function(t){ return $tuple([f(t.vs[0]), g(t.vs[1])]); }; }; },
   'Debug.toString': function(v){ return $show(v,true); },
   'Debug.log': function(m){ return function(v){ console.log(m + ': ' + $show(v,true)); return v; }; }
 };

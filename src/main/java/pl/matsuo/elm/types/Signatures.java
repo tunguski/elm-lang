@@ -16,7 +16,9 @@ public final class Signatures {
     "input", "label", "form", "section", "header", "footer", "nav", "br", "hr", "table", "thead",
     "tbody", "tr", "td", "th", "pre", "code", "strong", "em", "i", "b", "small", "select", "option",
     "textarea", "canvas", "blockquote", "cite", "figure", "figcaption", "main_", "article", "audio",
-    "video", "u", "s", "sup", "sub", "kbd", "samp", "dl", "dt", "dd"
+    "video", "u", "s", "sup", "sub", "kbd", "samp", "dl", "dt", "dd",
+    "abbr", "address", "aside", "caption", "datalist", "details", "embed", "fieldset", "iframe",
+    "legend", "mark", "menu", "meter", "object_", "output", "progress", "summary", "time", "var_"
   };
 
   private static final String[] HTML_STRING_ATTRS = {
@@ -26,7 +28,7 @@ public final class Signatures {
   };
 
   private static final String[] HTML_BOOL_ATTRS = {
-    "disabled", "checked", "selected", "required", "autofocus", "hidden", "multiple"
+    "disabled", "checked", "selected", "required", "autofocus", "hidden", "multiple", "readonly"
   };
 
   public static Map<String, Scheme> globals() {
@@ -83,6 +85,7 @@ public final class Signatures {
     g("identity", "a -> a");
     g("always", "a -> b -> a");
     g("not", "Bool -> Bool");
+    g("xor", "Bool -> Bool -> Bool");
     g("negate", "number -> number");
     g("abs", "number -> number");
     g("clamp", "number -> number -> number -> number");
@@ -99,6 +102,8 @@ public final class Signatures {
     g("remainderBy", "Int -> Int -> Int");
     g("pi", "Float");
     g("e", "Float");
+    g("Basics.pi", "Float");
+    g("Basics.e", "Float");
     g("sin", "Float -> Float");
     g("cos", "Float -> Float");
     g("tan", "Float -> Float");
@@ -180,6 +185,27 @@ public final class Signatures {
     g("String.foldr", "(Char -> b -> b) -> b -> String -> b");
     g("String.any", "(Char -> Bool) -> String -> Bool");
     g("String.all", "(Char -> Bool) -> String -> Bool");
+    g("String.concat", "List String -> String");
+    g("String.cons", "Char -> String -> String");
+    g("String.uncons", "String -> Maybe ( Char, String )");
+    g("String.left", "Int -> String -> String");
+    g("String.right", "Int -> String -> String");
+    g("String.dropLeft", "Int -> String -> String");
+    g("String.dropRight", "Int -> String -> String");
+    g("String.slice", "Int -> Int -> String -> String");
+    g("String.replace", "String -> String -> String -> String");
+    g("String.startsWith", "String -> String -> Bool");
+    g("String.endsWith", "String -> String -> Bool");
+    g("String.trimLeft", "String -> String");
+    g("String.trimRight", "String -> String");
+    g("String.repeat", "Int -> String -> String");
+    g("String.lines", "String -> List String");
+    g("String.words", "String -> List String");
+    g("String.toList", "String -> List Char");
+    g("String.fromList", "List Char -> String");
+    g("String.map", "(Char -> Char) -> String -> String");
+    g("String.filter", "(Char -> Bool) -> String -> String");
+    g("String.toFloat", "String -> Maybe Float");
 
     // Bitwise (32-bit).
     g("Bitwise.and", "Int -> Int -> Int");
@@ -221,6 +247,7 @@ public final class Signatures {
     g("Tuple.second", "( a, b ) -> b");
     g("Tuple.mapFirst", "(a -> x) -> ( a, b ) -> ( x, b )");
     g("Tuple.mapSecond", "(b -> x) -> ( a, b ) -> ( a, x )");
+    g("Tuple.mapBoth", "(a -> x) -> (b -> y) -> ( a, b ) -> ( x, y )");
 
     // Char.
     g("Char.toCode", "Char -> Int");
@@ -231,16 +258,36 @@ public final class Signatures {
     g("Char.isAlpha", "Char -> Bool");
     g("Char.isHexDigit", "Char -> Bool");
     g("Char.isOctDigit", "Char -> Bool");
+    g("Char.isUpper", "Char -> Bool");
+    g("Char.isLower", "Char -> Bool");
+    g("Char.isAlphaNum", "Char -> Bool");
 
     // Debug.
     g("Debug.toString", "a -> String");
     g("Debug.log", "String -> a -> a");
+    g("Debug.todo", "String -> a");
+
+    g("never", "Never -> a");
 
     registerHtml();
     registerSvg();
     registerBrowserAndEffects();
     registerCollections();
     registerMathWebGL();
+
+    // Every `Basics` function is callable both unqualified (`abs`) and qualified (`Basics.abs`);
+    // alias the qualified form to the same scheme so both type-check.
+    for (String n :
+        new String[] {
+          "abs", "acos", "always", "asin", "atan", "atan2", "ceiling", "clamp", "compare", "cos",
+          "degrees", "floor", "identity", "isInfinite", "isNaN", "logBase", "max", "min", "modBy",
+          "negate", "never", "not", "radians", "remainderBy", "round", "sin", "sqrt", "tan",
+          "toFloat", "truncate", "turns", "xor"
+        }) {
+      if (GLOBALS.containsKey(n)) {
+        GLOBALS.put("Basics." + n, GLOBALS.get(n));
+      }
+    }
   }
 
   private static void registerHtml() {
@@ -268,6 +315,8 @@ public final class Signatures {
     }
     g("Html.Attributes.width", "Int -> Attribute msg");
     g("Html.Attributes.height", "Int -> Attribute msg");
+    g("Html.Attributes.colspan", "Int -> Attribute msg");
+    g("Html.Attributes.rowspan", "Int -> Attribute msg");
     for (String attr : HTML_BOOL_ATTRS) {
       g("Html.Attributes." + attr, "Bool -> Attribute msg");
     }
@@ -403,6 +452,7 @@ public final class Signatures {
     g("Process.sleep", "Float -> Task x ()");
 
     g("Http.get", "{ url : String, expect : Expect msg } -> Cmd msg");
+    g("Http.post", "{ url : String, body : body, expect : Expect msg } -> Cmd msg");
     g("Http.expectString", "(Result Error String -> msg) -> Expect msg");
     g("Http.expectJson", "(Result Error a -> msg) -> Decoder a -> Expect msg");
 
@@ -464,8 +514,10 @@ public final class Signatures {
 
     g("File.decoder", "Decoder File");
     g("File.toUrl", "File -> Task x String");
+    g("File.toString", "File -> Task x String");
     g("File.name", "File -> String");
     g("File.mime", "File -> String");
+    g("File.size", "File -> Int");
     g("File.Select.file", "List String -> (File -> msg) -> Cmd msg");
     g("File.Select.files", "List String -> (File -> List File -> msg) -> Cmd msg");
     // A kernel command used by the in-browser editor: open a file picker and hand the chosen file's
@@ -500,6 +552,11 @@ public final class Signatures {
     g("Dict.filter", "(comparable -> v -> Bool) -> Dict comparable v -> Dict comparable v");
     g("Dict.partition", "(comparable -> v -> Bool) -> Dict comparable v -> ( Dict comparable v, Dict comparable v )");
     g("Dict.merge", "(comparable -> a -> r -> r) -> (comparable -> a -> b -> r -> r) -> (comparable -> b -> r -> r) -> Dict comparable a -> Dict comparable b -> r -> r");
+    g("Dict.isEmpty", "Dict k v -> Bool");
+    g("Dict.update", "comparable -> (Maybe v -> Maybe v) -> Dict comparable v -> Dict comparable v");
+    g("Dict.union", "Dict comparable v -> Dict comparable v -> Dict comparable v");
+    g("Dict.intersect", "Dict comparable v -> Dict comparable v -> Dict comparable v");
+    g("Dict.diff", "Dict comparable a -> Dict comparable b -> Dict comparable a");
 
     g("Set.empty", "Set a");
     g("Set.singleton", "comparable -> Set comparable");
@@ -514,6 +571,10 @@ public final class Signatures {
     g("Set.partition", "(comparable -> Bool) -> Set comparable -> ( Set comparable, Set comparable )");
     g("Set.foldl", "(a -> b -> b) -> b -> Set a -> b");
     g("Set.foldr", "(a -> b -> b) -> b -> Set a -> b");
+    g("Set.isEmpty", "Set a -> Bool");
+    g("Set.union", "Set comparable -> Set comparable -> Set comparable");
+    g("Set.intersect", "Set comparable -> Set comparable -> Set comparable");
+    g("Set.diff", "Set comparable -> Set comparable -> Set comparable");
 
     g("Array.empty", "Array a");
     g("Array.fromList", "List a -> Array a");
@@ -525,6 +586,14 @@ public final class Signatures {
     g("Array.map", "(a -> b) -> Array a -> Array b");
     g("Array.filter", "(a -> Bool) -> Array a -> Array a");
     g("Array.toIndexedList", "Array a -> List ( Int, a )");
+    g("Array.isEmpty", "Array a -> Bool");
+    g("Array.repeat", "Int -> a -> Array a");
+    g("Array.initialize", "Int -> (Int -> a) -> Array a");
+    g("Array.append", "Array a -> Array a -> Array a");
+    g("Array.slice", "Int -> Int -> Array a -> Array a");
+    g("Array.foldl", "(a -> b -> b) -> b -> Array a -> b");
+    g("Array.foldr", "(a -> b -> b) -> b -> Array a -> b");
+    g("Array.indexedMap", "(Int -> a -> b) -> Array a -> Array b");
   }
 
   private static void registerMathWebGL() {
@@ -541,6 +610,9 @@ public final class Signatures {
     g("Math.Matrix4.makeLookAt", "Vec3 -> Vec3 -> Vec3 -> Mat4");
     g("Math.Matrix4.makeRotate", "Float -> Vec3 -> Mat4");
     g("Math.Matrix4.makeTranslate", "Vec3 -> Mat4");
+    g("Math.Matrix4.makeTranslate3", "Float -> Float -> Float -> Mat4");
+    g("Math.Matrix4.makeScale3", "Float -> Float -> Float -> Mat4");
+    g("Math.Matrix4.rotate", "Float -> Vec3 -> Mat4 -> Mat4");
     g("Math.Vector3.normalize", "Vec3 -> Vec3");
     g("Math.Vector3.sub", "Vec3 -> Vec3 -> Vec3");
     g("Math.Vector3.cross", "Vec3 -> Vec3 -> Vec3");
@@ -549,6 +621,7 @@ public final class Signatures {
     g("Math.Vector3.setY", "Float -> Vec3 -> Vec3");
     g("Math.Vector3.setZ", "Float -> Vec3 -> Vec3");
     g("Math.Vector3.length", "Vec3 -> Float");
+    g("Math.Vector3.negate", "Vec3 -> Vec3");
     g("Math.Vector3.i", "Vec3");
     g("Math.Vector3.j", "Vec3");
     g("Math.Vector3.k", "Vec3");
@@ -566,7 +639,17 @@ public final class Signatures {
     g("WebGL.entity", "a -> b -> Mesh c -> d -> Entity");
     g("WebGL.triangles", "List ( v, v, v ) -> Mesh v");
     g("WebGL.indexedTriangles", "List v -> List ( Int, Int, Int ) -> Mesh v");
+    g("WebGL.triangleStrip", "List v -> Mesh v");
+    g("WebGL.triangleFan", "List v -> Mesh v");
+    g("WebGL.lines", "List ( v, v ) -> Mesh v");
+    g("WebGL.lineStrip", "List v -> Mesh v");
+    g("WebGL.lineLoop", "List v -> Mesh v");
+    g("WebGL.points", "List v -> Mesh v");
+    g("WebGL.entityWith", "List Setting -> a -> b -> Mesh c -> d -> Entity");
     g("WebGL.depth", "Float -> Option");
+    g("WebGL.alpha", "Bool -> Option");
+    g("WebGL.antialias", "Option");
+    g("WebGL.stencil", "Int -> Option");
     g("WebGL.clearColor", "Float -> Float -> Float -> Float -> Option");
 
     // elm-explorations/webgl WebGL.Texture. `Options` is a record alias (see Infer's builtin
@@ -579,8 +662,14 @@ public final class Signatures {
     g("WebGL.Texture.size", "Texture -> ( Int, Int )");
     g("WebGL.Texture.nearest", "Resize");
     g("WebGL.Texture.linear", "Resize");
+    g("WebGL.Texture.nearestMipmapNearest", "Resize");
+    g("WebGL.Texture.linearMipmapNearest", "Resize");
+    g("WebGL.Texture.nearestMipmapLinear", "Resize");
+    g("WebGL.Texture.linearMipmapLinear", "Resize");
     g("WebGL.Texture.repeat", "Wrap");
     g("WebGL.Texture.clampToEdge", "Wrap");
     g("WebGL.Texture.mirroredRepeat", "Wrap");
+    g("WebGL.Texture.nonPowerOfTwoOptions", texOptions);
+    g("WebGL.Settings.DepthTest.default", "Setting");
   }
 }
