@@ -70,7 +70,18 @@ climb minPrec left tokens =
     case tokens of
         (TOp op) :: rest ->
             if opPrec op >= minPrec then
-                parseBinary (opPrec op + 1) rest
+                -- Right-associative operators (`<|`, `::`, `++`, `^`, `&&`, `||`) recurse at their own
+                -- precedence so `a <| b <| c` groups as `a <| (b <| c)`; left-associative ones use
+                -- prec+1. (Getting `<|` right is what makes `f <| g <| x` mean `f (g x)`.)
+                let
+                    nextMin =
+                        if rightAssoc op then
+                            opPrec op
+
+                        else
+                            opPrec op + 1
+                in
+                parseBinary nextMin rest
                     |> Result.andThen (\r -> climb minPrec (mkBin op left (Tuple.first r)) (Tuple.second r))
 
             else
@@ -78,6 +89,14 @@ climb minPrec left tokens =
 
         _ ->
             Ok ( left, tokens )
+
+
+{-| The right-associative operators (Elm's `infixr`). Left-associative ones (`|>`, `+`, `*`, …) are
+the default. Associativity only changes the result for `<|`, `::` and `^`; the others are listed for
+correctness. -}
+rightAssoc : String -> Bool
+rightAssoc op =
+    List.member op [ "<|", "::", "++", "^", "&&", "||" ]
 
 
 {-| Pipe and composition operators desugar into ordinary application / lambdas so the

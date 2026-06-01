@@ -165,6 +165,16 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void backwardPipeIsRightAssociative() {
+    // `<|` is infixr: `a <| b <| c` is `a (b c)`. Chained `<|` is how the Cube example builds its
+    // mesh (`WebGL.triangles <| List.concat <| [ … ]`); left-associative parsing made it garbage.
+    assertEquals("12", eval("List.sum <| List.map (\\x -> x * 2) <| [ 1, 2, 3 ]"));
+    assertEquals("[1, 2, 3]", eval("identity <| List.concat <| [ [ 1 ], [ 2, 3 ] ]"));
+    // `::` is also right-associative: `1 :: 2 :: []` is `1 :: (2 :: [])`.
+    assertEquals("[1, 2]", eval("1 :: 2 :: []"));
+  }
+
+  @Test
   void parsesTheWebglExamples() throws Exception {
     // triangle/crate/thwomp/cube use unit, record and tuple-destructuring patterns plus `[glsl| … |]`
     // shader literals; the editor must at least parse them and evaluate `main` to a program record.
