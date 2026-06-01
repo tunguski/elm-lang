@@ -215,6 +215,17 @@ class JsBackendTest {
   }
 
   @Test
+  void arrayAndListAdditionsAgreeAcrossBackends() {
+    same("Array.toList (Array.filter (\\x -> x > 2) (Array.fromList [ 1, 2, 3, 4 ]))");
+    same("Array.toIndexedList (Array.fromList [ \"a\", \"b\", \"c\" ])");
+    same("List.map4 (\\a b c d -> a + b + c + d) [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ]");
+    same(
+        "List.map5 (\\a b c d e -> a + b + c + d + e) "
+            + "[ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] [ 10000, 20000 ]");
+    same("List.map4 (\\a b c d -> ( a, b, c, d )) [ 1 ] [ 2 ] [ 3 ] [ 4, 9 ]"); // ragged: truncates
+  }
+
+  @Test
   void bitwiseModuleAgreesAcrossBackends() {
     same("Bitwise.and 12 10");
     same("Bitwise.or 12 10");

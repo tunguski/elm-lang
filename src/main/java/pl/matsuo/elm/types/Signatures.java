@@ -133,6 +133,10 @@ public final class Signatures {
     g("List.concatMap", "(a -> List b) -> List a -> List b");
     g("List.filterMap", "(a -> Maybe b) -> List a -> List b");
     g("List.map3", "(a -> b -> c -> d) -> List a -> List b -> List c -> List d");
+    g("List.map4", "(a -> b -> c -> d -> e) -> List a -> List b -> List c -> List d -> List e");
+    g(
+        "List.map5",
+        "(a -> b -> c -> d -> e -> f) -> List a -> List b -> List c -> List d -> List e -> List f");
     g("List.repeat", "Int -> a -> List a");
     g("List.sort", "List comparable -> List comparable");
     g("List.sortBy", "(a -> comparable) -> List a -> List a");
@@ -441,6 +445,8 @@ public final class Signatures {
     g("Array.set", "Int -> a -> Array a -> Array a");
     g("Array.push", "a -> Array a -> Array a");
     g("Array.map", "(a -> b) -> Array a -> Array b");
+    g("Array.filter", "(a -> Bool) -> Array a -> Array a");
+    g("Array.toIndexedList", "Array a -> List ( Int, a )");
   }
 
   private static void registerMathWebGL() {

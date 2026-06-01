@@ -210,6 +210,23 @@ public final class Prelude {
       }
       return acc;
     });
+    fn("Array.filter", 2, a -> {
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      for (Object x : arr(a[1])) {
+        if (Boolean.TRUE.equals(Apply.apply(a[0], x))) {
+          out.add(x);
+        }
+      }
+      return new ElmArray(out.toArray());
+    });
+    fn("Array.toIndexedList", 1, a -> {
+      Object[] items = arr(a[0]);
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      for (int i = 0; i < items.length; i++) {
+        out.add(new ElmTuple(new Object[] {(long) i, items[i]}));
+      }
+      return ElmList.fromJava(out);
+    });
   }
 
   // --- Dict / Set --------------------------------------------------------
@@ -1120,6 +1137,32 @@ public final class Prelude {
       List<Object> out = new ArrayList<>();
       for (int i = 0; i < n; i++) {
         out.add(Apply.applyAll(a[0], xs.get(i), ys.get(i), zs.get(i)));
+      }
+      return ElmList.fromJava(out);
+    });
+    fn("List.map4", 5, a -> {
+      List<Object> w = javaList(a[1]);
+      List<Object> x = javaList(a[2]);
+      List<Object> y = javaList(a[3]);
+      List<Object> z = javaList(a[4]);
+      int n = Math.min(Math.min(w.size(), x.size()), Math.min(y.size(), z.size()));
+      List<Object> out = new ArrayList<>();
+      for (int i = 0; i < n; i++) {
+        out.add(Apply.applyAll(a[0], w.get(i), x.get(i), y.get(i), z.get(i)));
+      }
+      return ElmList.fromJava(out);
+    });
+    fn("List.map5", 6, a -> {
+      List<Object> v = javaList(a[1]);
+      List<Object> w = javaList(a[2]);
+      List<Object> x = javaList(a[3]);
+      List<Object> y = javaList(a[4]);
+      List<Object> z = javaList(a[5]);
+      int n =
+          Math.min(v.size(), Math.min(Math.min(w.size(), x.size()), Math.min(y.size(), z.size())));
+      List<Object> out = new ArrayList<>();
+      for (int i = 0; i < n; i++) {
+        out.add(Apply.applyAll(a[0], v.get(i), w.get(i), x.get(i), y.get(i), z.get(i)));
       }
       return ElmList.fromJava(out);
     });
