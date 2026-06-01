@@ -38,21 +38,113 @@ public final class BuildRunner {
   /** As {@link #run(Object, Path, PrintStream)}, optionally skipping {@code compile}/{@code archive}
    * tasks whose output is already newer than their inputs (incremental builds). */
   public static int run(Object planList, Path baseDir, boolean incremental, PrintStream out) {
-    for (Object stepObj : ((ElmList) Thunk.resolve(planList)).toJava()) {
-      ElmRecord step = (ElmRecord) Thunk.resolve(stepObj);
-      String phase = str(step.get("phase"));
-      String module = str(step.get("moduleName"));
-      String goal = str(step.get("goal"));
-      out.println("[" + phase + "] " + module + " :: " + goal);
-      for (Object taskObj : ((ElmList) Thunk.resolve(step.get("tasks"))).toJava()) {
-        int code = runTask((ElmData) Thunk.resolve(taskObj), baseDir, incremental, out);
-        if (code != 0) {
-          out.println("BUILD FAILED — " + phase + ":" + module + ":" + goal + " (exit " + code + ")");
-          return code;
-        }
+    return run(planList, baseDir, incremental, false, out);
+  }
+
+  /** One planned step, materialised from the Elm plan: a phase/module/goal and its tasks. */
+  private record PlannedStep(String phase, String module, String goal, List<ElmData> tasks) {}
+
+  /**
+   * Runs the plan. With {@code parallel}, modules within a phase build concurrently — within a phase
+   * each module's work is independent (a module reads other modules' <em>sources</em>, never their
+   * build output), and dependency order is already encoded across phases by {@code Build.plan}. Each
+   * module's output is buffered and flushed in declared order so logs stay readable.
+   */
+  public static int run(Object planList, Path baseDir, boolean incremental, boolean parallel, PrintStream out) {
+    List<PlannedStep> steps = materialize(planList);
+    int i = 0;
+    while (i < steps.size()) {
+      String phase = steps.get(i).phase();
+      int j = i;
+      while (j < steps.size() && steps.get(j).phase().equals(phase)) {
+        j++;
       }
+      List<PlannedStep> phaseSteps = steps.subList(i, j);
+      int code =
+          parallel ? runPhaseParallel(phaseSteps, baseDir, incremental, out)
+                   : runPhaseSequential(phaseSteps, baseDir, incremental, out);
+      if (code != 0) {
+        return code;
+      }
+      i = j;
     }
     out.println("BUILD SUCCESS");
+    return 0;
+  }
+
+  private static List<PlannedStep> materialize(Object planList) {
+    List<PlannedStep> steps = new ArrayList<>();
+    for (Object stepObj : ((ElmList) Thunk.resolve(planList)).toJava()) {
+      ElmRecord step = (ElmRecord) Thunk.resolve(stepObj);
+      List<ElmData> tasks = new ArrayList<>();
+      for (Object taskObj : ((ElmList) Thunk.resolve(step.get("tasks"))).toJava()) {
+        tasks.add((ElmData) Thunk.resolve(taskObj));
+      }
+      steps.add(new PlannedStep(str(step.get("phase")), str(step.get("moduleName")), str(step.get("goal")), tasks));
+    }
+    return steps;
+  }
+
+  private static int runPhaseSequential(List<PlannedStep> steps, Path baseDir, boolean incremental, PrintStream out) {
+    for (PlannedStep s : steps) {
+      int code = runStep(s, baseDir, incremental, out);
+      if (code != 0) {
+        return code;
+      }
+    }
+    return 0;
+  }
+
+  /** Runs a phase's modules concurrently (each module's steps stay sequential), preserving log order. */
+  private static int runPhaseParallel(List<PlannedStep> steps, Path baseDir, boolean incremental, PrintStream out) {
+    java.util.LinkedHashMap<String, List<PlannedStep>> byModule = new java.util.LinkedHashMap<>();
+    for (PlannedStep s : steps) {
+      byModule.computeIfAbsent(s.module(), k -> new ArrayList<>()).add(s);
+    }
+    if (byModule.size() <= 1) {
+      return runPhaseSequential(steps, baseDir, incremental, out);
+    }
+    var pool = java.util.concurrent.Executors.newFixedThreadPool(
+        Math.min(byModule.size(), Runtime.getRuntime().availableProcessors()));
+    try {
+      List<java.util.concurrent.Future<int[]>> futures = new ArrayList<>();
+      List<java.io.ByteArrayOutputStream> buffers = new ArrayList<>();
+      for (List<PlannedStep> group : byModule.values()) {
+        var buf = new java.io.ByteArrayOutputStream();
+        var ps = new PrintStream(buf, true, StandardCharsets.UTF_8);
+        buffers.add(buf);
+        futures.add(pool.submit(() -> new int[] {runPhaseSequential(group, baseDir, incremental, ps)}));
+      }
+      int failure = 0;
+      for (int k = 0; k < futures.size(); k++) {
+        int code;
+        try {
+          code = futures.get(k).get()[0];
+        } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
+          Thread.currentThread().interrupt();
+          code = 1;
+        }
+        out.print(buffers.get(k).toString(StandardCharsets.UTF_8));
+        if (code != 0 && failure == 0) {
+          failure = code;
+        }
+      }
+      return failure;
+    } finally {
+      pool.shutdown();
+    }
+  }
+
+  /** Runs one step's tasks in order, printing a header and a BUILD FAILED line on the first failure. */
+  private static int runStep(PlannedStep s, Path baseDir, boolean incremental, PrintStream out) {
+    out.println("[" + s.phase() + "] " + s.module() + " :: " + s.goal());
+    for (ElmData task : s.tasks()) {
+      int code = runTask(task, baseDir, incremental, out);
+      if (code != 0) {
+        out.println("BUILD FAILED — " + s.phase() + ":" + s.module() + ":" + s.goal() + " (exit " + code + ")");
+        return code;
+      }
+    }
     return 0;
   }
 

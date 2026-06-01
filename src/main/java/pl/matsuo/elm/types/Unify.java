@@ -13,19 +13,21 @@ public final class Unify {
 
   private Unify() {}
 
-  private static int depth = 0;
+  // Per-thread recursion depth, so concurrent type-checks (parallel builds) don't share the guard.
+  private static final ThreadLocal<int[]> DEPTH = ThreadLocal.withInitial(() -> new int[1]);
 
   /** Unifies two types, guarding against pathological deep recursion (reported as a type error
    * rather than a {@link StackOverflowError}). */
   public static void unify(Ty a0, Ty b0) {
-    if (++depth > 400) {
-      depth--;
+    int[] depth = DEPTH.get();
+    if (++depth[0] > 400) {
+      depth[0]--;
       throw new ElmTypeError("Type is too complex to unify");
     }
     try {
       unify0(a0, b0);
     } finally {
-      depth--;
+      depth[0]--;
     }
   }
 

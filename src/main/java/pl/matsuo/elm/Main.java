@@ -1232,6 +1232,9 @@ public final class Main implements Runnable {
     @Option(names = "--incremental", description = "Skip compile/package whose output is newer than its inputs.")
     boolean incremental;
 
+    @Option(names = "--parallel", description = "Build independent modules within a phase concurrently.")
+    boolean parallel;
+
     @Option(names = "--init", description = "Write a starter build file (does not overwrite an existing one).")
     boolean init;
 
@@ -1305,7 +1308,7 @@ public final class Main implements Runnable {
         }
         // Relative paths resolve against the build file's directory (like a pom.xml dir).
         Path baseDir = file.toAbsolutePath().getParent();
-        return pl.matsuo.elm.build.BuildRunner.run(planList, baseDir, incremental, System.out);
+        return pl.matsuo.elm.build.BuildRunner.run(planList, baseDir, incremental, parallel, System.out);
       } catch (IOException e) {
         System.err.println("build error: " + e.getMessage());
         return 1;

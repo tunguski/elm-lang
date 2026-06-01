@@ -21,9 +21,11 @@ public sealed interface Ty permits Ty.Var, Ty.Arrow, Ty.Con, Ty.Tuple, Ty.Record
 
   /** A unification variable. Mutable: {@code link} is set when the variable is bound. */
   final class Var implements Ty {
-    private static int counter = 0;
+    // Atomic so ids stay unique when several modules are type-checked concurrently (parallel builds).
+    private static final java.util.concurrent.atomic.AtomicInteger counter =
+        new java.util.concurrent.atomic.AtomicInteger();
 
-    public final int id = counter++;
+    public final int id = counter.getAndIncrement();
     public int level;
     public Constraint constraint;
     public Ty link; // null while unbound

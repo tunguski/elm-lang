@@ -243,6 +243,36 @@ class BuildRunnerTest {
   }
 
   @Test
+  void parallelBuildsIndependentModulesAndProducesAllArtifacts() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-par-");
+    for (String name : new String[] {"alpha", "beta"}) {
+      Files.createDirectories(dir.resolve(name + "/src"));
+      Files.writeString(
+          dir.resolve(name + "/src/Main.elm"),
+          "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"" + name + "\"\n");
+    }
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "suite" "1.0.0"
+                [ module_ "alpha" "alpha" |> withEntry "alpha/src/Main.elm" |> withOutput "alpha/out"
+                , module_ "beta" "beta" |> withEntry "beta/src/Main.elm" |> withOutput "beta/out"
+                ]
+        """);
+    Result r = build(dir, "compile", "--parallel");
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("BUILD SUCCESS"), r.out());
+    assertTrue(Files.exists(dir.resolve("alpha/out/alpha.js")), "alpha compiled: " + r.out());
+    assertTrue(Files.exists(dir.resolve("beta/out/beta.js")), "beta compiled: " + r.out());
+  }
+
+  @Test
   void cleanRemovesEachModulesOutput() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-clean-");
     Files.createDirectories(dir.resolve("out"));
