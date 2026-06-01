@@ -340,6 +340,13 @@ evalExpr globals env expr =
                         -- The Json.Decode decoder for a dropped/selected File (used by image-previews).
                         Ok (VCtor "Dec.file" [])
 
+                    else if moduleName == "Select" && field == "files" then
+                        -- `File.Select as Select` aliased: Select.files mimes toMsg opens a file picker.
+                        Ok (VBuiltin "File.Select.files" [])
+
+                    else if moduleName == "Select" && field == "file" then
+                        Ok (VBuiltin "File.Select.file" [])
+
                     else if List.member qualified builtins then
                         Ok (VBuiltin qualified [])
 

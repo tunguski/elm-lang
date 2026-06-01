@@ -164,7 +164,8 @@ class EditorInterpreterTest {
           // Generic event handlers used by image-previews' drag target (was: undefined variable).
           "preventDefaultOn \"dragover\" (D.succeed ( 1, True ))",
           "on \"drop\" (D.succeed 1)",
-          "D.at [ \"dataTransfer\", \"files\" ] (D.oneOrMore (\\f fs -> f) File.decoder)"
+          "D.at [ \"dataTransfer\", \"files\" ] (D.oneOrMore (\\f fs -> f) File.decoder)",
+          "Select.files [ \"image/*\" ] (\\f fs -> 1)"
         }) {
       assertFalse(eval(expr).startsWith("Error"), expr + " => " + eval(expr));
     }
