@@ -937,9 +937,22 @@ public final class Main implements Runnable {
 
   @Command(name = "repl", description = "Read-eval-print loop.")
   static final class Repl implements Callable<Integer> {
+    @Option(
+        names = "--project",
+        description = "An elm.json (or its dir): preload the project's modules + dependencies into scope.")
+    Path project;
+
+    @Option(names = "--registry", description = "Package cache for dependency sources (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
     @Override
     public Integer call() throws IOException {
-      pl.matsuo.elm.repl.Repl.loop(new InputStreamReader(System.in), System.out);
+      List<String> sources = List.of();
+      if (project != null) {
+        Path reg = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+        sources = pl.matsuo.elm.project.ProjectLoader.loadSources(project, reg);
+      }
+      pl.matsuo.elm.repl.Repl.loop(new InputStreamReader(System.in), System.out, sources);
       return 0;
     }
   }

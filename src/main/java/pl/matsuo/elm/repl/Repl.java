@@ -32,9 +32,21 @@ public final class Repl {
 
   /** Runs the loop against the given reader/writer (so it is testable without real stdin). */
   public static void loop(Reader in, PrintStream out) throws IOException {
+    loop(in, out, List.of());
+  }
+
+  /** As {@link #loop(Reader, PrintStream)}, but pre-loading the top-level definitions of the given
+   * module sources (a whole project's local modules + installed dependencies) into scope. */
+  public static void loop(Reader in, PrintStream out, List<String> moduleSources) throws IOException {
     BufferedReader reader = in instanceof BufferedReader b ? b : new BufferedReader(in);
     List<String> defs = new ArrayList<>(); // accumulated `name … = …` definitions
+    for (String src : moduleSources) {
+      defs.addAll(topLevelDefs(src));
+    }
     List<String> history = new ArrayList<>(); // entries entered this session
+    if (!defs.isEmpty()) {
+      out.println("(loaded " + defs.size() + " definitions from the project)");
+    }
     out.println("elm-lang REPL — expressions, definitions (x = …), :type, :load, :browse, :history, :reset, :help, :quit");
     out.print("> ");
     out.flush();

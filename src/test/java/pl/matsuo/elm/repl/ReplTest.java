@@ -91,6 +91,22 @@ class ReplTest {
   }
 
   @Test
+  void projectModulesArePreloadedIntoScope() throws Exception {
+    // Two project modules' top-level definitions are in scope from the start (no :load needed).
+    String mathSrc = "module Math exposing (square)\n\nsquare n = n * n\n";
+    String strSrc = "module Strings exposing (shout)\n\nimport String\n\nshout s = s ++ \"!\"\n";
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    Repl.loop(
+        new StringReader("square 5\nshout \"hi\"\n:quit\n"),
+        new PrintStream(out, true, StandardCharsets.UTF_8),
+        java.util.List.of(mathSrc, strSrc));
+    String s = out.toString(StandardCharsets.UTF_8);
+    assertTrue(s.contains("loaded") && s.contains("definitions from the project"), s);
+    assertTrue(s.contains("25"), s); // square 5
+    assertTrue(s.contains("hi!"), s); // shout "hi"
+  }
+
+  @Test
   void loadAcceptsSeveralFilesAtOnce() throws Exception {
     java.nio.file.Path a = java.nio.file.Files.createTempFile("repl-a-", ".elm");
     java.nio.file.Path b = java.nio.file.Files.createTempFile("repl-b-", ".elm");
