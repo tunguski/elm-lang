@@ -80,6 +80,18 @@ class SiteGeneratorTest {
   }
 
   @Test
+  void docPagesRewriteRepoLinksToTheDefaultBranchAndKeepExtensions() throws IOException {
+    Path out = Files.createTempDirectory("elm-site-docs-");
+    SiteGenerator.generate(EXAMPLES, PLAYGROUND, out, Path.of("docs"));
+    String scripting = Files.readString(out.resolve("scripting.html"), StandardCharsets.UTF_8);
+    // Repo source links resolve on the published site (correct default branch, original extension).
+    assertTrue(
+        scripting.contains("https://github.com/tunguski/elm-lang/blob/master/src/main/resources/elm/demos/wordcount.elm"),
+        "repo link points at blob/master with its .elm extension");
+    assertFalse(scripting.contains("blob/main/"), "no stale blob/main links (would 404)");
+  }
+
+  @Test
   void rtsGamePageIsCompiledAndLinked() throws IOException {
     Path out = generate();
     // The multi-module RTS game compiles to one live, standalone page.

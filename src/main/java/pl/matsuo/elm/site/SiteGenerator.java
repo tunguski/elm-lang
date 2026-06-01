@@ -238,14 +238,16 @@ public final class SiteGenerator {
   }
 
   /**
-   * Rewrites relative Markdown links so they work in the flat gallery: a link to a sibling guide
-   * ({@code foo.md}) becomes {@code foo.html}; links into the repo ({@code ../src/...}) become
-   * absolute GitHub URLs so they resolve from the published site.
+   * Rewrites relative Markdown links so they work in the flat gallery: links into the repo
+   * ({@code ../src/...}) become absolute GitHub URLs on the default branch (keeping their original
+   * extension — they're source files, not gallery pages); a link to a sibling guide ({@code foo.md})
+   * becomes {@code foo.html}. Repo links are rewritten first so the {@code .md → .html} rule (which
+   * skips {@code https://} URLs) never touches a repo source file.
    */
   private static String rewriteDocLinks(String md) {
-    String repo = "https://github.com/tunguski/elm-lang/blob/main/";
-    return md.replaceAll("\\]\\((?!https?://)([^)]+?)\\.md\\)", "]($1.html)")
-        .replaceAll("\\]\\(\\.\\./([^)]+)\\)", "](" + repo + "$1)");
+    String repo = "https://github.com/tunguski/elm-lang/blob/master/";
+    return md.replaceAll("\\]\\(\\.\\./([^)]+)\\)", "](" + repo + "$1)")
+        .replaceAll("\\]\\((?!https?://)([^)]+?)\\.md\\)", "]($1.html)");
   }
 
   private Built buildExample(Example ex) throws IOException {
