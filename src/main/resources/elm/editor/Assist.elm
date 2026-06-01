@@ -1,4 +1,4 @@
-module Assist exposing (completions, wordAt, accept, errorName, squiggleFor)
+module Assist exposing (completions, wordAt, accept, errorName, squiggleFor, offsetOf)
 
 {-| Editor assistance as pure functions the browser UI calls — no DOM, no effects, so it is fully
 testable. Two features:
@@ -108,6 +108,17 @@ squiggleFor source name =
 
     else
         findLine 0 (String.lines source) name
+
+
+{-| The character offset into `source` of the 0-based `line`/`column` produced by `squiggleFor` —
+the start index for slicing out the squiggled range (assumes `\n` line endings, like `squiggleFor`). -}
+offsetOf : Int -> Int -> String -> Int
+offsetOf line column source =
+    let
+        before =
+            List.take line (String.lines source)
+    in
+    List.sum (List.map String.length before) + line + column
 
 
 findLine : Int -> List String -> String -> Maybe { line : Int, column : Int, length : Int }

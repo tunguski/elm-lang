@@ -415,6 +415,16 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void offsetOfMapsASquiggleLocationToACharacterOffset() {
+    // The character offset the editor's squiggle overlay slices at: line 1, column 4 of
+    // "x = 1\ny = nope" is the 'n' of nope, at offset 5 (line 0) + 1 (newline) + 4 = 10.
+    Object offsetOf = EDITOR.value("Assist", "offsetOf");
+    assertEquals("10", Show.plain(Apply.applyAll(offsetOf, 1L, 4L, "x = 1\ny = nope")));
+    assertEquals("0", Show.plain(Apply.applyAll(offsetOf, 0L, 0L, "abc")));
+    assertEquals("2", Show.plain(Apply.applyAll(offsetOf, 0L, 2L, "abcdef")));
+  }
+
+  @Test
   void compilesToJavaScriptForTheBrowser() {
     // The editor is a multi-module Browser.sandbox program; the JS backend must bundle all modules.
     String page = JsCompiler.htmlPageProject(null, moduleSources());

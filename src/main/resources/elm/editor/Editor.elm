@@ -629,6 +629,7 @@ codeEditor model source =
                     :: codeStyles
                 )
                 (List.map renderSegment (Highlight.segments source) ++ [ text "\n" ])
+            , squiggleOverlay model source
             , textarea
                 (onEdit
                     :: value source
@@ -728,17 +729,65 @@ errorRibbon model source =
 {-| A "line N, col C: " prefix locating the offending identifier in the source, or "" if none. -}
 located : Model -> String -> String
 located model source =
+    case squiggle model source of
+        Just loc ->
+            "line " ++ String.fromInt (loc.line + 1) ++ ", col " ++ String.fromInt (loc.column + 1) ++ ": "
+
+        Nothing ->
+            ""
+
+
+{-| The location to squiggle: where the current error's offending identifier first appears, if any. -}
+squiggle : Model -> String -> Maybe { line : Int, column : Int, length : Int }
+squiggle model source =
     case model.app of
         Err message ->
-            case Maybe.andThen (Assist.squiggleFor source) (Assist.errorName message) of
-                Just loc ->
-                    "line " ++ String.fromInt (loc.line + 1) ++ ", col " ++ String.fromInt (loc.column + 1) ++ ": "
-
-                Nothing ->
-                    ""
+            Maybe.andThen (Assist.squiggleFor source) (Assist.errorName message)
 
         Ok _ ->
-            ""
+            Nothing
+
+
+{-| An overlay aligned exactly over the highlight `<pre>` (same font/padding/wrapping) that draws a
+wavy red underline under the offending identifier: the text is transparent, so the syntax-highlighted
+code shows through, but the underline's own colour marks the error in place. -}
+squiggleOverlay : Model -> String -> Html Msg
+squiggleOverlay model source =
+    case squiggle model source of
+        Nothing ->
+            text ""
+
+        Just loc ->
+            let
+                start =
+                    Assist.offsetOf loc.line loc.column source
+
+                before =
+                    String.left start source
+
+                marked =
+                    String.slice start (start + loc.length) source
+
+                after =
+                    String.dropLeft (start + loc.length) source
+            in
+            pre
+                (style "position" "absolute"
+                    :: style "top" "0"
+                    :: style "left" "0"
+                    :: style "margin" "0"
+                    :: style "pointer-events" "none"
+                    :: style "color" "transparent"
+                    :: codeStyles
+                )
+                [ text before
+                , span
+                    [ style "text-decoration" "underline wavy #ff5555"
+                    , style "text-decoration-skip-ink" "none"
+                    ]
+                    [ text marked ]
+                , text after
+                ]
 
 
 {-| The font/size/padding/wrapping shared by the highlight `<pre>` and the editing `<textarea>` so
