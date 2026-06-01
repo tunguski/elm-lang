@@ -258,7 +258,8 @@ class HeadlessChromeTest {
                 + " [ ( { position = vec3 0 0 0 }, { position = vec3 1 0 0 }, { position = vec3 0 1 0 } ) ]",
             "main = WebGL.toHtml [ width 220, height 160 ]"
                 + " [ WebGL.entity vert frag mesh { camera = Mat4.makePerspective 45 1.4 0.1 100 } ]");
-    String driver = "window.$app.dispatch($data('EditSource',[\"" + program + "\"]));";
+    // EditAt carries the new source and the caret offset (the editor's textarea reports both).
+    String driver = "window.$app.dispatch($data('EditAt',[\"" + program + "\",0]));";
     String dom = renderPage(JsCompiler.htmlPageProject(driver, modules));
     assertTrue(dom.contains("<canvas"), "a live WebGL <canvas> is mounted: " + dom);
     // The canvas carries the requested size, proving the program's attributes flowed through.
