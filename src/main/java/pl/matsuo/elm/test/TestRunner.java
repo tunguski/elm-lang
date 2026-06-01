@@ -84,8 +84,7 @@ public final class TestRunner {
       project = Project.load(all.toArray(new String[0]));
     }
 
-    List<Case> cases = new ArrayList<>();
-    long start = System.nanoTime();
+    List<ElmData> suites = new ArrayList<>();
     for (String src : userSources) {
       Module m = Parser.parseModule(src);
       for (Decl d : m.decls()) {
@@ -97,10 +96,18 @@ public final class TestRunner {
             continue; // not evaluable in isolation — not a test value
           }
           if (val instanceof ElmData t && isTest(t)) {
-            walk("", t, cases, opts);
+            suites.add(t);
           }
         }
       }
+    }
+
+    // If any test is marked `Test.only`, the run focuses on those: everything else is skipped.
+    boolean onlyMode = suites.stream().anyMatch(TestRunner::hasOnly);
+    List<Case> cases = new ArrayList<>();
+    long start = System.nanoTime();
+    for (ElmData t : suites) {
+      walk("", t, cases, opts, !onlyMode);
     }
     long ms = (System.nanoTime() - start) / 1_000_000;
     int passed = (int) cases.stream().filter(c -> c.outcome() == Outcome.PASS).count();
@@ -144,10 +151,32 @@ public final class TestRunner {
   }
 
   private static boolean isTest(ElmData d) {
-    return d.ctor().equals("UnitTest") || d.ctor().equals("Labeled") || d.ctor().equals("FuzzTest");
+    return switch (d.ctor()) {
+      case "UnitTest", "Labeled", "FuzzTest", "Only", "Skip", "Todo" -> true;
+      default -> false;
+    };
   }
 
-  private static void walk(String prefix, ElmData t, List<Case> cases, Options opts) {
+  /** Whether {@code t} contains a {@code Test.only} anywhere (which puts the run in focus mode). */
+  private static boolean hasOnly(ElmData t) {
+    return switch (t.ctor()) {
+      case "Only" -> true;
+      case "Skip" -> Thunk.resolve(t.arg(0)) instanceof ElmData c && hasOnly(c);
+      case "Labeled" -> {
+        if (Thunk.resolve(t.arg(1)) instanceof ElmList kids) {
+          for (Object kid : kids.toJava()) {
+            if (Thunk.resolve(kid) instanceof ElmData kt && hasOnly(kt)) {
+              yield true;
+            }
+          }
+        }
+        yield false;
+      }
+      default -> false;
+    };
+  }
+
+  private static void walk(String prefix, ElmData t, List<Case> cases, Options opts, boolean active) {
     switch (t.ctor()) {
       case "Labeled" -> {
         String label = String.valueOf(Thunk.resolve(t.arg(0)));
@@ -155,14 +184,34 @@ public final class TestRunner {
         if (Thunk.resolve(t.arg(1)) instanceof ElmList kids) {
           for (Object kid : kids.toJava()) {
             if (Thunk.resolve(kid) instanceof ElmData kt) {
-              walk(p, kt, cases, opts);
+              walk(p, kt, cases, opts, active);
             }
           }
         }
       }
+      case "Only" -> {
+        // Focused: tests inside run regardless of focus mode (this is what focus selects).
+        if (Thunk.resolve(t.arg(0)) instanceof ElmData child) {
+          walk(prefix, child, cases, opts, true);
+        }
+      }
+      case "Skip" -> {
+        // Everything inside is reported as skipped, never run.
+        if (Thunk.resolve(t.arg(0)) instanceof ElmData child) {
+          markSkipped(prefix, child, cases);
+        }
+      }
+      case "Todo" -> {
+        String desc = String.valueOf(Thunk.resolve(t.arg(0)));
+        if (!active) {
+          cases.add(new Case(prefix + desc, Outcome.SKIP, null, null));
+        } else {
+          cases.add(new Case(prefix + desc, Outcome.FAIL, "TODO: " + desc, null));
+        }
+      }
       case "UnitTest" -> {
         String desc = String.valueOf(Thunk.resolve(t.arg(0)));
-        if (filteredOut(prefix + desc, opts)) {
+        if (!active || filteredOut(prefix + desc, opts)) {
           cases.add(new Case(prefix + desc, Outcome.SKIP, null, null));
           return;
         }
@@ -177,7 +226,7 @@ public final class TestRunner {
       }
       case "FuzzTest" -> {
         String desc = String.valueOf(Thunk.resolve(t.arg(0)));
-        if (filteredOut(prefix + desc, opts)) {
+        if (!active || filteredOut(prefix + desc, opts)) {
           cases.add(new Case(prefix + desc, Outcome.SKIP, null, null));
           return;
         }
@@ -224,6 +273,31 @@ public final class TestRunner {
           cases.add(new Case(prefix + desc + " (fuzz)", Outcome.FAIL, reason, null));
         }
       }
+      default -> {}
+    }
+  }
+
+  /** Records every test under a {@code Test.skip} as a skipped case (without running it). */
+  private static void markSkipped(String prefix, ElmData t, List<Case> cases) {
+    switch (t.ctor()) {
+      case "Labeled" -> {
+        String label = String.valueOf(Thunk.resolve(t.arg(0)));
+        String p = label.isEmpty() ? prefix : prefix + label + " › ";
+        if (Thunk.resolve(t.arg(1)) instanceof ElmList kids) {
+          for (Object kid : kids.toJava()) {
+            if (Thunk.resolve(kid) instanceof ElmData kt) {
+              markSkipped(p, kt, cases);
+            }
+          }
+        }
+      }
+      case "Only", "Skip" -> {
+        if (Thunk.resolve(t.arg(0)) instanceof ElmData child) {
+          markSkipped(prefix, child, cases);
+        }
+      }
+      case "UnitTest", "FuzzTest", "Todo" ->
+          cases.add(new Case(prefix + String.valueOf(Thunk.resolve(t.arg(0))), Outcome.SKIP, null, null));
       default -> {}
     }
   }

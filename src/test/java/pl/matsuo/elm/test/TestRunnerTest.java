@@ -11,6 +11,63 @@ import pl.matsuo.elm.util.Resources;
 class TestRunnerTest {
 
   @Test
+  void skipMarksTestsAsSkippedWithoutRunning() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (Test, describe, test, skip)
+        suite =
+            describe "s"
+                [ test "runs" (\\_ -> Expect.equal 1 1)
+                , skip (test "ignored" (\\_ -> Expect.equal 1 2))
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(1, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report()); // the skipped failing test does NOT fail the run
+    assertEquals(1, r.skipped(), r.report());
+  }
+
+  @Test
+  void onlyFocusesTheRunOnMarkedTests() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (Test, describe, test, only)
+        suite =
+            describe "s"
+                [ only (test "focused" (\\_ -> Expect.equal 2 2))
+                , test "other" (\\_ -> Expect.equal 1 2)
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(1, r.passed(), r.report()); // only the focused test ran
+    assertEquals(0, r.failed(), r.report()); // the (failing) unfocused test was skipped, not run
+    assertEquals(1, r.skipped(), r.report());
+  }
+
+  @Test
+  void todoIsReportedAsAFailure() {
+    String src =
+        """
+        module T exposing (suite)
+        import Test exposing (Test, describe, test, todo)
+        import Expect
+        suite =
+            describe "s"
+                [ test "done" (\\_ -> Expect.equal 1 1)
+                , todo "implement the edge case"
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(1, r.passed(), r.report());
+    assertEquals(1, r.failed(), r.report());
+    assertTrue(r.report().contains("TODO: implement the edge case"), r.report());
+  }
+
+  @Test
   void runsTheBundledExampleSuite() {
     String suite = Resources.read("/elm/demos/example-test.elm");
     TestRunner.Result r = TestRunner.run(List.of(suite));

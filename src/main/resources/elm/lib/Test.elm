@@ -1,4 +1,4 @@
-module Test exposing (Test, test, describe, concat, fuzz)
+module Test exposing (Test, test, describe, concat, fuzz, only, skip, todo)
 
 {-| A tiny test framework (a subset of elm-explorations/test). Build tests with `test` and group
 them with `describe`/`concat`, then expose them as a top-level `Test` value; the `elm test` runner
@@ -23,6 +23,9 @@ type Test
     = UnitTest String (() -> Expectation)
     | Labeled String (List Test)
     | FuzzTest String (Int -> Expectation)
+    | Only Test
+    | Skip Test
+    | Todo String
 
 
 {-| A single test: a description and a thunk producing an `Expectation`. -}
@@ -41,6 +44,26 @@ describe =
 concat : List Test -> Test
 concat tests =
     Labeled "" tests
+
+
+{-| Focus the run on this test (and any other `only`-marked tests): when any `only` is present, the
+runner runs only the focused tests and skips the rest. Handy for zeroing in on one failure. -}
+only : Test -> Test
+only =
+    Only
+
+
+{-| Skip this test (and everything inside it): the runner reports it as skipped and never runs it. -}
+skip : Test -> Test
+skip =
+    Skip
+
+
+{-| A placeholder for a test not yet written: the runner reports it as a failure ("TODO: …") so it
+stays visible (red) until implemented. -}
+todo : String -> Test
+todo =
+    Todo
 
 
 {-| A property test: the runner draws many random inputs from the `Fuzzer` and fails on the first
