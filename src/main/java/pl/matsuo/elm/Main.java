@@ -1223,6 +1223,9 @@ public final class Main implements Runnable {
     @Option(names = {"-f", "--file"}, description = "The build definition (default: build.elm).")
     Path file = Path.of("build.elm");
 
+    @Option(names = "--dry-run", description = "Print the plan (phases, goals, tasks) without running it.")
+    boolean dryRun;
+
     @Override
     public Integer call() throws IOException {
       String userSource = readElmSource(file);
@@ -1242,6 +1245,9 @@ public final class Main implements Runnable {
         }
         planList =
             pl.matsuo.elm.interp.Apply.applyAll(project.value("Build", "plan"), phaseCtor, projectValue);
+      }
+      if (dryRun) {
+        return pl.matsuo.elm.build.BuildRunner.dryRun(planList, System.out);
       }
       // Relative paths in the build resolve against the build file's directory (like a pom.xml dir).
       Path baseDir = file.toAbsolutePath().getParent();

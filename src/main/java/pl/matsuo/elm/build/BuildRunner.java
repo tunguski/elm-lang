@@ -50,6 +50,44 @@ public final class BuildRunner {
     return 0;
   }
 
+  /** Prints the plan — every phase/module/goal and the tasks it would run — without executing any of
+   * them (a {@code --dry-run}). Always succeeds. */
+  public static int dryRun(Object planList, PrintStream out) {
+    for (Object stepObj : ((ElmList) Thunk.resolve(planList)).toJava()) {
+      ElmRecord step = (ElmRecord) Thunk.resolve(stepObj);
+      out.println(
+          "[" + str(step.get("phase")) + "] " + str(step.get("moduleName")) + " :: "
+              + str(step.get("goal")));
+      for (Object taskObj : ((ElmList) Thunk.resolve(step.get("tasks"))).toJava()) {
+        out.println("  - " + describe((ElmData) Thunk.resolve(taskObj)));
+      }
+    }
+    out.println("(dry run — nothing executed)");
+    return 0;
+  }
+
+  /** A one-line, human-readable description of a task (for {@code --dry-run}). */
+  private static String describe(ElmData task) {
+    return switch (task.ctor()) {
+      case "Log" -> "log " + quote(str(task.arg(0)));
+      case "MakeDir" -> "makeDir " + str(task.arg(0));
+      case "Remove" -> "remove " + str(task.arg(0));
+      case "WriteFile" -> "writeFile " + str(task.arg(0));
+      case "Copy" -> "copy " + str(task.arg(0)) + " -> " + str(task.arg(1));
+      case "Run" -> "exec " + str(task.arg(0)) + " " + String.join(" ", strings(task.arg(1)));
+      case "Check" -> "check " + str(task.arg(0));
+      case "CompileModule" ->
+          "compile " + str(task.arg(1)) + " ("
+              + str(((ElmData) Thunk.resolve(task.arg(0))).ctor()) + ") -> " + str(task.arg(2));
+      case "RunTests" -> "test " + str(task.arg(0));
+      default -> task.ctor();
+    };
+  }
+
+  private static String quote(String s) {
+    return "\"" + s + "\"";
+  }
+
   /** Performs one task, returning its exit code (0 = success). */
   private static int runTask(ElmData task, Path baseDir, PrintStream out) {
     try {

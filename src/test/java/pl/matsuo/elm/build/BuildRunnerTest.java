@@ -125,6 +125,33 @@ class BuildRunnerTest {
   }
 
   @Test
+  void dryRunPrintsThePlanWithoutExecuting() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-dry-");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "."
+                    |> withOutput "out"
+                    |> withGoals [ goal Compile "gen" (\\m -> [ makeDir m.output, log "hi" ]) ]
+                ]
+        """);
+    Result r = build(dir, "compile", "--dry-run");
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("[compile] app :: gen"), r.out());
+    assertTrue(r.out().contains("makeDir out"), r.out());
+    assertTrue(r.out().contains("(dry run — nothing executed)"), r.out());
+    // Nothing was actually created.
+    assertFalse(Files.exists(dir.resolve("out")), "dry run created no output");
+  }
+
+  @Test
   void unknownPhaseFails() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-bad-");
     Files.writeString(
