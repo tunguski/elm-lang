@@ -260,6 +260,32 @@ class MainCliTest {
   }
 
   @Test
+  void publishRecordsThePackageInADirectoryRegistry() throws Exception {
+    Path api = tempElm("module Widget exposing (inc)\n{-| Adds one. -}\ninc x = x + 1\n");
+    Path reg = Files.createTempDirectory("reg-");
+    Result r =
+        invoke("publish", api.toString(), "--registry", reg.toString(), "--name", "me/widget",
+            "--version", "1.0.0");
+    assertTrue(r.code() == 0, r.out() + r.err());
+    assertTrue(r.out().contains("published me/widget 1.0.0"), r.out());
+    // The registry now records it (elm.json + docs.json), so the solver sees the version.
+    Path versionDir = reg.resolve("me/widget/1.0.0");
+    assertTrue(Files.exists(versionDir.resolve("elm.json")), "manifest recorded");
+    assertTrue(Files.exists(versionDir.resolve("docs.json")), "docs recorded");
+    assertTrue(
+        new pl.matsuo.elm.pkg.DirectoryRegistry(reg)
+            .versions("me/widget")
+            .contains(pl.matsuo.elm.pkg.Version.parse("1.0.0")),
+        "registry lists the published version");
+    // Re-publishing the same version is rejected by the handshake.
+    Result again =
+        invoke("publish", api.toString(), "--registry", reg.toString(), "--name", "me/widget",
+            "--version", "1.0.0");
+    assertTrue(again.code() == 1, again.out());
+    assertTrue(again.out().contains("already published"), again.out());
+  }
+
+  @Test
   void publishRejectsAVersionThatDoesntMatchTheBump() throws Exception {
     Path oldApi = tempElm("module M exposing (inc)\ninc x = x + 1\n");
     Path newApi = tempElm("module M exposing (dec)\ndec x = x - 1\n"); // removed inc -> MAJOR

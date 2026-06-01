@@ -896,6 +896,12 @@ public final class Main implements Runnable {
     @Option(names = "--version", description = "The version you intend to publish; checked against the bump (with --bump-from).")
     String version;
 
+    @Option(names = "--registry", description = "Publish into this directory registry (the handshake: record elm.json + docs.json).")
+    Path registry;
+
+    @Option(names = "--name", description = "The package name (author/name), required with --registry.")
+    String name;
+
     @Override
     public Integer call() throws IOException {
       String source = Files.readString(file);
@@ -930,6 +936,17 @@ public final class Main implements Runnable {
         if (version != null) {
           System.out.println("ok version " + version + " matches the required bump");
         }
+      }
+      if (registry != null) {
+        if (name == null) {
+          System.err.println("Provide --name author/pkg to publish to a registry.");
+          return 1;
+        }
+        var v = pl.matsuo.elm.pkg.Version.parse(version == null ? "1.0.0" : version);
+        String manifest = pl.matsuo.elm.pkg.Publisher.manifest(name, v, api.moduleName());
+        var res = pl.matsuo.elm.pkg.Publisher.publish(registry, name, v, manifest, api.toJson());
+        System.out.println((res.ok() ? "ok " : "x ") + res.message());
+        return res.ok() ? 0 : 1;
       }
       System.out.println("Preflight OK - ready to publish.");
       return 0;
