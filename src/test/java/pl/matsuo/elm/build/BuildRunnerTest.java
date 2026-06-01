@@ -416,6 +416,83 @@ class BuildRunnerTest {
   }
 
   @Test
+  void expressesAMiniSiteGeneratorWithMarkdownAndScriptTasks() throws Exception {
+    // The capabilities a build needs to stand in for the SiteGenerator: compile a module to a live
+    // JS page, render a Markdown guide to HTML, and run an Elm gallery script (Site library) that
+    // lays out an index — all from a declarative build.elm, no Java glue.
+    Path dir = Files.createTempDirectory("elm-build-site-");
+    Files.createDirectories(dir.resolve("src"));
+    Files.createDirectories(dir.resolve("docs"));
+    Files.writeString(
+        dir.resolve("src/Main.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"demo\"\n");
+    Files.writeString(dir.resolve("docs/guide.md"), "# Guide\n\nHello **world**.\n");
+    // A tiny gallery generator: writes an index page from the Site library to its argument dir.
+    Files.writeString(
+        dir.resolve("gallery.elm"),
+        """
+        module Main exposing (main)
+
+        import Bash exposing (..)
+        import Site exposing (..)
+
+        main : Io
+        main =
+            getArgs
+                (\\args ->
+                    case args of
+                        out :: _ ->
+                            writeFile (out ++ "/index.html")
+                                (render (page "index.html" "Home" [ h1 "Gallery", text "built by elm build" ]))
+                                (print "wrote index.html" done)
+
+                        [] ->
+                            print "usage: gallery <dir>" (exit 1)
+                )
+        """);
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "site" "1.0.0"
+                [ module_ "site" "."
+                    |> withEntry "src/Main.elm"
+                    |> withOutput "out"
+                    |> withGoals
+                        [ goal Package "site"
+                            (\\m ->
+                                [ makeDir m.output
+                                , compile JS m.entry (m.output ++ "/demo.html")
+                                , markdown "docs/guide.md" (m.output ++ "/guide.html")
+                                , script "gallery.elm" [ m.output ]
+                                ]
+                            )
+                        ]
+                ]
+        """);
+    Result r = build(dir, "package");
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("rendered docs/guide.md"), "markdown task ran: " + r.out());
+    assertTrue(r.out().contains("wrote index.html"), "gallery script ran: " + r.out());
+    assertTrue(
+        Files.readString(dir.resolve("out/demo.html"), StandardCharsets.UTF_8).contains("$start"),
+        "the demo compiled to a live JS page");
+    assertTrue(
+        Files.readString(dir.resolve("out/guide.html"), StandardCharsets.UTF_8)
+            .contains("<strong>world</strong>"),
+        "the Markdown guide rendered to HTML");
+    assertTrue(
+        Files.readString(dir.resolve("out/index.html"), StandardCharsets.UTF_8)
+            .contains("built by elm build"),
+        "the gallery script laid out the index via the Site library");
+  }
+
+  @Test
   void unknownPhaseFails() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-bad-");
     Files.writeString(

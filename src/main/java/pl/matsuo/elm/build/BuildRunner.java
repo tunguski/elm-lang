@@ -180,6 +180,8 @@ public final class BuildRunner {
           "compile " + String.join(", ", strings(task.arg(1))) + " ("
               + str(((ElmData) Thunk.resolve(task.arg(0))).ctor()) + ") -> " + str(task.arg(2));
       case "RunTests" -> "test " + str(task.arg(0));
+      case "Markdown" -> "markdown " + str(task.arg(0)) + " -> " + str(task.arg(1));
+      case "Script" -> "script " + str(task.arg(0)) + " " + String.join(" ", strings(task.arg(1)));
       default -> task.ctor();
     };
   }
@@ -215,6 +217,10 @@ public final class BuildRunner {
             strings(task.arg(1)), str(task.arg(2)), baseDir, incremental, out);
         case "RunTests" -> {
           return runTests(str(task.arg(0)), baseDir, out);
+        }
+        case "Markdown" -> renderMarkdown(str(task.arg(0)), str(task.arg(1)), baseDir, out);
+        case "Script" -> {
+          return script(str(task.arg(0)), strings(task.arg(1)), baseDir, out);
         }
         default -> {
           out.println("  ! unknown task: " + task.ctor());
@@ -309,6 +315,43 @@ public final class BuildRunner {
     TestRunner.Result result = TestRunner.run(sources);
     out.print(result.report());
     return result.exitCode();
+  }
+
+  /** Renders a Markdown file to an HTML-fragment file with the same renderer the doc pages use. */
+  private static void renderMarkdown(String src, String dest, Path baseDir, PrintStream out)
+      throws IOException {
+    String md = Files.readString(at(baseDir, src), StandardCharsets.UTF_8);
+    Path target = at(baseDir, dest);
+    if (target.getParent() != null) {
+      Files.createDirectories(target.getParent());
+    }
+    Files.writeString(target, pl.matsuo.elm.site.Markdown.toHtml(md), StandardCharsets.UTF_8);
+    out.println("  rendered " + src + " -> " + dest);
+  }
+
+  /**
+   * Runs an Elm script (its {@code main : Posix.Io}) with the Posix/Bash/Site libraries in scope,
+   * exactly like {@code elm script}. Relative path arguments are resolved against the build dir so
+   * the script's file effects land under it (matching how the other tasks resolve paths).
+   */
+  private static int script(String entry, List<String> args, Path baseDir, PrintStream out)
+      throws IOException {
+    String userSource = Files.readString(at(baseDir, entry), StandardCharsets.UTF_8);
+    String posix = pl.matsuo.elm.util.Resources.read("/elm/lib/Posix.elm");
+    String bash = pl.matsuo.elm.util.Resources.read("/elm/lib/Bash.elm");
+    String site = pl.matsuo.elm.util.Resources.read("/elm/lib/Site.elm");
+    Object main = pl.matsuo.elm.interp.Project.load(userSource, posix, bash, site).main();
+    List<String> resolved = new ArrayList<>();
+    for (String a : args) {
+      resolved.add(at(baseDir, a).toString());
+    }
+    out.println("  script " + entry + (resolved.isEmpty() ? "" : " " + String.join(" ", resolved)));
+    return pl.matsuo.elm.script.ScriptRunner.run(
+        main,
+        resolved,
+        new java.io.BufferedReader(
+            new java.io.InputStreamReader(System.in, StandardCharsets.UTF_8)),
+        out);
   }
 
   /** Runs an external command in {@code baseDir}, streaming its (merged) output; returns the exit code. */

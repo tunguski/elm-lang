@@ -31,6 +31,8 @@ module Build exposing
     , remove
     , writeFile
     , log
+    , markdown
+    , script
     , phases
     , phaseName
     , phaseRank
@@ -149,6 +151,8 @@ type Task
     | Remove String
     | WriteFile String String
     | Log String
+    | Markdown String String
+    | Script String (List String)
 
 
 {-| One planned step: a phase, the module it runs for, the goal's name, and its concrete tasks. This
@@ -309,6 +313,21 @@ writeFile =
 log : String -> Task
 log =
     Log
+
+
+{-| Render a Markdown file to an HTML fragment file (the same renderer the docs use) — so a build
+can turn `*.md` guides into page bodies, as the site generator does. -}
+markdown : String -> String -> Task
+markdown =
+    Markdown
+
+
+{-| Run an Elm script (its `main : Posix.Io`, with the Posix/Bash/Site libraries in scope) with the
+given arguments — the escape hatch for laying out pages in Elm, e.g. running a gallery generator
+over a manifest. Relative path arguments resolve against the build directory. -}
+script : String -> List String -> Task
+script =
+    Script
 
 
 

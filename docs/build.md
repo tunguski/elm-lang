@@ -119,11 +119,18 @@ builders:
 | `copy : String -> String -> Task` | Copy a file or directory tree. |
 | `remove : String -> Task` | Delete a path (recursively). |
 | `writeFile : String -> String -> Task` | Write a file. |
+| `markdown : String -> String -> Task` | Render a Markdown file to an HTML fragment file. |
+| `script : String -> List String -> Task` | Run an Elm script (`main : Posix.Io`, with the Posix/Bash/Site libraries in scope) — relative path arguments resolve against the build dir. |
 | `log : String -> Task` | Print a line. |
 
 Because a goal is plain Elm, you can compute its tasks however you like — branch on the module name,
 map over `m.sources`, generate files, shell out. That is the whole "custom function" story: no
 plugin packaging, just functions.
+
+Together these are enough to drive a **static-site build** entirely from `build.elm`: `compile JS`
+emits a live demo page per module, `markdown` turns guides into page bodies, and `script` runs a
+gallery generator written with the [Site library](site.html) to lay out the index — the same
+pipeline the project's own showcase site uses, with no Java glue.
 
 ## A multi-module build
 
