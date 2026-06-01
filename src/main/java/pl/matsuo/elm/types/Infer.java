@@ -22,6 +22,9 @@ public final class Infer {
 
   private int level = 1;
   private final Map<String, AliasDef> aliases = new HashMap<>();
+
+  /** Alias names currently being expanded by {@link #astToTy}, to break self-referential cycles. */
+  private final java.util.Set<String> expandingAliases = new java.util.HashSet<>();
   private final Map<String, String> moduleAliases = new HashMap<>();
   private final Map<Expr, Ty> numericLiterals = new IdentityHashMap<>();
   private final Map<Expr, Ty> nodeTypes = new IdentityHashMap<>();
@@ -497,12 +500,17 @@ public final class Infer {
       }
       case Type.Con c -> {
         AliasDef alias = aliases.get(c.name());
-        if (alias != null) {
+        // Guard against alias cycles (e.g. `type alias Io = Posix.Io`, where the dropped module
+        // qualifier makes the body refer to the same name): expand each alias at most once on a
+        // path, otherwise treat it as an opaque constructor instead of recursing forever.
+        if (alias != null && expandingAliases.add(c.name())) {
           Map<String, Ty> sub = new HashMap<>();
           for (int i = 0; i < alias.params().size() && i < c.args().size(); i++) {
             sub.put(alias.params().get(i), astToTy(c.args().get(i), vars));
           }
-          yield astToTy(alias.body(), sub);
+          Ty expanded = astToTy(alias.body(), sub);
+          expandingAliases.remove(c.name());
+          yield expanded;
         }
         yield new Ty.Con(c.name(), c.args().stream().map(x -> astToTy(x, vars)).toList());
       }

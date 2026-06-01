@@ -69,6 +69,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Bench.class,
       Main.Wasm.class,
       Main.Site.class,
+      Main.GenSite.class,
       Main.Init.class,
       Main.Install.class,
       Main.Diff.class,
@@ -1015,6 +1016,36 @@ public final class Main implements Runnable {
     public Integer call() throws IOException {
       pl.matsuo.elm.site.SiteGenerator.generate(examplesDir, playground, outDir, docsDir);
       return 0;
+    }
+  }
+
+  @Command(
+      name = "gen-site",
+      description =
+          "Generate a static website from an Elm definition (`site : List Site.Page`) using the "
+              + "bundled Site library. With --api, also emit grouped API docs for the given Elm dirs.",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm gen-site examples/site/ElmLang.elm out --api src/main/resources/elm/lib --api examples",
+        "",
+        "The program exposes `site : List Page`; each page is rendered to HTML and written under the",
+        "output dir. `--api DIR` adds api/<Module>.html for every .elm file plus a grouped api index.",
+      })
+  static final class GenSite implements Callable<Integer> {
+    @Parameters(index = "0", description = "The .elm site definition (its `site : List Site.Page`).")
+    Path file;
+
+    @Parameters(index = "1", description = "Output directory.")
+    Path outDir;
+
+    @Option(
+        names = "--api",
+        description = "A directory of .elm files to document (repeatable); grouped by purpose.")
+    List<Path> apiDirs = new ArrayList<>();
+
+    @Override
+    public Integer call() throws IOException {
+      return pl.matsuo.elm.site.SiteGen.generate(readElmSource(file), outDir, apiDirs);
     }
   }
 
