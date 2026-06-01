@@ -330,6 +330,10 @@ evalExpr globals env expr =
                         Ok (VNum 0)
                         -- a Zone, modelled as a 0 offset
 
+                    else if qualified == "File.decoder" then
+                        -- The Json.Decode decoder for a dropped/selected File (used by image-previews).
+                        Ok (VCtor "Dec.file" [])
+
                     else if List.member qualified builtins then
                         Ok (VBuiltin qualified [])
 
@@ -2065,6 +2069,11 @@ okOrErr body =
 runDecoder : Globals -> Value -> Value -> Result String Value
 runDecoder globals decoder json =
     case decoder of
+        VCtor "Dec.file" [] ->
+            -- The editor can't materialise a real File from JSON; yield a placeholder so a decoder
+            -- that mentions File.decoder still runs (real File drops aren't wired in the editor).
+            Ok (VCtor "File" [ VStr "file", VStr "" ])
+
         VCtor "Dec.string" [] ->
             case json of
                 VStr s ->
