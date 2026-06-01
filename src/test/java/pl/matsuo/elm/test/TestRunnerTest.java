@@ -180,6 +180,28 @@ class TestRunnerTest {
   }
 
   @Test
+  void equalDictsAndEqualSets() {
+    // equalDicts/equalSets pass on equal collections and report a structured diff otherwise.
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (Test, describe, test)
+        suite =
+            describe "collections"
+                [ test "dict eq" (\\_ -> Expect.equalDicts (Dict.fromList [ ( 1, "a" ) ]) (Dict.fromList [ ( 1, "a" ) ]))
+                , test "set eq" (\\_ -> Expect.equalSets (Set.fromList [ 1, 2 ]) (Set.fromList [ 2, 1 ]))
+                , test "dict diff" (\\_ -> Expect.equalDicts (Dict.fromList [ ( 1, "a" ) ]) (Dict.fromList [ ( 1, "a" ), ( 2, "b" ) ]))
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(2, r.passed(), r.report());
+    assertEquals(1, r.failed(), r.report());
+    assertTrue(r.report().contains("Dicts are not equal"), r.report());
+    assertTrue(r.report().contains("only in actual"), r.report()); // (2,"b") is the extra entry
+  }
+
+  @Test
   void equalListsReportsLengthMismatch() {
     String src =
         """

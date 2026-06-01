@@ -4,6 +4,8 @@ module Expect exposing
     , fail
     , equal
     , equalLists
+    , equalDicts
+    , equalSets
     , notEqual
     , lessThan
     , greaterThan
@@ -69,6 +71,59 @@ equalLists expected actual =
 
     else
         Fail ("lists differ:\n  expected " ++ Debug.toString expected ++ "\n  but got  " ++ Debug.toString actual)
+
+
+{-| Passes if two `Dict`s are equal, reporting which entries are only in one side (and, when the
+keys match but values differ, both dicts) — clearer than `equal` on a `Dict`. -}
+equalDicts expected actual =
+    if expected == actual then
+        Pass
+
+    else
+        let
+            onlyExpected =
+                Dict.toList (Dict.diff expected actual)
+
+            onlyActual =
+                Dict.toList (Dict.diff actual expected)
+        in
+        Fail
+            ("Dicts are not equal."
+                ++ diffPart "\n  only in expected: " onlyExpected
+                ++ diffPart "\n  only in actual:   " onlyActual
+                ++ (if onlyExpected == [] && onlyActual == [] then
+                        "\n  same keys, differing values:\n  expected "
+                            ++ Debug.toString (Dict.toList expected)
+                            ++ "\n  but got  "
+                            ++ Debug.toString (Dict.toList actual)
+
+                    else
+                        ""
+                   )
+            )
+
+
+{-| Passes if two `Set`s are equal, reporting the elements only in one side — clearer than `equal`
+on a `Set`. -}
+equalSets expected actual =
+    if expected == actual then
+        Pass
+
+    else
+        Fail
+            ("Sets are not equal."
+                ++ diffPart "\n  only in expected: " (Set.toList (Set.diff expected actual))
+                ++ diffPart "\n  only in actual:   " (Set.toList (Set.diff actual expected))
+            )
+
+
+diffPart : String -> List a -> String
+diffPart label items =
+    if items == [] then
+        ""
+
+    else
+        label ++ Debug.toString items
 
 
 {-| Passes if the two values are not equal. -}
