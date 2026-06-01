@@ -1043,9 +1043,14 @@ public final class Main implements Runnable {
         description = "A directory of .elm files to document (repeatable); grouped by purpose.")
     List<Path> apiDirs = new ArrayList<>();
 
+    @Option(
+        names = "--base-url",
+        description = "URL prefix for sitemap.xml entries (default: relative paths).")
+    String baseUrl = "";
+
     @Override
     public Integer call() throws IOException {
-      return pl.matsuo.elm.site.SiteGen.generate(readElmSource(file), outDir, apiDirs);
+      return pl.matsuo.elm.site.SiteGen.generate(readElmSource(file), outDir, apiDirs, baseUrl);
     }
   }
 

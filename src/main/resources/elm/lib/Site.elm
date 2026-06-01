@@ -13,6 +13,7 @@ module Site exposing
     , links
     , raw
     , group
+    , markdown
     , render
     )
 
@@ -117,6 +118,38 @@ raw =
 group : List Block -> Block
 group =
     Group
+
+
+{-| Converts a (small subset of) Markdown into content blocks: blank-line-separated groups become
+`#`/`##`/`###` headings, fenced code blocks, `- ` bullet lists, or paragraphs. Lets a `*.md` file be
+dropped straight into a page. -}
+markdown : String -> List Block
+markdown src =
+    String.split "\n\n" src
+        |> List.map String.trim
+        |> List.filter (\g -> g /= "")
+        |> List.map classifyGroup
+
+
+classifyGroup : String -> Block
+classifyGroup group =
+    if String.startsWith "### " group then
+        Title 3 (String.dropLeft 4 group)
+
+    else if String.startsWith "## " group then
+        Title 2 (String.dropLeft 3 group)
+
+    else if String.startsWith "# " group then
+        Title 1 (String.dropLeft 2 group)
+
+    else if String.startsWith "```" group then
+        Code (String.join "\n" (List.filter (\l -> not (String.startsWith "```" l)) (String.lines group)))
+
+    else if String.startsWith "- " group then
+        Bullets (List.map (String.dropLeft 2) (List.filter (String.startsWith "- ") (String.lines group)))
+
+    else
+        Text (String.replace "\n" " " group)
 
 
 {-| Renders a page to a complete HTML document. -}

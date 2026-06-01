@@ -30,24 +30,45 @@ public final class SiteGen {
 
   private SiteGen() {}
 
-  /** Renders a site definition's pages, plus (for any {@code apiDirs}) grouped per-module API docs. */
-  public static int generate(String userSource, Path outDir, List<Path> apiDirs) throws IOException {
+  /** Renders a site definition's pages, plus (for any {@code apiDirs}) grouped per-module API docs,
+   * and a sitemap.xml of every page (URLs prefixed with {@code baseUrl}). */
+  public static int generate(String userSource, Path outDir, List<Path> apiDirs, String baseUrl)
+      throws IOException {
     String siteLib = Resources.read("/elm/lib/Site.elm");
     Project project = Project.load(userSource, siteLib);
     Object render = project.value("Site", "render");
 
-    int written = 0;
+    List<String> paths = new ArrayList<>();
     for (Object pageObj : ((ElmList) project.entryValue("site")).toJava()) {
       ElmRecord page = (ElmRecord) pageObj;
-      writePage(outDir, (String) page.get("path"), (String) Apply.apply(render, page));
-      written++;
+      String path = (String) page.get("path");
+      writePage(outDir, path, (String) Apply.apply(render, page));
+      paths.add(path);
     }
 
     if (!apiDirs.isEmpty()) {
-      written += generateApiDocs(apiDirs, outDir, render);
+      generateApiDocs(apiDirs, outDir, render, paths);
     }
-    System.out.println("Wrote " + written + " page(s) to " + outDir.toAbsolutePath());
+    writeSitemap(outDir, paths, baseUrl);
+    System.out.println("Wrote " + paths.size() + " page(s) + sitemap.xml to " + outDir.toAbsolutePath());
     return 0;
+  }
+
+  /** A sitemap.xml listing every generated page (each URL is {@code baseUrl + path}). */
+  private static void writeSitemap(Path outDir, List<String> paths, String baseUrl)
+      throws IOException {
+    StringBuilder sb = new StringBuilder();
+    sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    sb.append("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
+    for (String path : paths) {
+      sb.append("  <url><loc>").append(escapeXml(baseUrl + path)).append("</loc></url>\n");
+    }
+    sb.append("</urlset>\n");
+    writePage(outDir, "sitemap.xml", sb.toString());
+  }
+
+  private static String escapeXml(String s) {
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
   }
 
   /**
@@ -55,8 +76,8 @@ public final class SiteGen {
    * generator) and collects it under a purpose group. Then writes {@code api/index.html} — a grouped
    * table of contents rendered through the {@code Site} library so it matches the rest of the site.
    */
-  private static int generateApiDocs(List<Path> apiDirs, Path outDir, Object render)
-      throws IOException {
+  private static void generateApiDocs(
+      List<Path> apiDirs, Path outDir, Object render, List<String> pathsOut) throws IOException {
     // group -> (module name -> [docPath, summary])
     Map<String, Map<String, String[]>> grouped = new TreeMap<>();
     int count = 0;
@@ -64,13 +85,14 @@ public final class SiteGen {
       if (!Files.isDirectory(dir)) {
         continue;
       }
-      try (var paths = Files.walk(dir)) {
-        for (Path file : paths.filter(p -> p.toString().endsWith(".elm")).sorted().toList()) {
+      try (var walk = Files.walk(dir)) {
+        for (Path file : walk.filter(p -> p.toString().endsWith(".elm")).sorted().toList()) {
           String source = Files.readString(file, StandardCharsets.UTF_8);
           try {
             ApiDocs docs = ApiDocs.of(source);
             String name = docs.moduleName();
             writePage(outDir, "api/" + name + ".html", DocGenerator.html(source));
+            pathsOut.add("api/" + name + ".html");
             grouped
                 .computeIfAbsent(purpose(file), g -> new TreeMap<>())
                 .put(name, new String[] {name + ".html", firstLine(docs.moduleComment())});
@@ -83,9 +105,8 @@ public final class SiteGen {
     }
     if (count > 0) {
       writePage(outDir, "api/index.html", (String) Apply.apply(render, apiIndexPage(grouped)));
-      count++;
+      pathsOut.add("api/index.html");
     }
-    return count;
   }
 
   /** Builds the grouped API index as a {@code Site.Page} value (so {@code Site.render} styles it). */
