@@ -1054,15 +1054,46 @@ public final class Main implements Runnable {
     }
   }
 
-  @Command(name = "bench", description = "Benchmark the backends on a recursive workload.")
+  @Command(name = "bench", description = "Benchmark the backends on a recursive workload (or --check against a baseline).")
   static final class Bench implements Callable<Integer> {
     @Parameters(index = "0", arity = "0..1", description = "fib(n) input (default 30).")
     long fibN = 30;
 
+    @Option(names = "--check", description = "Compare warm timings against the baseline and fail on a regression.")
+    boolean check;
+
+    @Option(names = "--update", description = "Write the current warm timings as the new baseline.")
+    boolean update;
+
+    @Option(names = "--baseline", description = "Baseline JSON file (default bench-baseline.json).")
+    Path baseline = Path.of("bench-baseline.json");
+
+    @Option(names = "--tolerance", description = "Allowed slowdown before a regression fails, as a fraction (default 0.5 = 50%%).")
+    double tolerance = 0.5;
+
     @Override
-    public Integer call() {
-      System.out.print(pl.matsuo.elm.bench.Benchmark.run(fibN, 50, 50));
-      return 0;
+    public Integer call() throws IOException {
+      if (!check && !update) {
+        System.out.print(pl.matsuo.elm.bench.Benchmark.run(fibN, 50, 50));
+        return 0;
+      }
+      var current = pl.matsuo.elm.bench.Benchmark.warm(fibN, 50, 50);
+      if (update || !Files.exists(baseline)) {
+        Files.writeString(baseline, pl.matsuo.elm.bench.Benchmark.baselineJson(current),
+            java.nio.charset.StandardCharsets.UTF_8);
+        System.out.println((update ? "Updated" : "Created") + " baseline " + baseline);
+        return 0;
+      }
+      var base = pl.matsuo.elm.bench.Benchmark.parseBaseline(
+          Files.readString(baseline, java.nio.charset.StandardCharsets.UTF_8));
+      var regressions = pl.matsuo.elm.bench.Benchmark.checkRegressions(base, current, tolerance);
+      if (regressions.isEmpty()) {
+        System.out.println("No performance regressions (within " + (int) (tolerance * 100) + "% of baseline).");
+        return 0;
+      }
+      System.err.println("Performance regressions:");
+      regressions.forEach(r -> System.err.println("  - " + r));
+      return 1;
     }
   }
 

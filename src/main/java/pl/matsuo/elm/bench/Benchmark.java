@@ -145,6 +145,49 @@ public final class Benchmark {
     return out;
   }
 
+  // --- regression guard --------------------------------------------------
+
+  /** Serialises warm timings to a baseline JSON object ({@code {"backend": ms, …}}). */
+  public static String baselineJson(java.util.Map<String, Double> warm) {
+    java.util.LinkedHashMap<String, Object> obj = new java.util.LinkedHashMap<>(warm);
+    return pl.matsuo.elm.json.JsonEncode.serialize(obj, 2) + "\n";
+  }
+
+  /** Parses a baseline JSON object back to per-backend warm times. */
+  @SuppressWarnings("unchecked")
+  public static java.util.Map<String, Double> parseBaseline(String json) {
+    java.util.LinkedHashMap<String, Double> out = new java.util.LinkedHashMap<>();
+    if (pl.matsuo.elm.json.JsonParse.parse(json) instanceof java.util.Map<?, ?> m) {
+      ((java.util.Map<String, Object>) m)
+          .forEach((k, v) -> out.put(k, ((Number) v).doubleValue()));
+    }
+    return out;
+  }
+
+  /**
+   * Compares current warm timings against a baseline and returns a message for each backend that
+   * regressed by more than {@code tolerance} (a fraction: 0.5 = 50% slower). Backends absent from
+   * either side are skipped. Timing is noisy, so callers should use a generous tolerance.
+   */
+  public static java.util.List<String> checkRegressions(
+      java.util.Map<String, Double> baseline,
+      java.util.Map<String, Double> current,
+      double tolerance) {
+    java.util.List<String> regressions = new java.util.ArrayList<>();
+    baseline.forEach(
+        (name, base) -> {
+          Double cur = current.get(name);
+          if (cur != null && cur > base * (1 + tolerance)) {
+            regressions.add(
+                String.format(
+                    java.util.Locale.US,
+                    "%s regressed: %.2f ms vs baseline %.2f ms (>%.0f%% slower)",
+                    name, cur, base, tolerance * 100));
+          }
+        });
+    return regressions;
+  }
+
   /** Warm timing of the WasmGC backend, or null if Node is unavailable or the module can't compile. */
   public static double[] timeWasmGc(String src, String fn, long n, int warmup, int measured) {
     try {

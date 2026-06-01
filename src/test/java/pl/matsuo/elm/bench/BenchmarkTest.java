@@ -1,12 +1,38 @@
 package pl.matsuo.elm.bench;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class BenchmarkTest {
+
+  @Test
+  void regressionCheckFlagsBackendsThatGotSlower() {
+    // Pure comparison logic (no real timing): a backend slower than baseline*(1+tolerance) regresses.
+    Map<String, Double> base = Map.of("Interp", 10.0, "Bytecode", 20.0, "JS", 5.0);
+    Map<String, Double> current = Map.of("Interp", 30.0, "Bytecode", 22.0, "JS", 5.0);
+    List<String> regressions = Benchmark.checkRegressions(base, current, 0.5); // allow 50% slower
+    // Interp 30 > 10*1.5=15 -> regressed; Bytecode 22 < 20*1.5=30 -> ok; JS unchanged -> ok.
+    assertEquals(1, regressions.size(), regressions.toString());
+    assertTrue(regressions.get(0).contains("Interp"), regressions.toString());
+    // A clean run yields no regressions.
+    assertTrue(Benchmark.checkRegressions(base, base, 0.5).isEmpty());
+  }
+
+  @Test
+  void baselineJsonRoundTrips() {
+    Map<String, Double> warm = new java.util.LinkedHashMap<>();
+    warm.put("Truffle interpreter", 12.5);
+    warm.put("Bytecode VM", 40.0);
+    Map<String, Double> back = Benchmark.parseBaseline(Benchmark.baselineJson(warm));
+    assertEquals(12.5, back.get("Truffle interpreter"));
+    assertEquals(40.0, back.get("Bytecode VM"));
+  }
 
   @Test
   void benchmarkRunsAndBackendsAgree() throws Exception {
