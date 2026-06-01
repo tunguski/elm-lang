@@ -2129,12 +2129,15 @@ public final class WasmGc {
     }
     section(out, 10, code);
 
-    // Name section (custom): function indices -> Elm names, for readable disassembly / traces.
+    // Name section (custom): function indices -> Elm names plus each function's parameter names,
+    // for readable disassembly / traces.
     List<String> funcNames = new ArrayList<>();
+    List<List<String>> localNames = new ArrayList<>();
     for (Func f : funcList) {
       funcNames.add(f.name());
+      localNames.add(f.params());
     }
-    WasmCompiler.nameSection(out, funcNames);
+    WasmCompiler.nameSection(out, funcNames, localNames);
     return out.toByteArray();
   }
 

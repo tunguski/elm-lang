@@ -2089,18 +2089,35 @@ public final class WasmCompiler {
     // and stack traces show `mySum` / `$apply` instead of `func[7]`. Index space is user funcs
     // 0..U-1 then the natives, matching the code section above.
     List<String> funcNames = new ArrayList<>();
+    List<List<String>> localNames = new ArrayList<>();
     for (Func f : funcList) {
       funcNames.add(f.name());
+      localNames.add(f.params()); // parameter names for the local-names subsection
     }
     for (Native n : natives) {
       funcNames.add(n.name());
+      localNames.add(List.of()); // runtime helpers have no source-level parameter names
     }
-    nameSection(out, funcNames);
+    nameSection(out, funcNames, localNames);
     return out.toByteArray();
   }
 
   /** Emits the WebAssembly "name" custom section: a module name plus a function-name map. */
   static void nameSection(ByteArrayOutputStream out, List<String> funcNames) {
+    nameSection(out, funcNames, java.util.List.of());
+  }
+
+  /**
+   * Emits the WebAssembly "name" custom section: a module name, a function-name map, and (when
+   * {@code localNames} is given) a local-name map carrying each function's parameter names. Param
+   * names make wasm stack traces / disassembly show {@code (local $n)} instead of {@code (local 0)};
+   * a release strip step ({@code wasm-opt --strip}) removes the whole section if size matters.
+   *
+   * @param localNames per-function parameter names, parallel to {@code funcNames} (an entry may be
+   *     empty for a function with no named parameters, e.g. the native runtime helpers).
+   */
+  static void nameSection(
+      ByteArrayOutputStream out, List<String> funcNames, List<List<String>> localNames) {
     ByteArrayOutputStream content = new ByteArrayOutputStream();
     name(content, "name"); // custom section name
 
@@ -2121,6 +2138,29 @@ public final class WasmCompiler {
     content.write(0x01);
     leb(content, funcs.size());
     content.writeBytes(funcs.toByteArray());
+
+    // Subsection 2: local names — an indirect name map (funcIdx -> (localIdx -> name)), listing only
+    // the functions that have named locals (their parameters).
+    int withLocals = (int) localNames.stream().filter(ns -> !ns.isEmpty()).count();
+    if (withLocals > 0) {
+      ByteArrayOutputStream locals = new ByteArrayOutputStream();
+      leb(locals, withLocals);
+      for (int i = 0; i < localNames.size(); i++) {
+        List<String> ns = localNames.get(i);
+        if (ns.isEmpty()) {
+          continue;
+        }
+        leb(locals, i); // function index
+        leb(locals, ns.size()); // number of named locals
+        for (int j = 0; j < ns.size(); j++) {
+          leb(locals, j); // local index (parameters are locals 0..arity-1)
+          name(locals, ns.get(j));
+        }
+      }
+      content.write(0x02);
+      leb(content, locals.size());
+      content.writeBytes(locals.toByteArray());
+    }
 
     out.write(0x00); // custom section id
     leb(out, content.size());
