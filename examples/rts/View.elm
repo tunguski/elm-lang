@@ -139,19 +139,14 @@ hud model =
         , div
             [ HA.style "min-height" "34px"
             , HA.style "font-size" "13px"
-            , HA.style "color"
-                (if model.explored then
-                    "#4ade80"
-
-                 else
-                    "#cbd5e1"
-                )
+            , HA.style "color" (statusColor model.status)
             , HA.style "font-weight"
-                (if model.explored then
-                    "700"
+                (case model.status of
+                    Playing ->
+                        "400"
 
-                 else
-                    "400"
+                    _ ->
+                        "700"
                 )
             ]
             [ text model.message ]
@@ -161,6 +156,20 @@ hud model =
         , divider
         , legend
         ]
+
+
+{-| The message colour for the current status: green when won, red when lost, neutral while playing. -}
+statusColor : Status -> String
+statusColor status =
+    case status of
+        Won ->
+            "#4ade80"
+
+        Lost ->
+            "#f87171"
+
+        Playing ->
+            "#cbd5e1"
 
 
 {-| A small overview: explored terrain in colour, fog dark, buildings and units as dots. -}

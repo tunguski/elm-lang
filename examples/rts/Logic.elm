@@ -33,7 +33,7 @@ init =
             , nextId = 2
             , mode = Normal
             , tick = 0
-            , explored = False
+            , status = Playing
             , message = "Send workers onto gold/forest to gather; explore the whole map to win."
             }
     in
@@ -93,6 +93,16 @@ update msg model =
 
 tickGame : Model -> Model
 tickGame model =
+    case model.status of
+        Playing ->
+            tickPlaying model
+
+        _ ->
+            model
+
+
+tickPlaying : Model -> Model
+tickPlaying model =
     let
         moved =
             List.map (moveUnit model) model.units
@@ -113,16 +123,30 @@ tickGame model =
 
         allVisible =
             List.all (\t -> t.visible) revealed
+
+        status =
+            if allVisible then
+                Won
+
+            else if gained.tick >= tickLimit then
+                Lost
+
+            else
+                Playing
     in
     { gained
         | map = revealed
-        , explored = allVisible
+        , status = status
         , message =
-            if allVisible && not model.explored then
-                "Victory — the whole map is explored!"
+            case status of
+                Won ->
+                    "Victory — the whole map is explored!"
 
-            else
-                gained.message
+                Lost ->
+                    "Out of time — explore faster next run!"
+
+                Playing ->
+                    gained.message
     }
 
 

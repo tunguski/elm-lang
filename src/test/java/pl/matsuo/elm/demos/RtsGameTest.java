@@ -12,6 +12,7 @@ import pl.matsuo.elm.interp.Project;
 import pl.matsuo.elm.runtime.ElmData;
 import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmRecord;
+import pl.matsuo.elm.runtime.ElmTuple;
 import pl.matsuo.elm.util.Resources;
 
 /**
@@ -105,6 +106,47 @@ class RtsGameTest {
       m = update(new ElmData("Tick", new Object[0]), m);
     }
     assertTrue(asLong(m.get("gold")) > 150L, "worker reached the far mine around the obstacles");
+  }
+
+  @Test
+  void runningOutOfTimeWithoutExploringLoses() {
+    ElmRecord m = init();
+    assertEquals("Playing", ((ElmData) m.get("status")).ctor());
+    // Never move the worker out to explore; once the tick limit passes, the game is lost and frozen.
+    for (int i = 0; i < 620; i++) {
+      m = update(new ElmData("Tick", new Object[0]), m);
+    }
+    assertEquals("Lost", ((ElmData) m.get("status")).ctor());
+    long lostTick = asLong(m.get("tick"));
+    // Further ticks are ignored once the game is over (the clock froze).
+    m = update(new ElmData("Tick", new Object[0]), m);
+    assertEquals(lostTick, asLong(m.get("tick")), "the game freezes after it ends");
+  }
+
+  // --- backend save/load (stateful server) ------------------------------------------------------
+
+  private ElmTuple onRequest(String method, String path, String body, String state) {
+    Map<String, Object> fields = new java.util.LinkedHashMap<>();
+    fields.put("method", method);
+    fields.put("path", path);
+    fields.put("query", ElmList.fromJava(List.of()));
+    fields.put("body", body);
+    Object onReq = ((ElmRecord) BACKEND.value("RTS.Backend", "main")).get("onRequest");
+    return (ElmTuple) Apply.applyAll(onReq, new ElmRecord(fields), state);
+  }
+
+  @Test
+  void backendSavesAndLoadsGameState() {
+    // Saving stores the posted body as the new server state.
+    ElmTuple afterSave = onRequest("POST", "/api/save", "{\"gold\":42}", "");
+    assertEquals("{\"gold\":42}", afterSave.get(0), "save updates the in-memory state");
+    // Loading from that state returns it as the response body.
+    ElmTuple afterLoad = onRequest("GET", "/api/load", "", "{\"gold\":42}");
+    assertEquals("{\"gold\":42}", ((ElmRecord) afterLoad.get(1)).get("body"));
+    // Loading with nothing saved yet yields null.
+    assertEquals("null", ((ElmRecord) onRequest("GET", "/api/load", "", "").get(1)).get("body"));
+    // Other routes still work through the shared handler.
+    assertEquals("pong", ((ElmRecord) onRequest("GET", "/ping", "", "").get(1)).get("body"));
   }
 
   private int countVisible(ElmRecord model) {

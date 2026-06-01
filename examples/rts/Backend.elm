@@ -1,17 +1,54 @@
-module RTS.Backend exposing (handle)
+module RTS.Backend exposing (main, handle)
 
-{-| The RTS backend: a pure server-side handler that shares the game's `RTS.Model` constants with the
-frontend (one source of truth for the map size and unit/building costs). It serves a landing page, a
-health check, and a small JSON description of the world — demonstrating server-side Elm.
+{-| The RTS backend: a server that shares the game's `RTS.Model` constants with the frontend (one
+source of truth for the map size and unit/building costs). It serves a landing page, a health check
+and a JSON description of the world (the pure `handle`), and — as a *stateful* `Server.Program` —
+saves and loads a game state in memory at `/api/save` and `/api/load`. Demonstrating server-side Elm
+that the frontend can persist to.
 
-Run it (with the rts modules on the path) via the `server` command, e.g. once compiled as a project,
-or unit-tested directly (handlers are pure `Request -> Response`).
+Run it via the `server` command (with the rts modules on the path), or unit-test `handle`/onRequest
+directly (both are pure functions).
 -}
 
 import RTS.Model exposing (..)
 import Server exposing (..)
 
 
+{-| A stateful server holding the most recently saved game state (an opaque JSON string). -}
+main : Program String
+main =
+    program
+        { init = ""
+        , onRequest = onRequest
+        , onTick = \saved -> saved
+        , tickMillis = 0
+        }
+
+
+onRequest : Request -> String -> ( String, Response )
+onRequest req saved =
+    case ( req.method, segments req ) of
+        ( "POST", [ "api", "save" ] ) ->
+            -- Persist the posted game state and acknowledge.
+            ( req.body, json "{\"saved\":true}" )
+
+        ( _, [ "api", "load" ] ) ->
+            -- Return the saved state (or `null` if nothing has been saved yet).
+            ( saved
+            , json
+                (if saved == "" then
+                    "null"
+
+                 else
+                    saved
+                )
+            )
+
+        _ ->
+            ( saved, handle req )
+
+
+{-| The stateless routes (also usable on their own via the simpler `handle` server form). -}
 handle : Request -> Response
 handle req =
     case segments req of

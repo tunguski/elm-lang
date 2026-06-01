@@ -8,8 +8,10 @@ module RTS.Model exposing
     , Building
     , BuildingKind(..)
     , Mode(..)
+    , Status(..)
     , mapWidth
     , mapHeight
+    , tickLimit
     , tileSize
     , revealRadius
     , workerCost
@@ -40,9 +42,17 @@ type alias Model =
     , nextId : Int
     , mode : Mode
     , tick : Int
-    , explored : Bool
+    , status : Status
     , message : String
     }
+
+
+{-| How the game is going: still playing, won by exploring the whole map, or lost by running out of
+time before doing so. -}
+type Status
+    = Playing
+    | Won
+    | Lost
 
 
 {-| What a click on the map should do. -}
@@ -125,6 +135,12 @@ mapHeight =
 tileSize : Int
 tileSize =
     32
+
+
+{-| Reveal the whole map within this many ticks to win; exceed it and the game is lost. -}
+tickLimit : Int
+tickLimit =
+    600
 
 
 {-| How far (in tiles, Chebyshev distance) a unit or building clears the fog. -}
