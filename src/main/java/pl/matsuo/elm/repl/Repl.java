@@ -112,7 +112,7 @@ public final class Repl {
   private static String evalExpr(List<String> defs, String expr) {
     try {
       Object v = Interpreter.load(moduleWith(defs, "replResult = " + expr)).value("replResult");
-      return Show.plain(v);
+      return Show.pretty(v); // multi-line layout for large records/lists; compact for small values
     } catch (RuntimeException e) {
       return "Error: " + e.getMessage();
     }

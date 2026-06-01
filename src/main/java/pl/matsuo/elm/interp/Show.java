@@ -26,6 +26,83 @@ public final class Show {
     return render(v, false);
   }
 
+  /** Width past which a container is broken across multiple indented lines by {@link #pretty}. */
+  private static final int MAX_WIDTH = 72;
+
+  /**
+   * Like {@link #debug} but laid out across multiple lines when a value is too wide to read on one —
+   * lists, records, tuples, dicts/sets/arrays and constructor applications break onto indented lines
+   * (elm-format-style leading separators). Small values stay on a single line. For human display
+   * (REPL / editor), not for {@code Debug.toString} (which stays compact).
+   */
+  public static String pretty(Object v) {
+    return lay(v, 0);
+  }
+
+  /** Lays out {@code v} with its continuation lines indented to {@code indent}; the first line is
+   * positioned by the caller. Falls back to the compact form whenever it already fits. */
+  private static String lay(Object v, int indent) {
+    String compact = render(v, true);
+    if (indent + compact.length() <= MAX_WIDTH && !compact.contains("\n")) {
+      return compact;
+    }
+    return switch (v) {
+      case ElmList list -> seq(list.toJava(), indent, "[", "]");
+      case ElmTuple t -> seq(java.util.Arrays.asList(t.values()), indent, "(", ")");
+      case ElmRecord r -> fields(r, indent);
+      case ElmDict dict -> {
+        java.util.List<Object> pairs = new java.util.ArrayList<>();
+        dict.entries().forEach((k, val) -> pairs.add(new ElmTuple(new Object[] {k, val})));
+        yield prefixed("Dict.fromList", pairs, indent);
+      }
+      case ElmSet set -> prefixed("Set.fromList", new java.util.ArrayList<>(set.elements()), indent);
+      case ElmArray array ->
+          prefixed("Array.fromList", java.util.Arrays.asList(array.items()), indent);
+      case ElmData d when d.args().length > 0 -> ctor(d, indent);
+      default -> compact;
+    };
+  }
+
+  /** A bracketed sequence, one element per line with leading {@code [ } / {@code , } separators. */
+  private static String seq(java.util.List<Object> items, int indent, String open, String close) {
+    String pad = " ".repeat(indent);
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < items.size(); i++) {
+      sb.append(i == 0 ? open + " " : "\n" + pad + ", ");
+      sb.append(lay(items.get(i), indent + 2));
+    }
+    return sb.append("\n").append(pad).append(close).toString();
+  }
+
+  private static String fields(ElmRecord r, int indent) {
+    String pad = " ".repeat(indent);
+    StringBuilder sb = new StringBuilder();
+    boolean first = true;
+    for (var e : r.fields().entrySet()) {
+      sb.append(first ? "{ " : "\n" + pad + ", ");
+      first = false;
+      sb.append(e.getKey()).append(" = ").append(lay(e.getValue(), indent + 4));
+    }
+    return sb.append("\n").append(pad).append("}").toString();
+  }
+
+  /** A {@code Name.fromList}-style value: the prefix, then its element list broken below it. */
+  private static String prefixed(String prefix, java.util.List<Object> items, int indent) {
+    return prefix + "\n" + " ".repeat(indent + 4) + seq(items, indent + 4, "[", "]");
+  }
+
+  /** A constructor application: the constructor, then each argument on its own indented line. */
+  private static String ctor(ElmData d, int indent) {
+    String pad = " ".repeat(indent + 4);
+    StringBuilder sb = new StringBuilder(d.ctor());
+    for (Object arg : d.args()) {
+      String laid = lay(arg, indent + 4);
+      boolean parens = arg instanceof ElmData a && a.args().length > 0;
+      sb.append("\n").append(pad).append(parens ? "(" + laid + ")" : laid);
+    }
+    return sb.toString();
+  }
+
   public static String fromFloat(double d) {
     if (Double.isNaN(d)) {
       return "NaN";
