@@ -1229,8 +1229,36 @@ public final class Main implements Runnable {
     @Option(names = "--watch", description = "Re-run the build whenever a .elm file changes (Ctrl-C to stop).")
     boolean watch;
 
+    @Option(names = "--init", description = "Write a starter build file (does not overwrite an existing one).")
+    boolean init;
+
+    private static final String STARTER =
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+
+        project : Project
+        project =
+            Build.project "my-app" "1.0.0"
+                [ module_ "app" "."
+                    |> withEntry "src/Main.elm"
+                    |> withOutput "build"
+                ]
+        """;
+
     @Override
     public Integer call() throws IOException, InterruptedException {
+      if (init) {
+        if (Files.exists(file)) {
+          System.err.println(file + " already exists; not overwriting.");
+          return 1;
+        }
+        Files.writeString(file, STARTER, StandardCharsets.UTF_8);
+        System.out.println("Wrote " + file + ". Edit it, then run: elm build");
+        return 0;
+      }
       if (watch) {
         Path baseDir = file.toAbsolutePath().getParent();
         List<Path> watched = new ArrayList<>();

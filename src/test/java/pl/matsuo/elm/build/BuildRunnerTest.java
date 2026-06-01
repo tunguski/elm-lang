@@ -206,6 +206,23 @@ class BuildRunnerTest {
   }
 
   @Test
+  void initScaffoldsAStarterBuildFileAndRefusesToOverwrite() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-init-");
+    Result r = build(dir, "--init");
+    assertEquals(0, r.code(), r.out());
+    Path buildFile = dir.resolve("build.elm");
+    assertTrue(Files.exists(buildFile), "starter build.elm written");
+    String content = Files.readString(buildFile, StandardCharsets.UTF_8);
+    assertTrue(content.contains("project : Project") && content.contains("Build.project"), content);
+    // It type-checks and plans as a valid build definition.
+    Result dry = build(dir, "package", "--dry-run");
+    assertEquals(0, dry.code(), dry.out());
+    // A second --init must not clobber the existing file.
+    Result again = build(dir, "--init");
+    assertEquals(1, again.code(), again.out());
+  }
+
+  @Test
   void unknownPhaseFails() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-bad-");
     Files.writeString(
