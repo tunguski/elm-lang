@@ -54,11 +54,26 @@ class TestRunnerTest {
                 , test "ok" (\\_ -> Expect.ok (Ok 5))
                 , test "err" (\\_ -> Expect.err (Err "boom"))
                 , test "all" (\\_ -> Expect.all [ Expect.atLeast 0, Expect.atMost 10 ] 5)
+                , test "equalLists" (\\_ -> Expect.equalLists [ 1, 2, 3 ] (List.map (\\n -> n + 1) [ 0, 1, 2 ]))
                 ]
         """;
     TestRunner.Result r = TestRunner.run(List.of(src));
-    assertEquals(4, r.passed(), r.report());
+    assertEquals(5, r.passed(), r.report());
     assertEquals(0, r.failed(), r.report());
+  }
+
+  @Test
+  void equalListsReportsLengthMismatch() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (test)
+        suite = test "lists" (\\_ -> Expect.equalLists [ 1, 2, 3 ] [ 1, 2 ])
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(1, r.failed(), r.report());
+    assertTrue(r.report().contains("list lengths differ"), r.report());
   }
 
   @Test

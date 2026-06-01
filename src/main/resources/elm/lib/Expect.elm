@@ -3,6 +3,7 @@ module Expect exposing
     , pass
     , fail
     , equal
+    , equalLists
     , notEqual
     , lessThan
     , greaterThan
@@ -48,6 +49,25 @@ equal expected actual =
 
     else
         Fail ("expected " ++ Debug.toString expected ++ "\n     but got " ++ Debug.toString actual)
+
+
+{-| Passes if two lists are equal, with a message that calls out a length difference first (clearer
+than a plain `equal` on long lists). -}
+equalLists : List a -> List a -> Expectation
+equalLists expected actual =
+    if expected == actual then
+        Pass
+
+    else if List.length expected /= List.length actual then
+        Fail
+            ("list lengths differ: expected "
+                ++ String.fromInt (List.length expected)
+                ++ " elements but got "
+                ++ String.fromInt (List.length actual)
+            )
+
+    else
+        Fail ("lists differ:\n  expected " ++ Debug.toString expected ++ "\n  but got  " ++ Debug.toString actual)
 
 
 {-| Passes if the two values are not equal. -}
