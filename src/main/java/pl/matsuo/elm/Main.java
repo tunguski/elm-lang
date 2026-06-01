@@ -70,6 +70,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Wasm.class,
       Main.Site.class,
       Main.GenSite.class,
+      Main.Gallery.class,
       Main.Init.class,
       Main.Install.class,
       Main.Diff.class,
@@ -1051,6 +1052,30 @@ public final class Main implements Runnable {
     @Override
     public Integer call() throws IOException {
       return pl.matsuo.elm.site.SiteGen.generate(readElmSource(file), outDir, apiDirs, baseUrl);
+    }
+  }
+
+  @Command(
+      name = "gallery",
+      description =
+          "Generate the example gallery as artifacts + Elm: SiteGenerator compiles the demo bundles "
+              + "and a manifest, then the bundled Elm Gallery generator produces the HTML/CSS.")
+  static final class Gallery implements Callable<Integer> {
+    @Parameters(index = "0", description = "Examples directory.")
+    Path examplesDir;
+
+    @Parameters(index = "1", description = "Playground.elm source.")
+    Path playground;
+
+    @Parameters(index = "2", description = "Output directory.")
+    Path outDir;
+
+    @Parameters(index = "3", arity = "0..1", description = "Optional Markdown docs directory.")
+    Path docsDir;
+
+    @Override
+    public Integer call() throws IOException {
+      return pl.matsuo.elm.site.SiteGen.generateGallery(examplesDir, playground, outDir, docsDir);
     }
   }
 

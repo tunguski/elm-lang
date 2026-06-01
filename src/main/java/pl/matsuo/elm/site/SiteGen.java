@@ -1,6 +1,8 @@
 package pl.matsuo.elm.site;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,6 +31,26 @@ import pl.matsuo.elm.util.Resources;
 public final class SiteGen {
 
   private SiteGen() {}
+
+  /**
+   * Builds the example gallery in two phases: the Java {@link SiteGenerator} compiles the demo
+   * artifacts (JS bundles per example) and a {@code manifest.tsv}, then the Elm {@code Gallery}
+   * generator script reads that manifest and produces the gallery's HTML/CSS via the {@code Site}
+   * library — the compiler/Elm-generator split. Returns the generator's exit code.
+   */
+  public static int generateGallery(Path examplesDir, Path playground, Path outDir, Path docsDir)
+      throws IOException {
+    SiteGenerator.generate(examplesDir, playground, outDir, docsDir);
+    Object main =
+        Project.load(
+                Resources.read("/elm/site/Gallery.elm"),
+                Resources.read("/elm/lib/Posix.elm"),
+                Resources.read("/elm/lib/Bash.elm"),
+                Resources.read("/elm/lib/Site.elm"))
+            .main();
+    return pl.matsuo.elm.script.ScriptRunner.run(
+        main, List.of(outDir.toString()), new BufferedReader(new StringReader("")), System.out);
+  }
 
   /** Renders a site definition's pages, plus (for any {@code apiDirs}) grouped per-module API docs,
    * and a sitemap.xml of every page (URLs prefixed with {@code baseUrl}). */

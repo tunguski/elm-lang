@@ -118,6 +118,30 @@ public final class SiteGenerator {
   /** A documentation page rendered from a Markdown file: HTML filename and display title. */
   private record DocPage(String slug, String title) {}
 
+  /**
+   * Writes a tab-separated manifest of the compiled example artifacts (slug, title, category, demo
+   * path, method) that the Elm gallery generator reads to produce the HTML/CSS. This is the data
+   * contract between the Java compiler (which produces the demos) and the Elm site generator.
+   */
+  private void writeManifest(List<Built> built) throws IOException {
+    StringBuilder sb = new StringBuilder();
+    for (Built b : built) {
+      sb.append(b.example.slug())
+          .append('\t')
+          .append(b.example.title())
+          .append('\t')
+          .append(b.example.category())
+          .append('\t')
+          .append("demos/")
+          .append(b.example.slug())
+          .append(".html")
+          .append('\t')
+          .append(b.method.label)
+          .append('\n');
+    }
+    Files.writeString(outDir.resolve("manifest.tsv"), sb.toString(), StandardCharsets.UTF_8);
+  }
+
   private void run() throws IOException {
     Files.createDirectories(outDir.resolve("demos"));
     List<Built> built = new ArrayList<>();
@@ -132,6 +156,7 @@ public final class SiteGenerator {
     boolean rts = writeRtsPage();
     List<DocPage> docs = writeDocPages();
     writeIndex(built, docs, rts);
+    writeManifest(built);
     System.out.println("Site written to " + outDir.toAbsolutePath());
     for (Built b : built) {
       System.out.printf("  %-16s %-22s %s%n", b.example.slug(), b.method.label, b.note);
