@@ -233,35 +233,12 @@ public final class SiteGenerator {
       String slug = slugOf(md);
       String source = Files.readString(md, StandardCharsets.UTF_8);
       String title = docTitle(source, slug);
-      String body = Markdown.toHtml(rewriteDocLinks(source));
-      String page =
-          """
-          <!doctype html>
-          <html lang="en">
-          <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>%TITLE% — elm-lang</title>
-          %STYLE%
-          </head>
-          <body>
-          <header class="bar">
-            <a href="index.html">&larr; Gallery</a>
-            %NAV%
-          </header>
-          <main>
-          %BODY%
-          </main>
-          <footer>Documentation for the from-scratch Elm implementation ·
-          <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></footer>
-          </body>
-          </html>
-          """
-              .replace("%STYLE%", DOCS_STYLE)
-              .replace("%NAV%", docNav(slug, preferred))
-              .replace("%TITLE%", escape(title))
-              .replace("%BODY%", body);
-      Files.writeString(outDir.resolve(slug + ".html"), page, StandardCharsets.UTF_8);
+      // Render the Markdown body to an HTML fragment artifact; the Elm gallery generator wraps it in
+      // the page chrome (header nav + footer + docs.css), like it does for the index and wrappers.
+      Files.writeString(
+          outDir.resolve(slug + ".bodyhtml"),
+          Markdown.toHtml(rewriteDocLinks(source)),
+          StandardCharsets.UTF_8);
       pages.add(new DocPage(slug, title));
     }
     return pages;
@@ -281,23 +258,6 @@ public final class SiteGenerator {
       }
     }
     return slug;
-  }
-
-  /** A nav line linking to the sibling guide pages (the current one shown inert). */
-  private String docNav(String current, List<String> preferred) {
-    StringBuilder b = new StringBuilder();
-    for (String slug : preferred) {
-      if (b.length() > 0) {
-        b.append(" · ");
-      }
-      String label = slug.substring(0, 1).toUpperCase() + slug.substring(1);
-      if (slug.equals(current)) {
-        b.append("<strong>").append(label).append("</strong>");
-      } else {
-        b.append("<a href=\"").append(slug).append(".html\">").append(label).append("</a>");
-      }
-    }
-    return b.toString();
   }
 
   /**
@@ -816,9 +776,7 @@ public final class SiteGenerator {
 
   // --- styling -----------------------------------------------------------
 
-  // The wrapper-page stylesheet (page.css) is now owned by the Elm gallery generator.
-
-  private static final String DOCS_STYLE = style("/elm/css/docs.css");
+  // The wrapper-page (page.css) and docs (docs.css) stylesheets are now owned by the Elm generator.
 
   /** Loads a bundled CSS resource and wraps it in a {@code <style>} block for inlining. */
   private static String style(String resource) {

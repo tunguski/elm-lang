@@ -89,6 +89,12 @@ class SiteGeneratorTest {
         scripting.contains("https://github.com/tunguski/elm-lang/blob/master/src/main/resources/elm/demos/wordcount.elm"),
         "repo link points at blob/master with its .elm extension");
     assertFalse(scripting.contains("blob/main/"), "no stale blob/main links (would 404)");
+    // The doc page chrome is now assembled by the Elm gallery generator (links docs.css, has the
+    // header nav back to the gallery); the Markdown body is the Java-rendered artifact.
+    assertTrue(scripting.contains("href=\"docs.css\""), "Elm-assembled doc page links docs.css");
+    assertTrue(scripting.contains(">&larr; Gallery</a>"), "doc page has the gallery nav");
+    assertTrue(Files.exists(out.resolve("docs.css")), "docs.css written by the Elm generator");
+    assertTrue(Files.exists(out.resolve("scripting.bodyhtml")), "Markdown body artifact written by Java");
   }
 
   @Test

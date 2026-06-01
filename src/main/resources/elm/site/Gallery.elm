@@ -64,13 +64,17 @@ build dir =
 
                         examples =
                             List.filterMap exampleOf rows
+
+                        docs =
+                            List.filterMap docOf rows
                     in
                     writeFile (dir ++ "/styles.css") styles <|
                         writeFile (dir ++ "/page.css") pageStyles <|
-                            writeFile (dir ++ "/index.html") (render (indexPage rows)) <|
-                                writeWrappers dir
-                                    examples
-                                    (print ("Generated the gallery (" ++ String.fromInt (List.length examples) ++ " examples + wrappers) in " ++ dir) done)
+                            writeFile (dir ++ "/docs.css") docsStyles <|
+                                writeFile (dir ++ "/index.html") (render (indexPage rows)) <|
+                                    writeWrappers dir examples <|
+                                        writeDocs dir docs docs <|
+                                            print ("Generated the gallery (" ++ String.fromInt (List.length examples) ++ " examples, " ++ String.fromInt (List.length docs) ++ " docs) in " ++ dir) done
 
                 Err message ->
                     print ("cannot read manifest.tsv: " ++ message) (exit 1)
@@ -156,6 +160,94 @@ pageStyles =
         ++ ".badge.live{background:#e3f4e1;color:#246b1e}\n"
         ++ ".badge.snapshot{background:#fdf0d5;color:#8a5a00}\n"
         ++ ".badge.failed{background:#f6dada;color:#9a1e1e}\n"
+
+
+{-| A documentation row as (href, title). -}
+docOf : Row -> Maybe ( String, String )
+docOf row =
+    case row of
+        Doc href label ->
+            Just ( href, label )
+
+        _ ->
+            Nothing
+
+
+{-| Writes one documentation page per `doc` entry: reads the Markdown body the Java side rendered to
+`<slug>.bodyhtml` and wraps it in the page chrome (header nav across all guides, footer). -}
+writeDocs : String -> List ( String, String ) -> List ( String, String ) -> Io -> Io
+writeDocs dir allDocs docs andThen =
+    case docs of
+        [] ->
+            andThen
+
+        ( href, label ) :: rest ->
+            let
+                slug =
+                    String.dropRight 5 href
+            in
+            cat (dir ++ "/" ++ slug ++ ".bodyhtml")
+                (\result ->
+                    writeFile (dir ++ "/" ++ href)
+                        (docPageHtml allDocs href label (Result.withDefault "" result))
+                        (writeDocs dir allDocs rest andThen)
+                )
+
+
+docPageHtml : List ( String, String ) -> String -> String -> String -> String
+docPageHtml allDocs href title body =
+    "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+        ++ "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        ++ "<title>"
+        ++ escapeHtml title
+        ++ " — elm-lang</title><link rel=\"stylesheet\" href=\"docs.css\"></head><body>"
+        ++ "<header class=\"bar\"><a href=\"index.html\">&larr; Gallery</a> "
+        ++ docNav allDocs href
+        ++ "</header><main>"
+        ++ body
+        ++ "</main><footer>Documentation for the from-scratch Elm implementation · "
+        ++ "<a href=\"https://github.com/tunguski/elm-lang\">source on GitHub</a></footer></body></html>\n"
+
+
+{-| A nav row linking every guide; the current one is shown inert. -}
+docNav : List ( String, String ) -> String -> String
+docNav allDocs current =
+    String.join " · "
+        (List.map
+            (\( href, label ) ->
+                if href == current then
+                    "<strong>" ++ escapeHtml label ++ "</strong>"
+
+                else
+                    "<a href=\"" ++ escapeHtml href ++ "\">" ++ escapeHtml label ++ "</a>"
+            )
+            allDocs
+        )
+
+
+{-| The documentation-page stylesheet (docs.css), formerly inlined by the Java generator. -}
+docsStyles : String
+docsStyles =
+    ":root{--accent:#5fabdc;--ink:#293c4b}\n"
+        ++ "*{box-sizing:border-box}\n"
+        ++ "body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);line-height:1.6}\n"
+        ++ ".bar{display:flex;align-items:center;gap:16px;padding:12px 24px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:1}\n"
+        ++ ".bar a{color:var(--accent);text-decoration:none;font-weight:600}\n"
+        ++ ".bar a:hover{text-decoration:underline}\n"
+        ++ "main{max-width:820px;margin:0 auto;padding:24px 24px 64px}\n"
+        ++ "h1,h2,h3,h4{line-height:1.25;color:#1c2b38}\n"
+        ++ "h1{border-bottom:2px solid #eef2f5;padding-bottom:.3em}\n"
+        ++ "h2{margin-top:2em;border-bottom:1px solid #eef2f5;padding-bottom:.2em}\n"
+        ++ "a{color:var(--accent)}\n"
+        ++ "code{background:#f3f5f7;border-radius:5px;padding:.12em .4em;font-size:.92em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}\n"
+        ++ "pre{background:#0f1720;border-radius:10px;overflow:auto;line-height:1.5}\n"
+        ++ "pre code{display:block;padding:16px;color:#e6edf3;background:none;border-radius:0}\n"
+        ++ "table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.94rem}\n"
+        ++ "th,td{border:1px solid #e3e7ea;padding:7px 11px;text-align:left;vertical-align:top}\n"
+        ++ "th{background:#f6f8fa}\n"
+        ++ "tr:nth-child(even) td{background:#fbfcfd}\n"
+        ++ "blockquote{margin:1em 0;padding:.4em 1em;border-left:4px solid var(--accent);background:#f6fafd;color:#3a4a57}\n"
+        ++ "footer{max-width:820px;margin:0 auto;padding:24px;border-top:1px solid #eee;color:#889;font-size:.9rem}\n"
 
 
 parse : String -> List Row
