@@ -141,6 +141,172 @@ elm gen-site <file.elm> <out-dir> [--api DIR]... [--base-url URL]
 > `elm site` command builds *this project's* example gallery specifically and is not a
 > general tool.
 
+## Generating pages from files on disk
+
+`gen-site` is **pure**: your `site : List Page` is data, computed without touching the filesystem.
+That is ideal for a site whose structure is known in the source. When the pages should instead be
+*driven by files on disk* — one page per Markdown file in a folder, or a page assembled from files a
+JSON manifest names — reach for a **script** (`elm script`) instead. A script can read the
+filesystem with the [`Posix`](scripting.md) effects **and** render with the `Site` library (both are
+available to scripts), so you read files and write pages in the same program.
+
+### A page per file in a folder
+
+List a directory, read each file, turn its content into a page (here with `Site.markdown`), render
+it, and write it out:
+
+```elm
+module Main exposing (main)
+
+import Posix exposing (..)
+import Site
+
+
+main : Io
+main =
+    getArgs
+        (\args ->
+            case args of
+                dir :: _ ->
+                    listDir dir
+                        (\result ->
+                            case result of
+                                Ok names ->
+                                    generate dir (List.filter (String.endsWith ".md") names)
+
+                                Err e ->
+                                    print ("cannot read " ++ dir ++ ": " ++ e) (exit 1)
+                        )
+
+                [] ->
+                    print "usage: gen-pages <dir>" (exit 1)
+        )
+
+
+generate : String -> List String -> Io
+generate dir names =
+    case names of
+        [] ->
+            done
+
+        name :: rest ->
+            readFile (dir ++ "/" ++ name)
+                (\result ->
+                    case result of
+                        Ok content ->
+                            let
+                                slug =
+                                    String.replace ".md" ".html" name
+
+                                page =
+                                    Site.page slug name (Site.markdown content)
+                            in
+                            writeFile (dir ++ "/" ++ slug) (Site.render page) (generate dir rest)
+
+                        Err _ ->
+                            generate dir rest
+                )
+```
+
+```text
+elm script gen-pages.elm content/
+```
+
+Each `content/*.md` becomes a `content/*.html`. To also emit an index linking them, collect the
+slugs as you go and write one more page built from `Site.links`.
+
+### Pages driven by a JSON manifest
+
+A common variant: a JSON file on disk describes a *topic* — a subset of the project's source files
+that belong together — and you render one page that gathers them. Read the manifest with `Posix`,
+decode it with `Json.Decode`, then read the files it names:
+
+```json
+{ "title": "Parser internals", "files": [ "src/Lexer.elm", "src/Parser.elm" ] }
+```
+
+```elm
+module Main exposing (main)
+
+import Json.Decode as D
+import Posix exposing (..)
+import Site
+
+
+type alias Topic =
+    { title : String, files : List String }
+
+
+decoder : D.Decoder Topic
+decoder =
+    D.map2 Topic
+        (D.field "title" D.string)
+        (D.field "files" (D.list D.string))
+
+
+main : Io
+main =
+    getArgs
+        (\args ->
+            case args of
+                manifest :: _ ->
+                    readFile manifest
+                        (\result ->
+                            case result of
+                                Ok json ->
+                                    case D.decodeString decoder json of
+                                        Ok topic ->
+                                            readAll topic [] topic.files
+
+                                        Err e ->
+                                            print ("bad manifest: " ++ e) (exit 1)
+
+                                Err e ->
+                                    print ("cannot read " ++ manifest ++ ": " ++ e) (exit 1)
+                        )
+
+                [] ->
+                    print "usage: gen-topic <manifest.json>" (exit 1)
+        )
+
+
+readAll : Topic -> List Site.Block -> List String -> Io
+readAll topic acc files =
+    case files of
+        [] ->
+            writeFile (slug topic.title)
+                (Site.render (Site.page (slug topic.title) topic.title acc))
+                done
+
+        path :: rest ->
+            readFile path
+                (\result ->
+                    case result of
+                        Ok src ->
+                            readAll topic (acc ++ [ Site.h2 path, Site.codeBlock src ]) rest
+
+                        Err _ ->
+                            readAll topic acc rest
+                )
+
+
+slug : String -> String
+slug title =
+    String.replace " " "-" (String.toLower title) ++ ".html"
+```
+
+```text
+elm script gen-topic.elm topics/parser.json
+```
+
+This reads `topics/parser.json`, then each source file it lists, and writes a single
+`parser-internals.html` whose body is each file's path (`h2`) followed by its content
+(`codeBlock`). Swap `codeBlock` for `markdown`, syntax highlighting, or a summary as you like —
+because it is an ordinary script, the page is whatever you compute from what you read.
+
+> The pages link a `site.css`; a script does not copy one in, so either write your own next to the
+> output or drop in the bundled stylesheet. (The pure `gen-site` command copies `site.css` for you.)
+
 ## Using it in your project
 
 1. Add a module that exposes `site : List Site.Page` (commonly `module Main exposing (site)`).

@@ -395,7 +395,10 @@ public final class Main implements Runnable {
       String userSource = readElmSource(file);
       String posix = pl.matsuo.elm.util.Resources.read("/elm/lib/Posix.elm");
       String bash = pl.matsuo.elm.util.Resources.read("/elm/lib/Bash.elm");
-      Object main = pl.matsuo.elm.interp.Project.load(userSource, posix, bash).main();
+      // Site is bundled too, so a script can read files (Posix) and render them to HTML pages
+      // (Site.render) — e.g. generating a page per file in a folder, or from a JSON manifest.
+      String site = pl.matsuo.elm.util.Resources.read("/elm/lib/Site.elm");
+      Object main = pl.matsuo.elm.interp.Project.load(userSource, posix, bash, site).main();
       return pl.matsuo.elm.script.ScriptRunner.run(
           main,
           scriptArgs == null ? List.of() : scriptArgs,

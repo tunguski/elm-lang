@@ -20,6 +20,7 @@ class ScriptRunnerTest {
 
   private static final String POSIX = Resources.read("/elm/lib/Posix.elm");
   private static final String BASH = Resources.read("/elm/lib/Bash.elm");
+  private static final String SITE = Resources.read("/elm/lib/Site.elm");
   private static final String WORDCOUNT = Resources.read("/elm/demos/wordcount.elm");
   private static final String FOLDERREPORT = Resources.read("/elm/demos/folderreport.elm");
 
@@ -42,6 +43,83 @@ class ScriptRunnerTest {
             new BufferedReader(new StringReader(stdin)),
             new PrintStream(out, true, StandardCharsets.UTF_8));
     return new Run(code, out.toString(StandardCharsets.UTF_8));
+  }
+
+  /** Runs a script with the Posix, Bash and Site libraries all available (the `elm script` set). */
+  private Run runScriptWithSite(String source, List<String> args) {
+    Object main = Project.load(source, POSIX, BASH, SITE).main();
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    int code =
+        ScriptRunner.run(
+            main, args, new BufferedReader(new StringReader("")),
+            new PrintStream(out, true, StandardCharsets.UTF_8));
+    return new Run(code, out.toString(StandardCharsets.UTF_8));
+  }
+
+  @Test
+  void scriptGeneratesAPagePerFileInAFolderUsingSite() throws Exception {
+    // The disk-driven site-generation pattern documented in docs/site.md: read each Markdown file in
+    // a folder (Posix) and render it to an HTML page (Site), one page per file.
+    Path dir = Files.createTempDirectory("gen-");
+    Files.writeString(dir.resolve("intro.md"), "# Intro\n\nHello world.");
+    String script =
+        "module Main exposing (main)\n"
+            + "import Posix exposing (..)\n"
+            + "import Site\n"
+            + "main : Io\n"
+            + "main =\n"
+            + "    getArgs (\\args ->\n"
+            + "        case args of\n"
+            + "            dir :: _ -> listDir dir (\\res -> case res of\n"
+            + "                Ok names -> gen dir names\n"
+            + "                Err e -> print e (exit 1))\n"
+            + "            [] -> exit 1)\n"
+            + "gen : String -> List String -> Io\n"
+            + "gen dir names =\n"
+            + "    case names of\n"
+            + "        [] -> done\n"
+            + "        name :: rest ->\n"
+            + "            readFile (dir ++ \"/\" ++ name) (\\res -> case res of\n"
+            + "                Ok content ->\n"
+            + "                    writeFile (dir ++ \"/\" ++ name ++ \".html\")\n"
+            + "                        (Site.render (Site.page (name ++ \".html\") name (Site.markdown content)))\n"
+            + "                        (gen dir rest)\n"
+            + "                Err _ -> gen dir rest)\n";
+    Run r = runScriptWithSite(script, List.of(dir.toString()));
+    assertEquals(0, r.code(), r.out());
+    Path html = dir.resolve("intro.md.html");
+    assertTrue(Files.exists(html), "a page was generated for the file");
+    String page = Files.readString(html, StandardCharsets.UTF_8);
+    assertTrue(page.contains("<h1>Intro</h1>"), page); // heading from the Markdown
+    assertTrue(page.contains("<p>Hello world.</p>"), page); // body from the file's content
+  }
+
+  @Test
+  void scriptDecodesAJsonManifestToDriveGeneration() throws Exception {
+    // The JSON-manifest site-generation pattern: a script reads a manifest (Posix) and decodes it
+    // (Json.Decode) to learn which files a topic gathers — the novel piece beyond reading a folder.
+    Path dir = Files.createTempDirectory("topic-");
+    Files.writeString(
+        dir.resolve("parser.json"),
+        "{ \"title\": \"Parser\", \"files\": [ \"a.elm\", \"b.elm\" ] }");
+    String script =
+        "module Main exposing (main)\n"
+            + "import Posix exposing (..)\n"
+            + "import Json.Decode as D\n"
+            + "type alias Topic = { title : String, files : List String }\n"
+            + "decoder = D.map2 Topic (D.field \"title\" D.string) (D.field \"files\" (D.list D.string))\n"
+            + "main : Io\n"
+            + "main =\n"
+            + "    getArgs (\\args -> case args of\n"
+            + "        m :: _ -> readFile m (\\res -> case res of\n"
+            + "            Ok json -> (case D.decodeString decoder json of\n"
+            + "                Ok t -> print (t.title ++ \" has \" ++ String.fromInt (List.length t.files) ++ \" files\") done\n"
+            + "                Err e -> print e (exit 1))\n"
+            + "            Err e -> print e (exit 1))\n"
+            + "        [] -> exit 1)\n";
+    Run r = runScriptWithSite(script, List.of(dir.resolve("parser.json").toString()));
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("Parser has 2 files"), r.out());
   }
 
   @Test
