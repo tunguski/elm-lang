@@ -111,6 +111,11 @@
   $rt['Json.Decode.oneOf']=function(l){ var ds=$listToArray(l); return $dec(function(j){ for(var i=0;i<ds.length;i++){ var x=ds[i]._[0](j); if(x.ok) return x; } return {ok:0,v:'no matching decoder'}; }); };
   $rt['Json.Decode.maybe']=function(dec){ return $dec(function(j){ var x=dec._[0](j); return x.ok?{ok:1,v:$data('Just',[x.v])}:{ok:1,v:$data('Nothing',[])}; }); };
   $rt['Json.Decode.nullable']=function(dec){ return $dec(function(j){ if(j==null) return {ok:1,v:$data('Nothing',[])}; var x=dec._[0](j); return x.ok?{ok:1,v:$data('Just',[x.v])}:x; }); };
+  $rt['Json.Decode.null']=function(v){ return $dec(function(j){ return j==null?{ok:1,v:v}:{ok:0,v:'expected null'}; }); };
+  $rt['Json.Decode.index']=function(i){ return function(dec){ return $dec(function(j){ var a=$arr(j); if(!a||i<0||i>=a.length) return {ok:0,v:'expected index '+i}; return dec._[0](a[i]); }); }; };
+  $rt['Json.Decode.lazy']=function(thunk){ return $dec(function(j){ return thunk(null)._[0](j); }); };
+  $rt['Json.Decode.dict']=function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||Array.isArray(j)) return {ok:0,v:'expected an object'}; var d={$:'Dict',a:[]}; var ks=Object.keys(j); for(var i=0;i<ks.length;i++){ var x=dec._[0](j[ks[i]]); if(!x.ok) return x; d=$dictInsert(d,ks[i],x.v); } return {ok:1,v:d}; }); };
+  $rt['Json.Decode.keyValuePairs']=function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||Array.isArray(j)) return {ok:0,v:'expected an object'}; var ks=Object.keys(j),r=[]; for(var i=0;i<ks.length;i++){ var x=dec._[0](j[ks[i]]); if(!x.ok) return x; r.push($tuple([ks[i],x.v])); } return {ok:1,v:$list(r)}; }); };
   // Url / Browser.Navigation: minimal browser-backed support.
   $rt['Url.toString']=function(u){ return (u&&u.$==='$Url') ? u._[0] : String(u); };
   $rt['Url.fromString']=function(s){ try{ new URL(s); return $data('Just',[$data('$Url',[s])]); }catch(e){ return $data('Nothing',[]); } };
