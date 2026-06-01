@@ -609,6 +609,10 @@
       if (kind==='$Sandbox') model = def.update(msg)(model);
       else { var pair = def.update(msg)(model); model = pair.vs[0]; cmd = pair.vs[1]; }
       messages.push(msg); history.push(model); viewIndex=null; // a new message returns to live mode
+      // Bound the time-travel log so a long-running app (e.g. a `Time.every` game ticking for
+      // minutes) doesn't grow memory without limit and eventually freeze. Drop the oldest snapshot
+      // and its message together, preserving history.length === messages.length + 1.
+      if (history.length > 1000){ history.shift(); messages.shift(); }
       render(); syncSubs();
       if (cmd) runCmd(cmd, window.$dispatch);
     };
