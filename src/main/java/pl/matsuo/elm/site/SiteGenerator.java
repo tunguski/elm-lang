@@ -503,75 +503,7 @@ public final class SiteGenerator {
     String perf = perfChart();
 
     String page =
-        """
-        <!doctype html>
-        <html lang="en">
-        <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>JS vs WASM — elm-lang</title>
-        %STYLE%
-        </head>
-        <body>
-        <header class="bar">
-          <a class="home" href="index.html">&larr; All examples</a>
-          <span class="badge live">live in your browser</span>
-        </header>
-        <main>
-          <h1>JavaScript vs WebAssembly</h1>
-          <p>Each Elm expression below is compiled by two backends and run right here in your
-          browser: the <strong>JavaScript</strong> backend and the from-scratch <strong>WebAssembly</strong>
-          backend (a wasm binary instantiated via <code>WebAssembly.instantiate</code>). Results span
-          <code>Int</code>, <code>Float</code>, <code>String</code> and <code>List</code> — the
-          non-numeric ones cross the wasm boundary as heap pointers the page decodes from linear
-          memory. The interpreter's value is the expected baseline; ✓ means all three agree.</p>
-          <table>
-            <thead><tr><th>Expression</th><th>Interpreter</th><th>JS</th><th>WASM</th><th></th></tr></thead>
-            <tbody>
-        %ROWS%
-            </tbody>
-          </table>
-          %PERF%
-        </main>
-        <script>%JSEVAL%</script>
-        <script>
-        (function(){
-          var js = $evalAll();
-          for (var i=0;i<js.length;i++){ var el=document.getElementById('js'+i); if(el) el.textContent=js[i]; }
-          var bin = Uint8Array.from(atob("%WASM%"), function(c){ return c.charCodeAt(0); });
-          WebAssembly.instantiate(bin).then(function(r){
-            var ex=r.instance.exports;
-            var fb=new ArrayBuffer(8), fdv=new DataView(fb);
-            // A wasm f() returns an i64: a number, a Float's bit-pattern, or a heap pointer. Decode
-            // per the row's kind, re-reading memory.buffer each time (it may grow as strings/lists
-            // allocate, detaching an old view).
-            function decode(kind, raw){
-              if(kind==='float'){ fdv.setBigInt64(0, raw, true); return String(fdv.getFloat64(0,true)); }
-              var dv=new DataView(ex.memory.buffer);
-              if(kind==='string'){ var p=Number(raw), len=Number(dv.getBigInt64(p,true));
-                return new TextDecoder().decode(new Uint8Array(ex.memory.buffer, p+8, len)); }
-              if(kind==='list'){ var p=Number(raw), out=[];
-                while(p!==0){ out.push(Number(dv.getBigInt64(p,true)).toString()); p=Number(dv.getBigInt64(p+8,true)); }
-                return '['+out.join(',')+']'; }
-              return raw.toString();
-            }
-            document.querySelectorAll('tbody tr').forEach(function(tr,i){
-              if(!(('f'+i) in ex)) return;
-              tr.querySelector('.wasm').textContent = decode(tr.getAttribute('data-kind'), ex['f'+i]());
-            });
-            document.querySelectorAll('tbody tr').forEach(function(tr){
-              var want=tr.getAttribute('data-expected');
-              var a=tr.querySelector('.js').textContent, b=tr.querySelector('.wasm').textContent;
-              var ok=(a===want && b===want);
-              tr.querySelector('.ok').textContent = ok ? '✓' : '✗';
-              tr.querySelector('.ok').className = 'ok ' + (ok?'good':'bad');
-            });
-          });
-        })();
-        </script>
-        </body>
-        </html>
-        """
+        Resources.read("/elm/site/backends.html")
             .replace("%STYLE%", BACKENDS_STYLE)
             .replace("%ROWS%", rows.toString())
             .replace("%PERF%", perf)
@@ -693,67 +625,7 @@ public final class SiteGenerator {
     String jsScript = JsCompiler.declarationsScript(PLAYGROUND_SRC);
     String wasmB64 = Base64.getEncoder().encodeToString(WasmCompiler.moduleFromSource(PLAYGROUND_SRC));
     String page =
-        """
-        <!doctype html>
-        <html lang="en">
-        <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Playground — elm-lang</title>
-        %STYLE%
-        </head>
-        <body>
-        <header class="bar">
-          <a class="home" href="index.html">&larr; All examples</a>
-          <span class="badge live">compiled JS + WASM, live</span>
-        </header>
-        <main>
-          <h1>Interactive backend playground</h1>
-          <p>These Elm functions were compiled ahead of time to both JavaScript and WebAssembly.
-          Pick one and an input — it runs in <em>both</em> compiled backends right here, with timings.</p>
-          <pre class="src"><code class="language-elm">%SRC%</code></pre>
-          <div class="controls">
-            <select id="fn"><option>fib</option><option>factorial</option><option>sumTo</option><option>triple</option></select>
-            <input id="n" type="number" value="25" min="0" max="40">
-            <button id="run">Run</button>
-          </div>
-          <table>
-            <tr><th>Backend</th><th>Result</th><th>Time</th></tr>
-            <tr><td>JavaScript</td><td id="jsr">—</td><td id="jst"></td></tr>
-            <tr><td>WebAssembly</td><td id="wr">—</td><td id="wt"></td></tr>
-          </table>
-          <p id="agree"></p>
-        </main>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
-        <script>hljs.highlightAll();</script>
-        <script>%JS%</script>
-        <script>
-        var wasmExports=null;
-        WebAssembly.instantiate(Uint8Array.from(atob("%WASM%"), function(c){return c.charCodeAt(0);}))
-          .then(function(r){ wasmExports=r.instance.exports; run(); });
-        function run(){
-          var fn=document.getElementById('fn').value, n=parseInt(document.getElementById('n').value,10)||0;
-          var jsFn=window['_$'+fn];
-          var t0=performance.now(); var jr=jsFn(n); var jt=performance.now()-t0;
-          document.getElementById('jsr').textContent=String(jr);
-          document.getElementById('jst').textContent=jt.toFixed(3)+' ms';
-          if(wasmExports){
-            var w0=performance.now(); var wr=wasmExports[fn](BigInt(n)); var wt=performance.now()-w0;
-            document.getElementById('wr').textContent=wr.toString();
-            document.getElementById('wt').textContent=wt.toFixed(3)+' ms';
-            document.getElementById('agree').textContent =
-              (String(jr)===wr.toString()) ? '✓ both backends agree' : '✗ backends disagree';
-          }
-        }
-        document.getElementById('run').addEventListener('click', run);
-        document.getElementById('fn').addEventListener('change', run);
-        document.getElementById('n').addEventListener('input', run);
-        </script>
-        </body>
-        </html>
-        """
+        Resources.read("/elm/site/playground.html")
             .replace("%STYLE%", BACKENDS_STYLE)
             .replace("%SRC%", escape(PLAYGROUND_SRC))
             .replace("%JS%", jsScript)

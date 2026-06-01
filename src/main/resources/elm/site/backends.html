@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JS vs WASM — elm-lang</title>
+%STYLE%
+</head>
+<body>
+<header class="bar">
+  <a class="home" href="index.html">&larr; All examples</a>
+  <span class="badge live">live in your browser</span>
+</header>
+<main>
+  <h1>JavaScript vs WebAssembly</h1>
+  <p>Each Elm expression below is compiled by two backends and run right here in your
+  browser: the <strong>JavaScript</strong> backend and the from-scratch <strong>WebAssembly</strong>
+  backend (a wasm binary instantiated via <code>WebAssembly.instantiate</code>). Results span
+  <code>Int</code>, <code>Float</code>, <code>String</code> and <code>List</code> — the
+  non-numeric ones cross the wasm boundary as heap pointers the page decodes from linear
+  memory. The interpreter's value is the expected baseline; ✓ means all three agree.</p>
+  <table>
+    <thead><tr><th>Expression</th><th>Interpreter</th><th>JS</th><th>WASM</th><th></th></tr></thead>
+    <tbody>
+%ROWS%
+    </tbody>
+  </table>
+  %PERF%
+</main>
+<script>%JSEVAL%</script>
+<script>
+(function(){
+  var js = $evalAll();
+  for (var i=0;i<js.length;i++){ var el=document.getElementById('js'+i); if(el) el.textContent=js[i]; }
+  var bin = Uint8Array.from(atob("%WASM%"), function(c){ return c.charCodeAt(0); });
+  WebAssembly.instantiate(bin).then(function(r){
+    var ex=r.instance.exports;
+    var fb=new ArrayBuffer(8), fdv=new DataView(fb);
+    // A wasm f() returns an i64: a number, a Float's bit-pattern, or a heap pointer. Decode
+    // per the row's kind, re-reading memory.buffer each time (it may grow as strings/lists
+    // allocate, detaching an old view).
+    function decode(kind, raw){
+      if(kind==='float'){ fdv.setBigInt64(0, raw, true); return String(fdv.getFloat64(0,true)); }
+      var dv=new DataView(ex.memory.buffer);
+      if(kind==='string'){ var p=Number(raw), len=Number(dv.getBigInt64(p,true));
+        return new TextDecoder().decode(new Uint8Array(ex.memory.buffer, p+8, len)); }
+      if(kind==='list'){ var p=Number(raw), out=[];
+        while(p!==0){ out.push(Number(dv.getBigInt64(p,true)).toString()); p=Number(dv.getBigInt64(p+8,true)); }
+        return '['+out.join(',')+']'; }
+      return raw.toString();
+    }
+    document.querySelectorAll('tbody tr').forEach(function(tr,i){
+      if(!(('f'+i) in ex)) return;
+      tr.querySelector('.wasm').textContent = decode(tr.getAttribute('data-kind'), ex['f'+i]());
+    });
+    document.querySelectorAll('tbody tr').forEach(function(tr){
+      var want=tr.getAttribute('data-expected');
+      var a=tr.querySelector('.js').textContent, b=tr.querySelector('.wasm').textContent;
+      var ok=(a===want && b===want);
+      tr.querySelector('.ok').textContent = ok ? '✓' : '✗';
+      tr.querySelector('.ok').className = 'ok ' + (ok?'good':'bad');
+    });
+  });
+})();
+</script>
+</body>
+</html>
