@@ -173,9 +173,9 @@ class DifferentialPropertyTest {
 
   @Test
   void compoundValueConstructionAgreesIncludingWasmGc() throws Exception {
-    // Records (literal/access/update) and tuples (literal/destructure) built and reduced to an Int,
-    // compared across the interpreter, bytecode VM, JS and — the new coverage — WasmGC. (Linear WASM
-    // is excluded: it doesn't support tuple-`case` destructuring.)
+    // Records (literal/access/update) and tuples (literal/destructure, incl. nested) built and reduced
+    // to an Int, compared across all five backends: the interpreter, bytecode VM, JS, linear-memory
+    // WASM and WasmGC. (Linear WASM gained tuple-`case` destructuring, so it now joins this net.)
     Gen gen = new Gen(20260602L);
     List<String> exprs = new ArrayList<>();
     StringBuilder module = new StringBuilder();
@@ -196,6 +196,13 @@ class DifferentialPropertyTest {
       String[] r = js.split("\n", -1);
       for (int i = 0; i < exprs.size(); i++) {
         assertEquals(interp.get(i), r[i], "JS: " + exprs.get(i));
+      }
+    }
+    // Linear-memory WASM via the whole-module path (type-directed records need inference).
+    List<String> linear = runWasm(WasmCompiler.moduleFromSource(module.toString()), exprs.size());
+    if (linear != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), linear.get(i), "linear WASM: " + exprs.get(i));
       }
     }
     List<String> gc = runWasm(WasmGc.module(module.toString()), exprs.size());

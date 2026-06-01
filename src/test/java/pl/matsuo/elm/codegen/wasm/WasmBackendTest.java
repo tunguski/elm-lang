@@ -114,6 +114,16 @@ class WasmBackendTest {
   }
 
   @Test
+  void tupleDestructuringInCase() throws Exception {
+    // A tuple is n contiguous heap words; a tuple-`case` binds its parts by offset (now supported).
+    same("case ( 3, 4 ) of ( a, b ) -> a + b");
+    same("case ( 10, 20, 30 ) of ( a, b, c ) -> a + b - c");
+    same("case ( 5, 6 ) of ( a, _ ) -> a");
+    same("case ( ( 1, 2 ), 3 ) of ( ( x, y ), z ) -> x + y - z"); // nested
+    same("let t = ( 7, 8 ) in case t of ( a, b ) -> a * b");
+  }
+
+  @Test
   void largeValuesUseInt64() throws Exception {
     // Exceeds 32 bits, so this only matches if the backend really uses i64 like the interpreter.
     same("1000000 * 1000000");

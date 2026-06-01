@@ -1038,8 +1038,54 @@ public final class WasmCompiler {
               .anyMatch(b -> b.pattern() instanceof Pattern.Ctor ct && ctorTag.containsKey(ct.name()));
       if (adt) {
         intAdtCase(c, body);
+      } else if (c.branches().stream().anyMatch(b -> b.pattern() instanceof Pattern.Tuple)) {
+        intTupleCase(c, body);
       } else {
         intListCase(c, body);
+      }
+    }
+
+    /**
+     * Compiles a {@code case} whose pattern is a tuple. A tuple is the address of n contiguous i64
+     * words (see {@link #emitTuple}); the pattern is irrefutable, so we bind its parts by word offset
+     * (recursing into nested tuple patterns) and run the single branch body.
+     */
+    private void intTupleCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
+      Expr.Case.Branch br =
+          c.branches().stream()
+              .filter(b -> b.pattern() instanceof Pattern.Tuple)
+              .findFirst()
+              .orElseThrow();
+      int s = freshLocal();
+      intExpr(c.scrutinee());
+      code.write(0x21);
+      leb(code, s); // local.set tuple address
+      bindTupleFromLocal(s, (Pattern.Tuple) br.pattern());
+      body.accept(br.body());
+    }
+
+    /** Binds a tuple pattern's parts from the tuple whose address is in {@code addr} (word i -> item i),
+     * recursing into nested tuple patterns. Var binds a local; wildcard is skipped. */
+    private void bindTupleFromLocal(int addr, Pattern.Tuple pat) {
+      List<Pattern> items = pat.items();
+      for (int i = 0; i < items.size(); i++) {
+        switch (items.get(i)) {
+          case Pattern.Var v -> {
+            int l = local(v.name());
+            load(addr, i * 8);
+            code.write(0x21);
+            leb(code, l); // local.set item
+          }
+          case Pattern.Wildcard ignored -> {}
+          case Pattern.Tuple inner -> {
+            int innerAddr = freshLocal();
+            load(addr, i * 8);
+            code.write(0x21);
+            leb(code, innerAddr); // local.set nested tuple address
+            bindTupleFromLocal(innerAddr, inner);
+          }
+          default -> throw unsupported("tuple sub-pattern in WASM");
+        }
       }
     }
 
