@@ -1051,6 +1051,17 @@ public final class Prelude {
       }
       return ElmList.fromJava(out);
     });
+    fn("List.map3", 4, a -> {
+      List<Object> xs = javaList(a[1]);
+      List<Object> ys = javaList(a[2]);
+      List<Object> zs = javaList(a[3]);
+      int n = Math.min(xs.size(), Math.min(ys.size(), zs.size()));
+      List<Object> out = new ArrayList<>();
+      for (int i = 0; i < n; i++) {
+        out.add(Apply.applyAll(a[0], xs.get(i), ys.get(i), zs.get(i)));
+      }
+      return ElmList.fromJava(out);
+    });
     fn("List.sort", 1, a -> {
       List<Object> in = new ArrayList<>(javaList(a[0]));
       in.sort(Operators::compareValues);
@@ -1268,6 +1279,28 @@ public final class Prelude {
             }
           });
       return sb.toString();
+    });
+    fn("String.foldl", 3, a -> {
+      int[] cps = ((String) a[2]).codePoints().toArray();
+      Object acc = a[1];
+      for (int cp : cps) {
+        acc = Apply.applyAll(a[0], new ElmChar(cp), acc);
+      }
+      return acc;
+    });
+    fn("String.foldr", 3, a -> {
+      int[] cps = ((String) a[2]).codePoints().toArray();
+      Object acc = a[1];
+      for (int i = cps.length - 1; i >= 0; i--) {
+        acc = Apply.applyAll(a[0], new ElmChar(cps[i]), acc);
+      }
+      return acc;
+    });
+    fn("String.any", 2, a -> {
+      return ((String) a[1]).codePoints().anyMatch(cp -> (Boolean) Apply.apply(a[0], new ElmChar(cp)));
+    });
+    fn("String.all", 2, a -> {
+      return ((String) a[1]).codePoints().allMatch(cp -> (Boolean) Apply.apply(a[0], new ElmChar(cp)));
     });
   }
 

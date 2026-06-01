@@ -325,6 +325,37 @@ class DifferentialPropertyTest {
   }
 
   @Test
+  void newStdlibFunctionsAgreeAcrossValueBackends() throws Exception {
+    // Newly-added stdlib functions (List.map3, String.foldl/foldr/any/all) must evaluate identically
+    // on the three value-rendering backends: the interpreter, the bytecode VM and the JS compiler.
+    List<String> exprs =
+        List.of(
+            "List.map3 (\\a b c -> a + b + c) [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ]",
+            "List.map3 (\\a b c -> ( a, b, c )) [ 1, 2 ] [ 3, 4, 5 ] [ 6, 7 ]", // ragged -> shortest
+            "String.foldl (\\_ n -> n + 1) 0 \"hello\"",
+            "String.foldl (\\c acc -> String.cons c acc) \"\" \"abc\"", // reverse
+            "String.foldr (\\c acc -> String.cons c acc) \"\" \"abc\"", // identity
+            "String.any (\\c -> c == 'l') \"hello\"",
+            "String.any (\\c -> c == 'z') \"hello\"",
+            "String.all (\\c -> c /= 'z') \"hello\"",
+            "String.all (\\c -> c == 'l') \"hello\"");
+
+    List<String> interp = new ArrayList<>();
+    for (String e : exprs) {
+      interp.add(Show.plain(Interpreter.eval(e)));
+      assertEquals(
+          interp.get(interp.size() - 1), Show.plain(BytecodeInterpreter.eval(e)), "bytecode: " + e);
+    }
+    String node = runNode(JsCompiler.expressionsProgram(exprs));
+    if (node != null) {
+      String[] js = node.split("\n", -1);
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), js[i], "JS: " + exprs.get(i));
+      }
+    }
+  }
+
+  @Test
   void recursionAgreesAcrossAllFiveBackends() throws Exception {
     // Top-level recursive functions (tail-recursive accumulators, branching tree recursion, and
     // recursion-as-multiplication) exercised across all five backends. This guards the JS backend's

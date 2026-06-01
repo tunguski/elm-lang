@@ -171,6 +171,10 @@ public final class Signatures {
     g("String.pad", "Int -> Char -> String -> String");
     g("String.indexes", "String -> String -> List Int");
     g("String.indices", "String -> String -> List Int");
+    g("String.foldl", "(Char -> b -> b) -> b -> String -> b");
+    g("String.foldr", "(Char -> b -> b) -> b -> String -> b");
+    g("String.any", "(Char -> Bool) -> String -> Bool");
+    g("String.all", "(Char -> Bool) -> String -> Bool");
 
     // Bitwise (32-bit).
     g("Bitwise.and", "Int -> Int -> Int");
