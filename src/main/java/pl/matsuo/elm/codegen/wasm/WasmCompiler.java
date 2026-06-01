@@ -2169,6 +2169,21 @@ public final class WasmCompiler {
    */
   static void nameSection(
       ByteArrayOutputStream out, List<String> funcNames, List<List<String>> localNames) {
+    nameSection(out, funcNames, localNames, List.of(), List.of());
+  }
+
+  /**
+   * As {@link #nameSection(ByteArrayOutputStream, List, List)}, plus the GC type-name (subsection 4)
+   * and field-name (subsection 10) maps so a disassembler shows {@code (type $tuple2 (struct (field
+   * $item0 …)))} rather than numeric indices. {@code typeNames}/{@code fieldNames} are parallel to
+   * the module's struct type indices (an empty name / list is skipped).
+   */
+  static void nameSection(
+      ByteArrayOutputStream out,
+      List<String> funcNames,
+      List<List<String>> localNames,
+      List<String> typeNames,
+      List<List<String>> fieldNames) {
     ByteArrayOutputStream content = new ByteArrayOutputStream();
     name(content, "name"); // custom section name
 
@@ -2211,6 +2226,45 @@ public final class WasmCompiler {
       content.write(0x02);
       leb(content, locals.size());
       content.writeBytes(locals.toByteArray());
+    }
+
+    // Subsection 4: type names (idx -> name), for the GC struct/functype types.
+    int namedTypes = (int) typeNames.stream().filter(n -> n != null && !n.isEmpty()).count();
+    if (namedTypes > 0) {
+      ByteArrayOutputStream types = new ByteArrayOutputStream();
+      leb(types, namedTypes);
+      for (int i = 0; i < typeNames.size(); i++) {
+        String n = typeNames.get(i);
+        if (n != null && !n.isEmpty()) {
+          leb(types, i);
+          name(types, n);
+        }
+      }
+      content.write(0x04);
+      leb(content, types.size());
+      content.writeBytes(types.toByteArray());
+    }
+
+    // Subsection 10: field names — an indirect map (typeIdx -> (fieldIdx -> name)).
+    int typesWithFields = (int) fieldNames.stream().filter(fs -> fs != null && !fs.isEmpty()).count();
+    if (typesWithFields > 0) {
+      ByteArrayOutputStream fields = new ByteArrayOutputStream();
+      leb(fields, typesWithFields);
+      for (int i = 0; i < fieldNames.size(); i++) {
+        List<String> fs = fieldNames.get(i);
+        if (fs == null || fs.isEmpty()) {
+          continue;
+        }
+        leb(fields, i); // type index
+        leb(fields, fs.size());
+        for (int j = 0; j < fs.size(); j++) {
+          leb(fields, j);
+          name(fields, fs.get(j));
+        }
+      }
+      content.write(0x0A);
+      leb(content, fields.size());
+      content.writeBytes(fields.toByteArray());
     }
 
     out.write(0x00); // custom section id

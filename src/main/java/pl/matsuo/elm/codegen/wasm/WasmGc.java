@@ -958,6 +958,89 @@ public final class WasmGc {
       return shapes.size();
     }
 
+    /** Human-readable type names parallel to the struct type indices (for the wasm "name" section, so
+     * a disassembler shows {@code (type $tuple2 …)} instead of {@code (type (;5;) …)}). */
+    List<String> typeNames() {
+      String[] names = new String[shapes.size()];
+      for (var e : indexByKey.entrySet()) {
+        names[e.getValue()] = typeNameOf(e.getKey(), shapes.get(e.getValue()), e.getValue());
+      }
+      return java.util.Arrays.asList(names);
+    }
+
+    /** Field names per struct type index (empty where the type has no named fields), for the wasm
+     * "name" section's field-name subsection. */
+    List<List<String>> fieldNames() {
+      @SuppressWarnings("unchecked")
+      List<String>[] fields = new List[shapes.size()];
+      for (var e : indexByKey.entrySet()) {
+        fields[e.getValue()] = fieldNamesOf(e.getKey(), shapes.get(e.getValue()));
+      }
+      return java.util.Arrays.asList(fields);
+    }
+
+    private static String typeNameOf(String key, StructDef def, int index) {
+      return switch (def) {
+        case AdtBaseDef ignored -> "adtBase";
+        case AdtVariantDef ignored -> "adt." + key.split("\\$")[1]; // ADTV$Ctor$tag -> Ctor
+        case ConsDef ignored -> "cons$" + index;
+        case StrArrayDef ignored -> "string";
+        case PlainDef ignored -> (key.startsWith("R") ? "record$" : "tuple$") + index;
+        case FuncDef ignored -> "fn$" + index;
+        case ClosBaseDef ignored -> "closure$" + index;
+        case ClosVariantDef ignored -> "closureCap$" + index;
+      };
+    }
+
+    private static List<String> fieldNamesOf(String key, StructDef def) {
+      return switch (def) {
+        case ConsDef ignored -> List.of("head", "tail");
+        case AdtBaseDef ignored -> List.of("tag");
+        case AdtVariantDef v -> tagPlusArgs(v.argFields().size());
+        case ClosBaseDef ignored -> List.of("fn");
+        case ClosVariantDef v -> fnPlusCaps(v.captures().size());
+        case PlainDef p -> p == null ? List.of() : plainFieldNames(key, p.fields().size());
+        default -> List.of();
+      };
+    }
+
+    private static List<String> tagPlusArgs(int n) {
+      List<String> out = new ArrayList<>(n + 1);
+      out.add("tag");
+      for (int i = 0; i < n; i++) {
+        out.add("arg" + i);
+      }
+      return out;
+    }
+
+    private static List<String> fnPlusCaps(int n) {
+      List<String> out = new ArrayList<>(n + 1);
+      out.add("fn");
+      for (int i = 0; i < n; i++) {
+        out.add("cap" + i);
+      }
+      return out;
+    }
+
+    /** A tuple uses positional names; a record key ("R" + "name:"*N + types) carries its field names. */
+    private static List<String> plainFieldNames(String key, int count) {
+      if (key.startsWith("R")) {
+        String[] parts = key.substring(1).split(":", count + 1); // first N tokens are the field names
+        List<String> names = new ArrayList<>(count);
+        for (int i = 0; i < count && i < parts.length; i++) {
+          names.add(parts[i]);
+        }
+        if (names.size() == count) {
+          return names;
+        }
+      }
+      List<String> items = new ArrayList<>(count);
+      for (int i = 0; i < count; i++) {
+        items.add("item" + i);
+      }
+      return items;
+    }
+
     private static String keyOf(List<W> fields) {
       StringBuilder b = new StringBuilder();
       for (W w : fields) {
@@ -2167,7 +2250,7 @@ public final class WasmGc {
       funcNames.add(f.name());
       localNames.add(f.params());
     }
-    WasmCompiler.nameSection(out, funcNames, localNames);
+    WasmCompiler.nameSection(out, funcNames, localNames, tuples.typeNames(), tuples.fieldNames());
     return out.toByteArray();
   }
 

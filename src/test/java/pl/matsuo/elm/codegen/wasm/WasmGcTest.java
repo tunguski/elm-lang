@@ -1,6 +1,7 @@
 package pl.matsuo.elm.codegen.wasm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -402,6 +403,26 @@ class WasmGcTest {
     // its local out to the enclosing `x`.
     agrees("main = let x = 9 * (let x = (let x = 2 in x + x) in x + x) in x + x\n"); // 144
     agrees("main = let x = 1 in (let x = 2 in x) + x\n"); // 3
+  }
+
+  @Test
+  void nameSectionCarriesTypeAndFieldNames() {
+    // The "name" section names the GC struct types and their fields (a custom section engines ignore,
+    // so it never affects execution) — disassembly shows $tuple/$record and item0/alpha instead of
+    // bare indices. We inspect the emitted bytes directly (no Node needed).
+    byte[] bytes =
+        WasmGc.module(
+            "main = let t = ( 1, 2 ) in let r = { alpha = 3, beta = 4 } in Tuple.first t + r.alpha\n");
+    String blob = new String(bytes, StandardCharsets.ISO_8859_1);
+    assertTrue(blob.contains("name"), "has a name custom section");
+    // Field names of the tuple and record structs.
+    for (String field : new String[] {"item0", "item1", "alpha", "beta"}) {
+      assertTrue(blob.contains(field), "field name present: " + field);
+    }
+    // Type names for each struct kind.
+    for (String type : new String[] {"tuple$", "record$"}) {
+      assertTrue(blob.contains(type), "type name present: " + type);
+    }
   }
 
   @Test
