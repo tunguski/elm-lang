@@ -30,6 +30,7 @@ class EditorInterpreterTest {
     "/elm/editor/Eval.elm",
     "/elm/editor/Highlight.elm",
     "/elm/editor/Assist.elm",
+    "/elm/editor/Share.elm",
     "/elm/editor/Main.elm",
   };
 
@@ -431,6 +432,7 @@ class EditorInterpreterTest {
       "/elm/editor/Eval.elm",
       "/elm/editor/Highlight.elm",
       "/elm/editor/Assist.elm",
+      "/elm/editor/Share.elm",
       "/elm/editor/Editor.elm",
       "/elm/editor/Main.elm",
     };
@@ -439,6 +441,21 @@ class EditorInterpreterTest {
       sources[i] = Resources.read(paths[i]);
     }
     String page = JsCompiler.htmlPageProject(null, sources);
-    assertTrue(page.contains("$start"), "the full editor (with Assist wiring) bundles to JS");
+    assertTrue(page.contains("$start"), "the full editor (with Assist + Share wiring) bundles to JS");
+  }
+
+  /** Calls `Share.encodeFiles`/`Share.decodeFiles` and checks they round-trip the file set. */
+  @Test
+  void shareEncodesAndDecodesTheFileSet() {
+    Project share = Project.load(Resources.read("/elm/editor/Share.elm"));
+    // files : List (String, String) with content containing separators/newlines to stress the format.
+    ElmList files =
+        files(
+            "Main.elm", "module Main exposing (main)\nmain = 1, 2\n",
+            "Util.elm", "x = \"a,b\"\n");
+    Object encoded = Apply.apply(share.value("Share", "encodeFiles"), files);
+    Object decoded = Apply.apply(share.value("Share", "decodeFiles"), encoded);
+    // The decoded list renders identically to the original (round-trip).
+    assertEquals(Show.plain(files), Show.plain(decoded), "files round-trip through encode/decode");
   }
 }

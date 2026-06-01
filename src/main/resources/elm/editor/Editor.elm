@@ -23,6 +23,7 @@ import Html.Attributes exposing (placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput, onMouseDown, on)
 import Highlight
 import Assist
+import Share
 import Http
 import Lang exposing (Value(..))
 import Time
@@ -43,6 +44,7 @@ type alias Model =
     , historyAt : Int -- the index currently shown (last = live)
     , caret : Int -- the textarea's caret offset (for autocomplete)
     , completions : List String -- live autocomplete candidates for the word at the caret
+    , shareText : String -- the encoded share string (shown to copy, or pasted in to restore)
     }
 
 
@@ -65,6 +67,9 @@ type Msg
     | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
     | FilePicked Value String String
+    | Share
+    | ShareInput String
+    | Restore
     | NoOp
 
 
@@ -133,6 +138,7 @@ initModel =
         , historyAt = 0
         , caret = 0
         , completions = []
+        , shareText = ""
         }
 
 
@@ -323,6 +329,23 @@ update msg model =
         DismissCompletions ->
             ( { model | completions = [] }, Cmd.none )
 
+        Share ->
+            -- Encode the whole session into a string the user can copy (and later paste to restore).
+            ( { model | shareText = Share.encodeFiles model.files }, Cmd.none )
+
+        ShareInput text ->
+            ( { model | shareText = text }, Cmd.none )
+
+        Restore ->
+            -- Replace the session with the files decoded from the pasted share string.
+            case Share.decodeFiles model.shareText of
+                [] ->
+                    ( model, Cmd.none )
+
+                files ->
+                    refreshAndRun
+                        { model | files = files, selected = Tuple.first (firstFile files) }
+
         SetNewName n ->
             ( { model | newName = n }, Cmd.none )
 
@@ -463,6 +486,17 @@ update msg model =
             ( model, Cmd.none )
 
 
+{-| The first file of a session (a safe fallback when a restored session is somehow empty). -}
+firstFile : List ( String, String ) -> ( String, String )
+firstFile files =
+    case files of
+        f :: _ ->
+            f
+
+        [] ->
+            ( "Main.elm", "" )
+
+
 setFile : String -> String -> List ( String, String ) -> List ( String, String )
 setFile name content files =
     List.map
@@ -485,6 +519,24 @@ hasFile name files =
 -- VIEW
 
 
+{-| A share/restore bar: "Share" encodes the whole session into the text box (copy it to share);
+pasting a shared string and pressing "Restore" replaces the session with it. Pure (no ports). -}
+shareBar : Model -> Html Msg
+shareBar model =
+    div [ style "margin-left" "auto", style "display" "flex", style "gap" "6px", style "align-items" "center" ]
+        [ button [ onClick Share, style "font-size" "12px" ] [ text "Share" ]
+        , input
+            [ value model.shareText
+            , onInput ShareInput
+            , placeholder "paste a shared session…"
+            , style "width" "180px"
+            , style "font-size" "12px"
+            ]
+            []
+        , button [ onClick Restore, style "font-size" "12px" ] [ text "Restore" ]
+        ]
+
+
 view : Model -> Html Msg
 view model =
     div
@@ -505,6 +557,7 @@ view model =
             [ span [ style "font-size" "20px", style "font-weight" "700" ] [ text "Elm-in-Elm playground" ]
             , span [ style "color" "#9fb3c8", style "font-size" "13px" ]
                 [ text "edit a file on the left; its main runs live on the right" ]
+            , shareBar model
             ]
         , div
             [ style "display" "flex"
