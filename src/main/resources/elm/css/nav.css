@@ -1,6 +1,11 @@
-/* The unified left sidebar shared by every sub-page (example wrappers, docs, backends, playground).
-   Linked alongside each page's own stylesheet; the markup is the `nav.html` fragment the generator
-   writes once, so the navigation is identical everywhere. */
+/* The unified left sidebar shared by every sub-page (example wrappers, docs, backends, playground,
+   and the full-page app demos). Linked alongside each page's own stylesheet; the markup is the
+   `nav.html` fragment the generator writes once, so the navigation is identical everywhere. */
+body {
+  /* The compiled app demos (todomvc/rts) have no base stylesheet, so kill the default 8px body
+     margin that otherwise frames the whole layout in a stray white border. */
+  margin: 0;
+}
 .layout {
   display: flex;
   align-items: stretch;
@@ -11,6 +16,9 @@
   width: 240px;
   background: #0f1720;
   color: #aebfcf;
+  /* Own font so the menu is sans-serif even on pages with no base stylesheet (the app demos, which
+     would otherwise inherit the browser's serif default). */
+  font-family: system-ui, -apple-system, Segoe UI, sans-serif;
   padding: 22px 0 32px;
   position: sticky;
   top: 0;
