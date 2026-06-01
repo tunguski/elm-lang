@@ -417,6 +417,10 @@ public final class Signatures {
     g("Json.Decode.map2", "(a -> b -> v) -> Decoder a -> Decoder b -> Decoder v");
     g("Json.Decode.map3", "(a -> b -> c -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder v");
     g("Json.Decode.map4", "(a -> b -> c -> d -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder v");
+    g("Json.Decode.map5", "(a -> b -> c -> d -> e -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder v");
+    g("Json.Decode.map6", "(a -> b -> c -> d -> e -> f -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder v");
+    g("Json.Decode.map7", "(a -> b -> c -> d -> e -> f -> g -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder g -> Decoder v");
+    g("Json.Decode.map8", "(a -> b -> c -> d -> e -> f -> g -> h -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder g -> Decoder h -> Decoder v");
     g("Json.Decode.succeed", "a -> Decoder a");
     g("Json.Decode.andThen", "(a -> Decoder b) -> Decoder a -> Decoder b");
     g("Json.Decode.oneOrMore", "(a -> List a -> v) -> Decoder a -> Decoder v");

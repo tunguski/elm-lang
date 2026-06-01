@@ -821,6 +821,24 @@ class JsBackendTest {
   }
 
   @Test
+  void editorDecodesWithMap8() {
+    // map8 over eight fields, exercising the highest decoder arity end-to-end.
+    String src =
+        editorDecoderProgram(
+            "map8 (\\a b c d e f g h -> a + b + c + d + e + f + g + h)"
+                + " (field \"a\" int) (field \"b\" int) (field \"c\" int) (field \"d\" int)"
+                + " (field \"e\" int) (field \"f\" int) (field \"g\" int) (field \"h\" int)",
+            "Result Http.Error Int",
+            "Ok n -> ( String.fromInt n, Cmd.none )");
+    String out =
+        editorScript(
+            src,
+            jsonDriver(
+                "{\\\"a\\\":1,\\\"b\\\":2,\\\"c\\\":3,\\\"d\\\":4,\\\"e\\\":5,\\\"f\\\":6,\\\"g\\\":7,\\\"h\\\":8}"));
+    assertTrue(out.contains("36"), out);
+  }
+
+  @Test
   void editorDecodesNullable() {
     // `nullable int` yields Nothing for a JSON null (and Just n otherwise).
     String src =

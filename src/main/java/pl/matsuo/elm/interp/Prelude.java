@@ -779,6 +779,11 @@ public final class Prelude {
     fn("Json.Decode.map4", 5, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4]));
     fn("Json.Decode.map5", 6, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4], a[5]));
     fn("Json.Decode.map6", 7, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4], a[5], a[6]));
+    fn("Json.Decode.map7", 8, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]));
+    fn(
+        "Json.Decode.map8",
+        9,
+        a -> d("$Dec_MapN", a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]));
     fn("Json.Decode.succeed", 1, a -> d("$Dec_Succeed", a[0]));
     fn("Json.Decode.andThen", 2, a -> d("$Dec_AndThen", a[0], a[1]));
     fn("Json.Decode.maybe", 1, a -> d("$Dec_Maybe", a[0]));

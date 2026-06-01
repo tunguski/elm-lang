@@ -188,6 +188,35 @@ class JsonRoundTripTest {
                 + "result = D.decodeString (D.field \"n\" D.int) json\n"));
   }
 
+  @Test
+  void map7AndMap8CombineManyFields() {
+    String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
+    String json =
+        "json = E.encode 0 (E.object [ ( \"a\", E.int 1 ), ( \"b\", E.int 2 ), ( \"c\", E.int 3 ), "
+            + "( \"d\", E.int 4 ), ( \"e\", E.int 5 ), ( \"f\", E.int 6 ), ( \"g\", E.int 7 ), "
+            + "( \"h\", E.int 8 ) ])\n";
+    // map7 sums seven fields.
+    assertEquals(
+        "Ok 28",
+        decode(
+            head
+                + json
+                + "result = D.decodeString (D.map7 (\\a b c d e f g -> a + b + c + d + e + f + g) "
+                + "(D.field \"a\" D.int) (D.field \"b\" D.int) (D.field \"c\" D.int) "
+                + "(D.field \"d\" D.int) (D.field \"e\" D.int) (D.field \"f\" D.int) "
+                + "(D.field \"g\" D.int)) json\n"));
+    // map8 sums eight fields.
+    assertEquals(
+        "Ok 36",
+        decode(
+            head
+                + json
+                + "result = D.decodeString (D.map8 (\\a b c d e f g h -> a + b + c + d + e + f + g + h) "
+                + "(D.field \"a\" D.int) (D.field \"b\" D.int) (D.field \"c\" D.int) "
+                + "(D.field \"d\" D.int) (D.field \"e\" D.int) (D.field \"f\" D.int) "
+                + "(D.field \"g\" D.int) (D.field \"h\" D.int)) json\n"));
+  }
+
   /** A decoder over an object {@code {"a":1,"b":2}} for the dict/keyValuePairs tests. */
   private static String twoFieldObject() {
     return "json = E.encode 0 (E.object [ ( \"a\", E.int 1 ), ( \"b\", E.int 2 ) ])\n";
