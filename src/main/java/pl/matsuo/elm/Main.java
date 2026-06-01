@@ -71,6 +71,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Wasm.class,
       Main.Site.class,
       Main.GenSite.class,
+      Main.BuildCmd.class,
       Main.Gallery.class,
       Main.Init.class,
       Main.Install.class,
@@ -88,7 +89,7 @@ public final class Main implements Runnable {
   }
 
   /** Runs the CLI and returns the process exit code. Split out so tests can assert on it. */
-  static int run(String... args) {
+  public static int run(String... args) {
     return new CommandLine(new Main())
         .setExecutionExceptionHandler(
             (ex, cmd, parseResult) -> {
@@ -1189,6 +1190,74 @@ public final class Main implements Runnable {
     @Override
     public Integer call() throws IOException {
       return pl.matsuo.elm.site.SiteGen.generate(readElmSource(file), outDir, apiDirs, baseUrl);
+    }
+  }
+
+  @Command(
+      name = "build",
+      description =
+          "Run an Elm-defined build (a `project : Build.Project`) through the Maven-style lifecycle.",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm build              # run validate → compile → test → package (the default)",
+        "  elm build test         # run up to the test phase",
+        "  elm build clean        # remove every module's output",
+        "  elm build install -f build.elm",
+        "",
+        "The build file exposes `project : Build.Project` (see the bundled Build library): a",
+        "declarative, multi-module project run through a fixed phase lifecycle; each phase's work is",
+        "a list of goals, and a goal is an ordinary `Module -> List Task` function.",
+      })
+  static final class BuildCmd implements Callable<Integer> {
+    @Parameters(
+        index = "0",
+        arity = "0..1",
+        description =
+            "Phase to run up to (validate|compile|test|package|verify|install) or 'clean'. "
+                + "Default: package.")
+    String phase = "package";
+
+    @Option(names = {"-f", "--file"}, description = "The build definition (default: build.elm).")
+    Path file = Path.of("build.elm");
+
+    @Override
+    public Integer call() throws IOException {
+      String userSource = readElmSource(file);
+      String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Build.elm");
+      var project = pl.matsuo.elm.interp.Project.load(userSource, lib);
+      Object projectValue = project.entryValue("project");
+      Object planList;
+      if (phase.equalsIgnoreCase("clean")) {
+        planList = pl.matsuo.elm.interp.Apply.apply(project.value("Build", "cleanPlan"), projectValue);
+      } else {
+        Object phaseCtor = phaseConstructor(phase);
+        if (phaseCtor == null) {
+          System.err.println(
+              "Unknown phase '" + phase + "'. Use one of: validate, compile, test, package, "
+                  + "verify, install (or clean).");
+          return 1;
+        }
+        planList =
+            pl.matsuo.elm.interp.Apply.applyAll(project.value("Build", "plan"), phaseCtor, projectValue);
+      }
+      // Relative paths in the build resolve against the build file's directory (like a pom.xml dir).
+      Path baseDir = file.toAbsolutePath().getParent();
+      return pl.matsuo.elm.build.BuildRunner.run(planList, baseDir, System.out);
+    }
+
+    /** Maps a lower-case phase name to its {@code Build.Phase} constructor value, or null if unknown. */
+    private static Object phaseConstructor(String name) {
+      String ctor =
+          switch (name.toLowerCase(java.util.Locale.ROOT)) {
+            case "validate" -> "Validate";
+            case "compile" -> "Compile";
+            case "test" -> "Test";
+            case "package" -> "Package";
+            case "verify" -> "Verify";
+            case "install" -> "Install";
+            default -> null;
+          };
+      return ctor == null ? null : new pl.matsuo.elm.runtime.ElmData(ctor, new Object[0]);
     }
   }
 
