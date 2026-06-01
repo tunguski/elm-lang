@@ -35,7 +35,10 @@ public final class Markdown {
         if (inCode) {
           out.append("</code></pre>\n");
         } else {
-          out.append("<pre><code>");
+          // The fence's info string names the language (```elm, ```bash); emit it as a highlight.js
+          // class so the doc pages' highlighter colours Elm and Bash blocks.
+          String lang = line.substring(3).strip().toLowerCase();
+          out.append(langClass(lang).isEmpty() ? "<pre><code>" : "<pre><code class=\"" + langClass(lang) + "\">");
         }
         inCode = !inCode;
         continue;
@@ -145,5 +148,14 @@ public final class Markdown {
 
   private static String escape(String s) {
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+  }
+
+  /** Maps a fence info string to a highlight.js language class (empty when unrecognised). */
+  private static String langClass(String lang) {
+    return switch (lang) {
+      case "elm" -> "language-elm";
+      case "bash", "sh", "shell", "console" -> "language-bash";
+      default -> "";
+    };
   }
 }

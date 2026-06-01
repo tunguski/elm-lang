@@ -59,22 +59,30 @@ build dir =
         (\result ->
             case result of
                 Ok tsv ->
-                    let
-                        rows =
-                            parse tsv
+                    -- The shared sidebar fragment (nav.html) is written once by the Java side; we read
+                    -- it and embed it verbatim in every sub-page so the navigation is identical.
+                    cat (dir ++ "/nav.html")
+                        (\navResult ->
+                            let
+                                nav =
+                                    Result.withDefault "" navResult
 
-                        examples =
-                            List.filterMap exampleOf rows
+                                rows =
+                                    parse tsv
 
-                        docs =
-                            List.filterMap docOf rows
-                    in
-                    -- The stylesheets and gallery.js are static resources the Java side copies in; we
-                    -- only write the HTML pages here.
-                    writeFile (dir ++ "/index.html") (render (indexPage rows)) <|
-                        writeWrappers dir examples <|
-                            writeDocs dir docs docs <|
-                                print ("Generated the gallery (" ++ String.fromInt (List.length examples) ++ " examples, " ++ String.fromInt (List.length docs) ++ " docs) in " ++ dir) done
+                                examples =
+                                    List.filterMap exampleOf rows
+
+                                docs =
+                                    List.filterMap docOf rows
+                            in
+                            -- The stylesheets and gallery.js are static resources the Java side copies
+                            -- in; we only write the HTML pages here.
+                            writeFile (dir ++ "/index.html") (render (indexPage rows)) <|
+                                writeWrappers dir nav examples <|
+                                    writeDocs dir nav docs <|
+                                        print ("Generated the gallery (" ++ String.fromInt (List.length examples) ++ " examples, " ++ String.fromInt (List.length docs) ++ " docs) in " ++ dir) done
+                        )
 
                 Err message ->
                     print ("cannot read manifest.tsv: " ++ message) (exit 1)
@@ -88,8 +96,8 @@ build dir =
 {-| Writes one wrapper page per example: it reads the example's source (written under `examples/` by
 the Java side) and lays out the live demo iframe next to the highlighted source. Sequenced as a
 continuation-passing fold so each read-then-write happens in order. -}
-writeWrappers : String -> List Example -> Io -> Io
-writeWrappers dir examples andThen =
+writeWrappers : String -> String -> List Example -> Io -> Io
+writeWrappers dir nav examples andThen =
     case examples of
         [] ->
             andThen
@@ -98,35 +106,40 @@ writeWrappers dir examples andThen =
             cat (dir ++ "/examples/" ++ e.slug ++ ".elm")
                 (\result ->
                     writeFile (dir ++ "/" ++ e.slug ++ ".html")
-                        (wrapperHtml e (Result.withDefault "" result))
-                        (writeWrappers dir rest andThen)
+                        (wrapperHtml nav e (Result.withDefault "" result))
+                        (writeWrappers dir nav rest andThen)
                 )
 
 
-{-| A single example's wrapper page: header with a method badge, the live demo in an iframe, and the
-source highlighted by highlight.js (loaded from a CDN). Built from a template; `%SOURCE%` is filled
-last so source text can't collide with a placeholder. -}
-wrapperHtml : Example -> String -> String
-wrapperHtml e source =
+{-| A single example's wrapper page: the shared sidebar, then the live demo in an iframe next to the
+source highlighted by highlight.js (Elm + Bash languages, loaded from a CDN). Built from a template;
+`%SOURCE%` is filled last so source text can't collide with a placeholder. -}
+wrapperHtml : String -> Example -> String -> String
+wrapperHtml nav e source =
     """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%TITLE% — elm-lang</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <link rel="stylesheet" href="page.css">
+<link rel="stylesheet" href="nav.css">
 </head><body>
-<header class="bar"><a class="home" href="index.html">&larr; All examples</a><span class="badge %CSS%">%METHOD%</span></header>
+<div class="layout">%NAV%
 <main>
-<h1>%TITLE% <small>%CATEGORY%</small></h1>
+<h1>%TITLE% <small>%CATEGORY%</small> <span class="badge %CSS%">%METHOD%</span></h1>
 <section class="demo"><div class="demo-head"><a class="newtab" href="%DEMO%" target="_blank" rel="noopener">Open demo in a new tab &#8599;</a></div>
 <iframe title="%TITLE% demo" src="%DEMO%" loading="lazy"></iframe></section>
 <section class="src"><h2>Source</h2><pre><code class="language-elm">%SOURCE%</code></pre></section>
 </main>
+</div>
+<script src="nav.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
 <script>hljs.highlightAll();</script>
 </body></html>
 """
+        |> String.replace "%NAV%" nav
         |> String.replace "%CSS%" (badgeClass e.method)
         |> String.replace "%METHOD%" (escapeHtml e.method)
         |> String.replace "%CATEGORY%" (escapeHtml e.category)
@@ -151,9 +164,9 @@ docOf row =
 
 
 {-| Writes one documentation page per `doc` entry: reads the Markdown body the Java side rendered to
-`<slug>.bodyhtml` and wraps it in the page chrome (header nav across all guides, footer). -}
-writeDocs : String -> List ( String, String ) -> List ( String, String ) -> Io -> Io
-writeDocs dir allDocs docs andThen =
+`<slug>.bodyhtml` and wraps it in the shared page chrome (the sidebar, footer, and highlight.js). -}
+writeDocs : String -> String -> List ( String, String ) -> Io -> Io
+writeDocs dir nav docs andThen =
     case docs of
         [] ->
             andThen
@@ -166,42 +179,36 @@ writeDocs dir allDocs docs andThen =
             cat (dir ++ "/" ++ slug ++ ".bodyhtml")
                 (\result ->
                     writeFile (dir ++ "/" ++ href)
-                        (docPageHtml allDocs href label (Result.withDefault "" result))
-                        (writeDocs dir allDocs rest andThen)
+                        (docPageHtml nav label (Result.withDefault "" result))
+                        (writeDocs dir nav rest andThen)
                 )
 
 
-docPageHtml : List ( String, String ) -> String -> String -> String -> String
-docPageHtml allDocs href title body =
+docPageHtml : String -> String -> String -> String
+docPageHtml nav title body =
     """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>%TITLE% — elm-lang</title><link rel="stylesheet" href="docs.css"></head><body>
-<header class="bar"><a href="index.html">&larr; Gallery</a> %NAV%</header><main>
+<title>%TITLE% — elm-lang</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="docs.css">
+<link rel="stylesheet" href="nav.css"></head><body>
+<div class="layout">%NAV%
+<main>
 %BODY%
-</main><footer>Documentation for the from-scratch Elm implementation · <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></footer></body></html>
+<footer>Documentation for the from-scratch Elm implementation · <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></footer>
+</main>
+</div>
+<script src="nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body></html>
 """
+        |> String.replace "%NAV%" nav
         |> String.replace "%TITLE%" (escapeHtml title)
-        |> String.replace "%NAV%" (docNav allDocs href)
         |> String.replace "%BODY%" body
-
-
-{-| A nav row linking every guide; the current one is shown inert. -}
-docNav : List ( String, String ) -> String -> String
-docNav allDocs current =
-    String.join " · "
-        (List.map
-            (\( href, label ) ->
-                if href == current then
-                    "<strong>" ++ escapeHtml label ++ "</strong>"
-
-                else
-                    """<a href="%HREF%">%LABEL%</a>"""
-                        |> String.replace "%HREF%" (escapeHtml href)
-                        |> String.replace "%LABEL%" (escapeHtml label)
-            )
-            allDocs
-        )
 
 
 

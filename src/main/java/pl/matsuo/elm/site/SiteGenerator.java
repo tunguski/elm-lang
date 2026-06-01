@@ -190,19 +190,87 @@ public final class SiteGenerator {
     Files.writeString(outDir.resolve(name), Resources.read(resource), StandardCharsets.UTF_8);
   }
 
+  /**
+   * The unified left-hand navigation, written once as the {@code nav.html} fragment and embedded
+   * verbatim by every sub-page (the Elm-generated example wrappers and doc pages, and the static
+   * backends/playground templates) so the menu is identical site-wide. The active link is marked
+   * client-side by {@code nav.js} from the URL, keeping this a single static fragment.
+   */
+  private String navHtml(List<DocPage> docs, boolean rts) {
+    StringBuilder b = new StringBuilder();
+    b.append("<nav class=\"sidebar\">");
+    b.append("<a class=\"brand\" href=\"index.html\">elm-lang</a>");
+    b.append("<span class=\"tagline\">Elm, from scratch in Java</span>");
+    b.append("<div class=\"group\"><span class=\"label\">Demos</span>");
+    b.append(navLink("index.html", "Gallery"));
+    b.append(navLink("backends.html", "JS vs WASM"));
+    b.append(navLink("playground.html", "Playground"));
+    b.append(navLink("editor.html", "Editor"));
+    b.append(navLink("todomvc.html", "TodoMVC"));
+    if (rts) {
+      b.append(navLink("rts.html", "RTS Mini game"));
+    }
+    b.append("</div>");
+    if (!docs.isEmpty()) {
+      b.append("<div class=\"group\"><span class=\"label\">Guides</span>");
+      for (DocPage d : docs) {
+        b.append(navLink(d.slug() + ".html", d.title()));
+      }
+      b.append("</div>");
+    }
+    b.append("<div class=\"group\">");
+    b.append(navLink("https://github.com/tunguski/elm-lang", "Source on GitHub"));
+    b.append("</div>");
+    b.append("</nav>");
+    return b.toString();
+  }
+
+  private static String navLink(String href, String label) {
+    return "<a href=\"" + escape(href) + "\">" + escape(label) + "</a>";
+  }
+
+  /** Writes the shared sidebar fragment and copies its stylesheet/behaviour script in. */
+  private void writeNavAssets(String nav) throws IOException {
+    Files.writeString(outDir.resolve("nav.html"), nav, StandardCharsets.UTF_8);
+    copyResource("/elm/css/nav.css", "nav.css");
+    copyResource("/elm/js/nav.js", "nav.js");
+  }
+
+  /**
+   * Wraps a compiled, full-page app demo ({@code htmlPageProject} output: {@code <body><div
+   * id="app"></div>…}) in the shared sidebar so the menu is present here too. The app keeps its
+   * mount point and simply renders in the content column to the right of the nav.
+   */
+  private static String withSidebar(String pageHtml, String nav) {
+    return pageHtml
+        .replace("</head>", "<link rel=\"stylesheet\" href=\"nav.css\"></head>")
+        .replace(
+            "<body><div id=\"app\"></div>\n",
+            "<body><div class=\"layout\">"
+                + nav
+                + "<div id=\"app\" class=\"content\"></div></div>\n<script src=\"nav.js\"></script>\n");
+  }
+
   private void run() throws IOException {
     Files.createDirectories(outDir.resolve("demos"));
     List<Built> built = new ArrayList<>();
     for (Example ex : EXAMPLES) {
       built.add(buildExample(ex));
     }
-    writeBackendsPage();
-    writePlaygroundPage();
-    writeExampleSources();
-    writeTodoMvcPage();
-    writeEditorPage();
-    boolean rts = writeRtsPage();
+    // Render the Markdown docs (body artifacts) and learn whether the RTS demo is present first, so
+    // the shared sidebar — written once as nav.html and embedded by every sub-page — can list them.
     List<DocPage> docs = writeDocPages();
+    boolean rts = rtsAvailable();
+    String nav = navHtml(docs, rts);
+    writeNavAssets(nav);
+    writeBackendsPage(nav);
+    writePlaygroundPage(nav);
+    writeExampleSources();
+    writeTodoMvcPage(nav);
+    writeEditorPage(nav);
+    if (rts) {
+      writeRtsPage(nav);
+    }
     // The gallery's HTML is rendered by the Elm generator from the manifest; its stylesheets and
     // client script are static resource files we copy in (the Elm side only links them).
     copyStaticAssets();
@@ -472,7 +540,7 @@ public final class SiteGenerator {
    * backend live in the browser, showing the two results side by side (with the interpreter's value
    * as the expected baseline). Demonstrates the two compiled backends agreeing in-browser.
    */
-  private void writeBackendsPage() throws IOException {
+  private void writeBackendsPage(String nav) throws IOException {
     StringBuilder src = new StringBuilder();
     StringBuilder rows = new StringBuilder();
     for (int i = 0; i < BACKEND_SNIPPETS.size(); i++) {
@@ -505,6 +573,7 @@ public final class SiteGenerator {
     String page =
         Resources.read("/elm/site/backends.html")
             .replace("%STYLE%", BACKENDS_STYLE)
+            .replace("%NAV%", nav)
             .replace("%ROWS%", rows.toString())
             .replace("%PERF%", perf)
             .replace("%JSEVAL%", jsEval)
@@ -556,10 +625,13 @@ public final class SiteGenerator {
   }
 
   /** Compiles the bundled TodoMVC demo to a live, interactive page (the flagship TEA showcase). */
-  private void writeTodoMvcPage() throws IOException {
+  private void writeTodoMvcPage(String nav) throws IOException {
     Files.writeString(
         outDir.resolve("todomvc.html"),
-        JsCompiler.htmlPageProject(null, pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm")),
+        withSidebar(
+            JsCompiler.htmlPageProject(
+                null, pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm")),
+            nav),
         StandardCharsets.UTF_8);
   }
 
@@ -568,14 +640,14 @@ public final class SiteGenerator {
    * Eval/Main modules), bundled by the JS backend and running live in the browser — it fetches the
    * example files over HTTP and lets you edit them, rendering each selected file's `main`.
    */
-  private void writeEditorPage() throws IOException {
+  private void writeEditorPage(String nav) throws IOException {
     String[] sources = new String[EDITOR_MODULES.length];
     for (int i = 0; i < EDITOR_MODULES.length; i++) {
       sources[i] = pl.matsuo.elm.util.Resources.read(EDITOR_MODULES[i]);
     }
     Files.writeString(
         outDir.resolve("editor.html"),
-        JsCompiler.htmlPageProject(null, sources),
+        withSidebar(JsCompiler.htmlPageProject(null, sources), nav),
         StandardCharsets.UTF_8);
   }
 
@@ -592,19 +664,24 @@ public final class SiteGenerator {
    * in the browser — no backend needed. Returns whether the page was written (the example may be
    * absent in some checkouts). The whole game model/logic/view is the JS-compiled output.
    */
-  private boolean writeRtsPage() throws IOException {
+  private static boolean rtsAvailable() {
     for (String m : RTS_MODULES) {
       if (!Files.exists(Path.of(m))) {
         return false;
       }
     }
+    return true;
+  }
+
+  private void writeRtsPage(String nav) throws IOException {
     String[] sources = new String[RTS_MODULES.length];
     for (int i = 0; i < RTS_MODULES.length; i++) {
       sources[i] = Files.readString(Path.of(RTS_MODULES[i]), StandardCharsets.UTF_8);
     }
     Files.writeString(
-        outDir.resolve("rts.html"), JsCompiler.htmlPageProject(null, sources), StandardCharsets.UTF_8);
-    return true;
+        outDir.resolve("rts.html"),
+        withSidebar(JsCompiler.htmlPageProject(null, sources), nav),
+        StandardCharsets.UTF_8);
   }
 
   /** Numeric functions for the interactive playground (single Int argument each). */
@@ -621,12 +698,13 @@ public final class SiteGenerator {
    * BOTH compiled backends — the JavaScript backend and the WebAssembly backend — with timings.
    * (The compiler is on the JVM, so the functions are pre-compiled; the inputs are interactive.)
    */
-  private void writePlaygroundPage() throws IOException {
+  private void writePlaygroundPage(String nav) throws IOException {
     String jsScript = JsCompiler.declarationsScript(PLAYGROUND_SRC);
     String wasmB64 = Base64.getEncoder().encodeToString(WasmCompiler.moduleFromSource(PLAYGROUND_SRC));
     String page =
         Resources.read("/elm/site/playground.html")
             .replace("%STYLE%", BACKENDS_STYLE)
+            .replace("%NAV%", nav)
             .replace("%SRC%", escape(PLAYGROUND_SRC))
             .replace("%JS%", jsScript)
             .replace("%WASM%", wasmB64);

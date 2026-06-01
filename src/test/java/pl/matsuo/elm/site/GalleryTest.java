@@ -71,6 +71,17 @@ class GalleryTest {
     assertTrue(wrapper.contains("href=\"page.css\""), "wrapper links the static page stylesheet");
     assertTrue(Files.exists(out.resolve("page.css")), "page.css copied in by the Java side");
 
+    // The unified sidebar is embedded on every sub-page, with Elm + Bash highlighting.
+    assertTrue(wrapper.contains("<nav class=\"sidebar\">"), "wrapper has the shared sidebar");
+    assertTrue(wrapper.contains(">Gallery</a>") && wrapper.contains("href=\"editor.html\""),
+        "sidebar links the gallery and the other demos");
+    assertTrue(wrapper.contains("href=\"nav.css\"") && wrapper.contains("src=\"nav.js\""),
+        "wrapper links the shared sidebar assets");
+    assertTrue(wrapper.contains("languages/bash.min.js"), "wrapper loads the Bash highlighter too");
+    assertTrue(Files.exists(out.resolve("nav.css")) && Files.exists(out.resolve("nav.js"))
+            && Files.exists(out.resolve("nav.html")),
+        "the shared sidebar assets are written");
+
     // The demo artifacts (compiled by the Java side) are still present and live.
     assertTrue(
         Files.readString(out.resolve("demos/hello.html"), StandardCharsets.UTF_8).contains("$start"),

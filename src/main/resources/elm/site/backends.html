@@ -5,12 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>JS vs WASM — elm-lang</title>
 %STYLE%
+<link rel="stylesheet" href="nav.css">
 </head>
 <body>
-<header class="bar">
-  <a class="home" href="index.html">&larr; All examples</a>
-  <span class="badge live">live in your browser</span>
-</header>
+<div class="layout">
+%NAV%
 <main>
   <h1>JavaScript vs WebAssembly</h1>
   <p>Each Elm expression below is compiled by two backends and run right here in your
@@ -27,6 +26,8 @@
   </table>
   %PERF%
 </main>
+</div>
+<script src="nav.js"></script>
 <script>%JSEVAL%</script>
 <script>
 (function(){

@@ -5,12 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Playground — elm-lang</title>
 %STYLE%
+<link rel="stylesheet" href="nav.css">
 </head>
 <body>
-<header class="bar">
-  <a class="home" href="index.html">&larr; All examples</a>
-  <span class="badge live">compiled JS + WASM, live</span>
-</header>
+<div class="layout">
+%NAV%
 <main>
   <h1>Interactive backend playground</h1>
   <p>These Elm functions were compiled ahead of time to both JavaScript and WebAssembly.
@@ -28,6 +27,8 @@
   </table>
   <p id="agree"></p>
 </main>
+</div>
+<script src="nav.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>

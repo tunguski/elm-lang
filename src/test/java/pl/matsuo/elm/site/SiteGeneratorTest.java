@@ -89,11 +89,16 @@ class SiteGeneratorTest {
         scripting.contains("https://github.com/tunguski/elm-lang/blob/master/src/main/resources/elm/demos/wordcount.elm"),
         "repo link points at blob/master with its .elm extension");
     assertFalse(scripting.contains("blob/main/"), "no stale blob/main links (would 404)");
-    // The doc page chrome is now assembled by the Elm gallery generator (links docs.css, has the
-    // header nav back to the gallery); the Markdown body is the Java-rendered artifact.
+    // The doc page chrome is now assembled by the Elm gallery generator (links docs.css and the
+    // shared sidebar nav.css/nav.html); the Markdown body is the Java-rendered artifact.
     assertTrue(scripting.contains("href=\"docs.css\""), "Elm-assembled doc page links docs.css");
-    assertTrue(scripting.contains(">&larr; Gallery</a>"), "doc page has the gallery nav");
+    assertTrue(
+        scripting.contains("<nav class=\"sidebar\">") && scripting.contains(">Gallery</a>"),
+        "doc page has the shared sidebar with a Gallery link");
+    assertTrue(scripting.contains("href=\"nav.css\""), "doc page links the shared sidebar stylesheet");
     assertTrue(Files.exists(out.resolve("docs.css")), "docs.css written by the Elm generator");
+    assertTrue(Files.exists(out.resolve("nav.css")) && Files.exists(out.resolve("nav.html")),
+        "the shared sidebar assets are written");
     assertTrue(Files.exists(out.resolve("scripting.bodyhtml")), "Markdown body artifact written by Java");
   }
 
@@ -104,6 +109,9 @@ class SiteGeneratorTest {
     String page = Files.readString(out.resolve("rts.html"), StandardCharsets.UTF_8);
     assertTrue(page.contains("$start"), "rts.html is the compiled JS bundle");
     assertTrue(page.contains("RTS Mini"), "rts.html contains the game");
+    // The full-page app demo still gets the shared sidebar (the app mounts in the content column).
+    assertTrue(page.contains("<nav class=\"sidebar\">") && page.contains("id=\"app\" class=\"content\""),
+        "rts.html carries the shared sidebar");
     assertTrue(
         Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8).contains("rts.html"),
         "index links the RTS game");

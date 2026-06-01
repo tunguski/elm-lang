@@ -1,0 +1,83 @@
+/* The unified left sidebar shared by every sub-page (example wrappers, docs, backends, playground).
+   Linked alongside each page's own stylesheet; the markup is the `nav.html` fragment the generator
+   writes once, so the navigation is identical everywhere. */
+.layout {
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
+}
+.sidebar {
+  flex: 0 0 240px;
+  width: 240px;
+  background: #0f1720;
+  color: #aebfcf;
+  padding: 22px 0 32px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
+}
+.sidebar .brand {
+  display: block;
+  padding: 0 22px 4px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: .2px;
+  text-decoration: none;
+}
+.sidebar .tagline {
+  display: block;
+  padding: 0 22px 16px;
+  color: #6b7c8d;
+  font-size: .74rem;
+}
+.sidebar .group {
+  padding: 10px 0;
+  border-top: 1px solid #1b2733;
+}
+.sidebar .label {
+  display: block;
+  padding: 2px 22px 6px;
+  color: #6b7c8d;
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+}
+.sidebar a:not(.brand) {
+  display: block;
+  padding: 7px 22px;
+  color: #aebfcf;
+  text-decoration: none;
+  font-size: .9rem;
+  border-left: 3px solid transparent;
+}
+.sidebar a:not(.brand):hover {
+  background: #182430;
+  color: #fff;
+}
+.sidebar a.active {
+  background: #182430;
+  color: #fff;
+  border-left-color: var(--accent, #5fabdc);
+  font-weight: 600;
+}
+/* The page's own <main> sits to the right of the sidebar and fills the rest. */
+.layout > main,
+.layout > .content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .layout {
+    display: block;
+  }
+  .sidebar {
+    position: static;
+    width: auto;
+    height: auto;
+    flex: none;
+    padding-bottom: 12px;
+  }
+}

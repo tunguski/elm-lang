@@ -27,6 +27,22 @@ class MarkdownTest {
   }
 
   @Test
+  void fencedCodeCarriesAHighlightLanguageClass() {
+    // The fence info string becomes a highlight.js class so the doc pages colour Elm and Bash.
+    assertTrue(
+        Markdown.toHtml("```elm\nmain = text \"hi\"\n```\n")
+            .contains("<pre><code class=\"language-elm\">"),
+        "elm fence");
+    assertTrue(
+        Markdown.toHtml("```bash\nls -la\n```\n").contains("<pre><code class=\"language-bash\">"),
+        "bash fence");
+    assertTrue(
+        Markdown.toHtml("```sh\necho hi\n```\n").contains("language-bash"), "sh maps to bash");
+    // An unlabelled fence stays a plain code block.
+    assertTrue(Markdown.toHtml("```\nplain\n```\n").contains("<pre><code>plain"), "no label");
+  }
+
+  @Test
   void escapesHtmlInText() {
     assertTrue(Markdown.toHtml("a < b && c\n").contains("a &lt; b &amp;&amp; c"));
   }
