@@ -137,6 +137,70 @@ class DifferentialPropertyTest {
     private String str() {
       return "\"" + (char) ('a' + rng.nextInt(5)) + "\""; // single ASCII letter, no escaping needed
     }
+
+    /**
+     * Generates Int-valued expressions that <em>build and take apart</em> compound values — records
+     * (literal, field access, update) and tuples (literal, destructured in a single-branch case) —
+     * reducing back to an Int. Every construct here is supported by WasmGC (which returns a GC
+     * reference for a compound value that JS can't render, so the observable must be a number), as
+     * well as the interpreter, the bytecode VM and the JS backend.
+     */
+    String compoundInt(int depth) {
+      if (depth <= 0 || rng.nextInt(100) < 30) {
+        return Integer.toString(rng.nextInt(20));
+      }
+      return switch (rng.nextInt(6)) {
+        case 0 -> "(" + compoundInt(depth - 1) + " + " + compoundInt(depth - 1) + ")";
+        case 1 -> "(" + compoundInt(depth - 1) + " - " + compoundInt(depth - 1) + ")";
+        case 2 -> // record literal + field access
+            "(let cr = { a = " + compoundInt(depth - 1) + ", b = " + compoundInt(depth - 1)
+                + " } in cr.a + cr.b)";
+        case 3 -> // record update
+            "(let cr = { a = " + compoundInt(depth - 1) + ", b = " + compoundInt(depth - 1)
+                + " } in (let cs = { cr | a = " + compoundInt(depth - 1) + " } in cs.a - cs.b))";
+        case 4 -> // tuple literal + single-branch destructure
+            "(case ( " + compoundInt(depth - 1) + ", " + compoundInt(depth - 1)
+                + " ) of ( cx, cy ) -> cx + cy)";
+        default ->
+            "(if " + compoundInt(depth - 1) + " < " + compoundInt(depth - 1) + " then "
+                + compoundInt(depth - 1) + " else " + compoundInt(depth - 1) + ")";
+      };
+    }
+  }
+
+  @Test
+  void compoundValueConstructionAgreesIncludingWasmGc() throws Exception {
+    // Records (literal/access/update) and tuples (literal/destructure) built and reduced to an Int,
+    // compared across the interpreter, bytecode VM, JS and — the new coverage — WasmGC. (Linear WASM
+    // is excluded: it doesn't support tuple-`case` destructuring.)
+    Gen gen = new Gen(20260602L);
+    List<String> exprs = new ArrayList<>();
+    StringBuilder module = new StringBuilder();
+    for (int i = 0; i < 80; i++) {
+      String e = gen.compoundInt(4);
+      exprs.add(e);
+      module.append("f").append(i).append(" = ").append(e).append("\n");
+    }
+
+    List<String> interp = new ArrayList<>();
+    for (String e : exprs) {
+      interp.add(Show.plain(Interpreter.eval(e)));
+      assertEquals(interp.get(interp.size() - 1), Show.plain(BytecodeInterpreter.eval(e)), "bytecode: " + e);
+    }
+
+    String js = runNode(JsCompiler.expressionsProgram(exprs));
+    if (js != null) {
+      String[] r = js.split("\n", -1);
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), r[i], "JS: " + exprs.get(i));
+      }
+    }
+    List<String> gc = runWasm(WasmGc.module(module.toString()), exprs.size());
+    if (gc != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), gc.get(i), "WasmGC: " + exprs.get(i));
+      }
+    }
   }
 
   @Test
