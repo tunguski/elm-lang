@@ -117,6 +117,32 @@ public final class TestRunner {
     return new Result(passed, failed, skipped, report);
   }
 
+  /** Fuzz runs at or above this count are evaluated in parallel (the interpreter is thread-safe for
+   * the pure property evaluation; below this the thread-pool overhead isn't worth it). */
+  private static final int PARALLEL_THRESHOLD = 64;
+
+  /** A fuzz failure for one input: the reason (the rendered offending value, or an error message),
+   * and whether it came from a thrown error rather than a failed expectation. */
+  private record Failure(String reason, boolean error) {}
+
+  /** Evaluates the property on one seed; returns null if it passed, else the failure. */
+  private static Failure fuzzOutcome(Object body, long seed) {
+    Object expectation;
+    try {
+      expectation = Thunk.resolve(Apply.apply(body, seed));
+    } catch (RuntimeException e) {
+      return new Failure(e.getMessage(), true);
+    }
+    if (expectation instanceof ElmData ed && ed.ctor().equals("Pass")) {
+      return null;
+    }
+    String reason =
+        expectation instanceof ElmData ed && ed.args().length > 0
+            ? String.valueOf(Thunk.resolve(ed.arg(0)))
+            : "failed";
+    return new Failure(reason, false);
+  }
+
   private static boolean isTest(ElmData d) {
     return d.ctor().equals("UnitTest") || d.ctor().equals("Labeled") || d.ctor().equals("FuzzTest");
   }
@@ -156,30 +182,47 @@ public final class TestRunner {
           return;
         }
         Object body = Thunk.resolve(t.arg(1)); // Int -> Expectation
-        // Replay the property over many deterministic seeds; report the first failing input.
-        java.util.Random seeds = new java.util.Random(opts.seed());
-        for (int i = 0; i < opts.fuzzRuns(); i++) {
-          long seed = seeds.nextInt(); // a 32-bit Elm Int the Fuzzer scrambles
-          Object expectation;
-          try {
-            expectation = Thunk.resolve(Apply.apply(body, seed));
-          } catch (RuntimeException e) {
-            cases.add(new Case(prefix + desc, Outcome.FAIL, "error: " + e.getMessage(), null));
-            return;
-          }
-          if (!(expectation instanceof ElmData ed && ed.ctor().equals("Pass"))) {
-            String reason =
-                expectation instanceof ElmData ed && ed.args().length > 0
-                    ? String.valueOf(Thunk.resolve(ed.arg(0)))
-                    : "failed";
-            // The whole run is deterministic from the master seed, so re-running with it reproduces
-            // this failure (at run i+1 of N).
-            reason += " (reproduce with --seed " + opts.seed() + ")";
-            cases.add(new Case(prefix + desc + " (fuzz)", Outcome.FAIL, reason, null));
-            return;
+        // Deterministic seed sequence from the master seed (independent of evaluation order).
+        long[] seeds = new long[opts.fuzzRuns()];
+        java.util.Random rng = new java.util.Random(opts.seed());
+        for (int i = 0; i < seeds.length; i++) {
+          seeds[i] = rng.nextInt(); // a 32-bit Elm Int the Fuzzer scrambles
+        }
+
+        // Evaluate the property over every seed and report the LOWEST-index failure — the same input
+        // a sequential "stop at the first failure" run would report. Coverage tracking mutates shared
+        // state, so it forces sequential evaluation; otherwise large runs go in parallel.
+        boolean parallel = !opts.coverage() && seeds.length >= PARALLEL_THRESHOLD;
+        Failure failure;
+        if (parallel) {
+          java.util.concurrent.ConcurrentSkipListMap<Integer, Failure> fails =
+              new java.util.concurrent.ConcurrentSkipListMap<>();
+          java.util.stream.IntStream.range(0, seeds.length)
+              .parallel()
+              .forEach(
+                  i -> {
+                    Failure f = fuzzOutcome(body, seeds[i]);
+                    if (f != null) {
+                      fails.put(i, f);
+                    }
+                  });
+          failure = fails.isEmpty() ? null : fails.firstEntry().getValue();
+        } else {
+          failure = null;
+          for (int i = 0; i < seeds.length && failure == null; i++) {
+            failure = fuzzOutcome(body, seeds[i]);
           }
         }
-        cases.add(new Case(prefix + desc, Outcome.PASS, null, opts.fuzzRuns() + " passed"));
+
+        if (failure == null) {
+          cases.add(new Case(prefix + desc, Outcome.PASS, null, opts.fuzzRuns() + " passed"));
+        } else if (failure.error) {
+          cases.add(new Case(prefix + desc, Outcome.FAIL, "error: " + failure.reason, null));
+        } else {
+          // The whole run is deterministic from the master seed, so re-running with it reproduces it.
+          String reason = failure.reason + " (reproduce with --seed " + opts.seed() + ")";
+          cases.add(new Case(prefix + desc + " (fuzz)", Outcome.FAIL, reason, null));
+        }
       }
       default -> {}
     }

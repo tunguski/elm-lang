@@ -60,6 +60,31 @@ class TestRunnerTest {
   }
 
   @Test
+  void parallelAndSequentialFuzzingAgree() {
+    // The same property reported at a parallel run count (>= the parallel threshold) and a
+    // sequential sub-threshold count, with the same seed, must report the same minimal failing input
+    // — parallel evaluation reports the lowest-index failure, exactly as sequential does.
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (fuzz)
+        suite = fuzz Fuzz.int "ints are at most three" (\\n -> Expect.atMost 3 n)
+        """;
+    TestRunner.Result parallel = TestRunner.run(List.of(src), new TestRunner.Options(200, 99L, null));
+    TestRunner.Result sequential = TestRunner.run(List.of(src), new TestRunner.Options(50, 99L, null));
+    assertEquals(1, parallel.failed(), parallel.report());
+    assertEquals(1, sequential.failed(), sequential.report());
+    assertTrue(parallel.report().contains("Given 4"), parallel.report());
+    assertTrue(sequential.report().contains("Given 4"), sequential.report());
+    // Re-running the parallel suite reports the same failing input every time (timing aside).
+    assertTrue(
+        TestRunner.run(List.of(src), new TestRunner.Options(200, 99L, null)).report().contains("Given 4"),
+        "parallel fuzzing is deterministic");
+  }
+
+  @Test
   void fuzzShrinksListsToTheSmallestFailingList() {
     // "every list has length <= 2" fails for longer lists; shrinking drops elements down to the
     // minimal failing length of 3 (the elements themselves shrink toward 0 too).
