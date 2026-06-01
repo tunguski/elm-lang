@@ -156,6 +156,23 @@ public final class WasmCompiler {
           [] -> []
           h :: t -> f i h :: listIndexedHelp f (i + 1) t
       listIndexedMap f xs = listIndexedHelp f 0 xs
+      listHead xs = case xs of
+          [] -> Nothing
+          h :: t -> Just h
+      listTail xs = case xs of
+          [] -> Nothing
+          h :: t -> Just t
+      listFilterMap f xs = listFoldr (\\x acc -> case f x of
+          Just y -> y :: acc
+          Nothing -> acc) [] xs
+      listMap3 f xs ys zs = case xs of
+          [] -> []
+          hx :: tx -> case ys of
+              [] -> []
+              hy :: ty -> case zs of
+                  [] -> []
+                  hz :: tz -> f hx hy hz :: listMap3 f tx ty tz
+      stringIsEmpty s = String.length s == 0
       maybeWithDefault d m = case m of
           Just x -> x
           Nothing -> d
@@ -203,6 +220,11 @@ public final class WasmCompiler {
           Map.entry("List.sort", "listSort"),
           Map.entry("List.sortBy", "listSortBy"),
           Map.entry("List.indexedMap", "listIndexedMap"),
+          Map.entry("List.head", "listHead"),
+          Map.entry("List.tail", "listTail"),
+          Map.entry("List.filterMap", "listFilterMap"),
+          Map.entry("List.map3", "listMap3"),
+          Map.entry("String.isEmpty", "stringIsEmpty"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
           Map.entry("Maybe.map", "maybeMap"),
           Map.entry("Maybe.andThen", "maybeAndThen"),
@@ -273,10 +295,10 @@ public final class WasmCompiler {
     return compileModules(modules, prelude);
   }
 
-  /** Whether a source refers to a prelude (List/Maybe/Result/Basics) qualified name. */
+  /** Whether a source refers to a prelude (List/Maybe/Result/Basics/String) qualified name. */
   private static boolean wantsPrelude(String source) {
     return source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
-        || source.contains("Basics.");
+        || source.contains("Basics.") || source.contains("String.");
   }
 
   private static byte[] compileModules(List<pl.matsuo.elm.ast.Module> modules, boolean wantPrelude) {

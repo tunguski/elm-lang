@@ -181,6 +181,20 @@ class WasmHeapTest {
   }
 
   @Test
+  void headTailFilterMapAndMap3() throws Exception {
+    agrees("main = Maybe.withDefault 0 (List.head [ 7, 8, 9 ])\n"); // 7
+    agrees("main = List.sum (Maybe.withDefault [] (List.tail [ 7, 8, 9 ]))\n"); // 8 + 9 = 17
+    agrees("main = List.sum (List.filterMap (\\n -> if n > 2 then Just (n * 10) else Nothing) [ 1, 2, 3, 4 ])\n"); // 30 + 40 = 70
+    agrees("main = List.sum (List.map3 (\\a b c -> a + b + c) [ 1, 2 ] [ 10, 20 ] [ 100, 200 ])\n"); // 111 + 222 = 333
+  }
+
+  @Test
+  void stringIsEmpty() throws Exception {
+    agrees("main = if String.isEmpty \"\" then 1 else 0\n"); // 1
+    agrees("main = if String.isEmpty \"x\" then 1 else 0\n"); // 0
+  }
+
+  @Test
   void multiExportModuleDecodesEveryKind() throws Exception {
     assumeTrue(NODE, "node not available");
     // Mirrors the JS-vs-WASM gallery page: one module exporting f0..fN of mixed result types, each
