@@ -153,7 +153,12 @@ class EditorInterpreterTest {
           "Texture.nearest",
           "Dom.getViewport",
           "E.onAnimationFrameDelta",
-          "E.onResize"
+          "E.onResize",
+          // Json.Decode under an import alias (image-previews uses `import Json.Decode as D`).
+          "D.succeed 1",
+          "D.map (\\x -> x) (D.field \"a\" D.int)",
+          "D.at [ \"a\", \"b\" ] D.string",
+          "D.oneOrMore (\\h t -> h) D.int"
         }) {
       assertFalse(eval(expr).startsWith("Error"), expr + " => " + eval(expr));
     }

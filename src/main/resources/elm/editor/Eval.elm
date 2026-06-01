@@ -32,7 +32,7 @@ builtins =
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
         ++ [ "File.Select.file", "File.Select.files", "File.toString", "File.toUrl", "File.name", "File.mime", "File.size", "Task.perform", "Task.attempt" ]
-        ++ [ "field", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "succeed", "list", "andThen", "oneOf", "nullable" ]
+        ++ [ "field", "at", "map", "oneOrMore", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "succeed", "list", "andThen", "oneOf", "nullable" ]
         ++ [ "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object", "Encode.list", "Encode.encode" ]
         ++ webglNames
         ++ playgroundNames
@@ -75,6 +75,13 @@ editor; the rest are accepted as opaque (no-op) subscriptions so the programs ru
 browserEventSubs : List String
 browserEventSubs =
     [ "onAnimationFrameDelta", "onAnimationFrame", "onResize", "onMouseMove", "onMouseDown", "onMouseUp", "onKeyDown", "onKeyUp", "onKeyPress", "onVisibilityChange" ]
+
+
+{-| `Json.Decode` function names, recognised after an import alias (`as D`, `as Decode`, …) so
+`D.succeed`, `Decode.at`, … resolve to the bare decoder builtin regardless of the alias. -}
+jsonDecodeNames : List String
+jsonDecodeNames =
+    [ "succeed", "map", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "field", "at", "list", "oneOf", "oneOrMore", "andThen", "nullable", "string", "int", "float", "bool" ]
 
 
 {-| The Html (and inline SVG) element builtins (each takes a list of attributes then a list of
@@ -329,6 +336,14 @@ evalExpr globals env expr =
                     else if List.member field browserEventSubs then
                         -- A Browser.Events subscription under any import alias (E, Events, …): resolve
                         -- by the bare field name so `E.onAnimationFrameDelta`, `Events.onResize`, … all work.
+                        Ok (VBuiltin field [])
+
+                    else if List.member field [ "string", "int", "float", "bool" ] && List.member field jsonDecodeNames then
+                        -- A Json.Decode primitive decoder under an alias (`D.string`, `Decode.int`).
+                        Ok (VCtor ("Dec." ++ field) [])
+
+                    else if List.member field jsonDecodeNames then
+                        -- A Json.Decode combinator under an alias (`D.succeed`, `Decode.at`, …).
                         Ok (VBuiltin field [])
 
                     else
@@ -710,6 +725,28 @@ runBuiltin globals name args =
 
             ( "field", [ VStr name2, decoder ] ) ->
                 Ok (VCtor "Dec.field" [ VStr name2, decoder ])
+
+            ( "at", [ VList path, decoder ] ) ->
+                -- `at [ "a", "b" ] dec` is sugar for nested fields: field "a" (field "b" dec).
+                Ok
+                    (List.foldr
+                        (\seg acc ->
+                            case seg of
+                                VStr name2 ->
+                                    VCtor "Dec.field" [ VStr name2, acc ]
+
+                                _ ->
+                                    acc
+                        )
+                        decoder
+                        path
+                    )
+
+            ( "map", [ f, dec ] ) ->
+                Ok (VCtor "Dec.map" [ f, dec ])
+
+            ( "oneOrMore", [ f, dec ] ) ->
+                Ok (VCtor "Dec.oneOrMore" [ f, dec ])
 
             ( "succeed", [ v ] ) ->
                 Ok (VCtor "Dec.succeed" [ v ])
@@ -2082,6 +2119,23 @@ runDecoder globals decoder json =
                         applyValue globals f v
                             |> Result.andThen (\next -> runDecoder globals next json)
                     )
+
+        VCtor "Dec.oneOrMore" [ f, dec ] ->
+            -- A non-empty JSON array: decode each element, then apply f to (head, tail).
+            case json of
+                VList (first :: rest) ->
+                    runDecoder globals dec first
+                        |> Result.andThen
+                            (\head ->
+                                decodeEach globals dec rest []
+                                    |> Result.andThen (\tail -> applyAll globals f [ head, tail ])
+                            )
+
+                VList [] ->
+                    Err "expected a non-empty list"
+
+                _ ->
+                    Err "expected a list"
 
         VCtor "Dec.oneOf" [ VList decs ] ->
             tryDecoders globals decs json
