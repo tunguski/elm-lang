@@ -180,6 +180,37 @@ class TestRunnerTest {
   }
 
   @Test
+  void newFuzzCombinatorsGenerateValidInputs() {
+    // oneOf, frequency, maybe, result, filter, map2 all produce values the properties below accept,
+    // so a passing run exercises each generator across the sample.
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (Test, describe, fuzz)
+        suite =
+            describe "fuzzers"
+                [ fuzz (Fuzz.oneOf [ Fuzz.intRange 0 9, Fuzz.intRange 90 99 ]) "oneOf in range"
+                    (\\n -> Expect.equal True ((n >= 0 && n <= 9) || (n >= 90 && n <= 99)))
+                , fuzz (Fuzz.frequency [ ( 3, Fuzz.constant 1 ), ( 1, Fuzz.constant 2 ) ]) "frequency picks 1 or 2"
+                    (\\n -> Expect.equal True (n == 1 || n == 2))
+                , fuzz (Fuzz.maybe Fuzz.int) "maybe is Nothing or Just"
+                    (\\m -> Expect.equal True (m == Nothing || (case m of
+                        Just _ -> True
+                        Nothing -> False)))
+                , fuzz (Fuzz.filter (\\n -> modBy 2 n == 0) (Fuzz.intRange 0 100)) "filter keeps evens"
+                    (\\n -> Expect.equal 0 (modBy 2 n))
+                , fuzz (Fuzz.map2 (\\a b -> a + b) (Fuzz.constant 3) (Fuzz.constant 4)) "map2 sums"
+                    (\\n -> Expect.equal 7 n)
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(5, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
+  }
+
+  @Test
   void equalDictsAndEqualSets() {
     // equalDicts/equalSets pass on equal collections and report a structured diff otherwise.
     String src =

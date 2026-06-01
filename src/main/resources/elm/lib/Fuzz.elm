@@ -9,8 +9,15 @@ module Fuzz exposing
     , string
     , constant
     , map
+    , map2
+    , map3
     , pair
     , list
+    , maybe
+    , result
+    , oneOf
+    , frequency
+    , filter
     )
 
 {-| Random value generators for property-based (`fuzz`) tests — a small subset of
@@ -167,6 +174,138 @@ map f fuzzer =
     { gen = \seed -> f (fuzzer.gen seed)
     , shrink = \_ -> []
     }
+
+
+{-| Combine two fuzzers with a function (each fed a decorrelated seed). Does not shrink. -}
+map2 : (a -> b -> c) -> Fuzzer a -> Fuzzer b -> Fuzzer c
+map2 f fa fb =
+    { gen = \seed -> f (fa.gen seed) (fb.gen (hash (seed + 7919)))
+    , shrink = \_ -> []
+    }
+
+
+{-| Combine three fuzzers with a function (each fed a decorrelated seed). Does not shrink. -}
+map3 : (a -> b -> c -> d) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d
+map3 f fa fb fc =
+    { gen = \seed -> f (fa.gen seed) (fb.gen (hash (seed + 7919))) (fc.gen (hash (seed + 104729)))
+    , shrink = \_ -> []
+    }
+
+
+{-| `Nothing` about a quarter of the time, otherwise `Just` a value from the inner fuzzer; shrinks a
+`Just` toward `Nothing` and toward the inner shrinks. -}
+maybe : Fuzzer a -> Fuzzer (Maybe a)
+maybe fuzzer =
+    { gen =
+        \seed ->
+            if modBy 4 (hash seed) == 0 then
+                Nothing
+
+            else
+                Just (fuzzer.gen (hash (seed + 1)))
+    , shrink =
+        \m ->
+            case m of
+                Nothing ->
+                    []
+
+                Just x ->
+                    Nothing :: List.map Just (fuzzer.shrink x)
+    }
+
+
+{-| `Ok` or `Err` with equal chance, from the respective fuzzers; shrinks within the chosen side. -}
+result : Fuzzer e -> Fuzzer a -> Fuzzer (Result e a)
+result errFuzzer okFuzzer =
+    { gen =
+        \seed ->
+            if modBy 2 (hash seed) == 0 then
+                Err (errFuzzer.gen (hash (seed + 1)))
+
+            else
+                Ok (okFuzzer.gen (hash (seed + 2)))
+    , shrink =
+        \r ->
+            case r of
+                Ok a ->
+                    List.map Ok (okFuzzer.shrink a)
+
+                Err e ->
+                    List.map Err (errFuzzer.shrink e)
+    }
+
+
+{-| Picks uniformly from a (non-empty) list of fuzzers. Shrinks by trying every alternative's
+shrinker on the value (they all produce values of the same type). -}
+oneOf : List (Fuzzer a) -> Fuzzer a
+oneOf fuzzers =
+    case fuzzers of
+        [] ->
+            Debug.todo "Fuzz.oneOf: needs a non-empty list of fuzzers"
+
+        first :: _ ->
+            { gen =
+                \seed ->
+                    (pick (modBy (List.length fuzzers) (hash seed)) fuzzers first).gen (hash (seed + 104729))
+            , shrink = \v -> List.concatMap (\f -> f.shrink v) fuzzers
+            }
+
+
+{-| Picks from a (non-empty) list of `(weight, fuzzer)` pairs in proportion to the weights. -}
+frequency : List ( Int, Fuzzer a ) -> Fuzzer a
+frequency pairs =
+    case pairs of
+        [] ->
+            Debug.todo "Fuzz.frequency: needs a non-empty list"
+
+        ( _, first ) :: _ ->
+            { gen =
+                \seed ->
+                    (byWeight (modBy (max 1 (List.sum (List.map Tuple.first pairs))) (hash seed)) pairs first).gen
+                        (hash (seed + 104729))
+            , shrink = \v -> List.concatMap (\( _, f ) -> f.shrink v) pairs
+            }
+
+
+{-| Keeps only generated values satisfying the predicate (re-trying with fresh seeds, bounded);
+shrinks are filtered too. The predicate should accept a reasonable fraction of values. -}
+filter : (a -> Bool) -> Fuzzer a -> Fuzzer a
+filter pred fuzzer =
+    { gen = \seed -> filterGen pred fuzzer seed 0
+    , shrink = \v -> List.filter pred (fuzzer.shrink v)
+    }
+
+
+pick : Int -> List x -> x -> x
+pick i xs default =
+    Maybe.withDefault default (List.head (List.drop i xs))
+
+
+byWeight : Int -> List ( Int, Fuzzer a ) -> Fuzzer a -> Fuzzer a
+byWeight n pairs default =
+    case pairs of
+        [] ->
+            default
+
+        ( w, f ) :: rest ->
+            if n < w then
+                f
+
+            else
+                byWeight (n - w) rest default
+
+
+filterGen : (a -> Bool) -> Fuzzer a -> Int -> Int -> a
+filterGen pred fuzzer seed attempts =
+    let
+        v =
+            fuzzer.gen seed
+    in
+    if pred v || attempts >= 20 then
+        v
+
+    else
+        filterGen pred fuzzer (hash (seed + 1)) (attempts + 1)
 
 
 {-| A pair drawn from two fuzzers (each fed a decorrelated seed); shrinks each component in turn. -}
