@@ -9,6 +9,7 @@ import java.util.function.Function;
 import pl.matsuo.elm.error.ElmRuntimeError;
 import pl.matsuo.elm.runtime.Builtin;
 import pl.matsuo.elm.runtime.ElmArray;
+import pl.matsuo.elm.runtime.ElmCallable;
 import pl.matsuo.elm.runtime.ElmChar;
 import pl.matsuo.elm.runtime.ElmData;
 import pl.matsuo.elm.runtime.ElmDict;
@@ -1061,6 +1062,58 @@ public final class Prelude {
     return new ElmData("$Node", new Object[] {tag, attrs, children});
   }
 
+  /** Html.map / Svg.map: rebuild a node, routing every event's message through {@code f}. */
+  private static Object mapHtml(Object f, Object vnode) {
+    Object v = Thunk.resolve(vnode);
+    if (v instanceof ElmData d && d.ctor().equals("$Node")) {
+      List<Object> attrs = new ArrayList<>();
+      for (Object a : ((ElmList) Thunk.resolve(d.arg(1))).toJava()) {
+        attrs.add(mapAttr(f, Thunk.resolve(a)));
+      }
+      List<Object> kids = new ArrayList<>();
+      for (Object k : ((ElmList) Thunk.resolve(d.arg(2))).toJava()) {
+        kids.add(mapHtml(f, k));
+      }
+      return node((String) d.arg(0), ElmList.fromJava(attrs), ElmList.fromJava(kids));
+    }
+    return v; // $Text and anything without events is unchanged
+  }
+
+  /** Routes an attribute's event message through {@code f}; non-event attributes pass through. */
+  private static Object mapAttr(Object f, Object attr) {
+    if (!(attr instanceof ElmData a) || !a.ctor().equals("$On")) {
+      return attr;
+    }
+    String event = (String) a.arg(0);
+    Object handler = Thunk.resolve(a.arg(1));
+    // input/check carry a value -> msg function; decoders (on/preventDefaultOn) carry a $Dec_*; the
+    // rest carry the message directly.
+    if (event.equals("input") || event.equals("check")) {
+      ElmCallable mapped =
+          new ElmCallable() {
+            @Override
+            public int arity() {
+              return 1;
+            }
+
+            @Override
+            public Object invoke(Object[] args) {
+              return Apply.apply(f, Apply.apply(handler, args[0]));
+            }
+
+            @Override
+            public String name() {
+              return "Html.map handler";
+            }
+          };
+      return new ElmData("$On", new Object[] {event, mapped});
+    }
+    if (handler instanceof ElmData h && h.ctor().startsWith("$Dec")) {
+      return new ElmData("$On", new Object[] {event, d("$Dec_MapN", f, handler)});
+    }
+    return new ElmData("$On", new Object[] {event, Apply.apply(f, handler)});
+  }
+
   private static String[] split(String pair) {
     int i = pair.indexOf(':');
     return i < 0 ? new String[] {pair, pair} : new String[] {pair.substring(0, i), pair.substring(i + 1)};
@@ -1069,6 +1122,8 @@ public final class Prelude {
   private static void registerHtml() {
     fn("Html.text", 1, a -> new ElmData("$Text", new Object[] {a[0]}));
     fn("Html.node", 3, a -> node((String) a[0], a[1], a[2]));
+    fn("Html.map", 2, a -> mapHtml(a[0], a[1]));
+    fn("Svg.map", 2, a -> mapHtml(a[0], a[1]));
     for (String spec : HTML_TAGS) {
       String[] nt = split(spec);
       String tag = nt[1];

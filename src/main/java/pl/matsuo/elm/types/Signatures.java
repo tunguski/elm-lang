@@ -249,6 +249,8 @@ public final class Signatures {
       g("Html." + tag, elem);
     }
     g("Html.text", "String -> Html msg");
+    g("Html.map", "(a -> msg) -> Html a -> Html msg");
+    g("Svg.map", "(a -> msg) -> Svg a -> Svg msg");
     g("Html.node", "String -> " + elem);
     g("Html.map", "(a -> b) -> Html a -> Html b");
     for (String attr : HTML_STRING_ATTRS) {

@@ -155,6 +155,26 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void htmlMapRoutesAChildsMessageThroughTheParent() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // A child view dispatches Bump; the parent wraps it with Html.map into Child, so clicking the
+    // child's button drives the parent's update through the mapped message.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (button, div, text)\n"
+            + "import Html.Events exposing (onClick)\n"
+            + "type ChildMsg = Bump\n"
+            + "type Msg = Child ChildMsg\n"
+            + "childView = button [ onClick Bump ] [ text \"+\" ]\n"
+            + "main = Browser.sandbox { init = 0, update = update, view = view }\n"
+            + "update msg n = case msg of\n  Child Bump -> n + 1\n"
+            + "view n = div [] [ Html.map Child childView, text (\"count=\" ++ String.fromInt n) ]\n";
+    String dom = renderInBrowser(app, "document.querySelector('button').click();");
+    assertTrue(dom.contains("count=1"), "the mapped child click reached the parent: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);

@@ -25,6 +25,20 @@
   $rt['Html.Events.onSubmit']=function(m){ return $data('$On',['submit',m]); };
   $rt['Html.Events.on']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
   $rt['Html.Events.preventDefaultOn']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
+  // Html.map / Svg.map: rebuild a virtual node, routing every event's message through f.
+  function $mapAttr(f, a){
+    if (a.$!=='$On') return a;
+    var ev=a._[0], h=a._[1];
+    if (ev==='input'||ev==='check') return $data('$On',[ev, function(x){ return f(h(x)); }]);
+    if (h && h.$==='$Dec') return $data('$On',[ev, $data('$Dec',[function(e){ var r=h._[0](e); return r.ok?{ok:1,v:f(r.v)}:r; }])]);
+    return $data('$On',[ev, f(h)]);
+  }
+  function $mapHtml(f, v){
+    if (v.$==='$Node') return $data('$Node',[v._[0], $list($listToArray(v._[1]).map(function(a){return $mapAttr(f,a);})), $list($listToArray(v._[2]).map(function(k){return $mapHtml(f,k);}))]);
+    return v; // $Text (and anything without events) is unchanged
+  }
+  $rt['Html.map']=function(f){ return function(v){ return $mapHtml(f, v); }; };
+  $rt['Svg.map']=$rt['Html.map'];
   Object.keys(SVG_TAGS).forEach(function(t){ $rt['Svg.'+t]=node(t); });
   $rt['Svg.text']=function(s){ return $data('$Text',[s]); };
   var svgAttrs=['width','height','viewBox','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
