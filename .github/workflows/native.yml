@@ -31,6 +31,35 @@ jobs:
           ls -lh target/elm || true
           target/elm eval "List.sum (List.range 1 100)" || true
 
+      - name: Smoke-test the native binary
+        if: steps.build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          test -x target/elm
+          # eval
+          test "$(target/elm eval '1 + 2')" = "3"
+          # script: the Posix/Bash scripting layer
+          cat > /tmp/echo.elm <<'ELM'
+          module Main exposing (main)
+          import Bash exposing (..)
+          main : Io
+          main = getArgs (\args -> print (String.join "," args) done)
+          ELM
+          test "$(target/elm script /tmp/echo.elm a b c)" = "a,b,c"
+          # server: a pure handler answering over HTTP
+          cat > /tmp/srv.elm <<'ELM'
+          module Main exposing (handle)
+          import Server exposing (..)
+          handle : Request -> Response
+          handle req = text "pong"
+          ELM
+          target/elm server /tmp/srv.elm --port 8137 &
+          srv=$!
+          for i in $(seq 1 20); do curl -fsS http://localhost:8137/ >/dev/null 2>&1 && break; sleep 0.5; done
+          curl -fsS http://localhost:8137/ | grep -q pong
+          kill "$srv"
+          echo "native smoke tests passed (eval, script, server)"
+
       - name: Upload native binary
         uses: actions/upload-artifact@v4
         with:
