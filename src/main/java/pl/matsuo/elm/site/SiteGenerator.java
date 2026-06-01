@@ -67,15 +67,13 @@ public final class SiteGenerator {
           new Example("Playground", "Mario", "mario"));
 
   private enum Method {
-    LIVE("Live JS (compiled)", "live"),
-    SNAPSHOT("Rendered snapshot", "snapshot"),
-    FAILED("Source only", "failed");
-    final String label;
-    final String css;
+    LIVE("Live JS (compiled)"),
+    SNAPSHOT("Rendered snapshot"),
+    FAILED("Source only");
+    final String label; // the Elm gallery generator derives the badge CSS class from this label
 
-    Method(String label, String css) {
+    Method(String label) {
       this.label = label;
-      this.css = css;
     }
   }
 
@@ -343,8 +341,8 @@ public final class SiteGenerator {
     }
 
     Files.writeString(outDir.resolve("demos/" + ex.slug() + ".html"), demo, StandardCharsets.UTF_8);
-    Files.writeString(
-        outDir.resolve(ex.slug() + ".html"), wrapperPage(ex, method, source), StandardCharsets.UTF_8);
+    // The wrapper page (<slug>.html, demo + source) is now written by the Elm gallery generator from
+    // the manifest and the example source under examples/; the Java side only emits the demo artifact.
     return new Built(ex, method, note);
   }
 
@@ -457,50 +455,6 @@ public final class SiteGenerator {
         + escape(ex.title())
         + "</title><style>body{margin:0;padding:16px;font-family:system-ui,sans-serif;color:#555}</style></head>"
         + "<body><p>This example could not be rendered headlessly. See the source alongside.</p></body></html>\n";
-  }
-
-  private String wrapperPage(Example ex, Method method, String source) {
-    return """
-        <!doctype html>
-        <html lang="en">
-        <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>%TITLE% — elm-lang</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-        %STYLE%
-        </head>
-        <body>
-        <header class="bar">
-          <a class="home" href="index.html">&larr; All examples</a>
-          <span class="badge %CSS%">%METHOD%</span>
-        </header>
-        <main>
-          <h1>%TITLE% <small>%CATEGORY%</small></h1>
-          <section class="demo">
-            <div class="demo-head">
-              <a class="newtab" href="demos/%SLUG%.html" target="_blank" rel="noopener">Open demo in a new tab &#8599;</a>
-            </div>
-            <iframe title="%TITLE% demo" src="demos/%SLUG%.html" loading="lazy"></iframe>
-          </section>
-          <section class="src">
-            <h2>Source</h2>
-            <pre><code class="language-elm">%SOURCE%</code></pre>
-          </section>
-        </main>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js"></script>
-        <script>hljs.highlightAll();</script>
-        </body>
-        </html>
-        """
-        .replace("%STYLE%", PAGE_STYLE)
-        .replace("%TITLE%", escape(ex.title()))
-        .replace("%CATEGORY%", escape(ex.category()))
-        .replace("%SLUG%", ex.slug())
-        .replace("%METHOD%", method.label)
-        .replace("%CSS%", method.css)
-        .replace("%SOURCE%", escape(source));
   }
 
   /** Elm snippets the WASM backend supports, evaluated live by both JS and WASM in the page. They
@@ -862,7 +816,7 @@ public final class SiteGenerator {
 
   // --- styling -----------------------------------------------------------
 
-  private static final String PAGE_STYLE = style("/elm/css/page.css");
+  // The wrapper-page stylesheet (page.css) is now owned by the Elm gallery generator.
 
   private static final String DOCS_STYLE = style("/elm/css/docs.css");
 

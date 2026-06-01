@@ -66,12 +66,96 @@ build dir =
                             List.filterMap exampleOf rows
                     in
                     writeFile (dir ++ "/styles.css") styles <|
-                        writeFile (dir ++ "/index.html") (render (indexPage rows)) <|
-                            print ("Generated the gallery index (" ++ String.fromInt (List.length examples) ++ " examples) in " ++ dir) done
+                        writeFile (dir ++ "/page.css") pageStyles <|
+                            writeFile (dir ++ "/index.html") (render (indexPage rows)) <|
+                                writeWrappers dir
+                                    examples
+                                    (print ("Generated the gallery (" ++ String.fromInt (List.length examples) ++ " examples + wrappers) in " ++ dir) done)
 
                 Err message ->
                     print ("cannot read manifest.tsv: " ++ message) (exit 1)
         )
+
+
+{-| Writes one wrapper page per example: it reads the example's source (written under `examples/` by
+the Java side) and lays out the live demo iframe next to the highlighted source. Sequenced as a
+continuation-passing fold so each read-then-write happens in order. -}
+writeWrappers : String -> List Example -> Io -> Io
+writeWrappers dir examples andThen =
+    case examples of
+        [] ->
+            andThen
+
+        e :: rest ->
+            cat (dir ++ "/examples/" ++ e.slug ++ ".elm")
+                (\result ->
+                    writeFile (dir ++ "/" ++ e.slug ++ ".html")
+                        (wrapperHtml e (Result.withDefault "" result))
+                        (writeWrappers dir rest andThen)
+                )
+
+
+{-| A single example's wrapper page: header with a method badge, the live demo in an iframe, and the
+source highlighted by highlight.js (loaded from a CDN, as before). -}
+wrapperHtml : Example -> String -> String
+wrapperHtml e source =
+    "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+        ++ "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        ++ "<title>"
+        ++ escapeHtml e.title
+        ++ " — elm-lang</title>"
+        ++ "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css\">"
+        ++ "<link rel=\"stylesheet\" href=\"page.css\">"
+        ++ "</head><body>"
+        ++ "<header class=\"bar\"><a class=\"home\" href=\"index.html\">&larr; All examples</a>"
+        ++ "<span class=\"badge "
+        ++ badgeClass e.method
+        ++ "\">"
+        ++ escapeHtml e.method
+        ++ "</span></header><main>"
+        ++ "<h1>"
+        ++ escapeHtml e.title
+        ++ " <small>"
+        ++ escapeHtml e.category
+        ++ "</small></h1>"
+        ++ "<section class=\"demo\"><div class=\"demo-head\">"
+        ++ "<a class=\"newtab\" href=\""
+        ++ escapeHtml e.demo
+        ++ "\" target=\"_blank\" rel=\"noopener\">Open demo in a new tab &#8599;</a></div>"
+        ++ "<iframe title=\""
+        ++ escapeHtml e.title
+        ++ " demo\" src=\""
+        ++ escapeHtml e.demo
+        ++ "\" loading=\"lazy\"></iframe></section>"
+        ++ "<section class=\"src\"><h2>Source</h2><pre><code class=\"language-elm\">"
+        ++ escapeHtml source
+        ++ "</code></pre></section></main>"
+        ++ "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js\"></script>"
+        ++ "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elm.min.js\"></script>"
+        ++ "<script>hljs.highlightAll();</script>"
+        ++ "</body></html>\n"
+
+
+{-| The wrapper-page stylesheet (written to page.css), formerly inlined by the Java generator. -}
+pageStyles : String
+pageStyles =
+    ":root{--accent:#5fabdc;--ink:#293c4b}\n"
+        ++ "*{box-sizing:border-box}\n"
+        ++ "body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}\n"
+        ++ ".bar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;"
+        ++ "border-bottom:1px solid #eee;position:sticky;top:0;background:#fff}\n"
+        ++ ".home{color:var(--accent);text-decoration:none;font-weight:600}\n"
+        ++ "main{max-width:900px;margin:0 auto;padding:24px}\n"
+        ++ "h1 small{font-size:.9rem;color:#889;font-weight:400}\n"
+        ++ ".demo-head{display:flex;justify-content:flex-end;margin-bottom:6px}\n"
+        ++ ".newtab{color:var(--accent);text-decoration:none;font-size:.85rem;font-weight:600}\n"
+        ++ ".demo iframe{width:100%;min-height:420px;border:1px solid #e3e3e3;border-radius:10px;background:#fff}\n"
+        ++ ".src pre{background:#0f1720;border-radius:10px;overflow:auto;line-height:1.5}\n"
+        ++ ".src pre code{display:block;padding:16px;color:#e6edf3}\n"
+        ++ ".badge{font-size:.72rem;padding:3px 10px;border-radius:999px}\n"
+        ++ ".badge.live{background:#e3f4e1;color:#246b1e}\n"
+        ++ ".badge.snapshot{background:#fdf0d5;color:#8a5a00}\n"
+        ++ ".badge.failed{background:#f6dada;color:#9a1e1e}\n"
 
 
 parse : String -> List Row

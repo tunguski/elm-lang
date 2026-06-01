@@ -59,6 +59,15 @@ class GalleryTest {
     assertTrue(css.contains("prefers-color-scheme: dark"), "dark mode honours the OS preference");
     assertTrue(css.contains("[data-theme=dark]"), "dark mode also has an explicit toggle");
 
+    // The per-example wrapper pages are now Elm-generated too: header badge, the demo in an iframe,
+    // the highlighted source, and a link to the Elm-written page.css.
+    String wrapper = Files.readString(out.resolve("hello.html"), StandardCharsets.UTF_8);
+    assertTrue(wrapper.contains("class=\"badge live\""), wrapper.substring(0, Math.min(300, wrapper.length())));
+    assertTrue(wrapper.contains("src=\"demos/hello.html\""), "wrapper embeds the demo");
+    assertTrue(wrapper.contains("language-elm") && wrapper.contains("main ="), "wrapper shows the source");
+    assertTrue(wrapper.contains("href=\"page.css\""), "wrapper links the Elm-generated page stylesheet");
+    assertTrue(Files.exists(out.resolve("page.css")), "page.css written by the Elm generator");
+
     // The demo artifacts (compiled by the Java side) are still present and live.
     assertTrue(
         Files.readString(out.resolve("demos/hello.html"), StandardCharsets.UTF_8).contains("$start"),
