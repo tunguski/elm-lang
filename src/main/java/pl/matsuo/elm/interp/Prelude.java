@@ -441,6 +441,7 @@ public final class Prelude {
     registerFile();
     registerMath();
     registerWebGL();
+    registerRegex();
   }
 
   // --- Math.Vector3 / Math.Matrix4 (elm-explorations/linear-algebra) -----
@@ -459,6 +460,63 @@ public final class Prelude {
 
   private static double[] m4(Object o) {
     return (double[]) ((ElmData) o).arg(0);
+  }
+
+  // --- Regex (elm/regex) -------------------------------------------------
+
+  private static java.util.regex.Pattern pat(Object o) {
+    return (java.util.regex.Pattern) ((ElmData) o).arg(0);
+  }
+
+  /** A `Regex.Match` record { match, index, number, submatches }. */
+  private static ElmRecord matchRecord(java.util.regex.Matcher m, int number) {
+    java.util.List<Object> subs = new java.util.ArrayList<>();
+    for (int g = 1; g <= m.groupCount(); g++) {
+      subs.add(m.group(g) == null ? NOTHING : just(m.group(g)));
+    }
+    java.util.Map<String, Object> f = new java.util.LinkedHashMap<>();
+    f.put("match", m.group());
+    f.put("index", (long) m.start());
+    f.put("number", (long) (number + 1));
+    f.put("submatches", ElmList.fromJava(subs));
+    return new ElmRecord(f);
+  }
+
+  private static void registerRegex() {
+    BUILTINS.put("Regex.never", new ElmData("$Regex", new Object[] {java.util.regex.Pattern.compile("(?!)")}));
+    fn("Regex.fromString", 1, a -> {
+      try {
+        return just(new ElmData("$Regex", new Object[] {java.util.regex.Pattern.compile((String) a[0])}));
+      } catch (RuntimeException e) {
+        return NOTHING;
+      }
+    });
+    fn("Regex.contains", 2, a -> pat(a[0]).matcher((String) a[1]).find());
+    fn("Regex.split", 2, a -> {
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      for (String part : pat(a[0]).split((String) a[1], -1)) {
+        out.add(part);
+      }
+      return ElmList.fromJava(out);
+    });
+    fn("Regex.find", 2, a -> {
+      java.util.regex.Matcher m = pat(a[0]).matcher((String) a[1]);
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      for (int n = 0; m.find(); n++) {
+        out.add(matchRecord(m, n));
+      }
+      return ElmList.fromJava(out);
+    });
+    fn("Regex.replace", 3, a -> {
+      java.util.regex.Matcher m = pat(a[0]).matcher((String) a[2]);
+      StringBuilder sb = new StringBuilder();
+      for (int n = 0; m.find(); n++) {
+        String rep = (String) Apply.apply(a[1], matchRecord(m, n));
+        m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep));
+      }
+      m.appendTail(sb);
+      return sb.toString();
+    });
   }
 
   private static void registerMath() {

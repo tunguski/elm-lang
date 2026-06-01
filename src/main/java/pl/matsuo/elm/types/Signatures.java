@@ -381,6 +381,15 @@ public final class Signatures {
     // A kernel command used by the in-browser editor: open a file picker and hand the chosen file's
     // name and text content to the message constructor.
     g("File.openPicker", "(String -> String -> msg) -> Cmd msg");
+
+    // Regex (elm/regex). `Match` is a record alias inlined here so `.match`/`.index`/… resolve.
+    String match = "{ match : String, index : Int, number : Int, submatches : List (Maybe String) }";
+    g("Regex.never", "Regex");
+    g("Regex.fromString", "String -> Maybe Regex");
+    g("Regex.contains", "Regex -> String -> Bool");
+    g("Regex.split", "Regex -> String -> List String");
+    g("Regex.find", "Regex -> String -> List " + match);
+    g("Regex.replace", "Regex -> (" + match + " -> String) -> String -> String");
   }
 
   private static void registerCollections() {

@@ -89,6 +89,9 @@ function $setInsert(s, x){ var a=s.a.slice(), i=$setFind(a,x); if(i<0)a.splice(-
 
 // ---- prelude (canonical Module.name -> curried function) ----
 function $maybe(v){ return v===undefined?$data('Nothing',[]):$data('Just',[v]); }
+// A Regex.Match record from a RegExp exec result (find) or replace-callback arguments.
+function $regexMatch(m, number){ var subs=[]; for(var i=1;i<m.length;i++) subs.push($maybe(m[i])); return {match:m[0], index:m.index, number:number, submatches:$list(subs)}; }
+function $regexMatchOf(matchStr, index, number, groups){ return {match:matchStr, index:index, number:number, submatches:$list(groups.map($maybe))}; }
 var $rt = {
   'Dict.empty': {$:'Dict',a:[]},
   'Dict.singleton': function(k){ return function(v){ return {$:'Dict',a:[[k,v]]}; }; },
@@ -216,6 +219,13 @@ var $rt = {
   'String.reverse': function(s){ return s.split('').reverse().join(''); },
   'String.append': function(a){ return function(b){ return a+b; }; },
   'String.concat': function(xs){ return $listToArray(xs).join(''); },
+  // Regex (elm/regex): a Regex value is $data('$Regex',[source]); a Match is a plain record.
+  'Regex.never': $data('$Regex',['(?!)']),
+  'Regex.fromString': function(s){ try { new RegExp(s); return $data('Just',[$data('$Regex',[s])]); } catch(e){ return $data('Nothing',[]); } },
+  'Regex.contains': function(re){ return function(s){ return new RegExp(re._[0]).test(s); }; },
+  'Regex.split': function(re){ return function(s){ return $list(s.split(new RegExp(re._[0]))); }; },
+  'Regex.find': function(re){ return function(s){ var rx=new RegExp(re._[0],'g'),out=[],m,n=0; while((m=rx.exec(s))!==null){ out.push($regexMatch(m, ++n)); if(m.index===rx.lastIndex) rx.lastIndex++; } return $list(out); }; },
+  'Regex.replace': function(re){ return function(f){ return function(s){ var rx=new RegExp(re._[0],'g'),n=0; return s.replace(rx, function(){ var a=arguments; var groups=[].slice.call(a,1,a.length-2); return f($regexMatchOf(a[0], a[a.length-2], ++n, groups)); }); }; }; },
   'String.join': function(sep){ return function(xs){ return $listToArray(xs).join(sep); }; },
   'String.split': function(sep){ return function(s){ return $list(sep===''?s.split(''):s.split(sep)); }; },
   'String.words': function(s){ var t=s.trim(); return $list(t===''?[]:t.split(/\s+/)); },

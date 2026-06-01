@@ -206,6 +206,20 @@ class JsBackendTest {
   }
 
   @Test
+  void regexAgreesWithInterpreter() {
+    // The Regex module must give the same results compiled to JS as on the interpreter.
+    sameModule(
+        "re = Maybe.withDefault Regex.never (Regex.fromString \"[0-9]+\")\n"
+            + "main = Regex.replace re (\\m -> \"[\" ++ m.match ++ \"]\") \"a1b22c333\"\n");
+    sameModule(
+        "re = Maybe.withDefault Regex.never (Regex.fromString \",\")\n"
+            + "main = String.join \"|\" (Regex.split re \"a,b,c\")\n");
+    sameModule(
+        "re = Maybe.withDefault Regex.never (Regex.fromString \"[0-9]+\")\n"
+            + "main = List.map .match (Regex.find re \"x12y345\")\n");
+  }
+
+  @Test
   void jsonEncode() {
     same("Json.Encode.encode 0 (Json.Encode.int 42)");
     same("Json.Encode.encode 0 (Json.Encode.list Json.Encode.int [1, 2, 3])");
