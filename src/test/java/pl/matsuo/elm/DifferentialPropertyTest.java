@@ -149,7 +149,7 @@ class DifferentialPropertyTest {
       if (depth <= 0 || rng.nextInt(100) < 30) {
         return Integer.toString(rng.nextInt(20));
       }
-      return switch (rng.nextInt(6)) {
+      return switch (rng.nextInt(7)) {
         case 0 -> "(" + compoundInt(depth - 1) + " + " + compoundInt(depth - 1) + ")";
         case 1 -> "(" + compoundInt(depth - 1) + " - " + compoundInt(depth - 1) + ")";
         case 2 -> // record literal + field access
@@ -161,6 +161,9 @@ class DifferentialPropertyTest {
         case 4 -> // tuple literal + single-branch destructure
             "(case ( " + compoundInt(depth - 1) + ", " + compoundInt(depth - 1)
                 + " ) of ( cx, cy ) -> cx + cy)";
+        case 5 -> // nested tuple destructure
+            "(case ( ( " + compoundInt(depth - 1) + ", " + compoundInt(depth - 1) + " ), "
+                + compoundInt(depth - 1) + " ) of ( ( cx, cy ), cz ) -> cx + cy - cz)";
         default ->
             "(if " + compoundInt(depth - 1) + " < " + compoundInt(depth - 1) + " then "
                 + compoundInt(depth - 1) + " else " + compoundInt(depth - 1) + ")";

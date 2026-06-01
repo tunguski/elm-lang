@@ -91,6 +91,14 @@ class WasmGcTest {
   }
 
   @Test
+  void nestedTuplePatterns() throws Exception {
+    // Nested tuple destructuring in both `case` and `let`, to any depth.
+    agrees("f p =\n    case p of\n        ( ( x, y ), z ) -> x + y + z\nmain = f ( ( 1, 2 ), 3 )\n"); // 6
+    agrees("main =\n    let\n        ( ( x, y ), z ) = ( ( 4, 5 ), 6 )\n    in\n    x + y + z\n"); // 15
+    agrees("g p =\n    case p of\n        ( a, ( b, ( c, d ) ) ) -> a + b + c + d\nmain = g ( 1, ( 2, ( 3, 4 ) ) )\n"); // 10
+  }
+
+  @Test
   void tupleAcrossFunctionsAndConditionals() throws Exception {
     // A tuple returned from a function, chosen by an `if`, then projected.
     agrees(

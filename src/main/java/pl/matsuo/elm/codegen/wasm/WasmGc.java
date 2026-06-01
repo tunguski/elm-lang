@@ -1880,22 +1880,45 @@ public final class WasmGc {
       gen(value);
       code.write(0x21);
       leb(code, scrut);
+      bindTupleFromLocal(tp, tupleTy, scrut);
+    }
+
+    /** Binds a tuple pattern's fields from a local holding the tuple struct, recursing into nested
+     * tuple patterns (so {@code ( ( x, y ), z )} works). */
+    private void bindTupleFromLocal(Pattern.Tuple tp, Ty tupleTy, int scrut) {
+      int ti = tupleIndex(tupleTy);
       List<Ty> items = ((Ty.Tuple) Types.prune(tupleTy)).items();
       for (int i = 0; i < tp.items().size(); i++) {
-        if (tp.items().get(i) instanceof Pattern.Var pv) {
+        Pattern item = tp.items().get(i);
+        if (item instanceof Pattern.Wildcard) {
+          continue;
+        }
+        if (item instanceof Pattern.Var pv) {
           int idx = freshLocal(pv.name(), wOf(items.get(i), tuples));
-          code.write(0x20);
-          leb(code, scrut);
-          code.write(0xFB);
-          code.write(0x02); // struct.get
-          leb(code, ti);
-          leb(code, i);
+          structGet(scrut, ti, i);
           code.write(0x21);
           leb(code, idx);
-        } else if (!(tp.items().get(i) instanceof Pattern.Wildcard)) {
-          throw unsupported("a nested pattern in a tuple destructure");
+        } else if (item instanceof Pattern.Tuple nested) {
+          Ty nestedTy = items.get(i);
+          int nestedLocal = freshLocal("$tup" + code.size(), new Ref(tupleIndex(nestedTy)));
+          structGet(scrut, ti, i);
+          code.write(0x21);
+          leb(code, nestedLocal);
+          bindTupleFromLocal(nested, nestedTy, nestedLocal);
+        } else {
+          throw unsupported("a nested non-tuple pattern in a tuple destructure");
         }
       }
+    }
+
+    /** Emits {@code (struct.get $ti field (local.get scrut))}, leaving the field on the stack. */
+    private void structGet(int scrut, int ti, int field) {
+      code.write(0x20);
+      leb(code, scrut);
+      code.write(0xFB);
+      code.write(0x02); // struct.get
+      leb(code, ti);
+      leb(code, field);
     }
 
     /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
