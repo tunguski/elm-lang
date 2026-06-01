@@ -152,7 +152,9 @@ class SiteGeneratorTest {
     }
     // Relative Markdown links are rewritten for the flat gallery and out to GitHub.
     String server = Files.readString(out.resolve("server.html"), StandardCharsets.UTF_8);
-    assertTrue(server.contains("github.com/tunguski/elm-lang/blob/main/"), "repo links absolute-ised");
+    assertTrue(
+        server.contains("github.com/tunguski/elm-lang/blob/master/"),
+        "repo links absolute-ised to the default branch");
 
     // The landing page links to the rendered docs.
     String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
