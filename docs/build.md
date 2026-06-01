@@ -32,6 +32,9 @@ elm build              # validate → compile → test → package (the default)
 elm build test         # everything up to the test phase
 elm build install      # the whole lifecycle
 elm build clean        # remove every module's output
+elm build --dry-run    # print the plan (phases, goals, tasks) without running it
+elm build --watch      # re-run whenever a .elm file changes (Ctrl-C to stop)
+elm build --init       # scaffold a starter build.elm
 elm build install -f packages.build.elm   # a non-default build file
 ```
 
@@ -86,8 +89,9 @@ goal : Phase -> String -> (Module -> List Task) -> Goal
 ```
 
 When a module declares no goals, the **default lifecycle bindings** (`defaultGoals`) apply: validate
-logs, compile makes the output dir and emits a JS bundle, test runs the module's `tests/` directory,
-package logs the artifact. To keep the defaults *and* add your own, include them explicitly:
+type-checks the entry, compile makes the output dir and emits a JS bundle, test runs the module's
+`tests/` directory, package zips the output to `dist/<name>.zip`, and install copies that archive
+into `build-repo/`. To keep the defaults *and* add your own, include them explicitly:
 
 ```elm
 module_ "app" "."
@@ -106,8 +110,10 @@ builders:
 
 | Builder | Action |
 |---|---|
+| `check : String -> Task` | Type-check an entry file (fails the build on a type error). |
 | `compile : Backend -> String -> String -> Task` | Compile an entry file to a target (`JS`, `Wasm`, `WasmGc`). |
 | `test : String -> Task` | Run the tests under a directory (a no-op if absent). |
+| `archive : String -> String -> Task` | Zip a directory tree into an archive file. |
 | `exec : String -> List String -> Task` | Run an external command (the escape hatch). |
 | `makeDir : String -> Task` | Create a directory. |
 | `copy : String -> String -> Task` | Copy a file or directory tree. |
