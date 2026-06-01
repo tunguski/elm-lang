@@ -123,7 +123,8 @@ group =
 
 
 {-| Converts a (small subset of) Markdown into content blocks: blank-line-separated groups become
-`#`/`##`/`###` headings, fenced code blocks, `- ` bullet lists, or paragraphs. Lets a `*.md` file be
+`#`/`##`/`###` headings, fenced code blocks, `- ` bullet lists, or paragraphs. Headings, paragraphs
+and bullets also support inline `code`, **bold**, *italic* and [label](url). Lets a `*.md` file be
 dropped straight into a page. -}
 markdown : String -> List Block
 markdown src =
@@ -204,11 +205,11 @@ renderBlock block =
         Title n s ->
             ("<h%N%>%S%</h%N%>"
                 |> String.replace "%N%" (String.fromInt n)
-                |> String.replace "%S%" (escape s)
+                |> String.replace "%S%" (inline s)
             )
 
         Text s ->
-            "<p>%S%</p>" |> String.replace "%S%" (escape s)
+            "<p>%S%</p>" |> String.replace "%S%" (inline s)
 
         Code s ->
             "<pre><code>%S%</code></pre>" |> String.replace "%S%" (escape s)
@@ -231,7 +232,137 @@ renderBlock block =
 
 listItem : String -> String
 listItem item =
-    "<li>%S%</li>" |> String.replace "%S%" (escape item)
+    "<li>%S%</li>" |> String.replace "%S%" (inline item)
+
+
+{-| Inline Markdown within a paragraph/heading/bullet: `code`, **bold**, *italic* and [label](url).
+HTML special characters are escaped; an unmatched marker is left as a literal character. -}
+inline : String -> String
+inline s =
+    fmt (String.toList s)
+
+
+fmt : List Char -> String
+fmt chars =
+    case chars of
+        [] ->
+            ""
+
+        '*' :: '*' :: rest ->
+            case takeUntilBold [] rest of
+                Just ( body, after ) ->
+                    "<strong>" ++ fmt body ++ "</strong>" ++ fmt after
+
+                Nothing ->
+                    "*" ++ fmt ('*' :: rest)
+
+        '*' :: rest ->
+            case takeUntil '*' [] rest of
+                Just ( body, after ) ->
+                    "<em>" ++ fmt body ++ "</em>" ++ fmt after
+
+                Nothing ->
+                    "*" ++ fmt rest
+
+        '`' :: rest ->
+            case takeUntil '`' [] rest of
+                Just ( body, after ) ->
+                    "<code>" ++ escape (String.fromList body) ++ "</code>" ++ fmt after
+
+                Nothing ->
+                    "`" ++ fmt rest
+
+        '[' :: rest ->
+            case takeLink rest of
+                Just ( label, url, after ) ->
+                    ("""<a href="%H%">%L%</a>"""
+                        |> String.replace "%H%" (escape (String.fromList url))
+                        |> String.replace "%L%" (fmt label)
+                    )
+                        ++ fmt after
+
+                Nothing ->
+                    "[" ++ fmt rest
+
+        c :: rest ->
+            escapeChar c ++ fmt rest
+
+
+{-| Splits at the first closing `**`, requiring a non-empty body; `Nothing` if unterminated. -}
+takeUntilBold : List Char -> List Char -> Maybe ( List Char, List Char )
+takeUntilBold acc chars =
+    case chars of
+        [] ->
+            Nothing
+
+        '*' :: '*' :: rest ->
+            if acc == [] then
+                Nothing
+
+            else
+                Just ( List.reverse acc, rest )
+
+        c :: rest ->
+            takeUntilBold (c :: acc) rest
+
+
+{-| Splits at the first occurrence of `delim`, requiring a non-empty body. -}
+takeUntil : Char -> List Char -> List Char -> Maybe ( List Char, List Char )
+takeUntil delim acc chars =
+    case chars of
+        [] ->
+            Nothing
+
+        c :: rest ->
+            if c == delim then
+                if acc == [] then
+                    Nothing
+
+                else
+                    Just ( List.reverse acc, rest )
+
+            else
+                takeUntil delim (c :: acc) rest
+
+
+{-| Parses the remainder of a `[label](url)` link after the opening `[`. -}
+takeLink : List Char -> Maybe ( List Char, List Char, List Char )
+takeLink chars =
+    case takeUntil ']' [] chars of
+        Just ( label, afterLabel ) ->
+            case afterLabel of
+                '(' :: urlRest ->
+                    case takeUntil ')' [] urlRest of
+                        Just ( url, after ) ->
+                            Just ( label, url, after )
+
+                        Nothing ->
+                            Nothing
+
+                _ ->
+                    Nothing
+
+        Nothing ->
+            Nothing
+
+
+escapeChar : Char -> String
+escapeChar c =
+    case c of
+        '&' ->
+            "&amp;"
+
+        '<' ->
+            "&lt;"
+
+        '>' ->
+            "&gt;"
+
+        '"' ->
+            "&quot;"
+
+        _ ->
+            String.fromChar c
 
 
 linkAnchor : ( String, String ) -> String

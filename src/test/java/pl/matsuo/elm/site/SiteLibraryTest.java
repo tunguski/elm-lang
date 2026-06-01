@@ -29,6 +29,13 @@ class SiteLibraryTest {
 
       feedXml : String
       feedXml = Site.feed "My blog" "https://example.com/" pages
+
+      inlineHtml : String
+      inlineHtml =
+          Site.render
+              (Site.page "p.html" "T"
+                  (Site.markdown "Some **bold**, *italic*, `code` and a [link](https://e.com/?a=1). Also 2 < 3.")
+              )
       """;
 
   private static String value(String name) {
@@ -49,5 +56,15 @@ class SiteLibraryTest {
     assertTrue(xml.contains("<title>My blog</title>"), xml);
     assertTrue(xml.contains("<item><title>First</title><link>https://example.com/a.html</link></item>"), xml);
     assertTrue(xml.contains("<item><title>Second</title><link>https://example.com/b.html</link></item>"), xml);
+  }
+
+  @Test
+  void markdownParagraphsSupportInlineFormatting() {
+    String html = value("inlineHtml");
+    assertTrue(html.contains("<strong>bold</strong>"), html);
+    assertTrue(html.contains("<em>italic</em>"), html);
+    assertTrue(html.contains("<code>code</code>"), html);
+    assertTrue(html.contains("<a href=\"https://e.com/?a=1\">link</a>"), html);
+    assertTrue(html.contains("2 &lt; 3."), html); // HTML special characters still escaped
   }
 }
