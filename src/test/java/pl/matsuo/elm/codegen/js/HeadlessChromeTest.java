@@ -204,6 +204,7 @@ class HeadlessChromeTest {
     assertTrue(dom.contains("Buttons.elm"), "starter file listed");
     assertTrue(dom.contains(">-<"), "selected file's main rendered live (the minus button)");
     assertTrue(dom.contains("<div>0</div>"), "live app shows the initial interpreted model");
+    assertTrue(dom.contains("Open .elm"), "the Open-file button is present");
   }
 
   @Test

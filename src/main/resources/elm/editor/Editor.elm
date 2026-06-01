@@ -48,6 +48,8 @@ type Msg
     | EditSource String
     | SetNewName String
     | AddFile
+    | OpenFile
+    | OpenedFile String String
     | RemoveFile String
     | Interp Value
     | Rewind Int
@@ -302,6 +304,21 @@ update msg model =
 
             else
                 refreshAndRun { model | files = model.files ++ [ ( name, "main = text \"new file\"" ) ], selected = name, newName = "" }
+
+        OpenFile ->
+            -- Open a local .elm from disk via the browser file picker; its contents arrive as OpenedFile.
+            ( model, File.openPicker (\name content -> OpenedFile name content) )
+
+        OpenedFile name content ->
+            let
+                unique =
+                    if hasFile name model.files then
+                        "imported-" ++ name
+
+                    else
+                        name
+            in
+            refreshAndRun { model | files = model.files ++ [ ( unique, content ) ], selected = unique }
 
         RemoveFile name ->
             let
@@ -602,6 +619,19 @@ fileSidebar model =
                 ]
                 [ text "+" ]
             ]
+        , button
+            [ onClick OpenFile
+            , style "margin-top" "6px"
+            , style "width" "100%"
+            , style "border" "1px solid #d0d7de"
+            , style "background" "#f6f8fa"
+            , style "color" "#24292f"
+            , style "border-radius" "6px"
+            , style "padding" "6px"
+            , style "cursor" "pointer"
+            , style "font-size" "13px"
+            ]
+            [ text "Open .elm…" ]
         ]
 
 
