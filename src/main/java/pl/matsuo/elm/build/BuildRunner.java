@@ -32,6 +32,12 @@ public final class BuildRunner {
    * Relative task paths resolve against {@code baseDir} — the build file's directory, like Maven's
    * {@code pom.xml} dir — so a build runs the same regardless of the process working directory. */
   public static int run(Object planList, Path baseDir, PrintStream out) {
+    return run(planList, baseDir, false, out);
+  }
+
+  /** As {@link #run(Object, Path, PrintStream)}, optionally skipping {@code compile}/{@code archive}
+   * tasks whose output is already newer than their inputs (incremental builds). */
+  public static int run(Object planList, Path baseDir, boolean incremental, PrintStream out) {
     for (Object stepObj : ((ElmList) Thunk.resolve(planList)).toJava()) {
       ElmRecord step = (ElmRecord) Thunk.resolve(stepObj);
       String phase = str(step.get("phase"));
@@ -39,7 +45,7 @@ public final class BuildRunner {
       String goal = str(step.get("goal"));
       out.println("[" + phase + "] " + module + " :: " + goal);
       for (Object taskObj : ((ElmList) Thunk.resolve(step.get("tasks"))).toJava()) {
-        int code = runTask((ElmData) Thunk.resolve(taskObj), baseDir, out);
+        int code = runTask((ElmData) Thunk.resolve(taskObj), baseDir, incremental, out);
         if (code != 0) {
           out.println("BUILD FAILED — " + phase + ":" + module + ":" + goal + " (exit " + code + ")");
           return code;
@@ -90,7 +96,7 @@ public final class BuildRunner {
   }
 
   /** Performs one task, returning its exit code (0 = success). */
-  private static int runTask(ElmData task, Path baseDir, PrintStream out) {
+  private static int runTask(ElmData task, Path baseDir, boolean incremental, PrintStream out) {
     try {
       switch (task.ctor()) {
         case "Log" -> out.println("  " + str(task.arg(0)));
@@ -104,7 +110,7 @@ public final class BuildRunner {
           Files.writeString(target, str(task.arg(1)), StandardCharsets.UTF_8);
         }
         case "Copy" -> copy(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))));
-        case "Archive" -> archive(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))), out);
+        case "Archive" -> archive(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))), incremental, out);
         case "Run" -> {
           return exec(str(task.arg(0)), strings(task.arg(1)), baseDir, out);
         }
@@ -112,7 +118,7 @@ public final class BuildRunner {
           return check(strings(task.arg(0)), baseDir, out);
         }
         case "CompileModule" -> compile(str(((ElmData) Thunk.resolve(task.arg(0))).ctor()),
-            strings(task.arg(1)), str(task.arg(2)), baseDir, out);
+            strings(task.arg(1)), str(task.arg(2)), baseDir, incremental, out);
         case "RunTests" -> {
           return runTests(str(task.arg(0)), baseDir, out);
         }
@@ -130,16 +136,24 @@ public final class BuildRunner {
 
   /** Compiles a module's source files (entry first) to {@code target} with the named backend. The JS
    * and linear-WASM backends bundle all the sources; WasmGC compiles the entry source only. */
-  private static void compile(String backend, List<String> entries, String target, Path baseDir, PrintStream out)
-      throws IOException {
+  private static void compile(String backend, List<String> entries, String target, Path baseDir,
+      boolean incremental, PrintStream out) throws IOException {
     if (entries.isEmpty()) {
       throw new IOException("compile: no source files");
     }
-    List<String> sources = new ArrayList<>();
-    for (String e : entries) {
-      sources.add(Files.readString(at(baseDir, e), StandardCharsets.UTF_8));
-    }
     Path path = at(baseDir, target);
+    List<Path> inputs = new ArrayList<>();
+    for (String e : entries) {
+      inputs.add(at(baseDir, e));
+    }
+    if (incremental && upToDate(path, inputs)) {
+      out.println("  up to date " + target);
+      return;
+    }
+    List<String> sources = new ArrayList<>();
+    for (Path p : inputs) {
+      sources.add(Files.readString(p, StandardCharsets.UTF_8));
+    }
     if (path.getParent() != null) {
       Files.createDirectories(path.getParent());
     }
@@ -224,9 +238,19 @@ public final class BuildRunner {
   }
 
   /** Zips a directory tree (or a single file) into {@code zip}, with entries relative to {@code src}. */
-  private static void archive(Path src, Path zip, PrintStream out) throws IOException {
+  private static void archive(Path src, Path zip, boolean incremental, PrintStream out) throws IOException {
     if (!Files.exists(src)) {
       throw new IOException("nothing to archive at " + src);
+    }
+    if (incremental) {
+      List<Path> inputs = new ArrayList<>();
+      try (var walk = Files.walk(src)) {
+        walk.filter(Files::isRegularFile).forEach(inputs::add);
+      }
+      if (upToDate(zip, inputs)) {
+        out.println("  up to date " + zip);
+        return;
+      }
     }
     if (zip.getParent() != null) {
       Files.createDirectories(zip.getParent());
@@ -282,6 +306,20 @@ public final class BuildRunner {
       }
     }
     Files.deleteIfExists(root);
+  }
+
+  /** Whether {@code target} exists and is at least as new as every input — i.e. nothing to rebuild. */
+  private static boolean upToDate(Path target, List<Path> inputs) throws IOException {
+    if (!Files.exists(target)) {
+      return false;
+    }
+    long out = Files.getLastModifiedTime(target).toMillis();
+    for (Path in : inputs) {
+      if (!Files.exists(in) || Files.getLastModifiedTime(in).toMillis() > out) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Resolves a (possibly relative) task path against the build's base directory. */

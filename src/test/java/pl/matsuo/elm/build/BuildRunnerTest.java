@@ -214,6 +214,35 @@ class BuildRunnerTest {
   }
 
   @Test
+  void incrementalSkipsCompileWhenTheOutputIsUpToDate() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-incr-");
+    Files.createDirectories(dir.resolve("src"));
+    Files.writeString(
+        dir.resolve("src/Main.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"hi\"\n");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "." |> withEntry "src/Main.elm" |> withOutput "out" ]
+        """);
+    Result first = build(dir, "compile", "--incremental");
+    assertEquals(0, first.code(), first.out());
+    assertTrue(first.out().contains("compiled"), first.out());
+    // Second run: the artifact is newer than the source, so compile is skipped.
+    Result second = build(dir, "compile", "--incremental");
+    assertEquals(0, second.code(), second.out());
+    assertTrue(second.out().contains("up to date"), second.out());
+    assertFalse(second.out().contains("compiled src/Main.elm"), "did not recompile: " + second.out());
+  }
+
+  @Test
   void cleanRemovesEachModulesOutput() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-clean-");
     Files.createDirectories(dir.resolve("out"));
