@@ -1245,8 +1245,40 @@ matchPattern pat value =
             else
                 Nothing
 
+        ( PRecord fields, VRecord pairs ) ->
+            -- A record pattern `{ a, b }` binds each named field to its value (extra fields ignored).
+            List.foldr
+                (\field acc ->
+                    acc
+                        |> Maybe.andThen
+                            (\bs ->
+                                case lookupField field pairs of
+                                    Just v ->
+                                        Just (( field, v ) :: bs)
+
+                                    Nothing ->
+                                        Nothing
+                            )
+                )
+                (Just [])
+                fields
+
         _ ->
             Nothing
+
+
+lookupField : String -> List ( String, Value ) -> Maybe Value
+lookupField name pairs =
+    case pairs of
+        [] ->
+            Nothing
+
+        ( k, v ) :: rest ->
+            if k == name then
+                Just v
+
+            else
+                lookupField name rest
 
 
 matchAll : List Pattern -> List Value -> Maybe (List ( String, Value ))

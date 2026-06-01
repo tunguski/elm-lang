@@ -216,6 +216,10 @@ parseAtom tokens =
         TLambda :: rest ->
             parseLambda rest []
 
+        TLParen :: TRParen :: rest ->
+            -- The unit value `()`, modelled as the empty tuple.
+            Ok ( Tup [], rest )
+
         TLParen :: rest ->
             parseExpr rest
                 |> Result.andThen
@@ -357,44 +361,57 @@ parseLetBinding : List Token -> Result String ( ( String, Expr ), List Token )
 parseLetBinding tokens =
     case tokens of
         (TId name) :: rest ->
-            let
-                collected =
-                    collectParams rest []
+            collectParams rest [] []
+                |> Result.andThen
+                    (\( params, wrappers, afterParams ) ->
+                        case afterParams of
+                            TEquals :: afterEq ->
+                                parseExpr afterEq
+                                    |> Result.map
+                                        (\rv ->
+                                            let
+                                                wrapped =
+                                                    wrapDestructures wrappers (Tuple.first rv)
 
-                params =
-                    Tuple.first collected
-            in
-            case Tuple.second collected of
-                TEquals :: afterEq ->
-                    parseExpr afterEq
-                        |> Result.map
-                            (\rv ->
-                                let
-                                    value =
-                                        if List.isEmpty params then
-                                            Tuple.first rv
+                                                value =
+                                                    if List.isEmpty params then
+                                                        wrapped
 
-                                        else
-                                            Lam params (Tuple.first rv)
-                                in
-                                ( ( name, value ), Tuple.second rv )
-                            )
+                                                    else
+                                                        Lam params wrapped
+                                            in
+                                            ( ( name, value ), Tuple.second rv )
+                                        )
 
-                _ ->
-                    Err "expected '=' in let binding"
+                            _ ->
+                                Err "expected '=' in let binding"
+                    )
 
         _ ->
             Err "expected 'NAME =' after let"
 
 
-collectParams : List Token -> List String -> ( List String, List Token )
-collectParams tokens acc =
+{-| Collects a let/lambda binding's parameters: simple names plus tuple-pattern destructures (each
+bound to a fresh `$larg` name and unpacked by `wrapDestructures` in the body). -}
+collectParams : List Token -> List String -> List ( String, Pattern ) -> Result String ( List String, List ( String, Pattern ), List Token )
+collectParams tokens params wrappers =
     case tokens of
         (TId p) :: rest ->
-            collectParams rest (acc ++ [ p ])
+            collectParams rest (params ++ [ p ]) wrappers
+
+        TLParen :: _ ->
+            parsePatternAtom tokens
+                |> Result.andThen
+                    (\( pat, after ) ->
+                        let
+                            fresh =
+                                "$larg" ++ String.fromInt (List.length params)
+                        in
+                        collectParams after (params ++ [ fresh ]) (wrappers ++ [ ( fresh, pat ) ])
+                    )
 
         _ ->
-            ( acc, tokens )
+            Ok ( params, wrappers, tokens )
 
 
 parseLambda : List Token -> List String -> Result String ( Expr, List Token )
@@ -535,6 +552,9 @@ startsPatternAtom tokens =
         TLBracket :: _ ->
             True
 
+        TLBrace :: _ ->
+            True
+
         _ ->
             False
 
@@ -555,6 +575,23 @@ parseTuplePat tokens acc =
                     _ ->
                         Err "expected ',' or ')' in tuple pattern"
             )
+
+
+{-| Parses the field names of a record pattern `{ a, b }` (the opening `{` already consumed). -}
+parseRecordPatFields : List Token -> List String -> Result String ( Pattern, List Token )
+parseRecordPatFields tokens acc =
+    case tokens of
+        TRBrace :: rest ->
+            Ok ( PRecord acc, rest )
+
+        (TId name) :: TComma :: rest ->
+            parseRecordPatFields rest (acc ++ [ name ])
+
+        (TId name) :: TRBrace :: rest ->
+            Ok ( PRecord (acc ++ [ name ]), rest )
+
+        _ ->
+            Err "expected a field name in record pattern"
 
 
 parsePatternAtom : List Token -> Result String ( Pattern, List Token )
@@ -583,6 +620,14 @@ parsePatternAtom tokens =
 
         TLBracket :: TRBracket :: rest ->
             Ok ( PNil, rest )
+
+        TLParen :: TRParen :: rest ->
+            -- The unit pattern `()` (e.g. `init () = …`): unit carries no data, so it always matches.
+            Ok ( PWild, rest )
+
+        TLBrace :: rest ->
+            -- A record pattern `{ a, b }`: binds the named fields (e.g. `GotViewport { viewport } ->`).
+            parseRecordPatFields rest []
 
         TLParen :: rest ->
             parsePattern rest

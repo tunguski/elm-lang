@@ -48,6 +48,7 @@ type Pattern
     | PNil
     | PCons Pattern Pattern
     | PTup (List Pattern)
+    | PRecord (List String)
 
 
 {-| A top-level definition `name args = body`. -}

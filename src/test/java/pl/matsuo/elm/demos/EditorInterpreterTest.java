@@ -118,6 +118,31 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsUnitRecordAndDestructuringPatterns() {
+    // Unit pattern `()` as a function parameter (e.g. `init () = …`).
+    assertEquals("42", evalProject(files("Main.elm", "f () = 42"), "f ()"));
+    // A `let` function binding whose parameter is a tuple pattern (e.g. crate's `transformTriangle`).
+    assertEquals("7", eval("let g (a, b) = a + b in g (3, 4)"));
+    // A record pattern binds the named fields (e.g. thwomp's `GotViewport { viewport } ->`).
+    assertEquals("5", eval("case { x = 5, y = 6 } of { x } -> x"));
+    // A constructor whose argument is a tuple pattern (e.g. thwomp's `Just (face, side) ->`).
+    assertEquals("9", eval("case Just (4, 5) of Just (a, b) -> a + b ; Nothing -> 0"));
+  }
+
+  @Test
+  void parsesTheWebglExamples() throws Exception {
+    // triangle/crate/thwomp/cube use unit, record and tuple-destructuring patterns plus `[glsl| … |]`
+    // shader literals; the editor must at least parse them and evaluate `main` to a program record.
+    for (String slug : new String[] {"triangle", "crate", "thwomp", "cube"}) {
+      String src =
+          java.nio.file.Files.readString(
+              java.nio.file.Path.of("src/test/resources/examples/" + slug + ".elm"));
+      String out = evalProject(files("Main.elm", src), "main");
+      assertTrue(out.startsWith("{ init ="), slug + " did not parse/evaluate: " + out);
+    }
+  }
+
+  @Test
   void interpretsRecursiveCustomTypeViaCase() {
     // A recursive tree summed by a recursive function with case — closures + ctors + matching.
     assertEquals(
