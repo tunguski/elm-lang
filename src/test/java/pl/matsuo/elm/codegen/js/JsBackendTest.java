@@ -238,6 +238,19 @@ class JsBackendTest {
   }
 
   @Test
+  void dictSetFilterPartitionAndMapAgreeAcrossBackends() {
+    String d = "(Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ), ( \"c\", 3 ) ])";
+    same("Dict.toList (Dict.filter (\\_ v -> v > 1) " + d + ")");
+    same("Dict.toList (Tuple.first (Dict.partition (\\_ v -> v > 1) " + d + "))");
+    same("Dict.toList (Tuple.second (Dict.partition (\\_ v -> v > 1) " + d + "))");
+    String s = "(Set.fromList [ 1, 2, 3, 4 ])";
+    same("Set.toList (Set.filter (\\x -> modBy 2 x == 0) " + s + ")");
+    same("Set.toList (Set.map (\\x -> x * 10) " + s + ")");
+    same("Set.toList (Tuple.first (Set.partition (\\x -> x > 2) " + s + "))");
+    same("Set.toList (Tuple.second (Set.partition (\\x -> x > 2) " + s + "))");
+  }
+
+  @Test
   void arrayAndListAdditionsAgreeAcrossBackends() {
     same("Array.toList (Array.filter (\\x -> x > 2) (Array.fromList [ 1, 2, 3, 4 ]))");
     same("Array.toIndexedList (Array.fromList [ \"a\", \"b\", \"c\" ])");

@@ -274,6 +274,8 @@
   $rt['Set.union']=function(a){ return function(b){ return $data('$Set',[Object.assign({},b._[0],a._[0])]); }; };
   $rt['Set.foldl']=function(f){ return function(acc){ return function(s){ var o=s._[0]; Object.keys(o).sort().forEach(function(k){ acc=f(o[k])(acc); }); return acc; }; }; };
   $rt['Set.map']=function(f){ return function(s){ var o={}; var src=s._[0]; Object.keys(src).forEach(function(k){ var y=f(src[k]); o[$k(y)]=y; }); return $data('$Set',[o]); }; };
+  $rt['Set.filter']=function(f){ return function(s){ var o={}; var src=s._[0]; Object.keys(src).forEach(function(k){ if(f(src[k])) o[k]=src[k]; }); return $data('$Set',[o]); }; };
+  $rt['Set.partition']=function(f){ return function(s){ var yes={},no={}; var src=s._[0]; Object.keys(src).forEach(function(k){ (f(src[k])?yes:no)[k]=src[k]; }); return $tuple([$data('$Set',[yes]),$data('$Set',[no])]); }; };
   $rt['Dict.empty']=$data('$Dict',[{}]);
   $rt['Dict.singleton']=function(k){ return function(v){ var o={}; o[$k(k)]=$tuple([k,v]); return $data('$Dict',[o]); }; };
   $rt['Dict.insert']=function(k){ return function(v){ return function(d){ var o=Object.assign({},d._[0]); o[$k(k)]=$tuple([k,v]); return $data('$Dict',[o]); }; }; };
@@ -289,6 +291,8 @@
   $rt['Dict.update']=function(k){ return function(f){ return function(d){ var o=Object.assign({},d._[0]); var cur=o[$k(k)]; var mb=f(cur?$data('Just',[cur.vs[1]]):$data('Nothing',[])); if(mb.$==='Just'){ o[$k(k)]=$tuple([k,mb._[0]]); } else { delete o[$k(k)]; } return $data('$Dict',[o]); }; }; };
   $rt['Dict.map']=function(f){ return function(d){ var o={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; o[kk]=$tuple([p.vs[0], f(p.vs[0])(p.vs[1])]); }); return $data('$Dict',[o]); }; };
   $rt['Dict.foldl']=function(f){ return function(acc){ return function(d){ var o=d._[0]; Object.keys(o).sort().forEach(function(kk){ acc=f(o[kk].vs[0])(o[kk].vs[1])(acc); }); return acc; }; }; };
+  $rt['Dict.filter']=function(f){ return function(d){ var o={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; if(f(p.vs[0])(p.vs[1])) o[kk]=p; }); return $data('$Dict',[o]); }; };
+  $rt['Dict.partition']=function(f){ return function(d){ var yes={},no={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; (f(p.vs[0])(p.vs[1])?yes:no)[kk]=p; }); return $tuple([$data('$Dict',[yes]),$data('$Dict',[no])]); }; };
   // Json.Encode.dict/set over dom's Dict/Set representation (kernel.js's versions assume the other one).
   $rt['Json.Encode.dict']=function(toKey){ return function(toVal){ return function(d){ var o={},src=d._[0]; Object.keys(src).sort().forEach(function(kk){ o[toKey(src[kk].vs[0])]=toVal(src[kk].vs[1]); }); return o; }; }; };
   $rt['Json.Encode.set']=function(toVal){ return function(s){ var o=s._[0]; return Object.keys(o).sort().map(function(kk){ return toVal(o[kk]); }); }; };
