@@ -18,6 +18,7 @@ module Build exposing
     , withGoals
     , addGoal
     , exec
+    , check
     , compile
     , test
     , copy
@@ -128,6 +129,7 @@ type Backend
 any command); the rest map onto the toolchain and the filesystem. Prefer the lowercase builders. -}
 type Task
     = Run String (List String)
+    | Check String
     | CompileModule Backend String String
     | RunTests String
     | Copy String String
@@ -220,6 +222,12 @@ addGoal g m =
 exec : String -> List String -> Task
 exec =
     Run
+
+
+{-| Type-check a module's entry file (failing the build on a type error). -}
+check : String -> Task
+check =
+    Check
 
 
 {-| Compile a module's entry file to a backend, writing the artifact to a path. -}
@@ -321,12 +329,12 @@ phasesUpTo target =
 
 
 {-| The default lifecycle bindings, used for any module that declares no goals of its own: validate
-logs, compile makes the output dir and emits a JS bundle, test runs the module's `tests/` directory,
-and package logs the produced artifact. Include them explicitly (`defaultGoals ++ yours`) to keep
-them when you add your own. -}
+type-checks the entry, compile makes the output dir and emits a JS bundle, test runs the module's
+`tests/` directory, and package logs the produced artifact. Include them explicitly
+(`defaultGoals ++ yours`) to keep them when you add your own. -}
 defaultGoals : List Goal
 defaultGoals =
-    [ goal Validate "validate" (\m -> [ log ("validate " ++ m.name) ])
+    [ goal Validate "validate" (\m -> [ check m.entry ])
     , goal Compile "compile" (\m -> [ makeDir m.output, compile JS m.entry (m.output ++ "/" ++ m.name ++ ".js") ])
     , goal Test "test" (\m -> [ test (m.path ++ "/tests") ])
     , goal Package "package" (\m -> [ log ("package " ++ m.name ++ " " ++ m.output) ])

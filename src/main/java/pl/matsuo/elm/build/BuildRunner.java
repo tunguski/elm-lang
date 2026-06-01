@@ -106,6 +106,9 @@ public final class BuildRunner {
         case "Run" -> {
           return exec(str(task.arg(0)), strings(task.arg(1)), baseDir, out);
         }
+        case "Check" -> {
+          return check(str(task.arg(0)), baseDir, out);
+        }
         case "CompileModule" -> compile(str(((ElmData) Thunk.resolve(task.arg(0))).ctor()),
             str(task.arg(1)), str(task.arg(2)), baseDir, out);
         case "RunTests" -> {
@@ -138,6 +141,19 @@ public final class BuildRunner {
       default -> throw new IllegalArgumentException("unknown backend: " + backend);
     }
     out.println("  compiled " + entry + " (" + backend + ") -> " + target);
+  }
+
+  /** Type-checks a module's entry file, returning 0 if it checks or 1 (with the error) otherwise. */
+  private static int check(String entry, Path baseDir, PrintStream out) throws IOException {
+    String source = Files.readString(at(baseDir, entry), StandardCharsets.UTF_8);
+    try {
+      pl.matsuo.elm.types.TypeChecker.checkModule(source);
+      out.println("  ok " + entry + " type-checks");
+      return 0;
+    } catch (pl.matsuo.elm.error.ElmTypeError e) {
+      out.println("  x type error in " + entry + ": " + message(e));
+      return 1;
+    }
   }
 
   /** Runs the tests under {@code dir} (a no-op if it is absent), returning the test exit code. */

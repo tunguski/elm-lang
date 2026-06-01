@@ -103,6 +103,33 @@ class BuildRunnerTest {
   }
 
   @Test
+  void defaultValidateTypeChecksAndFailsTheBuildOnAnError() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-validate-");
+    Files.createDirectories(dir.resolve("src"));
+    // A type error in the entry: validate must catch it and stop before compile.
+    Files.writeString(
+        dir.resolve("src/Main.elm"),
+        "module Main exposing (x)\nx = 1 + \"oops\"\n");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "." |> withEntry "src/Main.elm" |> withOutput "out" ]
+        """);
+    Result r = build(dir, "compile");
+    assertEquals(1, r.code(), r.out());
+    assertTrue(r.out().contains("type error"), r.out());
+    assertTrue(r.out().contains("BUILD FAILED"), r.out());
+    assertFalse(Files.exists(dir.resolve("out")), "compile did not run after validate failed");
+  }
+
+  @Test
   void cleanRemovesEachModulesOutput() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-clean-");
     Files.createDirectories(dir.resolve("out"));
