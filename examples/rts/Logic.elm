@@ -21,7 +21,7 @@ init =
             { x = 2, y = 2, kind = Base }
 
         worker =
-            { id = 1, x = 2, y = 3, tx = 2, ty = 3, kind = Worker }
+            { id = 1, x = 2, y = 3, tx = 2, ty = 3, kind = Worker, carrying = 0, assigned = Nothing }
 
         start =
             { map = tiles
@@ -95,16 +95,16 @@ tickGame : Model -> Model
 tickGame model =
     let
         moved =
-            List.map moveUnit model.units
+            List.map (moveUnit model) model.units
 
-        isIncomeTick =
-            modBy 5 model.tick == 0
+        ( workedUnits, goldGain, woodGain ) =
+            List.foldr (gatherStep model) ( [], 0, 0 ) moved
 
         gained =
             { model
-                | units = moved
-                , gold = model.gold + (if isIncomeTick then countWorkersOn isGold model else 0)
-                , wood = model.wood + (if isIncomeTick then countWorkersOn isForest model else 0)
+                | units = workedUnits
+                , gold = model.gold + goldGain
+                , wood = model.wood + woodGain
                 , tick = model.tick + 1
             }
 
@@ -126,28 +126,100 @@ tickGame model =
     }
 
 
-{-| Moves a unit a small step toward its target tile (straight line; obstacles are avoided by simply
-not letting the player target impassable tiles). -}
-moveUnit : Unit -> Unit
-moveUnit u =
+{-| Moves a unit a small step toward its target. While it's still in a different tile from the goal
+it heads toward the next tile on a breadth-first path that routes *around* impassable water/rock;
+once in the goal tile it homes in on the exact target point. -}
+moveUnit : Model -> Unit -> Unit
+moveUnit model u =
     let
-        dx =
-            u.tx - u.x
-
-        dy =
-            u.ty - u.y
-
         dist =
-            sqrt (dx * dx + dy * dy)
-
-        speed =
-            0.2
+            distance u.x u.y u.tx u.ty
     in
     if dist <= speed then
         { u | x = u.tx, y = u.ty }
 
     else
-        { u | x = u.x + speed * dx / dist, y = u.y + speed * dy / dist }
+        let
+            cur =
+                ( round u.x, round u.y )
+
+            goal =
+                ( round u.tx, round u.ty )
+
+            ( gx, gy ) =
+                if cur == goal then
+                    ( u.tx, u.ty )
+
+                else
+                    case nextStep model cur goal of
+                        Just ( sx, sy ) ->
+                            ( toFloat sx, toFloat sy )
+
+                        Nothing ->
+                            ( u.x, u.y )
+
+            step =
+                distance u.x u.y gx gy
+        in
+        if step <= speed then
+            { u | x = gx, y = gy }
+
+        else
+            { u | x = u.x + speed * (gx - u.x) / step, y = u.y + speed * (gy - u.y) / step }
+
+
+speed : Float
+speed =
+    0.2
+
+
+distance : Float -> Float -> Float -> Float -> Float
+distance ax ay bx by =
+    sqrt ((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
+
+
+{-| The next tile to step to on a shortest passable path from `start` to `goal` (4-directional BFS),
+or `Nothing` if no path exists. -}
+nextStep : Model -> ( Int, Int ) -> ( Int, Int ) -> Maybe ( Int, Int )
+nextStep model start goal =
+    if start == goal then
+        Just goal
+
+    else
+        let
+            ring =
+                passableNeighbors model goal start
+        in
+        bfs model goal (List.map (\n -> ( n, n )) ring) (start :: ring)
+
+
+bfs : Model -> ( Int, Int ) -> List ( ( Int, Int ), ( Int, Int ) ) -> List ( Int, Int ) -> Maybe ( Int, Int )
+bfs model goal queue visited =
+    case queue of
+        [] ->
+            Nothing
+
+        ( tile, first ) :: rest ->
+            if tile == goal then
+                Just first
+
+            else
+                let
+                    ns =
+                        List.filter (\n -> not (List.member n visited)) (passableNeighbors model goal tile)
+                in
+                bfs model goal (rest ++ List.map (\n -> ( n, first )) ns) (visited ++ ns)
+
+
+{-| In-bounds 4-neighbours that are passable (the `goal` is always allowed, so a worker can step onto
+a resource tile even though it's the destination). -}
+passableNeighbors : Model -> ( Int, Int ) -> ( Int, Int ) -> List ( Int, Int )
+passableNeighbors model goal ( x, y ) =
+    List.filter
+        (\( nx, ny ) ->
+            nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight && (( nx, ny ) == goal || passableAt nx ny model)
+        )
+        [ ( x + 1, y ), ( x - 1, y ), ( x, y + 1 ), ( x, y - 1 ) ]
 
 
 {-| Clears the fog around every unit and building (Chebyshev distance ≤ `revealRadius`). -}
@@ -191,13 +263,18 @@ clickTile x y model =
                                 List.map
                                     (\u ->
                                         if u.id == id then
-                                            { u | tx = toFloat x, ty = toFloat y }
+                                            retarget x y model u
 
                                         else
                                             u
                                     )
                                     model.units
-                            , message = ""
+                            , message =
+                                if isResourceAt x y model then
+                                    "Worker assigned to gather — it will haul loads back to the base."
+
+                                else
+                                    ""
                         }
 
                     else
@@ -263,7 +340,7 @@ spawnUnit kind cost atBuilding name model =
                         toFloat (by + 1)
                 in
                 { model
-                    | units = { id = model.nextId, x = sx, y = sy, tx = sx, ty = sy, kind = kind } :: model.units
+                    | units = { id = model.nextId, x = sx, y = sy, tx = sx, ty = sy, kind = kind, carrying = 0, assigned = Nothing } :: model.units
                     , gold = model.gold - cost
                     , nextId = model.nextId + 1
                     , selected = Just model.nextId
@@ -273,6 +350,37 @@ spawnUnit kind cost atBuilding name model =
 
 
 -- QUERIES ----------------------------------------------------------------------------------------
+
+
+{-| Points a unit at a tile; a worker sent to a resource tile is `assigned` to gather it, while a
+worker sent elsewhere (or any soldier) just walks there. -}
+retarget : Int -> Int -> Model -> Unit -> Unit
+retarget x y model u =
+    case u.kind of
+        Worker ->
+            { u
+                | tx = toFloat x
+                , ty = toFloat y
+                , assigned =
+                    if isResourceAt x y model then
+                        Just ( x, y )
+
+                    else
+                        Nothing
+            }
+
+        Soldier ->
+            { u | tx = toFloat x, ty = toFloat y }
+
+
+isResourceAt : Int -> Int -> Model -> Bool
+isResourceAt x y model =
+    case lookupTerrain x y model of
+        Just terrain ->
+            isGold terrain || isForest terrain
+
+        Nothing ->
+            False
 
 
 passableAt : Int -> Int -> Model -> Bool
@@ -311,20 +419,103 @@ lookupTerrain x y model =
         )
 
 
-countWorkersOn : (Terrain -> Bool) -> Model -> Int
-countWorkersOn isKind model =
-    List.length
-        (List.filter
-            (\u ->
-                case lookupTerrain (round u.x) (round u.y) model of
-                    Just terrain ->
-                        isWorker u.kind && isKind terrain
+{-| Advances a single unit's gather loop, threading the gold/wood deposited this tick:
 
-                    Nothing ->
-                        False
-            )
-            model.units
-        )
+  - on the base with a load: deposit it (into gold or wood, per the assigned resource) and head back;
+  - full: walk to the base to unload;
+  - standing on its assigned resource: keep filling up;
+  - otherwise: nothing.
+
+Soldiers pass through unchanged. -}
+gatherStep : Model -> Unit -> ( List Unit, Int, Int ) -> ( List Unit, Int, Int )
+gatherStep model u ( us, g, w ) =
+    case u.kind of
+        Soldier ->
+            ( u :: us, g, w )
+
+        Worker ->
+            if atBase u model && u.carrying > 0 then
+                let
+                    ( dg, dw ) =
+                        deposit u model
+                in
+                ( resume u :: us, g + dg, w + dw )
+
+            else if u.carrying >= carryCap then
+                ( sendHome u model :: us, g, w )
+
+            else if onAssignedResource u model then
+                ( { u | carrying = min carryCap (u.carrying + gatherRate) } :: us, g, w )
+
+            else
+                ( u :: us, g, w )
+
+
+{-| A worker's load as (gold, wood): gold from a mine, wood from a forest (gold by default). -}
+deposit : Unit -> Model -> ( Int, Int )
+deposit u model =
+    case u.assigned of
+        Just ( ax, ay ) ->
+            if isForestAt ax ay model then
+                ( 0, u.carrying )
+
+            else
+                ( u.carrying, 0 )
+
+        Nothing ->
+            ( u.carrying, 0 )
+
+
+isForestAt : Int -> Int -> Model -> Bool
+isForestAt x y model =
+    case lookupTerrain x y model of
+        Just terrain ->
+            isForest terrain
+
+        Nothing ->
+            False
+
+
+{-| Clears the load and walks back to the assigned resource (or waits if none). -}
+resume : Unit -> Unit
+resume u =
+    case u.assigned of
+        Just ( ax, ay ) ->
+            { u | carrying = 0, tx = toFloat ax, ty = toFloat ay }
+
+        Nothing ->
+            { u | carrying = 0 }
+
+
+{-| Targets the base so a full worker returns to unload. -}
+sendHome : Unit -> Model -> Unit
+sendHome u model =
+    case findBuilding isBase model of
+        Just ( bx, by ) ->
+            { u | tx = toFloat bx, ty = toFloat (by + 1) }
+
+        Nothing ->
+            u
+
+
+atBase : Unit -> Model -> Bool
+atBase u model =
+    case findBuilding isBase model of
+        Just ( bx, by ) ->
+            abs (round u.x - bx) <= 1 && abs (round u.y - by) <= 1
+
+        Nothing ->
+            False
+
+
+onAssignedResource : Unit -> Model -> Bool
+onAssignedResource u model =
+    case u.assigned of
+        Just ( ax, ay ) ->
+            round u.x == ax && round u.y == ay
+
+        Nothing ->
+            False
 
 
 findBuilding : (BuildingKind -> Bool) -> Model -> Maybe ( Int, Int )
@@ -360,16 +551,6 @@ isForest : Terrain -> Bool
 isForest t =
     case t of
         Forest ->
-            True
-
-        _ ->
-            False
-
-
-isWorker : UnitKind -> Bool
-isWorker k =
-    case k of
-        Worker ->
             True
 
         _ ->

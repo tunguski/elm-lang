@@ -95,6 +95,18 @@ class RtsGameTest {
     assertTrue(countVisible(m) > visibleStart, "moving across the map cleared more fog");
   }
 
+  @Test
+  void workerPathfindsAroundObstaclesToAFarResource() {
+    // The gold mine at (16, 9) sits past the water lake (x 8-10, y 4-7) and scattered rock; a worker
+    // must route *around* them. After enough ticks it gathers and deposits, so gold rises.
+    ElmRecord m = init();
+    m = update(new ElmData("ClickTile", new Object[] {16L, 9L}), m);
+    for (int i = 0; i < 400; i++) {
+      m = update(new ElmData("Tick", new Object[0]), m);
+    }
+    assertTrue(asLong(m.get("gold")) > 150L, "worker reached the far mine around the obstacles");
+  }
+
   private int countVisible(ElmRecord model) {
     int n = 0;
     for (Object tile : ((ElmList) model.get("map")).toJava()) {

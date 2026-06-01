@@ -15,6 +15,8 @@ module RTS.Model exposing
     , workerCost
     , barracksCost
     , soldierCost
+    , carryCap
+    , gatherRate
     , buildingLabel
     , buildingColor
     , terrainColor
@@ -77,8 +79,9 @@ type Terrain
     | Rock
 
 
-{-| A movable unit. `tx`/`ty` is the move target (in tile coordinates); a worker standing on a
-resource tile harvests it each tick. -}
+{-| A movable unit. `tx`/`ty` is the move target (in tile coordinates). A worker `assigned` to a
+resource tile runs a gather loop: walk there, fill up to `carryCap`, haul the load back to the base,
+deposit it and return for more. -}
 type alias Unit =
     { id : Int
     , x : Float
@@ -86,6 +89,8 @@ type alias Unit =
     , tx : Float
     , ty : Float
     , kind : UnitKind
+    , carrying : Int
+    , assigned : Maybe ( Int, Int )
     }
 
 
@@ -141,6 +146,18 @@ barracksCost =
 soldierCost : Int
 soldierCost =
     60
+
+
+{-| How much a worker can carry before it must return to base to deposit. -}
+carryCap : Int
+carryCap =
+    10
+
+
+{-| How much a worker gathers per tick while standing on its assigned resource. -}
+gatherRate : Int
+gatherRate =
+    2
 
 
 buildingLabel : BuildingKind -> String

@@ -150,8 +150,69 @@ hud model =
             ]
             [ text model.message ]
         , divider
+        , div [ HA.style "font-weight" "600", HA.style "color" "#cbd5e1", HA.style "font-size" "12px" ] [ text "Minimap" ]
+        , minimap model
+        , divider
         , legend
         ]
+
+
+{-| A small overview: explored terrain in colour, fog dark, buildings and units as dots. -}
+minimap : Model -> Html Msg
+minimap model =
+    let
+        scale =
+            10
+    in
+    svg
+        [ SA.width (px (mapWidth * scale))
+        , SA.height (px (mapHeight * scale))
+        , HA.style "background" "#020617"
+        , HA.style "border-radius" "4px"
+        ]
+        (List.map (miniTile scale) model.map
+            ++ List.map (miniDot scale "#e2e8f0") (List.map buildingPos model.buildings)
+            ++ List.map (miniDot scale "#fde047") (List.map unitPos model.units)
+        )
+
+
+miniTile : Int -> Tile -> Html Msg
+miniTile scale t =
+    rect
+        [ SA.x (px (t.x * scale))
+        , SA.y (px (t.y * scale))
+        , SA.width (px scale)
+        , SA.height (px scale)
+        , SA.fill
+            (if t.visible then
+                terrainColor t.terrain
+
+             else
+                "#0b1220"
+            )
+        ]
+        []
+
+
+miniDot : Int -> String -> ( Int, Int ) -> Html Msg
+miniDot scale color ( x, y ) =
+    circle
+        [ SA.cx (px (x * scale + scale // 2))
+        , SA.cy (px (y * scale + scale // 2))
+        , SA.r (px (scale // 2))
+        , SA.fill color
+        ]
+        []
+
+
+buildingPos : Building -> ( Int, Int )
+buildingPos b =
+    ( b.x, b.y )
+
+
+unitPos : Unit -> ( Int, Int )
+unitPos u =
+    ( round u.x, round u.y )
 
 
 resourceRow : String -> Int -> String -> Html Msg
