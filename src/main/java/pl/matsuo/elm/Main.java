@@ -1226,32 +1226,59 @@ public final class Main implements Runnable {
     @Option(names = "--dry-run", description = "Print the plan (phases, goals, tasks) without running it.")
     boolean dryRun;
 
+    @Option(names = "--watch", description = "Re-run the build whenever a .elm file changes (Ctrl-C to stop).")
+    boolean watch;
+
     @Override
-    public Integer call() throws IOException {
-      String userSource = readElmSource(file);
-      String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Build.elm");
-      var project = pl.matsuo.elm.interp.Project.load(userSource, lib);
-      Object projectValue = project.entryValue("project");
-      Object planList;
-      if (phase.equalsIgnoreCase("clean")) {
-        planList = pl.matsuo.elm.interp.Apply.apply(project.value("Build", "cleanPlan"), projectValue);
-      } else {
-        Object phaseCtor = phaseConstructor(phase);
-        if (phaseCtor == null) {
-          System.err.println(
-              "Unknown phase '" + phase + "'. Use one of: validate, compile, test, package, "
-                  + "verify, install (or clean).");
-          return 1;
+    public Integer call() throws IOException, InterruptedException {
+      if (watch) {
+        Path baseDir = file.toAbsolutePath().getParent();
+        List<Path> watched = new ArrayList<>();
+        if (baseDir != null && Files.isDirectory(baseDir)) {
+          try (var w = Files.walk(baseDir)) {
+            w.filter(p -> p.toString().endsWith(".elm")).forEach(watched::add);
+          }
         }
-        planList =
-            pl.matsuo.elm.interp.Apply.applyAll(project.value("Build", "plan"), phaseCtor, projectValue);
+        if (watched.isEmpty()) {
+          watched.add(file);
+        }
+        pl.matsuo.elm.util.FileWatcher.watch(watched, 300, this::runOnce);
+        return 0;
       }
-      if (dryRun) {
-        return pl.matsuo.elm.build.BuildRunner.dryRun(planList, System.out);
+      return runOnce();
+    }
+
+    /** Loads, plans and executes (or dry-runs) the build once, returning the exit code. */
+    private int runOnce() {
+      try {
+        String userSource = readElmSource(file);
+        String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Build.elm");
+        var project = pl.matsuo.elm.interp.Project.load(userSource, lib);
+        Object projectValue = project.entryValue("project");
+        Object planList;
+        if (phase.equalsIgnoreCase("clean")) {
+          planList = pl.matsuo.elm.interp.Apply.apply(project.value("Build", "cleanPlan"), projectValue);
+        } else {
+          Object phaseCtor = phaseConstructor(phase);
+          if (phaseCtor == null) {
+            System.err.println(
+                "Unknown phase '" + phase + "'. Use one of: validate, compile, test, package, "
+                    + "verify, install (or clean).");
+            return 1;
+          }
+          planList =
+              pl.matsuo.elm.interp.Apply.applyAll(project.value("Build", "plan"), phaseCtor, projectValue);
+        }
+        if (dryRun) {
+          return pl.matsuo.elm.build.BuildRunner.dryRun(planList, System.out);
+        }
+        // Relative paths resolve against the build file's directory (like a pom.xml dir).
+        Path baseDir = file.toAbsolutePath().getParent();
+        return pl.matsuo.elm.build.BuildRunner.run(planList, baseDir, System.out);
+      } catch (IOException e) {
+        System.err.println("build error: " + e.getMessage());
+        return 1;
       }
-      // Relative paths in the build resolve against the build file's directory (like a pom.xml dir).
-      Path baseDir = file.toAbsolutePath().getParent();
-      return pl.matsuo.elm.build.BuildRunner.run(planList, baseDir, System.out);
     }
 
     /** Maps a lower-case phase name to its {@code Build.Phase} constructor value, or null if unknown. */
