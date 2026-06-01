@@ -304,6 +304,7 @@ public final class Signatures {
   private static void registerBrowserAndEffects() {
     g("Browser.sandbox", "{ init : model, update : msg -> model -> model, view : model -> Html msg } -> Program () model msg");
     g("Browser.element", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg, view : model -> Html msg } -> Program flags model msg");
+    g("Platform.worker", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg } -> Program flags model msg");
     g("Browser.document", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg, view : model -> { title : String, body : List (Html msg) } } -> Program flags model msg");
     g("Cmd.none", "Cmd msg");
     g("Cmd.batch", "List (Cmd msg) -> Cmd msg");

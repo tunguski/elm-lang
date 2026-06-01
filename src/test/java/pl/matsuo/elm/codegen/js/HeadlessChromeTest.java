@@ -201,6 +201,24 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void platformWorkerRunsWithoutAView() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // A headless worker (no view): dispatch Inc, then write the model into the DOM so we can read it.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Platform\n"
+            + "type Msg = Inc\n"
+            + "main = Platform.worker { init = \\_ -> ( 0, Cmd.none ), update = update, subscriptions = \\_ -> Sub.none }\n"
+            + "update msg n = case msg of\n  Inc -> ( n + 1, Cmd.none )\n";
+    String driver =
+        "window.$app.dispatch($data('Inc',[]));"
+            + "window.$app.dispatch($data('Inc',[]));"
+            + "document.body.textContent = 'model=' + window.$app.model();";
+    String dom = renderPage(JsCompiler.htmlPage(app, driver));
+    assertTrue(dom.contains("model=2"), "the worker ran update without a view: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);

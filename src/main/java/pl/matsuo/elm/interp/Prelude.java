@@ -1255,6 +1255,7 @@ public final class Prelude {
     fn("Browser.sandbox", 1, a -> new ElmData("$Sandbox", new Object[] {a[0]}));
     fn("Browser.element", 1, a -> new ElmData("$Element", new Object[] {a[0]}));
     fn("Browser.document", 1, a -> new ElmData("$Document", new Object[] {a[0]}));
+    fn("Platform.worker", 1, a -> new ElmData("$Worker", new Object[] {a[0]}));
   }
 
   private static void registerConstructors() {

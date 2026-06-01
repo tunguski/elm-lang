@@ -58,6 +58,7 @@
   $rt['Browser.element']=function(r){ return $data('$Element',[r]); };
   $rt['Browser.document']=function(r){ return $data('$Document',[r]); };
   $rt['Browser.application']=function(r){ return $data('$Application',[r]); };
+  $rt['Platform.worker']=function(r){ return $data('$Worker',[r]); }; // a headless program (no view)
   // ---- effects: Cmd / Sub / Task / Generator / Decoder kernels ----
   // A Cmd is $Cmd[run] where run(dispatch) performs the side effect; none/batch compose them.
   function $cmd(run){ return $data('$Cmd',[run]); }
@@ -532,6 +533,7 @@
       return v;
     }
     function render(){
+      if (kind==='$Worker') return; // a worker has no view
       var v = viewVNode();
       if (dom==null){ dom = window.$toDom(v); root.appendChild(dom); }
       else { dom = $patch(root, dom, current, v); }
