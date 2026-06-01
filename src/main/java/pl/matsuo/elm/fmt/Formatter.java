@@ -69,13 +69,43 @@ public final class Formatter {
       }
     }
 
-    for (Decl d : m.decls()) {
+    String[] srcLines = source.split("\n", -1);
+    List<int[]> commentSpans = new ArrayList<>();
+    for (Lexer.Comment c : Lexer.comments(source)) {
+      commentSpans.add(new int[] {c.line(), c.line() + countNewlines(c.text())});
+    }
+    List<Decl> decls = m.decls();
+    for (int i = 0; i < decls.size(); i++) {
+      Decl d = decls.get(i);
       sb.append("\n\n");
       // Comments preceding this declaration (a doc comment, or a section header).
       for (Lexer.Comment c : take(comments, idx, d.pos().line())) {
         sb.append(c.text()).append("\n");
       }
-      sb.append(declaration(d)).append("\n");
+      int nextStart =
+          i + 1 < decls.size()
+              ? regionStart(decls.get(i + 1), srcLines, commentSpans)
+              : srcLines.length + 1;
+      int lastCode = lastCodeLine(srcLines, commentSpans, d.pos().line(), nextStart);
+      boolean hasInnerComment =
+          idx[0] < comments.size() && comments.get(idx[0]).line() <= lastCode;
+      if (hasInnerComment) {
+        // Reflowing would drop or misplace the comments inside this declaration, so keep its body
+        // verbatim (the type annotation is still normalised). Comments are never lost.
+        if (d instanceof Decl.Value v) {
+          v.annotation()
+              .ifPresent(t -> sb.append(Pretty.declName(v.name())).append(" : ").append(type(t, false)).append("\n"));
+        }
+        for (int line = d.pos().line(); line <= lastCode; line++) {
+          sb.append(srcLines[line - 1]).append(line < lastCode ? "\n" : "");
+        }
+        sb.append("\n");
+        while (idx[0] < comments.size() && comments.get(idx[0]).line() <= lastCode) {
+          idx[0]++; // the in-body comments are now part of the verbatim block
+        }
+      } else {
+        sb.append(declaration(d)).append("\n");
+      }
     }
 
     // Any comments after the last declaration.
@@ -87,6 +117,73 @@ public final class Formatter {
       }
     }
     return sb.toString();
+  }
+
+  private static int countNewlines(String s) {
+    int n = 0;
+    for (int i = 0; i < s.length(); i++) {
+      if (s.charAt(i) == '\n') {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** The first source line of a declaration's leading region: its body line, moved up past a
+   * directly-preceding type annotation and any contiguous doc/section comments and blank lines. This
+   * is the boundary where the previous declaration's body ends. */
+  private static int regionStart(Decl d, String[] srcLines, List<int[]> commentSpans) {
+    int line = d.pos().line();
+    if (d instanceof Decl.Value v
+        && line - 1 >= 1
+        && isAnnotationLine(srcLines[line - 2], v.name())) {
+      line--; // skip the annotation line directly above the body
+    }
+    while (line - 1 >= 1
+        && (srcLines[line - 2].isBlank() || isCommentLine(commentSpans, line - 1))) {
+      line--; // skip the doc/section comment block (and blank lines) above
+    }
+    return line;
+  }
+
+  /** Whether {@code text} is the type annotation of {@code name} (e.g. {@code "name : Int -> Int"}). */
+  private static boolean isAnnotationLine(String text, String name) {
+    String t = text.strip();
+    return t.startsWith(name) && t.substring(name.length()).stripLeading().startsWith(":");
+  }
+
+  private static boolean isCommentLine(List<int[]> commentSpans, int line) {
+    for (int[] span : commentSpans) {
+      if (line >= span[0] && line <= span[1]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** The last source line that holds code (non-blank, not inside a comment) in {@code [from,
+   * nextStart)} — i.e. the end of a declaration's body. Falls back to {@code from}. */
+  private static int lastCodeLine(String[] srcLines, List<int[]> commentSpans, int from, int nextStart) {
+    int upper = Math.min(nextStart - 1, srcLines.length);
+    for (int line = upper; line >= from; line--) {
+      if (isCodeLine(srcLines, commentSpans, line)) {
+        return line;
+      }
+    }
+    return from;
+  }
+
+  /** Whether 1-based {@code line} is a code line: non-blank and not covered by any comment span. */
+  private static boolean isCodeLine(String[] srcLines, List<int[]> commentSpans, int line) {
+    if (line < 1 || line > srcLines.length || srcLines[line - 1].isBlank()) {
+      return false;
+    }
+    for (int[] span : commentSpans) {
+      if (line >= span[0] && line <= span[1]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Consumes and returns the leading comments whose line is before {@code beforeLine}. */

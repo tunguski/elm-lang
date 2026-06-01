@@ -78,6 +78,17 @@ class FormatterTest {
   }
 
   @Test
+  void preservesCommentsInsideADeclarationBody() {
+    // Comments inside a function body used to be dropped/misplaced; now the body is kept verbatim.
+    String src =
+        "module M exposing (f)\n\n\nf x =\n    let\n        -- double it\n        y = x * 2\n"
+            + "    in\n    y + 1\n";
+    String out = Formatter.format(src);
+    assertTrue(out.contains("-- double it"), out);
+    assertEquals(out, Formatter.format(out), "still idempotent"); // format is stable
+  }
+
+  @Test
   void producesElmFormatStyleLayout() {
     String out = Formatter.format(example("buttons"));
     assertTrue(out.startsWith("module Main exposing (..)\n"), out);
