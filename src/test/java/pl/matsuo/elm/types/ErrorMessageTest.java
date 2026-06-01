@@ -69,6 +69,18 @@ class ErrorMessageTest {
   }
 
   @Test
+  void heterogeneousListReportsListContextNotABareLeafMismatch() {
+    // [1, "two"] used to surface a bare "expected Int but got String"; now it names the list context
+    // (which element, against the earlier ones) and hints that a list is homogeneous.
+    String m = error("main = [ 1, \"two\" ]\n").getMessage();
+    assertTrue(m.contains("All elements of a list must have the same type"), m);
+    // element 2 is a String; the earlier element is still an unconstrained `number` literal.
+    assertTrue(m.contains("element 2") && m.contains("String") && m.contains("number"), m);
+    assertTrue(m.contains("Hint:") && m.contains("single type"), m);
+    assertTrue(m.contains("^"), m); // located at the list
+  }
+
+  @Test
   void overApplicationHintsAboutArgumentCount() {
     // `not` takes one argument but is given two — a function/non-function mismatch with a hint.
     String src = "main = not True False\n";

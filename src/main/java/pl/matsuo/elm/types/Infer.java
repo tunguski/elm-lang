@@ -564,8 +564,17 @@ public final class Infer {
       }
       case Expr.ListLit l -> {
         Ty elem = fresh();
-        for (Expr item : l.items()) {
-          Unify.unify(elem, infer(env, item));
+        for (int i = 0; i < l.items().size(); i++) {
+          Ty itemTy = infer(env, l.items().get(i));
+          try {
+            Unify.unify(elem, itemTy);
+          } catch (ElmTypeError ex) {
+            // A heterogeneous list: keep the list context instead of a bare leaf mismatch.
+            throw new ElmTypeError(
+                "All elements of a list must have the same type, but element " + (i + 1)
+                    + " is `" + Types.show(itemTy) + "` while the earlier element(s) are `"
+                    + Types.show(elem) + "`.");
+          }
         }
         yield Ty.list(elem);
       }
@@ -757,6 +766,10 @@ public final class Infer {
     String m = e.rawMessage();
     if (m == null) {
       return null;
+    }
+    if (m.startsWith("All elements of a list")) {
+      return "A list holds values of a single type. To combine different shapes, wrap them in a custom"
+          + " type, or use a tuple/record for a fixed-size collection.";
     }
     boolean hasInt = m.contains("Int"), hasFloat = m.contains("Float"), hasStr = m.contains("String");
     if (hasStr && (m.contains("number") || hasInt || hasFloat)) {
