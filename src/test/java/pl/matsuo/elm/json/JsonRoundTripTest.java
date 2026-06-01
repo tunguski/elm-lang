@@ -187,4 +187,66 @@ class JsonRoundTripTest {
                 + "json = E.encode 0 (E.object [ ( \"n\", E.int 7 ) ])\n"
                 + "result = D.decodeString (D.field \"n\" D.int) json\n"));
   }
+
+  /** A decoder over an object {@code {"a":1,"b":2}} for the dict/keyValuePairs tests. */
+  private static String twoFieldObject() {
+    return "json = E.encode 0 (E.object [ ( \"a\", E.int 1 ), ( \"b\", E.int 2 ) ])\n";
+  }
+
+  @Test
+  void nullFailLazyDecoders() {
+    String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
+    // null succeeds with the supplied value when the JSON is null.
+    assertEquals("Ok 0", decode(head + "result = D.decodeString (D.null 0) (E.encode 0 E.null)\n"));
+    // null fails when the JSON is not null.
+    assertTrue(
+        decode(head + "result = D.decodeString (D.null 0) (E.encode 0 (E.int 1))\n")
+            .startsWith("Err"));
+    // fail always fails with the given message.
+    assertEquals(
+        "Err \"nope\"",
+        decode(head + "result = D.decodeString (D.fail \"nope\") (E.encode 0 (E.int 1))\n"));
+    // lazy forces the thunk and then decodes.
+    assertEquals(
+        "Ok 5",
+        decode(head + "result = D.decodeString (D.lazy (\\_ -> D.int)) (E.encode 0 (E.int 5))\n"));
+  }
+
+  @Test
+  void indexOneOfAndAtDecoders() {
+    String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
+    // index reads a positional element of a JSON array.
+    assertEquals(
+        "Ok 20",
+        decode(
+            head
+                + "result = D.decodeString (D.index 1 D.int) "
+                + "(E.encode 0 (E.list E.int [ 10, 20, 30 ]))\n"));
+    // oneOf takes the first decoder that succeeds.
+    assertEquals(
+        "Ok 99",
+        decode(
+            head
+                + "result = D.decodeString (D.oneOf [ D.int, D.null 99 ]) (E.encode 0 E.null)\n"));
+    // at drills through nested object fields.
+    assertEquals(
+        "Ok 7",
+        decode(
+            head
+                + "json = E.encode 0 (E.object [ ( \"a\", E.object [ ( \"b\", E.int 7 ) ] ) ])\n"
+                + "result = D.decodeString (D.at [ \"a\", \"b\" ] D.int) json\n"));
+  }
+
+  @Test
+  void dictAndKeyValuePairsDecoders() {
+    String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
+    // dict reads a JSON object into a Dict String a (ordered by key).
+    assertEquals(
+        "Ok Dict.fromList [(\"a\",1),(\"b\",2)]",
+        decode(head + twoFieldObject() + "result = D.decodeString (D.dict D.int) json\n"));
+    // keyValuePairs reads a JSON object into a List ( String, a ), preserving source order.
+    assertEquals(
+        "Ok [(\"a\",1),(\"b\",2)]",
+        decode(head + twoFieldObject() + "result = D.decodeString (D.keyValuePairs D.int) json\n"));
+  }
 }

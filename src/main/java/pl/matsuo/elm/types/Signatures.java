@@ -358,6 +358,16 @@ public final class Signatures {
     g("Json.Decode.succeed", "a -> Decoder a");
     g("Json.Decode.andThen", "(a -> Decoder b) -> Decoder a -> Decoder b");
     g("Json.Decode.oneOrMore", "(a -> List a -> v) -> Decoder a -> Decoder v");
+    g("Json.Decode.index", "Int -> Decoder a -> Decoder a");
+    g("Json.Decode.oneOf", "List (Decoder a) -> Decoder a");
+    g("Json.Decode.value", "Decoder Value");
+    g("Json.Decode.maybe", "Decoder a -> Decoder (Maybe a)");
+    g("Json.Decode.nullable", "Decoder a -> Decoder (Maybe a)");
+    g("Json.Decode.null", "a -> Decoder a");
+    g("Json.Decode.fail", "String -> Decoder a");
+    g("Json.Decode.lazy", "(() -> Decoder a) -> Decoder a");
+    g("Json.Decode.dict", "Decoder a -> Decoder (Dict String a)");
+    g("Json.Decode.keyValuePairs", "Decoder a -> Decoder (List ( String, a ))");
 
     g("Json.Encode.int", "Int -> Value");
     g("Json.Encode.float", "Float -> Value");

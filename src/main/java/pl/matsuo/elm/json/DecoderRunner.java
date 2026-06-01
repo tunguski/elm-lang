@@ -106,6 +106,87 @@ public final class DecoderRunner {
         ElmData r = run(d.arg(0), json);
         return r.ctor().equals("Err") ? r : ok(new ElmData("Just", new Object[] {r.arg(0)}));
       }
+      case "$Dec_Null" -> {
+        // null : a -> Decoder a — succeeds with the given value iff the JSON is null.
+        return json == JsonParse.NULL ? ok(d.arg(0)) : err("expecting null");
+      }
+      case "$Dec_Fail" -> {
+        // fail : String -> Decoder a — always fails with the given message.
+        return err((String) d.arg(0));
+      }
+      case "$Dec_Lazy" -> {
+        // lazy : (() -> Decoder a) -> Decoder a — force the thunk, then decode.
+        return run(Apply.apply(d.arg(0), pl.matsuo.elm.runtime.ElmUnit.INSTANCE), json);
+      }
+      case "$Dec_At" -> {
+        // at : List String -> Decoder a -> Decoder a — drill through nested object fields.
+        Object node = json;
+        for (Object fieldObj : ((ElmList) d.arg(0)).toJava()) {
+          String name = (String) fieldObj;
+          if (!(node instanceof Map<?, ?> map) || !map.containsKey(name)) {
+            return err("expecting an OBJECT with a field named '" + name + "'");
+          }
+          node = map.get(name);
+        }
+        return run(d.arg(1), node);
+      }
+      case "$Dec_Index" -> {
+        // index : Int -> Decoder a -> Decoder a — decode the element at a list position.
+        int i = (int) (long) (Long) d.arg(0);
+        if (!(json instanceof List<?> arr)) {
+          return err("expecting a LIST");
+        }
+        if (i < 0 || i >= arr.size()) {
+          return err("expecting a LIST with index " + i);
+        }
+        return run(d.arg(1), arr.get(i));
+      }
+      case "$Dec_OneOf" -> {
+        // oneOf : List (Decoder a) -> Decoder a — first decoder that succeeds wins.
+        ElmData last = err("oneOf: no decoders");
+        for (Object dec : ((ElmList) d.arg(0)).toJava()) {
+          last = run(dec, json);
+          if (!last.ctor().equals("Err")) {
+            return last;
+          }
+        }
+        return last;
+      }
+      case "$Dec_Value" -> {
+        // value : Decoder Value — keep the raw JSON tree as an opaque Value ($Json wrapper).
+        return ok(new ElmData("$Json", new Object[] {json}));
+      }
+      case "$Dec_Dict" -> {
+        // dict : Decoder a -> Decoder (Dict String a)
+        if (!(json instanceof Map<?, ?> map)) {
+          return err("expecting an OBJECT");
+        }
+        pl.matsuo.elm.runtime.ElmDict out =
+            pl.matsuo.elm.runtime.ElmDict.empty(pl.matsuo.elm.interp.Operators::compareValues);
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+          ElmData r = run(d.arg(0), e.getValue());
+          if (r.ctor().equals("Err")) {
+            return r;
+          }
+          out = out.insert(e.getKey(), r.arg(0));
+        }
+        return ok(out);
+      }
+      case "$Dec_KeyValuePairs" -> {
+        // keyValuePairs : Decoder a -> Decoder (List (String, a)) — preserves JSON object order.
+        if (!(json instanceof Map<?, ?> map)) {
+          return err("expecting an OBJECT");
+        }
+        List<Object> pairs = new ArrayList<>();
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+          ElmData r = run(d.arg(0), e.getValue());
+          if (r.ctor().equals("Err")) {
+            return r;
+          }
+          pairs.add(new pl.matsuo.elm.runtime.ElmTuple(new Object[] {e.getKey(), r.arg(0)}));
+        }
+        return ok(ElmList.fromJava(pairs));
+      }
       default -> {
         return err("unsupported decoder " + d.ctor());
       }

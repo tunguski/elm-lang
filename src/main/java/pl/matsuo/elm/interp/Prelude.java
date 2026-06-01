@@ -724,6 +724,11 @@ public final class Prelude {
     fn("Json.Decode.andThen", 2, a -> d("$Dec_AndThen", a[0], a[1]));
     fn("Json.Decode.maybe", 1, a -> d("$Dec_Maybe", a[0]));
     fn("Json.Decode.nullable", 1, a -> d("$Dec_Nullable", a[0]));
+    fn("Json.Decode.null", 1, a -> d("$Dec_Null", a[0]));
+    fn("Json.Decode.fail", 1, a -> d("$Dec_Fail", a[0]));
+    fn("Json.Decode.lazy", 1, a -> d("$Dec_Lazy", a[0]));
+    fn("Json.Decode.dict", 1, a -> d("$Dec_Dict", a[0]));
+    fn("Json.Decode.keyValuePairs", 1, a -> d("$Dec_KeyValuePairs", a[0]));
     fn("Json.Decode.decodeString", 2, a -> {
       Object json;
       try {
