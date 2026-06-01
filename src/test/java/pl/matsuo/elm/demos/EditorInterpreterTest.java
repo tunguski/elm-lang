@@ -158,7 +158,10 @@ class EditorInterpreterTest {
           "D.succeed 1",
           "D.map (\\x -> x) (D.field \"a\" D.int)",
           "D.at [ \"a\", \"b\" ] D.string",
-          "D.oneOrMore (\\h t -> h) D.int"
+          "D.oneOrMore (\\h t -> h) D.int",
+          // Generic event handlers used by image-previews' drag target (was: undefined variable).
+          "preventDefaultOn \"dragover\" (D.succeed ( 1, True ))",
+          "on \"drop\" (D.succeed 1)"
         }) {
       assertFalse(eval(expr).startsWith("Error"), expr + " => " + eval(expr));
     }

@@ -18,7 +18,7 @@ builtins =
     htmlTags
         ++ htmlStringAttrs
         ++ htmlBoolAttrs
-        ++ [ "text", "onClick", "onInput", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat" ]
+        ++ [ "text", "onClick", "onInput", "on", "preventDefaultOn", "stopPropagationOn", "style", "toString", "negate", "not", "String.fromInt", "String.fromFloat" ]
         ++ [ "Browser.sandbox", "Browser.element" ]
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
         ++ [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product" ]
@@ -543,6 +543,18 @@ runBuiltin globals name args =
             ( "onInput", [ handler ] ) ->
                 -- The handler (e.g. a Msg constructor) is applied to the input string at event time.
                 Ok (VCtor "Html.on" [ VStr "input", handler ])
+
+            -- Generic event handlers (Html.Events.on / preventDefaultOn / stopPropagationOn). The
+            -- editor wires click/input live; other events (e.g. drag/drop) render as inert handlers,
+            -- so a program using them — like the image-previews drag target — at least displays.
+            ( "on", [ VStr event, handler ] ) ->
+                Ok (VCtor "Html.on" [ VStr event, handler ])
+
+            ( "preventDefaultOn", [ VStr event, handler ] ) ->
+                Ok (VCtor "Html.on" [ VStr event, handler ])
+
+            ( "stopPropagationOn", [ VStr event, handler ] ) ->
+                Ok (VCtor "Html.on" [ VStr event, handler ])
 
             ( "style", [ k, v ] ) ->
                 Ok (VCtor "Html.style" [ k, v ])
