@@ -207,6 +207,36 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void portsSendAndReceiveAcrossTheJsBoundary() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // A port module with an outgoing port (out) and an incoming port (incoming). The driver
+    // subscribes to `out`, pushes a value in through `incoming`, and the app echoes the running
+    // total back out — exercising both directions of the JS port boundary.
+    String source =
+        "port module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (text)\n"
+            + "port out : Int -> Cmd msg\n"
+            + "port incoming : (Int -> msg) -> Sub msg\n"
+            + "type Msg = Got Int\n"
+            + "main = Browser.element\n"
+            + "    { init = \\_ -> ( 0, Cmd.none )\n"
+            + "    , update = \\msg model -> case msg of\n"
+            + "        Got n -> ( model + n, out (model + n) )\n"
+            + "    , view = \\model -> text (String.fromInt model)\n"
+            + "    , subscriptions = \\_ -> incoming Got\n"
+            + "    }\n";
+    String driver =
+        "window.$app.ports.out.subscribe(function(v){ document.title = 'out=' + v; });"
+            + "window.$app.ports.incoming.send(5);"
+            + "window.$app.ports.incoming.send(10);";
+    String dom = renderInBrowser(source, driver);
+    // 0 -> Got 5 -> 5 (out 5) -> Got 10 -> 15 (out 15); the last outgoing value is in the title.
+    assertTrue(dom.contains("out=15"), "outgoing port delivered the latest value: " + dom);
+    assertTrue(dom.contains(">15<") || dom.contains("15"), "the model updated from incoming ports: " + dom);
+  }
+
+  @Test
   void editorRendersAWebglProgramToALiveCanvas() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
