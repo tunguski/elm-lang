@@ -238,6 +238,21 @@ class JsonRoundTripTest {
   }
 
   @Test
+  void decodeValueDecodesAnAlreadyHeldValue() {
+    String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
+    // decodeValue runs a decoder against a Value you already hold (here one built with Json.Encode),
+    // without serializing to a string first.
+    assertEquals(
+        "Ok 42",
+        decode(head + "result = D.decodeValue D.int (E.int 42)\n"));
+    assertEquals(
+        "Ok [1,2,3]",
+        decode(head + "result = D.decodeValue (D.list D.int) (E.list E.int [ 1, 2, 3 ])\n"));
+    // A type mismatch is an Err, just like decodeString.
+    assertTrue(decode(head + "result = D.decodeValue D.string (E.int 1)\n").startsWith("Err"));
+  }
+
+  @Test
   void dictAndKeyValuePairsDecoders() {
     String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
     // dict reads a JSON object into a Dict String a (ordered by key).

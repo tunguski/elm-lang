@@ -772,6 +772,8 @@ public final class Prelude {
       }
       return pl.matsuo.elm.json.DecoderRunner.run(a[0], json);
     });
+    fn("Json.Decode.decodeValue", 2, a ->
+        pl.matsuo.elm.json.DecoderRunner.run(a[0], jsonTree(a[1])));
 
     // Json.Encode: a Value is $Json wrapping a plain Java tree; encode serializes it.
     fn("Json.Encode.int", 1, a -> d("$Json", a[0]));

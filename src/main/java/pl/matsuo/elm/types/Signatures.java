@@ -374,6 +374,7 @@ public final class Signatures {
     g("Json.Decode.lazy", "(() -> Decoder a) -> Decoder a");
     g("Json.Decode.dict", "Decoder a -> Decoder (Dict String a)");
     g("Json.Decode.keyValuePairs", "Decoder a -> Decoder (List ( String, a ))");
+    g("Json.Decode.decodeValue", "Decoder a -> Value -> Result String a");
 
     g("Json.Encode.int", "Int -> Value");
     g("Json.Encode.float", "Float -> Value");
