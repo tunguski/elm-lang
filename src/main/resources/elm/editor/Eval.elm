@@ -113,7 +113,7 @@ arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
-    else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ] then
+    else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
         1
 
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
@@ -736,7 +736,9 @@ runBuiltin globals name args =
                 Ok (VCtor "Cmd.fileSelect" [ toMsg ])
 
             ( "File.Select.files", [ _, toMsg ] ) ->
-                Ok (VCtor "Cmd.fileSelect" [ toMsg ])
+                -- `files` takes `File -> List File -> msg`; flag it so the picked file is delivered as
+                -- (file, []) rather than only the first argument (which left an unsaturated message).
+                Ok (VCtor "Cmd.fileSelectMany" [ toMsg ])
 
             ( "File.name", [ VCtor "File" [ name, _ ] ] ) ->
                 Ok name
@@ -1987,21 +1989,36 @@ httpCmd cmd =
 
 {-| If the command is a `File.Select.file`, the message constructor to apply to the chosen file; the
 editor opens a real browser file picker and feeds the result back through {@link fileSelected}. -}
-fileSelectCmd : Value -> Maybe Value
+fileSelectCmd : Value -> Maybe ( Value, Bool )
 fileSelectCmd cmd =
     case cmd of
         VCtor "Cmd.fileSelect" [ toMsg ] ->
-            Just toMsg
+            Just ( toMsg, False )
+
+        VCtor "Cmd.fileSelectMany" [ toMsg ] ->
+            -- `File.Select.files`: toMsg is `File -> List File -> msg`.
+            Just ( toMsg, True )
 
         _ ->
             Nothing
 
 
 {-| The message to dispatch once the user picks a file: `toMsg` applied to a `File` value carrying
-the file's name and text content (so `File.name`/`File.toString` work on it). -}
-fileSelected : List ( String, String ) -> Value -> String -> String -> Result String Value
-fileSelected files toMsg name content =
-    applyMsgIn files toMsg (VCtor "File" [ VStr name, VStr content ])
+the file's name and text content (so `File.name`/`File.toString` work on it). When `many` (from
+`File.Select.files`), toMsg is `File -> List File -> msg`, so it's also applied to the rest of the
+selection (empty — the editor's picker yields one file). -}
+fileSelected : List ( String, String ) -> Value -> Bool -> String -> String -> Result String Value
+fileSelected files toMsg many name content =
+    let
+        file =
+            VCtor "File" [ VStr name, VStr content ]
+    in
+    if many then
+        applyMsgIn files toMsg file
+            |> Result.andThen (\partial -> applyMsgIn files partial (VList []))
+
+    else
+        applyMsgIn files toMsg file
 
 
 {-| Resolves a `Task.perform` command (over an already-evaluated `Task.value`, e.g. from

@@ -72,7 +72,7 @@ type Msg
     | AppResize Int Int
     | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
-    | FilePicked Value String String
+    | FilePicked Value Bool String String
     | Share
     | ShareInput String
     | Restore
@@ -324,9 +324,9 @@ runCmd fuel model cmd =
 
                         Nothing ->
                             case fileSelectCmd cmd of
-                                Just toMsg ->
+                                Just ( toMsg, many ) ->
                                     -- Open a real browser file picker; the choice returns via FilePicked.
-                                    ( model, File.openPicker (\name content -> FilePicked toMsg name content) )
+                                    ( model, File.openPicker (\name content -> FilePicked toMsg many name content) )
 
                                 Nothing ->
                                     ( model, Cmd.none )
@@ -509,9 +509,9 @@ update msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
-        FilePicked toMsg name content ->
+        FilePicked toMsg many name content ->
             -- The user chose a file: apply the program's File handler to it and step the app.
-            case fileSelected (selectedFile model) toMsg name content of
+            case fileSelected (selectedFile model) toMsg many name content of
                 Ok interpMsg ->
                     stepApp 100 model interpMsg
 
