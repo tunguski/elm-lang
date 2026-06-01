@@ -647,10 +647,12 @@ public final class SiteGenerator {
       sources[i] = pl.matsuo.elm.util.Resources.read(EDITOR_MODULES[i]);
     }
     // The editor is a full-screen, three-column IDE with its own in-app "back to gallery" link, so
-    // it deliberately does NOT get the shared sidebar wrapper (it would crowd the panes).
+    // it deliberately does NOT get the shared sidebar wrapper (it would crowd the panes). Reset the
+    // body margin so its 100vh layout fills the viewport exactly (no page scrollbar).
     Files.writeString(
         outDir.resolve("editor.html"),
-        JsCompiler.htmlPageProject(null, sources),
+        JsCompiler.htmlPageProject(null, sources)
+            .replace("</head>", "<style>html,body{margin:0;height:100%}</style></head>"),
         StandardCharsets.UTF_8);
   }
 

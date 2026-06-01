@@ -770,6 +770,7 @@ codeColumn model =
     div
         [ style "flex" "1"
         , style "min-width" "0"
+        , style "min-height" "0"
         , style "overflow" "auto"
         , style "padding" "16px"
         ]
@@ -799,6 +800,7 @@ resultColumn model =
         [ style "flex" "0 0 40%"
         , style "max-width" "40%"
         , style "min-width" "0"
+        , style "min-height" "0"
         , style "overflow" "auto"
         , style "padding" "16px 16px 16px 0"
         ]
@@ -1088,6 +1090,7 @@ fileSidebar model =
     div
         [ style "flex" "0 0 220px"
         , style "width" "220px"
+        , style "min-height" "0"
         , style "background" "#fff"
         , style "border-radius" "10px"
         , style "padding" "12px"
