@@ -824,8 +824,11 @@ public final class Prelude {
         pl.matsuo.elm.json.JsonEncode.serialize(jsonTree(a[1]), (int) (long) (Long) a[0]));
 
     // Url / Browser.Navigation: minimal support (headless navigation is a no-op Cmd).
-    fn("Url.toString", 1, a -> a[0]);
-    fn("Url.fromString", 1, a -> d("Just", a[0]));
+    fn("Url.toString", 1, a -> urlToString((ElmRecord) Thunk.resolve(a[0])));
+    fn("Url.fromString", 1, a -> {
+      ElmRecord r = parseUrl((String) Thunk.resolve(a[0]));
+      return r == null ? d("Nothing") : d("Just", r);
+    });
     fn("Browser.Navigation.load", 1, a -> d("$CmdNone"));
     fn("Browser.Navigation.pushUrl", 2, a -> d("$CmdNone"));
     fn("Browser.Navigation.replaceUrl", 2, a -> d("$CmdNone"));
@@ -923,6 +926,52 @@ public final class Prelude {
       }
       default -> throw new pl.matsuo.elm.error.ElmRuntimeError("Unsupported generator: " + g.ctor());
     }
+  }
+
+  // --- Url (an elm/url-shaped record) ------------------------------------
+
+  /** Parses an absolute URL into an elm/url-shaped record, or {@code null} if it isn't absolute. */
+  private static ElmRecord parseUrl(String href) {
+    java.net.URI u;
+    try {
+      u = new java.net.URI(href);
+    } catch (java.net.URISyntaxException e) {
+      return null;
+    }
+    String scheme = u.getScheme();
+    if (scheme == null || u.getHost() == null) {
+      return null;
+    }
+    Map<String, Object> r = new java.util.LinkedHashMap<>();
+    r.put("protocol", "https".equalsIgnoreCase(scheme) ? d("Https") : d("Http"));
+    r.put("host", u.getHost());
+    r.put("port_", u.getPort() < 0 ? d("Nothing") : d("Just", (long) u.getPort()));
+    String path = u.getRawPath();
+    r.put("path", path == null || path.isEmpty() ? "/" : path);
+    r.put("query", u.getRawQuery() == null ? d("Nothing") : d("Just", u.getRawQuery()));
+    r.put("fragment", u.getRawFragment() == null ? d("Nothing") : d("Just", u.getRawFragment()));
+    return new ElmRecord(r);
+  }
+
+  /** Rebuilds a URL string from an elm/url-shaped record. */
+  private static String urlToString(ElmRecord u) {
+    Object protocol = u.get("protocol");
+    boolean https = protocol instanceof ElmData p && p.ctor().equals("Https");
+    StringBuilder sb = new StringBuilder(https ? "https://" : "http://").append(u.get("host"));
+    Object port = u.get("port_");
+    if (port instanceof ElmData pd && pd.ctor().equals("Just")) {
+      sb.append(':').append(pd.arg(0));
+    }
+    sb.append(u.get("path"));
+    Object query = u.get("query");
+    if (query instanceof ElmData qd && qd.ctor().equals("Just")) {
+      sb.append('?').append(qd.arg(0));
+    }
+    Object frag = u.get("fragment");
+    if (frag instanceof ElmData fd && fd.ctor().equals("Just")) {
+      sb.append('#').append(fd.arg(0));
+    }
+    return sb.toString();
   }
 
   /** Unwraps a {@code Json.Encode.Value} ($Json) to its underlying Java JSON tree. */

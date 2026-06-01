@@ -400,8 +400,9 @@ public final class Signatures {
     g("Json.Encode.set", "(a -> Value) -> Set a -> Value");
     g("Json.Encode.encode", "Int -> Value -> String");
 
-    g("Url.fromString", "String -> Maybe Url");
-    g("Url.toString", "Url -> String");
+    // Url is an elm/url-shaped record, so a parsed Url's fields (path, fragment, …) are accessible.
+    g("Url.fromString", "String -> Maybe { protocol : Protocol, host : String, port_ : Maybe Int, path : String, query : Maybe String, fragment : Maybe String }");
+    g("Url.toString", "{ protocol : Protocol, host : String, port_ : Maybe Int, path : String, query : Maybe String, fragment : Maybe String } -> String");
     g("Browser.Navigation.load", "String -> Cmd msg");
     g("Browser.Navigation.pushUrl", "Key -> String -> Cmd msg");
     g("Browser.Navigation.replaceUrl", "Key -> String -> Cmd msg");
