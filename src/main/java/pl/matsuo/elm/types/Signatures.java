@@ -326,9 +326,22 @@ public final class Signatures {
     g("Time.toHour", "Zone -> Posix -> Int");
     g("Time.toMinute", "Zone -> Posix -> Int");
     g("Time.toSecond", "Zone -> Posix -> Int");
+    g("Time.toMillis", "Zone -> Posix -> Int");
+    g("Time.toYear", "Zone -> Posix -> Int");
+    g("Time.toMonth", "Zone -> Posix -> Month");
+    g("Time.toDay", "Zone -> Posix -> Int");
+    g("Time.toWeekday", "Zone -> Posix -> Weekday");
+    g("Time.customZone", "Int -> List Era -> Zone");
     g("Time.utc", "Zone");
     g("Time.here", "Task x Zone");
     g("Time.now", "Task x Posix");
+    // Month and Weekday constructors (built-in unions, like Order's LT/EQ/GT).
+    for (String m : new String[] {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"}) {
+      g(m, "Month");
+    }
+    for (String w : new String[] {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"}) {
+      g(w, "Weekday");
+    }
 
     g("Browser.Events.onAnimationFrame", "(Posix -> msg) -> Sub msg");
     g("Browser.Events.onAnimationFrameDelta", "(Float -> msg) -> Sub msg");

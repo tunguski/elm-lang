@@ -175,6 +175,13 @@
   $rt['Time.toMinute']=function(z){ return function(p){ return Math.floor(zoned(p,z)/60000)%60; }; };
   $rt['Time.toSecond']=function(z){ return function(p){ return Math.floor(zoned(p,z)/1000)%60; }; };
   $rt['Time.toMillis']=function(z){ return function(p){ return zoned(p,z)%1000; }; };
+  var $months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var $weekdays=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  $rt['Time.toYear']=function(z){ return function(p){ return new Date(zoned(p,z)).getUTCFullYear(); }; };
+  $rt['Time.toMonth']=function(z){ return function(p){ return $data($months[new Date(zoned(p,z)).getUTCMonth()],[]); }; };
+  $rt['Time.toDay']=function(z){ return function(p){ return new Date(zoned(p,z)).getUTCDate(); }; };
+  $rt['Time.toWeekday']=function(z){ return function(p){ return $data($weekdays[(new Date(zoned(p,z)).getUTCDay()+6)%7],[]); }; };
+  $rt['Time.customZone']=function(off){ return function(eras){ return $data('$Zone',[off]); }; };
   $rt['Time.every']=function(ms){ return function(toMsg){ return $sub('every:'+ms, function(d){ var id=setInterval(function(){ d(toMsg(Date.now())); }, ms); return function(){ clearInterval(id); }; }); }; };
   // Browser.Events / Browser.Dom: real DOM events as subscriptions (used by elm-playground).
   function domSub(key, target, type, make){ return $sub(key, function(d){ var h=function(e){ var m=make(e); if(m!==undefined) d(m); }; target.addEventListener(type, h); return function(){ target.removeEventListener(type, h); }; }); }

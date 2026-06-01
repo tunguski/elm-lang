@@ -514,6 +514,11 @@ public final class Prelude {
     fn("Time.toMinute", 2, a -> timePart(a[0], a[1], 60000L, 60));
     fn("Time.toSecond", 2, a -> timePart(a[0], a[1], 1000L, 60));
     fn("Time.toMillis", 2, a -> timePart(a[0], a[1], 1L, 1000));
+    fn("Time.toYear", 2, a -> (long) zonedDate(a[0], a[1]).getYear());
+    fn("Time.toMonth", 2, a -> d(MONTHS[zonedDate(a[0], a[1]).getMonthValue() - 1]));
+    fn("Time.toDay", 2, a -> (long) zonedDate(a[0], a[1]).getDayOfMonth());
+    fn("Time.toWeekday", 2, a -> d(WEEKDAYS[zonedDate(a[0], a[1]).getDayOfWeek().getValue() - 1]));
+    fn("Time.customZone", 2, a -> d("$Zone", Operators.asLong(a[0]))); // eras (arg 1) are ignored
 
     fn("Task.perform", 2, a -> d("$Cmd_Task", a[1], a[0])); // (toMsg, task) -> [task, toMsg]
     fn("Task.attempt", 2, a -> d("$Cmd_TaskAttempt", a[1], a[0])); // delivers Ok value / Err
@@ -999,6 +1004,17 @@ public final class Prelude {
     long offsetMinutes = Operators.asLong(((ElmData) zone).arg(0));
     long millis = Operators.asLong(((ElmData) posix).arg(0)) + offsetMinutes * 60000L;
     return Math.floorMod(millis / unit, (long) mod);
+  }
+
+  private static final String[] MONTHS =
+      {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  private static final String[] WEEKDAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+
+  /** The calendar date of a Posix instant in a Zone (offset applied, then read as a UTC date). */
+  private static java.time.LocalDate zonedDate(Object zone, Object posix) {
+    long offsetMinutes = Operators.asLong(((ElmData) zone).arg(0));
+    long millis = Operators.asLong(((ElmData) posix).arg(0)) + offsetMinutes * 60000L;
+    return java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneOffset.UTC).toLocalDate();
   }
 
   // --- Html / Svg / Browser ----------------------------------------------
