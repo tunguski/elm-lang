@@ -273,6 +273,41 @@ class BuildRunnerTest {
   }
 
   @Test
+  void dependencyModuleSourcesAreIncludedAutomatically() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-deps-");
+    // The "core" module is Core.elm (with a main so it compiles to a page on its own).
+    Files.writeString(
+        dir.resolve("Core.elm"),
+        "module Core exposing (greeting, main)\nimport Html exposing (text)\n"
+            + "greeting = \"from-core\"\nmain = text greeting\n");
+    // "web" imports Core but lists no withSources — it just declares the dependency.
+    Files.writeString(
+        dir.resolve("Web.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nimport Core\nmain = text Core.greeting\n");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "suite" "1.0.0"
+                [ module_ "core" "." |> withEntry "Core.elm" |> withOutput "core/out"
+                , module_ "web" "."
+                    |> withEntry "Web.elm"
+                    |> withOutput "web/out"
+                    |> withDependencies [ dependency "core" "1.0.0" ]
+                ]
+        """);
+    Result r = build(dir, "compile");
+    assertEquals(0, r.code(), r.out());
+    String js = Files.readString(dir.resolve("web/out/web.js"), StandardCharsets.UTF_8);
+    assertTrue(js.contains("from-core"), "the dependency's source was bundled automatically: " + r.out());
+  }
+
+  @Test
   void cleanRemovesEachModulesOutput() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-clean-");
     Files.createDirectories(dir.resolve("out"));

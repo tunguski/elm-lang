@@ -37,6 +37,8 @@ module Build exposing
     , defaultGoals
     , effectiveGoals
     , buildOrder
+    , transitiveDeps
+    , withDependencySources
     , plan
     , cleanPlan
     )
@@ -432,14 +434,58 @@ buildOrder proj =
     go proj.modules []
 
 
+{-| Every sibling module a module depends on, transitively (the modules whose sources it needs to
+compile). External-package dependencies are ignored; a module never includes itself. -}
+transitiveDeps : Project -> Module -> List Module
+transitiveDeps proj m =
+    let
+        siblings =
+            List.map .name proj.modules
+
+        depNamesOf mod =
+            mod.dependencies |> List.map .name |> List.filter (\d -> List.member d siblings)
+
+        collect toVisit visited =
+            case toVisit of
+                [] ->
+                    visited
+
+                name :: rest ->
+                    if List.member name visited then
+                        collect rest visited
+
+                    else
+                        case byName proj name of
+                            Just dm ->
+                                collect (rest ++ depNamesOf dm) (visited ++ [ name ])
+
+                            Nothing ->
+                                collect rest visited
+    in
+    List.filterMap (byName proj) (collect (depNamesOf m) [])
+
+
+byName : Project -> String -> Maybe Module
+byName proj name =
+    List.head (List.filter (\m -> m.name == name) proj.modules)
+
+
+{-| Adds the sources of a module's (transitive sibling) dependencies to its own, so compiling and
+validating it sees those modules without listing them by hand. -}
+withDependencySources : Project -> Module -> Module
+withDependencySources proj m =
+    { m | sources = m.sources ++ List.concatMap (\d -> d.entry :: d.sources) (transitiveDeps proj m) }
+
+
 {-| The ordered steps to reach `target`: phase by phase (each phase across every module in dependency
-order), and within a phase, goal by goal. Pure — running it computes the whole build plan without
-performing anything, which is exactly what makes a build testable and a `--dry-run` possible. -}
+order), and within a phase, goal by goal. Each module's sources are expanded with its dependencies'.
+Pure — running it computes the whole build plan without performing anything, which is exactly what
+makes a build testable and a `--dry-run` possible. -}
 plan : Phase -> Project -> List Step
 plan target proj =
     let
         ordered =
-            buildOrder proj
+            List.map (withDependencySources proj) (buildOrder proj)
     in
     phasesUpTo target
         |> List.concatMap (\phase -> stepsForPhase phase ordered)
