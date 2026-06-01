@@ -91,6 +91,44 @@ class ReplTest {
   }
 
   @Test
+  void loadAcceptsSeveralFilesAtOnce() throws Exception {
+    java.nio.file.Path a = java.nio.file.Files.createTempFile("repl-a-", ".elm");
+    java.nio.file.Path b = java.nio.file.Files.createTempFile("repl-b-", ".elm");
+    java.nio.file.Files.writeString(a, "module A exposing (..)\n\ndouble n = n * 2\n");
+    java.nio.file.Files.writeString(b, "module B exposing (..)\n\ntriple n = n * 3\n");
+    String out = session(":load " + a + " " + b + "\ndouble (triple 7)\n:quit\n");
+    assertTrue(out.contains("loaded 1 definitions from " + a), out);
+    assertTrue(out.contains("loaded 1 definitions from " + b), out);
+    assertTrue(out.contains("42"), out); // both files' definitions are in scope: double (triple 7)
+    java.nio.file.Files.deleteIfExists(a);
+    java.nio.file.Files.deleteIfExists(b);
+  }
+
+  @Test
+  void browseListsSessionBindingsWithTypes() throws Exception {
+    String out = session("double n = n * 2\nx = 21\n:browse\n:quit\n");
+    assertTrue(out.contains("double : number -> number"), out);
+    assertTrue(out.contains("x : number"), out);
+    assertTrue(out.contains("built-ins in scope"), out);
+  }
+
+  @Test
+  void completeListsInScopeNamesByPrefix() throws Exception {
+    String out = session("doubler n = n * 2\n:complete doub\n:quit\n");
+    assertTrue(out.contains("doubler"), out); // the session binding matches
+    String builtins = session(":complete String.to\n:quit\n");
+    assertTrue(builtins.contains("String.toUpper") || builtins.contains("String.toInt"), builtins);
+  }
+
+  @Test
+  void completionsHelperUnionsSessionAndBuiltins() {
+    var matches = Repl.completions(java.util.List.of("myValue = 1"), "my");
+    assertTrue(matches.contains("myValue"), matches.toString());
+    assertTrue(Repl.completions(java.util.List.of(), "List.ma").contains("List.map"),
+        Repl.completions(java.util.List.of(), "List.ma").toString());
+  }
+
+  @Test
   void completeDetectsBalanceAndContinuations() {
     assertTrue(Repl.complete("1 + 2"));
     assertTrue(Repl.complete("begin")); // ends in "in" but isn't the keyword

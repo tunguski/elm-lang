@@ -20,8 +20,11 @@ import pl.matsuo.elm.types.TypeChecker;
  * doesn't end on a continuation token. Commands: {@code :type <expr>} (alias {@code :t}) shows the
  * inferred type, {@code :info <name>} (aliases {@code :i}/{@code :doc}) shows a name's type (a
  * session binding or any builtin) and its source if defined this session, {@code :load <file.elm>}
- * (alias {@code :l}) brings a module's definitions into scope, {@code :history} lists the session's
- * entries, {@code :reset} forgets all definitions, {@code :help}, {@code :quit}/{@code :q}.
+ * (alias {@code :l}, accepts several files at once) brings a module's definitions into scope,
+ * {@code :browse} (alias {@code :b}) lists the session's bindings with their types,
+ * {@code :complete <prefix>} lists in-scope names starting with a prefix (the hook a line-reader's
+ * tab-completion would call), {@code :history} lists the session's entries, {@code :reset} forgets
+ * all definitions, {@code :help}, {@code :quit}/{@code :q}.
  */
 public final class Repl {
 
@@ -32,7 +35,7 @@ public final class Repl {
     BufferedReader reader = in instanceof BufferedReader b ? b : new BufferedReader(in);
     List<String> defs = new ArrayList<>(); // accumulated `name … = …` definitions
     List<String> history = new ArrayList<>(); // entries entered this session
-    out.println("elm-lang REPL — expressions, definitions (x = …), :type, :load, :history, :reset, :help, :quit");
+    out.println("elm-lang REPL — expressions, definitions (x = …), :type, :load, :browse, :history, :reset, :help, :quit");
     out.print("> ");
     out.flush();
     StringBuilder buffer = new StringBuilder();
@@ -60,7 +63,7 @@ public final class Repl {
       } else if (trimmed.equals(":help")) {
         out.println(
             "expressions are evaluated; `x = …` defines a binding; :type <expr>, :info <name>,"
-                + " :load <file.elm>, :history, :reset, :quit");
+                + " :load <file.elm> [more.elm …], :browse, :complete <prefix>, :history, :reset, :quit");
       } else if (trimmed.equals(":reset")) {
         defs.clear();
         out.println("(forgot all definitions)");
@@ -69,14 +72,25 @@ public final class Repl {
           out.println((i + 1) + "  " + history.get(i).replace("\n", "\n   "));
         }
       } else if (trimmed.startsWith(":load ") || trimmed.startsWith(":l ")) {
-        String path = trimmed.substring(trimmed.indexOf(' ') + 1).trim();
-        try {
-          List<String> loaded = topLevelDefs(Files.readString(Path.of(path)));
-          defs.addAll(loaded);
-          out.println("(loaded " + loaded.size() + " definitions from " + path + ")");
-        } catch (Exception e) {
-          out.println("Error: could not load " + path + ": " + e.getMessage());
+        // Multiple files may be given at once: `:load A.elm B.elm` loads each in turn.
+        String[] paths = trimmed.substring(trimmed.indexOf(' ') + 1).trim().split("\\s+");
+        for (String path : paths) {
+          if (path.isEmpty()) {
+            continue;
+          }
+          try {
+            List<String> loaded = topLevelDefs(Files.readString(Path.of(path)));
+            defs.addAll(loaded);
+            out.println("(loaded " + loaded.size() + " definitions from " + path + ")");
+          } catch (Exception e) {
+            out.println("Error: could not load " + path + ": " + e.getMessage());
+          }
         }
+      } else if (trimmed.equals(":browse") || trimmed.equals(":b")) {
+        out.print(browse(defs));
+      } else if (trimmed.startsWith(":complete ")) {
+        List<String> matches = completions(defs, trimmed.substring(trimmed.indexOf(' ') + 1).trim());
+        out.println(matches.isEmpty() ? "(no matches)" : String.join(" ", matches));
       } else if (trimmed.startsWith(":type ") || trimmed.startsWith(":t ")) {
         String expr = trimmed.substring(trimmed.indexOf(' ') + 1);
         out.println(typeOf(defs, expr));
@@ -102,6 +116,51 @@ public final class Repl {
     } catch (RuntimeException e) {
       return "Error: " + e.getMessage();
     }
+  }
+
+  /** {@code :browse}: every session binding with its inferred type, then the count of built-ins in
+   * scope (which {@code :complete <prefix>} can enumerate). */
+  static String browse(List<String> defs) {
+    StringBuilder sb = new StringBuilder();
+    List<String> names = sessionNames(defs);
+    if (names.isEmpty()) {
+      sb.append("(no session bindings yet)\n");
+    } else {
+      for (String name : names) {
+        sb.append(name).append(" : ").append(typeOfName(defs, name)).append("\n");
+      }
+    }
+    sb.append("-- ").append(pl.matsuo.elm.types.Signatures.globals().size())
+        .append(" built-ins in scope (e.g. :complete List., :complete map)\n");
+    return sb.toString();
+  }
+
+  /** In-scope names beginning with {@code prefix}: this session's bindings and the typed built-ins,
+   * sorted and de-duplicated. This is the lookup a line-reader's tab-completion would call. */
+  static List<String> completions(List<String> defs, String prefix) {
+    java.util.TreeSet<String> names = new java.util.TreeSet<>(sessionNames(defs));
+    names.addAll(pl.matsuo.elm.types.Signatures.globals().keySet());
+    List<String> out = new ArrayList<>();
+    for (String name : names) {
+      if (name.startsWith(prefix)) {
+        out.add(name);
+      }
+    }
+    return out;
+  }
+
+  /** The names bound by this session's definitions (most recent shadowing wins), in first-seen order. */
+  private static List<String> sessionNames(List<String> defs) {
+    java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+    for (String d : defs) {
+      if (isDefinition(d)) {
+        String name = definedName(d);
+        if (!name.equals("type")) { // skip `type`/`type alias` chunks, whose lead word isn't a value
+          names.add(name);
+        }
+      }
+    }
+    return new ArrayList<>(names);
   }
 
   /** {@code :info}/{@code :doc <name>}: the inferred type of {@code name} (works for a session
