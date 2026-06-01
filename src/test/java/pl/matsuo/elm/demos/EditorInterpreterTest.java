@@ -468,7 +468,7 @@ class EditorInterpreterTest {
     }
     String page = JsCompiler.htmlPageProject(null, sources);
     // The exact constructors HeadlessChromeTest dispatches via window.$app.dispatch($data('X',...)).
-    for (String ctor : new String[] {"EditAt", "Interp", "Rewind", "GotHash"}) {
+    for (String ctor : new String[] {"EditAt", "Interp", "Rewind", "GotHash", "LoadedSession"}) {
       assertTrue(
           page.contains("'" + ctor + "'") || page.contains("\"" + ctor + "\""),
           "compiled editor bundle has no handler for the dispatched message " + ctor);

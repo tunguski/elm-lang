@@ -129,6 +129,9 @@
   // setHash writes one (URI-encoded) so a session round-trips through the address bar.
   $rt['Browser.Navigation.getHash']=function(toMsg){ return $cmd(function(d){ var h=''; try{ h=(window.location&&window.location.hash)||''; if(h.charAt(0)==='#') h=h.slice(1); h=decodeURIComponent(h); }catch(e){ h=''; } d(toMsg(h)); }); };
   $rt['Browser.Navigation.setHash']=function(s){ return $cmd(function(d){ try{ window.location.hash=encodeURIComponent(s); }catch(e){} }); };
+  // localStorage bridge (used by the editor's autosave): save/load a string under a key.
+  $rt['Storage.save']=function(key){ return function(val){ return $cmd(function(d){ try{ localStorage.setItem(key, val); }catch(e){} }); }; };
+  $rt['Storage.load']=function(key){ return function(toMsg){ return $cmd(function(d){ var v=null; try{ v=localStorage.getItem(key); }catch(e){} d(toMsg(v==null?$data('Nothing',[]):$data('Just',[v]))); }); }; };
   $rt['Json.Decode.decodeString']=function(dec){ return function(s){ try{ var x=dec._[0](JSON.parse(s)); return x.ok?$data('Ok',[x.v]):$data('Err',[$data('Failure',[String(x.v)])]); }catch(e){ return $data('Err',[$data('Failure',[String(e)])]); } }; };
   $rt['Json.Decode.decodeValue']=function(dec){ return function(j){ var x=dec._[0](j); return x.ok?$data('Ok',[x.v]):$data('Err',[$data('Failure',[String(x.v)])]); }; };
   // Http: real fetch; any failure maps to an Http.Error so update's error branch renders.

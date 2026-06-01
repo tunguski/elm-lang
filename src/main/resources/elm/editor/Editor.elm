@@ -25,6 +25,7 @@ import Html.Events exposing (onClick, onInput, onMouseDown, on)
 import Highlight
 import Assist
 import Share
+import Storage
 import Http
 import Lang exposing (Value(..))
 import Time
@@ -73,6 +74,7 @@ type Msg
     | ShareInput String
     | Restore
     | GotHash String
+    | LoadedSession (Maybe String)
     | NoOp
 
 
@@ -88,7 +90,7 @@ starter =
 program : List String -> Program () Model Msg
 program urls =
     Browser.element
-        { init = \_ -> ( initModel, Cmd.batch [ Browser.Navigation.getHash GotHash, fetchAll urls ] )
+        { init = \_ -> ( initModel, Cmd.batch [ Browser.Navigation.getHash GotHash, Storage.load sessionKey LoadedSession, fetchAll urls ] )
         , update = update
         , view = view
         , subscriptions = subscriptions
@@ -307,12 +309,14 @@ update msg model =
                 word =
                     Assist.wordAt content caret
             in
-            refreshAndRun
-                { model
-                    | files = setFile model.selected content model.files
-                    , caret = caret
-                    , completions = Assist.completions content word
-                }
+            withAutosave
+                (refreshAndRun
+                    { model
+                        | files = setFile model.selected content model.files
+                        , caret = caret
+                        , completions = Assist.completions content word
+                    }
+                )
 
         AcceptCompletion choice ->
             -- Replace the half-typed word with the chosen completion.
@@ -346,13 +350,20 @@ update msg model =
 
         GotHash hash ->
             -- A permalink (#hash) opened the editor: restore that session in place of the defaults.
-            case Share.decodeFiles hash of
-                [] ->
-                    ( model, Cmd.none )
+            restoreSession hash model
 
-                files ->
-                    refreshAndRun
-                        { model | files = files, selected = Tuple.first (firstFile files), restored = True }
+        LoadedSession stored ->
+            -- An autosaved session in localStorage: restore it, unless a permalink already won.
+            case stored of
+                Just text ->
+                    if model.restored then
+                        ( model, Cmd.none )
+
+                    else
+                        restoreSession text model
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         Restore ->
             -- Replace the session with the files decoded from the pasted share string.
@@ -507,6 +518,31 @@ update msg model =
 
         NoOp ->
             ( model, Cmd.none )
+
+
+{-| The localStorage key the session is autosaved under. -}
+sessionKey : String
+sessionKey =
+    "elm-editor-session"
+
+
+{-| Tacks an autosave of the model's files onto a command, so edits survive a page reload. -}
+withAutosave : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+withAutosave ( m, cmd ) =
+    ( m, Cmd.batch [ cmd, Storage.save sessionKey (Share.encodeFiles m.files) ] )
+
+
+{-| Replaces the session with the files encoded in `text` (a permalink or autosaved string), marking
+the session restored so the default examples (and a later autosave load) don't clobber it. -}
+restoreSession : String -> Model -> ( Model, Cmd Msg )
+restoreSession text model =
+    case Share.decodeFiles text of
+        [] ->
+            ( model, Cmd.none )
+
+        files ->
+            refreshAndRun
+                { model | files = files, selected = Tuple.first (firstFile files), restored = True }
 
 
 {-| The first file of a session (a safe fallback when a restored session is somehow empty). -}

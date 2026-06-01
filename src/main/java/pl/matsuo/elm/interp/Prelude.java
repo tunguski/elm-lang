@@ -826,6 +826,9 @@ public final class Prelude {
     // The permalink bridge is browser-only; headlessly there is no URL fragment, so both are no-ops.
     fn("Browser.Navigation.getHash", 1, a -> d("$CmdNone"));
     fn("Browser.Navigation.setHash", 1, a -> d("$CmdNone"));
+    // localStorage is browser-only too; headlessly there is nothing to save to or load from.
+    fn("Storage.save", 2, a -> d("$CmdNone"));
+    fn("Storage.load", 2, a -> d("$CmdNone"));
   }
 
   /** Unwraps a {@code Json.Encode.Value} ($Json) to its underlying Java JSON tree. */

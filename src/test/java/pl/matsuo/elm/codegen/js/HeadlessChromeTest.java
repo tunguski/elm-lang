@@ -306,6 +306,21 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void editorRestoresAnAutosavedSessionFromLocalStorage() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    // LoadedSession(Just <encoded>) is what the autosave load dispatches at startup; it restores the
+    // saved file, whose main concatenates "AUTO" ++ "SAVED" (the rendered "AUTOSAVED" proves it ran).
+    String encoded = "9,Saved.elm31,main = text (\"AUTO\" ++ \"SAVED\")";
+    String driver = "window.$app.dispatch($data('LoadedSession',[$data('Just',['" + encoded + "'])]));";
+    String dom = renderPage(JsCompiler.htmlPageProject(driver, modules));
+    assertTrue(dom.contains("AUTOSAVED"), "the autosaved session restored and rendered live: " + dom);
+  }
+
+  @Test
   void editorLoadsExamplesOverHttp() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Serve the editor page + example files over real HTTP and confirm the editor fetches them at
