@@ -57,26 +57,17 @@ report dir entries =
         byExt =
             extensionBreakdown files
     in
-    print ("Folder report for " ++ dir)
-        (print separator
-            (print ("Files:        " ++ String.fromInt (List.length files))
-                (print ("Directories:  " ++ String.fromInt (List.length dirs))
-                    (print ("Total size:   " ++ humanSize totalSize)
-                        (print ""
-                            (print "Largest files:"
-                                (printLines (List.map largestLine largest)
-                                    (print ""
-                                        (print "By extension:"
-                                            (printLines (List.map extLine byExt) done)
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
-            )
-        )
+    [ "Folder report for " ++ dir
+    , separator
+    , "Files:        " ++ String.fromInt (List.length files)
+    , "Directories:  " ++ String.fromInt (List.length dirs)
+    , "Total size:   " ++ humanSize totalSize
+    , ""
+    , "Largest files:"
+    ]
+        ++ List.map largestLine largest
+        ++ ("" :: "By extension:" :: List.map extLine byExt)
+        |> printAll
 
 
 separator : String
@@ -84,10 +75,11 @@ separator =
     "----------------------------------------"
 
 
-{-| Prints each line in turn, then continues. -}
-printLines : List String -> Io -> Io
-printLines lines rest =
-    List.foldr print rest lines
+{-| Prints every line in turn, then finishes. Lets the report be built as one flat list of lines and
+piped here, instead of deeply nesting `print` calls. -}
+printAll : List String -> Io
+printAll lines =
+    List.foldr print done lines
 
 
 largestLine : Entry -> String
