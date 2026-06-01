@@ -194,10 +194,12 @@ public final class Signatures {
     g("Maybe.map", "(a -> b) -> Maybe a -> Maybe b");
     g("Maybe.map2", "(a -> b -> v) -> Maybe a -> Maybe b -> Maybe v");
     g("Maybe.map3", "(a -> b -> c -> v) -> Maybe a -> Maybe b -> Maybe c -> Maybe v");
+    g("Maybe.map4", "(a -> b -> c -> d -> v) -> Maybe a -> Maybe b -> Maybe c -> Maybe d -> Maybe v");
     g("Maybe.andThen", "(a -> Maybe b) -> Maybe a -> Maybe b");
     g("Result.withDefault", "a -> Result e a -> a");
     g("Result.map", "(a -> b) -> Result e a -> Result e b");
     g("Result.map2", "(a -> b -> v) -> Result e a -> Result e b -> Result e v");
+    g("Result.map3", "(a -> b -> c -> v) -> Result e a -> Result e b -> Result e c -> Result e v");
     g("Result.andThen", "(a -> Result e b) -> Result e a -> Result e b");
     g("Result.mapError", "(e -> f) -> Result e a -> Result f a");
     g("Result.toMaybe", "Result e a -> Maybe a");
@@ -426,6 +428,7 @@ public final class Signatures {
     g("Dict.fromList", "List ( comparable, v ) -> Dict comparable v");
     g("Dict.map", "(k -> a -> b) -> Dict k a -> Dict k b");
     g("Dict.foldl", "(k -> v -> b -> b) -> b -> Dict k v -> b");
+    g("Dict.foldr", "(k -> v -> b -> b) -> b -> Dict k v -> b");
     g("Dict.partition", "(comparable -> v -> Bool) -> Dict comparable v -> ( Dict comparable v, Dict comparable v )");
     g("Dict.merge", "(comparable -> a -> r -> r) -> (comparable -> a -> b -> r -> r) -> (comparable -> b -> r -> r) -> Dict comparable a -> Dict comparable b -> r -> r");
 
@@ -438,6 +441,8 @@ public final class Signatures {
     g("Set.toList", "Set a -> List a");
     g("Set.fromList", "List comparable -> Set comparable");
     g("Set.partition", "(comparable -> Bool) -> Set comparable -> ( Set comparable, Set comparable )");
+    g("Set.foldl", "(a -> b -> b) -> b -> Set a -> b");
+    g("Set.foldr", "(a -> b -> b) -> b -> Set a -> b");
 
     g("Array.empty", "Array a");
     g("Array.fromList", "List a -> Array a");

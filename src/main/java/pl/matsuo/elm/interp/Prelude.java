@@ -297,6 +297,15 @@ public final class Prelude {
       }
       return acc;
     });
+    fn("Dict.foldr", 3, a -> {
+      Object acc = a[1];
+      java.util.List<Map.Entry<Object, Object>> entries =
+          new java.util.ArrayList<>(asDict(a[2]).entries().entrySet());
+      for (int i = entries.size() - 1; i >= 0; i--) {
+        acc = Apply.applyAll(a[0], entries.get(i).getKey(), entries.get(i).getValue(), acc);
+      }
+      return acc;
+    });
     fn("Dict.union", 2, a -> {
       ElmDict out = asDict(a[1]);
       for (Map.Entry<Object, Object> e : asDict(a[0]).entries().entrySet()) {
@@ -449,6 +458,14 @@ public final class Prelude {
       Object acc = a[1];
       for (Object x : asSet(a[2]).elements()) {
         acc = Apply.applyAll(a[0], x, acc);
+      }
+      return acc;
+    });
+    fn("Set.foldr", 3, a -> {
+      Object acc = a[1];
+      java.util.List<Object> elems = new java.util.ArrayList<>(asSet(a[2]).elements());
+      for (int i = elems.size() - 1; i >= 0; i--) {
+        acc = Apply.applyAll(a[0], elems.get(i), acc);
       }
       return acc;
     });
@@ -1492,6 +1509,18 @@ public final class Prelude {
       }
       return NOTHING;
     });
+    fn("Maybe.map3", 4, a -> {
+      if (isJust(a[1]) && isJust(a[2]) && isJust(a[3])) {
+        return just(Apply.applyAll(a[0], justValue(a[1]), justValue(a[2]), justValue(a[3])));
+      }
+      return NOTHING;
+    });
+    fn("Maybe.map4", 5, a -> {
+      if (isJust(a[1]) && isJust(a[2]) && isJust(a[3]) && isJust(a[4])) {
+        return just(Apply.applyAll(a[0], justValue(a[1]), justValue(a[2]), justValue(a[3]), justValue(a[4])));
+      }
+      return NOTHING;
+    });
   }
 
   private static boolean isJust(Object o) {
@@ -1511,6 +1540,29 @@ public final class Prelude {
     fn("Result.mapError", 2, a ->
         isOk(a[1]) ? a[1] : new ElmData("Err", new Object[] {Apply.apply(a[0], ((ElmData) a[1]).arg(0))}));
     fn("Result.andThen", 2, a -> isOk(a[1]) ? Apply.apply(a[0], ((ElmData) a[1]).arg(0)) : a[1]);
+    fn("Result.map2", 3, a -> {
+      if (!isOk(a[1])) {
+        return a[1];
+      }
+      if (!isOk(a[2])) {
+        return a[2];
+      }
+      return new ElmData("Ok",
+          new Object[] {Apply.applyAll(a[0], ((ElmData) a[1]).arg(0), ((ElmData) a[2]).arg(0))});
+    });
+    fn("Result.map3", 4, a -> {
+      if (!isOk(a[1])) {
+        return a[1];
+      }
+      if (!isOk(a[2])) {
+        return a[2];
+      }
+      if (!isOk(a[3])) {
+        return a[3];
+      }
+      return new ElmData("Ok", new Object[] {
+          Apply.applyAll(a[0], ((ElmData) a[1]).arg(0), ((ElmData) a[2]).arg(0), ((ElmData) a[3]).arg(0))});
+    });
     fn("Result.toMaybe", 1, a -> isOk(a[0]) ? just(((ElmData) a[0]).arg(0)) : NOTHING);
     fn("Result.fromMaybe", 2, a ->
         isJust(a[1]) ? new ElmData("Ok", new Object[] {justValue(a[1])}) : new ElmData("Err", new Object[] {a[0]}));

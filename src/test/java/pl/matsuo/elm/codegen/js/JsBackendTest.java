@@ -215,6 +215,18 @@ class JsBackendTest {
   }
 
   @Test
+  void maybeResultDictSetFoldAdditionsAgreeAcrossBackends() {
+    same("Maybe.map3 (\\a b c -> a + b + c) (Just 1) (Just 2) (Just 3)");
+    same("Maybe.map3 (\\a b c -> a + b + c) (Just 1) Nothing (Just 3)"); // Nothing
+    same("Maybe.map4 (\\a b c d -> a + b + c + d) (Just 1) (Just 2) (Just 3) (Just 4)");
+    same("Result.map2 (\\a b -> a + b) (Ok 1) (Ok 2)");
+    same("Result.map2 (\\a b -> a + b) (Err \"e\") (Ok 2)"); // short-circuits to the Err
+    same("Result.map3 (\\a b c -> a + b + c) (Ok 1) (Ok 2) (Ok 3)");
+    same("Dict.foldr (\\k v acc -> k ++ acc) \"\" (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])");
+    same("Set.foldr (\\x acc -> x :: acc) [] (Set.fromList [ 3, 1, 2 ])");
+  }
+
+  @Test
   void arrayAndListAdditionsAgreeAcrossBackends() {
     same("Array.toList (Array.filter (\\x -> x > 2) (Array.fromList [ 1, 2, 3, 4 ]))");
     same("Array.toIndexedList (Array.fromList [ \"a\", \"b\", \"c\" ])");
