@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep, httpCmd, httpResult, fileSelectCmd, fileSelected, taskResult)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, appAnimation, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep, httpCmd, httpResult, fileSelectCmd, fileSelected, taskResult)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -31,7 +31,7 @@ builtins =
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
-        ++ [ "File.Select.file", "File.Select.files", "File.toString", "File.toUrl", "File.name", "File.mime", "File.size", "Task.perform" ]
+        ++ [ "File.Select.file", "File.Select.files", "File.toString", "File.toUrl", "File.name", "File.mime", "File.size", "Task.perform", "Task.attempt" ]
         ++ [ "field", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "succeed", "list", "andThen", "oneOf", "nullable" ]
         ++ [ "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object", "Encode.list", "Encode.encode" ]
         ++ webglNames
@@ -48,6 +48,14 @@ webglNames =
         ++ [ "WebGL.clearColor", "WebGL.depth", "WebGL.alpha", "WebGL.antialias", "WebGL.Texture.load", "WebGL.Texture.size" ]
         ++ [ "vec2", "vec3", "vec4" ]
         ++ [ "Mat4.makePerspective", "Mat4.makeLookAt", "Mat4.makeRotate", "Mat4.makeTranslate", "Mat4.makeScale", "Mat4.mul", "Mat4.mulAffine", "Mat4.transform", "Mat4.inverse", "Mat4.transpose", "Mat4.makeOrtho2D" ]
+        -- The conventional `Math.Vector3 as Vec3` / `Math.Vector2 as Vec2` aliases. Opaque to the
+        -- interpreter; the JS WebGL bridge computes them for real (see $glScalar in dom.js).
+        ++ [ "Vec3.add", "Vec3.sub", "Vec3.scale", "Vec3.normalize", "Vec3.negate", "Vec3.dot", "Vec3.cross", "Vec3.length", "Vec3.distance", "Vec3.direction", "Vec3.getX", "Vec3.getY", "Vec3.getZ", "Vec3.setX", "Vec3.setY", "Vec3.setZ", "Vec3.i", "Vec3.j", "Vec3.k", "Vec3.fromRecord", "Vec3.toRecord" ]
+        ++ [ "Vec2.add", "Vec2.sub", "Vec2.scale", "Vec2.normalize", "Vec2.length", "Vec2.getX", "Vec2.getY" ]
+        -- `WebGL.Texture as Texture` aliased names, plus the texture-option constants.
+        ++ [ "Texture.load", "Texture.loadWith", "Texture.size", "Texture.nearest", "Texture.linear", "Texture.repeat", "Texture.clampToEdge", "Texture.mirroredRepeat", "Texture.nearestMipmapNearest", "Texture.linearMipmapLinear" ]
+        -- `Browser.Dom as Dom`: getViewport is an opaque Task (fed to Task.perform).
+        ++ [ "Dom.getViewport" ]
 
 
 {-| evancz/elm-playground builtins: shape constructors, transforms, colours and the `picture`/
@@ -59,6 +67,14 @@ playgroundNames =
     [ "picture", "animation", "game", "oval", "rectangle", "square", "triangle", "pentagon", "hexagon", "octagon", "words", "image" ]
         ++ [ "move", "moveUp", "moveDown", "moveLeft", "moveRight", "moveX", "moveY", "rotate", "scale", "fade" ]
         ++ [ "rgb", "spin", "wave", "zigzag", "toX", "toY", "degrees" ]
+
+
+{-| `Browser.Events` subscription functions, recognised by their (unqualified) field name so the
+import alias (`as E`, `as Events`, …) doesn't matter. `onAnimationFrameDelta` is driven live by the
+editor; the rest are accepted as opaque (no-op) subscriptions so the programs run. -}
+browserEventSubs : List String
+browserEventSubs =
+    [ "onAnimationFrameDelta", "onAnimationFrame", "onResize", "onMouseMove", "onMouseDown", "onMouseUp", "onKeyDown", "onKeyUp", "onKeyPress", "onVisibilityChange" ]
 
 
 {-| The Html (and inline SVG) element builtins (each takes a list of attributes then a list of
@@ -100,6 +116,13 @@ arity name =
         3
 
     else if List.member name [ "WebGL.triangles", "WebGL.lines", "WebGL.lineStrip", "WebGL.lineLoop", "WebGL.points", "WebGL.triangleStrip", "WebGL.triangleFan", "WebGL.depth", "WebGL.alpha", "WebGL.Texture.load", "WebGL.Texture.size", "Mat4.makeTranslate", "Mat4.makeScale", "Mat4.inverse", "Mat4.transpose" ] then
+        1
+
+    else if List.member name [ "Vec3.normalize", "Vec3.negate", "Vec3.length", "Vec3.getX", "Vec3.getY", "Vec3.getZ", "Vec3.fromRecord", "Vec3.toRecord", "Vec2.normalize", "Vec2.length", "Vec2.getX", "Vec2.getY", "Texture.load", "Texture.size" ] then
+        1
+
+    else if List.member name browserEventSubs then
+        -- Each Browser.Events subscription takes a single argument (a toMsg or a decoder).
         1
 
     else if List.member name [ "WebGL.toHtmlWith", "vec3", "Mat4.makeLookAt" ] then
@@ -303,6 +326,11 @@ evalExpr globals env expr =
                     else if List.member qualified builtins then
                         Ok (VBuiltin qualified [])
 
+                    else if List.member field browserEventSubs then
+                        -- A Browser.Events subscription under any import alias (E, Events, …): resolve
+                        -- by the bare field name so `E.onAnimationFrameDelta`, `Events.onResize`, … all work.
+                        Ok (VBuiltin field [])
+
                     else
                         Err ("unknown qualified name: " ++ qualified)
 
@@ -439,6 +467,19 @@ runBuiltin globals name args =
 
     else if List.member name playgroundNames then
         runPlayground globals name args
+
+    else if name == "onAnimationFrameDelta" then
+        -- The editor drives this live: a frame's delta (ms) is fed to its toMsg each animation frame.
+        case args of
+            [ toMsg ] ->
+                Ok (VCtor "Sub.animationFrame" [ toMsg ])
+
+            _ ->
+                Ok (VCtor "Sub" [])
+
+    else if List.member name browserEventSubs then
+        -- Other Browser.Events subscriptions: accepted as opaque no-op subs so the program runs.
+        Ok (VCtor "Sub" [])
 
     else if name == "WebGL.toHtml" then
         case args of
@@ -1760,6 +1801,56 @@ appSubscription files model =
 
         Err _ ->
             Nothing
+
+
+{-| If the app subscribes (anywhere in `subscriptions`, including inside a `Sub.batch`) via
+`Browser.Events.onAnimationFrameDelta`, the toMsg the editor applies to each frame's delta (in ms).
+Lets animated programs — like the WebGL examples that orbit a camera over time — actually move. -}
+appAnimation : List ( String, String ) -> Value -> Maybe Value
+appAnimation files model =
+    case parseProject files of
+        Ok globals ->
+            case evalGlobal globals "subscriptions" |> Result.andThen (\f -> applyValue globals f model) of
+                Ok subs ->
+                    findAnimationSub subs
+
+                Err _ ->
+                    Nothing
+
+        Err _ ->
+            Nothing
+
+
+{-| Searches a (possibly batched) subscription value for an `onAnimationFrameDelta` sub. -}
+findAnimationSub : Value -> Maybe Value
+findAnimationSub v =
+    case v of
+        VCtor "Sub.animationFrame" [ toMsg ] ->
+            Just toMsg
+
+        VCtor _ args ->
+            firstJust findAnimationSub args
+
+        VList items ->
+            firstJust findAnimationSub items
+
+        _ ->
+            Nothing
+
+
+firstJust : (a -> Maybe b) -> List a -> Maybe b
+firstJust f xs =
+    case xs of
+        [] ->
+            Nothing
+
+        x :: rest ->
+            case f x of
+                Just y ->
+                    Just y
+
+                Nothing ->
+                    firstJust f rest
 
 
 {-| Resolves a `Random.generate` command: samples its generator with the editor's `seed` and applies

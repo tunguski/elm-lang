@@ -214,7 +214,7 @@ parseAtom tokens =
             Ok ( Var name, rest )
 
         TLambda :: rest ->
-            parseLambda rest []
+            parseLambda rest
 
         TLParen :: TRParen :: rest ->
             -- The unit value `()`, modelled as the empty tuple.
@@ -400,35 +400,53 @@ collectParams tokens params wrappers =
             collectParams rest (params ++ [ p ]) wrappers
 
         TLParen :: _ ->
-            parsePatternAtom tokens
-                |> Result.andThen
-                    (\( pat, after ) ->
-                        let
-                            fresh =
-                                "$larg" ++ String.fromInt (List.length params)
-                        in
-                        collectParams after (params ++ [ fresh ]) (wrappers ++ [ ( fresh, pat ) ])
-                    )
+            destructureParam tokens params wrappers
+
+        TLBrace :: _ ->
+            -- A record-pattern parameter, e.g. `\{ viewport } -> …` or `f { x, y } = …`.
+            destructureParam tokens params wrappers
 
         _ ->
             Ok ( params, wrappers, tokens )
 
 
-parseLambda : List Token -> List String -> Result String ( Expr, List Token )
-parseLambda tokens params =
-    case tokens of
-        (TId name) :: rest ->
-            parseLambda rest (params ++ [ name ])
+{-| Collects one destructuring parameter (a tuple `( … )` or record `{ … }` pattern): binds it to a
+fresh `$larg` name and records the pattern for `wrapDestructures` to unpack in the body. -}
+destructureParam : List Token -> List String -> List ( String, Pattern ) -> Result String ( List String, List ( String, Pattern ), List Token )
+destructureParam tokens params wrappers =
+    parsePatternAtom tokens
+        |> Result.andThen
+            (\( pat, after ) ->
+                let
+                    fresh =
+                        "$larg" ++ String.fromInt (List.length params)
+                in
+                collectParams after (params ++ [ fresh ]) (wrappers ++ [ ( fresh, pat ) ])
+            )
 
-        TArrow :: rest ->
-            if List.isEmpty params then
-                Err "lambda needs a parameter"
 
-            else
-                parseExpr rest |> Result.map (\r -> ( Lam params (Tuple.first r), Tuple.second r ))
+parseLambda : List Token -> Result String ( Expr, List Token )
+parseLambda tokens =
+    collectParams tokens [] []
+        |> Result.andThen
+            (\( params, wrappers, rest ) ->
+                case rest of
+                    TArrow :: afterArrow ->
+                        if List.isEmpty params then
+                            Err "lambda needs a parameter"
 
-        _ ->
-            Err "expected lambda parameters then '->'"
+                        else
+                            parseExpr afterArrow
+                                |> Result.map
+                                    (\r ->
+                                        ( Lam params (wrapDestructures wrappers (Tuple.first r))
+                                        , Tuple.second r
+                                        )
+                                    )
+
+                    _ ->
+                        Err "expected lambda parameters then '->'"
+            )
 
 
 parseListItems : List Token -> List Expr -> Result String ( Expr, List Token )
@@ -793,16 +811,11 @@ parseDeclParams name tokens params wrappers =
         TLParen :: _ ->
             -- A destructuring parameter (a tuple pattern like `(x, y)`): bind a fresh name and
             -- `case` on it in the body, so `f (x, y) = …` works without changing the value model.
-            case parsePatternAtom tokens of
-                Ok ( pat, after ) ->
-                    let
-                        fresh =
-                            "$arg" ++ String.fromInt (List.length params)
-                    in
-                    parseDeclParams name after (params ++ [ fresh ]) (wrappers ++ [ ( fresh, pat ) ])
+            declDestructure name tokens params wrappers
 
-                Err e ->
-                    Err e
+        TLBrace :: _ ->
+            -- A record-pattern parameter, e.g. `f { x, y } = …`.
+            declDestructure name tokens params wrappers
 
         TEquals :: rest ->
             parse rest
@@ -814,6 +827,22 @@ parseDeclParams name tokens params wrappers =
         _ ->
             -- not a value/function definition (e.g. an annotation `name : Type`): ignore
             Ok []
+
+
+{-| Collects one destructuring top-level parameter (tuple or record pattern), binding it to a fresh
+`$arg` name unpacked by `wrapDestructures` in the body. -}
+declDestructure : String -> List Token -> List String -> List ( String, Pattern ) -> Result String Globals
+declDestructure name tokens params wrappers =
+    case parsePatternAtom tokens of
+        Ok ( pat, after ) ->
+            let
+                fresh =
+                    "$arg" ++ String.fromInt (List.length params)
+            in
+            parseDeclParams name after (params ++ [ fresh ]) (wrappers ++ [ ( fresh, pat ) ])
+
+        Err e ->
+            Err e
 
 
 {-| Wraps a body in a `case` per destructuring parameter, binding its pattern against the fresh name. -}

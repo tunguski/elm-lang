@@ -361,6 +361,13 @@
         if (typeof fn === 'function'){ for (var i=0;i<args.length;i++) fn = fn(args[i]); }
         return fn; // a Float32Array (or the identity matrix value)
       }
+      // The conventional Vec3/Vec2/Vec4 aliases for Math.Vector{3,2,4} (e.g. Vec3.scale, Vec3.i).
+      var vecMod = name.indexOf('Vec3.')===0 ? 'Math.Vector3.' : name.indexOf('Vec2.')===0 ? 'Math.Vector2.' : name.indexOf('Vec4.')===0 ? 'Math.Vector4.' : null;
+      if (vecMod){
+        var fv = $rt[vecMod + name.slice(5)];
+        if (typeof fv === 'function'){ for (var v=0;v<args.length;v++) fv = fv(args[v]); }
+        return fv; // a vector (array) value — or a constant like Vec3.i
+      }
       if (name.indexOf('Math.Vector') === 0 || name.indexOf('Math.Matrix') === 0){
         var f2 = $rt[name];
         if (typeof f2 === 'function'){ for (var j=0;j<args.length;j++) f2 = f2(args[j]); }

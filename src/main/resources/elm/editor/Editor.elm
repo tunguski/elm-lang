@@ -15,12 +15,12 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 import Browser
 import Browser.Events
 import Browser.Navigation
-import Eval exposing (appInit, appInitCmd, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, fileSelectCmd, fileSelected, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue, taskResult)
+import Eval exposing (appAnimation, appInit, appInitCmd, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, fileSelectCmd, fileSelected, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue, taskResult)
 import File
 import Json.Decode as Decode
 import Set exposing (Set)
-import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
-import Html.Attributes exposing (placeholder, style, title, value)
+import Html exposing (Html, a, button, div, input, li, node, pre, span, text, textarea, ul)
+import Html.Attributes exposing (href, placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput, onMouseDown, on)
 import Highlight
 import Assist
@@ -67,6 +67,7 @@ type Msg
     | KeyDown String
     | KeyUp String
     | Frame Float
+    | AnimFrame Float
     | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
     | FilePicked Value String String
@@ -111,12 +112,25 @@ subscriptions model =
         Nothing ->
             case model.app of
                 Ok m ->
-                    case appSubscription (selectedFile model) m of
-                        Just ( interval, _ ) ->
-                            Time.every (toFloat interval) (\posix -> Tick (Time.posixToMillis posix))
+                    let
+                        -- A live animation-frame loop, for apps subscribing via onAnimationFrameDelta.
+                        animSub =
+                            case appAnimation (selectedFile model) m of
+                                Just _ ->
+                                    Browser.Events.onAnimationFrameDelta AnimFrame
 
-                        Nothing ->
-                            Sub.none
+                                Nothing ->
+                                    Sub.none
+
+                        timeSub =
+                            case appSubscription (selectedFile model) m of
+                                Just ( interval, _ ) ->
+                                    Time.every (toFloat interval) (\posix -> Tick (Time.posixToMillis posix))
+
+                                Nothing ->
+                                    Sub.none
+                    in
+                    Sub.batch [ animSub, timeSub ]
 
                 Err _ ->
                     Sub.none
@@ -467,6 +481,26 @@ update msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
+        AnimFrame dt ->
+            -- An animation frame for a Browser.element app subscribing via onAnimationFrameDelta:
+            -- apply its toMsg to the frame delta (ms) and step the app, so animated scenes advance.
+            case shownModel model of
+                Ok m ->
+                    case appAnimation (selectedFile model) m of
+                        Just toMsg ->
+                            case applyMsgIn (selectedFile model) toMsg (VNum dt) of
+                                Ok interpMsg ->
+                                    stepApp 100 model interpMsg
+
+                                Err _ ->
+                                    ( model, Cmd.none )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
         KeyDown key ->
             ( { model | gameKeys = Set.insert key model.gameKeys }, Cmd.none )
 
@@ -600,53 +634,96 @@ view : Model -> Html Msg
 view model =
     div
         [ style "font-family" "system-ui, -apple-system, Segoe UI, sans-serif"
-        , style "min-height" "100vh"
+        , style "height" "100vh"
         , style "background" "#eef1f4"
         , style "color" "#0f1720"
         , style "margin" "0"
+        , style "display" "flex"
+        , style "flex-direction" "column"
         ]
         [ div
             [ style "background" "#1f2933"
             , style "color" "#e6edf3"
-            , style "padding" "14px 24px"
+            , style "padding" "12px 20px"
             , style "display" "flex"
-            , style "align-items" "baseline"
-            , style "gap" "12px"
+            , style "align-items" "center"
+            , style "gap" "14px"
+            , style "flex" "0 0 auto"
             ]
-            [ span [ style "font-size" "20px", style "font-weight" "700" ] [ text "Elm-in-Elm playground" ]
+            [ backLink
+            , span [ style "font-size" "18px", style "font-weight" "700" ] [ text "Elm-in-Elm playground" ]
             , span [ style "color" "#9fb3c8", style "font-size" "13px" ]
-                [ text "edit a file on the left; its main runs live on the right" ]
+                [ text "files · code · live result" ]
             , shareBar model
             ]
         , div
             [ style "display" "flex"
-            , style "gap" "16px"
-            , style "align-items" "flex-start"
-            , style "max-width" "1080px"
-            , style "margin" "20px auto"
-            , style "padding" "0 16px"
+            , style "align-items" "stretch"
+            , style "flex" "1"
+            , style "min-height" "0"
             ]
             [ fileSidebar model
-            , div [ style "flex" "2", style "min-width" "0" ]
-                [ div
-                    [ style "border-radius" "10px"
-                    , style "overflow" "hidden"
-                    , style "box-shadow" "0 4px 14px rgba(0,0,0,0.08)"
-                    ]
-                    [ div
-                        [ style "background" "#0f1720"
-                        , style "color" "#9fb3c8"
-                        , style "font-family" "monospace"
-                        , style "font-size" "12px"
-                        , style "padding" "8px 14px"
-                        ]
-                        [ text model.selected ]
-                    , codeEditor model (lookup model.selected model.files |> Maybe.withDefault "")
-                    ]
-                , mainPane model
-                ]
+            , codeColumn model
+            , resultColumn model
             ]
         ]
+
+
+{-| A themed "back to the gallery" link in the header — an arrow plus the site wordmark, in the
+gallery's accent colour so it reads as part of the same site. -}
+backLink : Html Msg
+backLink =
+    a
+        [ href "index.html"
+        , style "color" "#5fabdc"
+        , style "text-decoration" "none"
+        , style "font-weight" "700"
+        , style "font-size" "14px"
+        , style "white-space" "nowrap"
+        , title "Back to the gallery"
+        ]
+        [ text "← elm-lang" ]
+
+
+{-| The middle column: the file name tab and the syntax-highlighted code editor, scrolling on its own. -}
+codeColumn : Model -> Html Msg
+codeColumn model =
+    div
+        [ style "flex" "1"
+        , style "min-width" "0"
+        , style "overflow" "auto"
+        , style "padding" "16px"
+        ]
+        [ div
+            [ style "border-radius" "10px"
+            , style "overflow" "hidden"
+            , style "box-shadow" "0 4px 14px rgba(0,0,0,0.08)"
+            ]
+            [ div
+                [ style "background" "#0f1720"
+                , style "color" "#9fb3c8"
+                , style "font-family" "monospace"
+                , style "font-size" "12px"
+                , style "padding" "8px 14px"
+                ]
+                [ text model.selected ]
+            , codeEditor model (lookup model.selected model.files |> Maybe.withDefault "")
+            ]
+        ]
+
+
+{-| The right column (~40% of the width): the live result of the selected file's `main`, scrolling
+on its own. -}
+resultColumn : Model -> Html Msg
+resultColumn model =
+    div
+        [ style "flex" "0 0 40%"
+        , style "max-width" "40%"
+        , style "min-width" "0"
+        , style "overflow" "auto"
+        , style "padding" "16px 16px 16px 0"
+        ]
+        [ mainPane model ]
 
 
 {-| The syntax-highlighted code editor: a transparent `<textarea>` (which owns the caret, selection
@@ -930,18 +1007,19 @@ segColor cls =
 fileSidebar : Model -> Html Msg
 fileSidebar model =
     div
-        [ style "flex" "1"
-        , style "min-width" "200px"
-        , style "max-width" "240px"
+        [ style "flex" "0 0 220px"
+        , style "width" "220px"
         , style "background" "#fff"
         , style "border-radius" "10px"
         , style "padding" "12px"
+        , style "margin" "16px 0 16px 16px"
+        , style "overflow" "auto"
         , style "box-shadow" "0 4px 14px rgba(0,0,0,0.08)"
         ]
         [ div [ style "font-size" "12px", style "font-weight" "700", style "color" "#52606d", style "text-transform" "uppercase", style "letter-spacing" "0.05em", style "margin-bottom" "8px" ]
             [ text "Files" ]
         , ul [ style "list-style" "none", style "padding" "0", style "margin" "0", style "max-height" "60vh", style "overflow" "auto" ]
-            (List.map (fileRow model.selected) model.files)
+            (List.map (fileRow model.selected) (List.sortBy Tuple.first model.files))
         , div [ style "display" "flex", style "gap" "4px", style "margin-top" "10px" ]
             [ input
                 [ placeholder "New.elm"
@@ -1039,7 +1117,7 @@ fileRow selected file =
 value, or a plain value as text. -}
 mainPane : Model -> Html Msg
 mainPane model =
-    div [ style "margin-top" "14px" ]
+    div []
         [ div [ style "font-size" "12px", style "font-weight" "700", style "color" "#52606d", style "text-transform" "uppercase", style "letter-spacing" "0.05em", style "margin-bottom" "6px" ]
             [ text "Result" ]
         , div

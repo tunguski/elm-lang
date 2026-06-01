@@ -1,6 +1,7 @@
 package pl.matsuo.elm.demos;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -127,6 +128,35 @@ class EditorInterpreterTest {
     assertEquals("5", eval("case { x = 5, y = 6 } of { x } -> x"));
     // A constructor whose argument is a tuple pattern (e.g. thwomp's `Just (face, side) ->`).
     assertEquals("9", eval("case Just (4, 5) of Just (a, b) -> a + b ; Nothing -> 0"));
+  }
+
+  @Test
+  void lambdasAcceptDestructuringParameters() {
+    // A lambda with a record pattern parameter (e.g. first-person's `\{viewport} -> …`).
+    assertEquals("5", eval("(\\{ x } -> x) { x = 5, y = 6 }"));
+    // A lambda with a tuple pattern parameter.
+    assertEquals("7", eval("(\\( a, b ) -> a + b) ( 3, 4 )"));
+    // Mixed: a plain parameter and a record-pattern parameter.
+    assertEquals("11", eval("(\\n { x } -> n + x) 6 { x = 5 }"));
+  }
+
+  @Test
+  void resolvesWebglAndBrowserEventsQualifiedNames() {
+    // Names that previously errored with "unknown qualified name" in the WebGL examples now resolve
+    // (to opaque values the WebGL bridge / editor handle) rather than failing.
+    for (String expr :
+        new String[] {
+          "Vec3.scale 2 (vec3 1 1 1)",
+          "Vec3.normalize (vec3 1 2 3)",
+          "Vec3.i",
+          "Texture.load \"u\"",
+          "Texture.nearest",
+          "Dom.getViewport",
+          "E.onAnimationFrameDelta",
+          "E.onResize"
+        }) {
+      assertFalse(eval(expr).startsWith("Error"), expr + " => " + eval(expr));
+    }
   }
 
   @Test

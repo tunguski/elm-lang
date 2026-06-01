@@ -645,9 +645,11 @@ public final class SiteGenerator {
     for (int i = 0; i < EDITOR_MODULES.length; i++) {
       sources[i] = pl.matsuo.elm.util.Resources.read(EDITOR_MODULES[i]);
     }
+    // The editor is a full-screen, three-column IDE with its own in-app "back to gallery" link, so
+    // it deliberately does NOT get the shared sidebar wrapper (it would crowd the panes).
     Files.writeString(
         outDir.resolve("editor.html"),
-        withSidebar(JsCompiler.htmlPageProject(null, sources), nav),
+        JsCompiler.htmlPageProject(null, sources),
         StandardCharsets.UTF_8);
   }
 
