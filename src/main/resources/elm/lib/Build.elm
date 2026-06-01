@@ -1,0 +1,381 @@
+module Build exposing
+    ( Project
+    , Module
+    , Dependency
+    , Goal
+    , Phase(..)
+    , Task(..)
+    , Backend(..)
+    , Step
+    , project
+    , module_
+    , dependency
+    , goal
+    , withEntry
+    , withSources
+    , withDependencies
+    , withOutput
+    , withGoals
+    , addGoal
+    , exec
+    , compile
+    , test
+    , copy
+    , makeDir
+    , remove
+    , writeFile
+    , log
+    , phases
+    , phaseName
+    , phaseRank
+    , phasesUpTo
+    , defaultGoals
+    , effectiveGoals
+    , plan
+    , cleanPlan
+    )
+
+{-| A small, Maven-flavoured build tool described in Elm. The build is **declarative** like a Maven
+POM — a `Project` of one or more `Module`s — and runs through a **fixed lifecycle of phases**
+(`validate → compile → test → package → verify → install`). Asking for a phase runs every earlier
+phase first, exactly like Maven.
+
+What each phase does for a module is a list of **goals**, and a goal is just a function
+`Module -> List Task` — so anything Maven would need a plugin for, you write inline as an ordinary
+Elm function. A single file can describe a whole **multi-module** build (`project … [ a, b, c ]`),
+and the modules share the same lifecycle.
+
+The `elm build [phase]` runner loads your `project`, asks `plan phase project` for the ordered list
+of steps (a pure computation — fully testable without running anything), then executes each step's
+`Task`s, stopping on the first failure (fail-fast, Maven-style).
+
+    import Build exposing (..)
+
+    project : Project
+    project =
+        Build.project "my-app" "1.0.0"
+            [ module_ "app" "."
+                |> withEntry "src/Main.elm"
+                |> withGoals
+                    (defaultGoals
+                        ++ [ goal Package "bundle" (\m -> [ copy (m.output ++ "/app.js") "dist/app.js" ]) ]
+                    )
+            ]
+
+-}
+
+
+-- DATA --------------------------------------------------------------------
+
+
+{-| A whole build: a name, a version, and the modules it contains (Maven's reactor). -}
+type alias Project =
+    { name : String
+    , version : String
+    , modules : List Module
+    }
+
+
+{-| One buildable unit (a Maven module): where its source lives, what to build, and the goals bound
+to each phase. `entry` is the module's main file; `output` is its target directory. -}
+type alias Module =
+    { name : String
+    , path : String
+    , entry : String
+    , sources : List String
+    , dependencies : List Dependency
+    , output : String
+    , goals : List Goal
+    }
+
+
+{-| A dependency on another package, by name and version (resolution is the runner's concern). -}
+type alias Dependency =
+    { name : String
+    , version : String
+    }
+
+
+{-| A unit of work bound to a phase. `tasks` is the custom function: given the module, it produces
+the concrete build actions to run. Built-in behaviour and your own steps are written the same way. -}
+type alias Goal =
+    { phase : Phase
+    , name : String
+    , tasks : Module -> List Task
+    }
+
+
+{-| The fixed build lifecycle, in order. Running a phase runs every earlier phase first. `clean` is
+deliberately *not* in this list — it is a separate operation (see `cleanPlan`), as in Maven. -}
+type Phase
+    = Validate
+    | Compile
+    | Test
+    | Package
+    | Verify
+    | Install
+
+
+{-| A compilation target understood by the runner. -}
+type Backend
+    = JS
+    | Wasm
+    | WasmGc
+
+
+{-| An atomic build action the runner knows how to perform. `Run` is the general escape hatch (run
+any command); the rest map onto the toolchain and the filesystem. Prefer the lowercase builders. -}
+type Task
+    = Run String (List String)
+    | CompileModule Backend String String
+    | RunTests String
+    | Copy String String
+    | MakeDir String
+    | Remove String
+    | WriteFile String String
+    | Log String
+
+
+{-| One planned step: a phase, the module it runs for, the goal's name, and its concrete tasks. This
+is what `plan` produces and the runner executes — and what a `--dry-run` prints. -}
+type alias Step =
+    { phase : String
+    , moduleName : String
+    , goal : String
+    , tasks : List Task
+    }
+
+
+
+-- BUILDERS ----------------------------------------------------------------
+
+
+{-| A project from a name, a version and its modules. -}
+project : String -> String -> List Module -> Project
+project name version modules =
+    { name = name, version = version, modules = modules }
+
+
+{-| A module with sensible defaults: `entry = <path>/src/Main.elm`, `output = <path>/build`, no
+dependencies and no goals (so it uses `defaultGoals`). Refine it with the `with*` helpers. -}
+module_ : String -> String -> Module
+module_ name path =
+    { name = name
+    , path = path
+    , entry = path ++ "/src/Main.elm"
+    , sources = []
+    , dependencies = []
+    , output = path ++ "/build"
+    , goals = []
+    }
+
+
+dependency : String -> String -> Dependency
+dependency name version =
+    { name = name, version = version }
+
+
+{-| A goal: a phase, a name, and the function producing its tasks. -}
+goal : Phase -> String -> (Module -> List Task) -> Goal
+goal phase name tasks =
+    { phase = phase, name = name, tasks = tasks }
+
+
+withEntry : String -> Module -> Module
+withEntry entry m =
+    { m | entry = entry }
+
+
+withSources : List String -> Module -> Module
+withSources sources m =
+    { m | sources = sources }
+
+
+withDependencies : List Dependency -> Module -> Module
+withDependencies deps m =
+    { m | dependencies = deps }
+
+
+withOutput : String -> Module -> Module
+withOutput output m =
+    { m | output = output }
+
+
+withGoals : List Goal -> Module -> Module
+withGoals goals m =
+    { m | goals = goals }
+
+
+addGoal : Goal -> Module -> Module
+addGoal g m =
+    { m | goals = m.goals ++ [ g ] }
+
+
+
+-- TASK BUILDERS -----------------------------------------------------------
+
+
+{-| Run an external command with arguments (a custom build step). -}
+exec : String -> List String -> Task
+exec =
+    Run
+
+
+{-| Compile a module's entry file to a backend, writing the artifact to a path. -}
+compile : Backend -> String -> String -> Task
+compile =
+    CompileModule
+
+
+{-| Run the tests under a directory. -}
+test : String -> Task
+test =
+    RunTests
+
+
+copy : String -> String -> Task
+copy =
+    Copy
+
+
+makeDir : String -> Task
+makeDir =
+    MakeDir
+
+
+remove : String -> Task
+remove =
+    Remove
+
+
+writeFile : String -> String -> Task
+writeFile =
+    WriteFile
+
+
+log : String -> Task
+log =
+    Log
+
+
+
+-- LIFECYCLE ---------------------------------------------------------------
+
+
+{-| The lifecycle, in order. -}
+phases : List Phase
+phases =
+    [ Validate, Compile, Test, Package, Verify, Install ]
+
+
+phaseName : Phase -> String
+phaseName phase =
+    case phase of
+        Validate ->
+            "validate"
+
+        Compile ->
+            "compile"
+
+        Test ->
+            "test"
+
+        Package ->
+            "package"
+
+        Verify ->
+            "verify"
+
+        Install ->
+            "install"
+
+
+{-| A phase's position in the lifecycle (0-based), for ordering. -}
+phaseRank : Phase -> Int
+phaseRank phase =
+    case phase of
+        Validate ->
+            0
+
+        Compile ->
+            1
+
+        Test ->
+            2
+
+        Package ->
+            3
+
+        Verify ->
+            4
+
+        Install ->
+            5
+
+
+{-| Every phase up to and including `target`, in order. -}
+phasesUpTo : Phase -> List Phase
+phasesUpTo target =
+    List.filter (\p -> phaseRank p <= phaseRank target) phases
+
+
+{-| The default lifecycle bindings, used for any module that declares no goals of its own: validate
+logs, compile makes the output dir and emits a JS bundle, test runs the module's `tests/` directory,
+and package logs the produced artifact. Include them explicitly (`defaultGoals ++ yours`) to keep
+them when you add your own. -}
+defaultGoals : List Goal
+defaultGoals =
+    [ goal Validate "validate" (\m -> [ log ("validate " ++ m.name) ])
+    , goal Compile "compile" (\m -> [ makeDir m.output, compile JS m.entry (m.output ++ "/" ++ m.name ++ ".js") ])
+    , goal Test "test" (\m -> [ test (m.path ++ "/tests") ])
+    , goal Package "package" (\m -> [ log ("package " ++ m.name ++ " " ++ m.output) ])
+    ]
+
+
+{-| A module's goals: its own if it declares any, otherwise the defaults. -}
+effectiveGoals : Module -> List Goal
+effectiveGoals m =
+    if List.isEmpty m.goals then
+        defaultGoals
+
+    else
+        m.goals
+
+
+
+-- PLANNING ----------------------------------------------------------------
+
+
+{-| The ordered steps to reach `target`: phase by phase (each phase across every module), and within
+a phase, goal by goal. Pure — running it computes the whole build plan without performing anything,
+which is exactly what makes a build testable and a `--dry-run` possible. -}
+plan : Phase -> Project -> List Step
+plan target proj =
+    phasesUpTo target
+        |> List.concatMap (\phase -> stepsForPhase phase proj.modules)
+
+
+stepsForPhase : Phase -> List Module -> List Step
+stepsForPhase phase modules =
+    List.concatMap
+        (\m ->
+            effectiveGoals m
+                |> List.filter (\g -> g.phase == phase)
+                |> List.map
+                    (\g ->
+                        { phase = phaseName phase
+                        , moduleName = m.name
+                        , goal = g.name
+                        , tasks = g.tasks m
+                        }
+                    )
+        )
+        modules
+
+
+{-| The clean operation (outside the lifecycle): remove each module's output directory. -}
+cleanPlan : Project -> List Step
+cleanPlan proj =
+    List.map
+        (\m -> { phase = "clean", moduleName = m.name, goal = "clean", tasks = [ remove m.output ] })
+        proj.modules
