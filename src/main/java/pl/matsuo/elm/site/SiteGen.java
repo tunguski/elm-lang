@@ -52,6 +52,10 @@ public final class SiteGen {
     Project project = Project.load(userSource, siteLib);
     Object render = project.value("Site", "render");
 
+    // The Site library links a static site.css (rather than inlining CSS); copy it in.
+    Files.createDirectories(outDir);
+    Files.writeString(outDir.resolve("site.css"), Resources.read("/elm/css/site.css"), StandardCharsets.UTF_8);
+
     List<String> paths = new ArrayList<>();
     for (Object pageObj : ((ElmList) project.entryValue("site")).toJava()) {
       ElmRecord page = (ElmRecord) pageObj;

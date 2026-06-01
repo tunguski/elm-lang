@@ -152,49 +152,60 @@ classifyGroup group =
         Text (String.replace "\n" " " group)
 
 
-{-| Renders a page to a complete HTML document. -}
+{-| Renders a page to a complete HTML document. The stylesheet is the static `site.css` (copied in
+by the generator), linked rather than inlined; the body is assembled from the page's blocks. -}
 render : Page -> String
 render p =
-    "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
-        ++ "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        ++ "<title>"
-        ++ escape p.title
-        ++ "</title><style>"
-        ++ style
-        ++ "</style></head><body><main>"
-        ++ String.concat (List.map renderBlock p.blocks)
-        ++ "</main></body></html>\n"
+    """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%TITLE%</title><link rel="stylesheet" href="site.css"></head><body><main>%BODY%</main></body></html>
+"""
+        |> String.replace "%TITLE%" (escape p.title)
+        |> String.replace "%BODY%" (String.concat (List.map renderBlock p.blocks))
 
 
 renderBlock : Block -> String
 renderBlock block =
     case block of
         Title n s ->
-            let
-                tag =
-                    "h" ++ String.fromInt n
-            in
-            "<" ++ tag ++ ">" ++ escape s ++ "</" ++ tag ++ ">"
+            ("<h%N%>%S%</h%N%>"
+                |> String.replace "%N%" (String.fromInt n)
+                |> String.replace "%S%" (escape s)
+            )
 
         Text s ->
-            "<p>" ++ escape s ++ "</p>"
+            "<p>%S%</p>" |> String.replace "%S%" (escape s)
 
         Code s ->
-            "<pre><code>" ++ escape s ++ "</code></pre>"
+            "<pre><code>%S%</code></pre>" |> String.replace "%S%" (escape s)
 
         Bullets items ->
-            "<ul>" ++ String.concat (List.map (\i -> "<li>" ++ escape i ++ "</li>") items) ++ "</ul>"
+            "<ul>%ITEMS%</ul>"
+                |> String.replace "%ITEMS%" (String.concat (List.map listItem items))
 
         LinkRow rows ->
-            "<p class=\"links\">"
-                ++ String.join " · " (List.map (\( href, label ) -> "<a href=\"" ++ escape href ++ "\">" ++ escape label ++ "</a>") rows)
-                ++ "</p>"
+            """<p class="links">%LINKS%</p>"""
+                |> String.replace "%LINKS%" (String.join " · " (List.map linkAnchor rows))
 
         Raw s ->
             s
 
         Group blocks ->
-            "<section>" ++ String.concat (List.map renderBlock blocks) ++ "</section>"
+            "<section>%BODY%</section>"
+                |> String.replace "%BODY%" (String.concat (List.map renderBlock blocks))
+
+
+listItem : String -> String
+listItem item =
+    "<li>%S%</li>" |> String.replace "%S%" (escape item)
+
+
+linkAnchor : ( String, String ) -> String
+linkAnchor ( href, label ) =
+    """<a href="%HREF%">%LABEL%</a>"""
+        |> String.replace "%HREF%" (escape href)
+        |> String.replace "%LABEL%" (escape label)
 
 
 {-| Escapes the HTML special characters so user text can't break the markup. -}
@@ -205,12 +216,3 @@ escape s =
         |> String.replace "<" "&lt;"
         |> String.replace ">" "&gt;"
         |> String.replace "\"" "&quot;"
-
-
-style : String
-style =
-    "body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;line-height:1.6;color:#0f1720;"
-        ++ "background:#eef1f4;margin:0}main{max-width:760px;margin:40px auto;padding:0 20px}"
-        ++ "h1{font-size:2rem}h2{margin-top:1.8em}code{background:#e3e8ee;padding:2px 6px;border-radius:4px}"
-        ++ "pre{background:#0f1720;color:#e6edf3;padding:14px;border-radius:8px;overflow:auto}"
-        ++ "pre code{background:none;padding:0;color:inherit}a{color:#2563eb}.links a{margin:0}"

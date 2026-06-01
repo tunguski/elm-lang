@@ -176,6 +176,20 @@ public final class SiteGenerator {
     }
   }
 
+  /** Copies the gallery's static stylesheets and client script from resources into {@code outDir}
+   * (the Elm generator only links them). Kept as plain files so they aren't generated from Elm. */
+  private void copyStaticAssets() throws IOException {
+    copyResource("/elm/css/site.css", "site.css"); // the Site library's base stylesheet
+    copyResource("/elm/css/gallery.css", "styles.css");
+    copyResource("/elm/css/page.css", "page.css");
+    copyResource("/elm/css/docs.css", "docs.css");
+    copyResource("/elm/js/gallery.js", "gallery.js");
+  }
+
+  private void copyResource(String resource, String name) throws IOException {
+    Files.writeString(outDir.resolve(name), Resources.read(resource), StandardCharsets.UTF_8);
+  }
+
   private void run() throws IOException {
     Files.createDirectories(outDir.resolve("demos"));
     List<Built> built = new ArrayList<>();
@@ -189,8 +203,9 @@ public final class SiteGenerator {
     writeEditorPage();
     boolean rts = writeRtsPage();
     List<DocPage> docs = writeDocPages();
-    // The index page (index.html + styles.css) is owned by the Elm gallery generator: write the
-    // manifest of artifacts, then let the Elm side render all of the gallery's HTML/CSS from it.
+    // The gallery's HTML is rendered by the Elm generator from the manifest; its stylesheets and
+    // client script are static resource files we copy in (the Elm side only links them).
+    copyStaticAssets();
     writeManifest(built, docs, rts);
     renderGalleryIndex(outDir);
     // GitHub Pages: skip Jekyll so files/dirs are served verbatim.
