@@ -308,6 +308,48 @@ class BuildRunnerTest {
   }
 
   @Test
+  void linksAModuleAgainstItsDependenciesCompiledArtifacts() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-link-");
+    // Distinct module names so core's source (auto-included as a dependency) doesn't clash with app.
+    Files.writeString(
+        dir.resolve("Core.elm"),
+        "module Core exposing (main)\nimport Html exposing (text)\nmain = text \"core-marker\"\n");
+    Files.writeString(
+        dir.resolve("App.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"app-marker\"\n");
+    // app's package goal links (bundles) its dependencies' compiled artifacts with its own. The
+    // dependency declaration makes core build first (buildOrder), so its artifact exists by then.
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "suite" "1.0.0"
+                [ module_ "core" "." |> withEntry "Core.elm" |> withOutput "core/out"
+                , module_ "app" "."
+                    |> withEntry "App.elm"
+                    |> withOutput "app/out"
+                    |> withDependencies [ dependency "core" "1.0.0" ]
+                    |> withGoals
+                        (defaultGoals
+                            ++ [ goal Package "link"
+                                    (\\m -> [ bundle (dependencyArtifacts project m ++ [ artifactPath m ]) "dist/app.js" ]) ]
+                        )
+                ]
+        """);
+    Result r = build(dir, "package");
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("bundled"), r.out());
+    String linked = Files.readString(dir.resolve("dist/app.js"), StandardCharsets.UTF_8);
+    assertTrue(linked.contains("core-marker"), "core's compiled output is linked in");
+    assertTrue(linked.contains("app-marker"), "app's compiled output is linked in: " + r.out());
+  }
+
+  @Test
   void cleanRemovesEachModulesOutput() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-clean-");
     Files.createDirectories(dir.resolve("out"));

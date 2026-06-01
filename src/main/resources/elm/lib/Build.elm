@@ -25,6 +25,7 @@ module Build exposing
     , compileAll
     , test
     , archive
+    , bundle
     , copy
     , makeDir
     , remove
@@ -39,6 +40,8 @@ module Build exposing
     , buildOrder
     , transitiveDeps
     , withDependencySources
+    , artifactPath
+    , dependencyArtifacts
     , plan
     , cleanPlan
     )
@@ -140,6 +143,7 @@ type Task
     | CompileModule Backend (List String) String
     | RunTests String
     | Archive String String
+    | Bundle (List String) String
     | Copy String String
     | MakeDir String
     | Remove String
@@ -273,6 +277,13 @@ test =
 archive : String -> String -> Task
 archive =
     Archive
+
+
+{-| Concatenate already-built artifact files into one output — link a module against its
+dependencies' compiled output (see `dependencyArtifacts`). -}
+bundle : List String -> String -> Task
+bundle =
+    Bundle
 
 
 copy : String -> String -> Task
@@ -468,6 +479,13 @@ transitiveDeps proj m =
 byName : Project -> String -> Maybe Module
 byName proj name =
     List.head (List.filter (\m -> m.name == name) proj.modules)
+
+
+{-| The compiled-artifact paths of a module's (transitive sibling) dependencies — what a dependent
+links against with `bundle`, since each dependency's compile produced that artifact first. -}
+dependencyArtifacts : Project -> Module -> List String
+dependencyArtifacts proj m =
+    List.map artifactPath (transitiveDeps proj m)
 
 
 {-| Adds the sources of a module's (transitive sibling) dependencies to its own, so compiling and

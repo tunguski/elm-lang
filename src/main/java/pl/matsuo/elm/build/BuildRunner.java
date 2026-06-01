@@ -173,6 +173,7 @@ public final class BuildRunner {
       case "WriteFile" -> "writeFile " + str(task.arg(0));
       case "Copy" -> "copy " + str(task.arg(0)) + " -> " + str(task.arg(1));
       case "Archive" -> "archive " + str(task.arg(0)) + " -> " + str(task.arg(1));
+      case "Bundle" -> "bundle " + String.join(" + ", strings(task.arg(0))) + " -> " + str(task.arg(1));
       case "Run" -> "exec " + str(task.arg(0)) + " " + String.join(" ", strings(task.arg(1)));
       case "Check" -> "check " + String.join(", ", strings(task.arg(0)));
       case "CompileModule" ->
@@ -203,6 +204,7 @@ public final class BuildRunner {
         }
         case "Copy" -> copy(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))));
         case "Archive" -> archive(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))), incremental, out);
+        case "Bundle" -> bundle(strings(task.arg(0)), str(task.arg(1)), baseDir, out);
         case "Run" -> {
           return exec(str(task.arg(0)), strings(task.arg(1)), baseDir, out);
         }
@@ -360,6 +362,22 @@ public final class BuildRunner {
       }
     }
     out.println("  archived " + src + " -> " + zip);
+  }
+
+  /** Concatenates already-built artifact files into {@code target} — links a module against its
+   * dependencies' compiled output. */
+  private static void bundle(List<String> inputs, String target, Path baseDir, PrintStream out)
+      throws IOException {
+    Path path = at(baseDir, target);
+    if (path.getParent() != null) {
+      Files.createDirectories(path.getParent());
+    }
+    StringBuilder sb = new StringBuilder();
+    for (String in : inputs) {
+      sb.append(Files.readString(at(baseDir, in), StandardCharsets.UTF_8)).append('\n');
+    }
+    Files.writeString(path, sb.toString(), StandardCharsets.UTF_8);
+    out.println("  bundled " + inputs.size() + " artifact(s) -> " + target);
   }
 
   /** Copies a file (or, recursively, a directory tree), creating parent directories. */
