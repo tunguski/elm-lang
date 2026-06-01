@@ -829,8 +829,11 @@ public final class Main implements Runnable {
     @Parameters(index = "1", description = "The new .elm file.")
     Path newFile;
 
-    @Parameters(index = "2", arity = "0..1", description = "Current version (default 1.0.0).")
-    String current = "1.0.0";
+    @Parameters(
+        index = "2",
+        arity = "0..1",
+        description = "Current version; defaults to the version in a sibling elm.json, else 1.0.0.")
+    String current;
 
     @Override
     public Integer call() throws IOException {
@@ -838,10 +841,30 @@ public final class Main implements Runnable {
           pl.matsuo.elm.pkg.ApiDiff.compare(
               pl.matsuo.elm.doc.ApiDocs.of(Files.readString(oldFile)),
               pl.matsuo.elm.doc.ApiDocs.of(Files.readString(newFile)));
-      var next =
-          pl.matsuo.elm.pkg.ApiDiff.bump(pl.matsuo.elm.pkg.Version.parse(current), diff.magnitude());
-      System.out.println(diff.magnitude() + " change: " + current + " -> " + next);
+      var currentVersion = current != null ? pl.matsuo.elm.pkg.Version.parse(current) : currentFrom(newFile);
+      var next = pl.matsuo.elm.pkg.ApiDiff.bump(currentVersion, diff.magnitude());
+      System.out.println(diff.magnitude() + " change: " + currentVersion + " -> " + next);
       return 0;
+    }
+
+    /** The current version: the {@code "version"} of a package elm.json next to {@code newFile} if
+     * present, else 1.0.0. (Read directly, since a package manifest isn't an application elm.json.) */
+    private static pl.matsuo.elm.pkg.Version currentFrom(Path newFile) {
+      Path parent = newFile.toAbsolutePath().getParent();
+      if (parent != null) {
+        Path elmJson = parent.resolve("elm.json");
+        if (Files.isRegularFile(elmJson)) {
+          try {
+            Object parsed = pl.matsuo.elm.json.JsonParse.parse(Files.readString(elmJson));
+            if (parsed instanceof java.util.Map<?, ?> m && m.get("version") instanceof String s) {
+              return pl.matsuo.elm.pkg.Version.parse(s);
+            }
+          } catch (IOException | RuntimeException ignored) {
+            // Fall through to the default below.
+          }
+        }
+      }
+      return new pl.matsuo.elm.pkg.Version(1, 0, 0);
     }
   }
 

@@ -220,6 +220,29 @@ class MainCliTest {
   }
 
   @Test
+  void bumpReadsCurrentVersionFromASiblingElmJson() throws Exception {
+    Path dir = Files.createTempDirectory("cli-bump-");
+    Files.writeString(dir.resolve("old.elm"), "module M exposing (inc)\ninc x = x + 1\n");
+    Path newApi = dir.resolve("new.elm");
+    Files.writeString(newApi, "module M exposing (inc, dec)\ninc x = x + 1\ndec x = x - 1\n");
+    Files.writeString(
+        dir.resolve("elm.json"), "{ \"type\": \"package\", \"version\": \"2.3.4\" }");
+    // No explicit version arg: it comes from the package elm.json next to the new module.
+    Result r = invoke("bump", dir.resolve("old.elm").toString(), newApi.toString());
+    assertTrue(r.code() == 0, r.out() + r.err());
+    assertTrue(r.out().contains("MINOR change: 2.3.4 -> 2.4.0"), r.out()); // adding `dec` is MINOR
+  }
+
+  @Test
+  void bumpUsesAnExplicitVersionArgumentWhenGiven() throws Exception {
+    Path oldApi = tempElm("module M exposing (inc)\ninc x = x + 1\n");
+    Path newApi = tempElm("module M exposing (dec)\ndec x = x - 1\n"); // removed inc -> MAJOR
+    Result r = invoke("bump", oldApi.toString(), newApi.toString(), "1.2.0");
+    assertTrue(r.code() == 0, r.out() + r.err());
+    assertTrue(r.out().contains("MAJOR change: 1.2.0 -> 2.0.0"), r.out());
+  }
+
+  @Test
   void publishDryRunFailsOnTypeError() throws Exception {
     Path bad = tempElm("module M exposing (x)\nx = 1 + \"oops\"\n");
     Result r = invoke("publish", bad.toString());
