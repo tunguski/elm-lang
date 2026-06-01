@@ -61,6 +61,20 @@ class BuildLibraryTest {
 
       compileTasks : List Task
       compileTasks = List.concatMap .tasks (Build.plan Compile proj)
+
+      -- web depends on core; declared web-first, but core must build first (reactor order).
+      reactor : Project
+      reactor =
+          Build.project "suite" "1.0.0"
+              [ module_ "web" "web" |> withDependencies [ dependency "core" "1.0.0" ]
+              , module_ "core" "core"
+              ]
+
+      buildOrderNames : List String
+      buildOrderNames = List.map .name (Build.buildOrder reactor)
+
+      reactorCompileOrder : List String
+      reactorCompileOrder = List.map .moduleName (Build.plan Compile reactor)
       """;
 
   private static String value(String name) {
@@ -92,6 +106,14 @@ class BuildLibraryTest {
     // The module declares one Package goal, so only it appears — no default validate/compile/test —
     // and its task function ran against the module (its name "c" appears in the produced task).
     assertEquals("[\"package:c:bundle\"]", value("customOnly"));
+  }
+
+  @Test
+  void modulesBuildInDependencyOrder() {
+    // web depends on core, so even though web is declared first, core is ordered first.
+    assertEquals("[\"core\",\"web\"]", value("buildOrderNames"));
+    // plan Compile spans validate then compile; core precedes web within each phase.
+    assertEquals("[\"core\",\"web\",\"core\",\"web\"]", value("reactorCompileOrder"));
   }
 
   @Test

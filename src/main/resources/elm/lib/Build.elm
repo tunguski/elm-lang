@@ -31,6 +31,7 @@ module Build exposing
     , phasesUpTo
     , defaultGoals
     , effectiveGoals
+    , buildOrder
     , plan
     , cleanPlan
     )
@@ -346,13 +347,55 @@ effectiveGoals m =
 -- PLANNING ----------------------------------------------------------------
 
 
-{-| The ordered steps to reach `target`: phase by phase (each phase across every module), and within
-a phase, goal by goal. Pure — running it computes the whole build plan without performing anything,
-which is exactly what makes a build testable and a `--dry-run` possible. -}
+{-| Modules in build order: each module after the sibling modules it depends on (Maven reactor
+order). A dependency that names a non-sibling (an external package) does not affect ordering. A cycle
+can't be ordered, so the modules it involves are left in declared order. -}
+buildOrder : Project -> List Module
+buildOrder proj =
+    let
+        siblings =
+            List.map .name proj.modules
+
+        deps m =
+            m.dependencies
+                |> List.map .name
+                |> List.filter (\d -> List.member d siblings)
+
+        go remaining ordered =
+            case remaining of
+                [] ->
+                    List.reverse ordered
+
+                _ ->
+                    let
+                        placed =
+                            List.map .name ordered
+
+                        ready =
+                            List.filter (\m -> List.all (\d -> List.member d placed) (deps m)) remaining
+                    in
+                    case ready of
+                        next :: _ ->
+                            go (List.filter (\m -> m.name /= next.name) remaining) (next :: ordered)
+
+                        [] ->
+                            -- A dependency cycle (or a self-dependency): keep the rest as declared.
+                            List.reverse ordered ++ remaining
+    in
+    go proj.modules []
+
+
+{-| The ordered steps to reach `target`: phase by phase (each phase across every module in dependency
+order), and within a phase, goal by goal. Pure — running it computes the whole build plan without
+performing anything, which is exactly what makes a build testable and a `--dry-run` possible. -}
 plan : Phase -> Project -> List Step
 plan target proj =
+    let
+        ordered =
+            buildOrder proj
+    in
     phasesUpTo target
-        |> List.concatMap (\phase -> stepsForPhase phase proj.modules)
+        |> List.concatMap (\phase -> stepsForPhase phase ordered)
 
 
 stepsForPhase : Phase -> List Module -> List Step
