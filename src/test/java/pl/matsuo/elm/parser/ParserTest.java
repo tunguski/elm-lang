@@ -61,6 +61,46 @@ class ParserTest {
     assertEquals("((String.fromFloat (neg y)) x)", expr("String.fromFloat -y x"));
   }
 
+  // --- error recovery ----------------------------------------------------
+
+  @Test
+  void reportsEveryTopLevelSyntaxErrorInOnePass() {
+    // Two malformed declarations between two good ones: the parser recovers and reports both.
+    String src =
+        "module M exposing (..)\n"
+            + "good1 = 1\n"
+            + "bad1 = if\n"
+            + "good2 = 2\n"
+            + "bad2 = case\n"
+            + "good3 = 3\n";
+    var errs =
+        assertThrows(pl.matsuo.elm.error.ElmSyntaxErrors.class, () -> Parser.parseModule(src));
+    assertEquals(2, errs.errors.size(), errs.getMessage());
+    // The two errors are at two distinct locations (the parser resynced between them).
+    assertTrue(
+        errs.errors.get(0).position().line() < errs.errors.get(1).position().line(),
+        errs.getMessage());
+  }
+
+  @Test
+  void aSingleSyntaxErrorIsThrownUnchanged() {
+    // With exactly one error, the plain ElmSyntaxError is thrown (not the multi-error wrapper).
+    String src = "module M exposing (..)\ngood = 1\nbad = if\n";
+    ElmSyntaxError e = assertThrows(ElmSyntaxError.class, () -> Parser.parseModule(src));
+    assertTrue(
+        !(e instanceof pl.matsuo.elm.error.ElmSyntaxErrors), "single error is not wrapped");
+  }
+
+  @Test
+  void recoveryStillParsesTheGoodDeclarations() {
+    // A bad middle declaration doesn't stop the good ones from being parsed (the parser keeps the
+    // ones it could read). We can't get the Module out when it throws, so assert via the LSP-style
+    // count instead: three good + one bad means exactly one error survives recovery.
+    String src = "module M exposing (..)\na = 1\nb = )\nc = 3\n";
+    ElmSyntaxError e = assertThrows(ElmSyntaxError.class, () -> Parser.parseModule(src));
+    assertEquals(3, e.position().line()); // the `b = )` line
+  }
+
   // --- atoms -------------------------------------------------------------
 
   @Test

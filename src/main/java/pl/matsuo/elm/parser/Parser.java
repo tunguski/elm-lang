@@ -11,6 +11,7 @@ import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Pattern;
 import pl.matsuo.elm.ast.Type;
 import pl.matsuo.elm.error.ElmSyntaxError;
+import pl.matsuo.elm.error.ElmSyntaxErrors;
 import pl.matsuo.elm.error.Position;
 import pl.matsuo.elm.lexer.Lexer;
 import pl.matsuo.elm.lexer.Token;
@@ -274,9 +275,69 @@ public final class Parser {
       imports.add(parseImport());
     }
 
-    List<Decl> decls = check(TokenType.EOF) ? List.of() : parseDeclList(peek().col(), false);
+    List<Decl> decls = check(TokenType.EOF) ? List.of() : parseTopLevelDecls(peek().col());
     expect(TokenType.EOF, "end of input");
     return new Module(moduleName, exposing, imports, decls, pos);
+  }
+
+  /**
+   * Parses the module's top-level declarations with error recovery: a declaration that fails to
+   * parse is recorded and the parser skips to the next top-level declaration and continues, so one
+   * parse reports every independent syntax error. Throws the single error unchanged when there is
+   * exactly one (preserving existing messages), or an {@link ElmSyntaxErrors} when there are several.
+   */
+  private List<Decl> parseTopLevelDecls(int col) {
+    List<Decl> decls = new ArrayList<>();
+    List<ElmSyntaxError> errors = new ArrayList<>();
+    Ann pending = null;
+    while (!check(TokenType.EOF)) {
+      try {
+        Object item = withIndent(col, () -> parseOneDecl(false));
+        if (item instanceof Ann a) {
+          pending = a;
+        } else {
+          Decl d = (Decl) item;
+          if (d instanceof Decl.Value v && pending != null && pending.name().equals(v.name())) {
+            d = new Decl.Value(v.name(), v.params(), v.body(), Optional.of(pending.type()), v.pos());
+          }
+          pending = null;
+          decls.add(d);
+        }
+        if (check(TokenType.EOF) || (atNewLine() && peek().col() == col)) {
+          continue; // cleanly at the next top-level declaration (or end)
+        }
+        // Anything else after a declaration is unexpected; record it and resynchronise.
+        errors.add(error("Unexpected token after declaration"));
+        recoverToNextTopLevel(col);
+        pending = null;
+      } catch (ElmSyntaxError e) {
+        errors.add(e);
+        pending = null;
+        recoverToNextTopLevel(col);
+      }
+    }
+    if (errors.size() == 1) {
+      throw errors.get(0);
+    }
+    if (!errors.isEmpty()) {
+      StringBuilder b = new StringBuilder(errors.size() + " syntax errors:");
+      for (ElmSyntaxError e : errors) {
+        b.append("\n  - ").append(e.getMessage());
+      }
+      throw new ElmSyntaxErrors(b.toString(), errors);
+    }
+    return decls;
+  }
+
+  /** Skips tokens until the start of the next top-level declaration (a new line at column {@code
+   * col} or shallower) or end of input. Always consumes at least one token, guaranteeing progress. */
+  private void recoverToNextTopLevel(int col) {
+    if (!check(TokenType.EOF)) {
+      advance();
+    }
+    while (!check(TokenType.EOF) && !(atNewLine() && peek().col() <= col)) {
+      advance();
+    }
   }
 
   private String parseModuleName() {

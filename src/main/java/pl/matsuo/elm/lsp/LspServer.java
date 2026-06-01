@@ -60,6 +60,12 @@ public final class LspServer {
     Module module;
     try {
       module = Parser.parseModule(source);
+    } catch (pl.matsuo.elm.error.ElmSyntaxErrors errs) {
+      // Multi-error recovery: surface one diagnostic per independent syntax error.
+      for (ElmSyntaxError e : errs.errors) {
+        out.add(at(e.position(), e.getMessage()));
+      }
+      return out;
     } catch (ElmSyntaxError e) {
       out.add(at(e.position(), e.getMessage()));
       return out;

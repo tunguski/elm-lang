@@ -62,6 +62,17 @@ class LspServerTest {
   }
 
   @Test
+  void multipleSyntaxErrorsBecomeSeparateDiagnostics() {
+    // The parser recovers between top-level declarations, so two independent syntax errors yield
+    // two diagnostics (not just the first), on different lines.
+    String src =
+        "module M exposing (..)\n" + "good1 = 1\n" + "bad1 = if\n" + "good2 = 2\n" + "bad2 = case\n";
+    var diags = server.diagnose(src);
+    assertTrue(diags.size() >= 2, diags.toString());
+    assertTrue(diags.get(0).line() != diags.get(diags.size() - 1).line(), diags.toString());
+  }
+
+  @Test
   void hoverReturnsInferredType() {
     String src = "double n = n * 2\nmain = double 21\n";
     assertEquals(Optional.of("double : number -> number"), server.hoverType(src, 0));
