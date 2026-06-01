@@ -1,6 +1,7 @@
 package pl.matsuo.elm.doc;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -151,6 +152,24 @@ public final class ApiDocs {
    */
   public String toJson() {
     return JsonEncode.serialize(List.<Object>of(moduleObject()), 2) + "\n";
+  }
+
+  /**
+   * The whole-package {@code docs.json}: the API of several modules as one JSON array (sorted by
+   * module name), the exact artifact {@code elm publish} uploads and package.elm-lang.org serves.
+   * A module whose source fails to parse/type-check is skipped.
+   */
+  public static String packageJson(List<String> sources) {
+    List<Map<String, Object>> modules = new ArrayList<>();
+    for (String source : sources) {
+      try {
+        modules.add(of(source).moduleObject());
+      } catch (RuntimeException ignored) {
+        // skip a module that can't be analysed; the rest still document
+      }
+    }
+    modules.sort(Comparator.comparing(m -> String.valueOf(m.get("name"))));
+    return JsonEncode.serialize(new ArrayList<Object>(modules), 2) + "\n";
   }
 
   /** The single module object inside the {@code docs.json} array. */

@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -686,6 +687,11 @@ public final class Main implements Runnable {
     @Option(names = "--html", description = "Emit a self-contained, searchable HTML documentation page.")
     boolean html;
 
+    @Option(
+        names = "--project",
+        description = "An elm.json (or its dir): emit the whole-package docs.json for every exposed module (publish preflight).")
+    Path project;
+
     @Option(names = "--pkg", description = "Fetch a published package's docs.json from the registry, e.g. elm/json.")
     String pkg;
 
@@ -701,6 +707,10 @@ public final class Main implements Runnable {
 
     @Override
     public Integer call() throws IOException {
+      if (project != null) {
+        System.out.print(pl.matsuo.elm.doc.ApiDocs.packageJson(exposedModuleSources(project)));
+        return 0;
+      }
       if (pkg != null) {
         pl.matsuo.elm.pkg.ElmRegistry reg =
             new pl.matsuo.elm.pkg.ElmRegistry(elm != null ? elm : "https://package.elm-lang.org");
@@ -732,6 +742,50 @@ public final class Main implements Runnable {
                 : pl.matsuo.elm.doc.DocGenerator.markdown(source) + "\n");
       }
       return 0;
+    }
+
+    /** Reads a package elm.json's {@code exposed-modules} (a flat list or grouped object) and returns
+     * each exposed module's source, located under the {@code source-directories} (default src/). */
+    @SuppressWarnings("unchecked")
+    private static List<String> exposedModuleSources(Path projectArg) throws IOException {
+      Path elmJson = Files.isDirectory(projectArg) ? projectArg.resolve("elm.json") : projectArg;
+      Path root = elmJson.toAbsolutePath().getParent();
+      Object cfg = pl.matsuo.elm.json.JsonParse.parse(Files.readString(elmJson));
+      Map<String, Object> obj = cfg instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+
+      List<String> dirs = new ArrayList<>();
+      if (obj.get("source-directories") instanceof List<?> sd) {
+        sd.forEach(d -> dirs.add(String.valueOf(d)));
+      }
+      if (dirs.isEmpty()) {
+        dirs.add("src");
+      }
+
+      // exposed-modules is either a flat list or an object grouping lists by category.
+      List<String> moduleNames = new ArrayList<>();
+      Object exposed = obj.get("exposed-modules");
+      if (exposed instanceof List<?> flat) {
+        flat.forEach(n -> moduleNames.add(String.valueOf(n)));
+      } else if (exposed instanceof Map<?, ?> groups) {
+        for (Object group : groups.values()) {
+          if (group instanceof List<?> names) {
+            names.forEach(n -> moduleNames.add(String.valueOf(n)));
+          }
+        }
+      }
+
+      List<String> sources = new ArrayList<>();
+      for (String name : moduleNames) {
+        String rel = name.replace('.', '/') + ".elm";
+        for (String dir : dirs) {
+          Path candidate = root.resolve(dir).resolve(rel);
+          if (Files.exists(candidate)) {
+            sources.add(Files.readString(candidate));
+            break;
+          }
+        }
+      }
+      return sources;
     }
   }
 

@@ -107,4 +107,17 @@ class DocGeneratorTest {
     assertTrue(json.contains("Doubles a number."), "value doc comment included: " + json);
     assertTrue(json.contains("\"binops\""), json);
   }
+
+  @Test
+  void packageJsonDocumentsEveryModuleSortedByName() {
+    String mathSrc = "module Math exposing (double)\ndouble n = n * 2\n";
+    String strSrc = "module Strings exposing (shout)\nshout s = s ++ \"!\"\n";
+    // Whole-package docs.json: a single array with both modules, sorted by name (Math before
+    // Strings) — the artifact `elm publish` uploads.
+    String json = ApiDocs.packageJson(java.util.List.of(strSrc, mathSrc));
+    assertTrue(json.stripLeading().startsWith("["), json);
+    assertTrue(json.contains("\"Math\"") && json.contains("\"Strings\""), json);
+    assertTrue(json.indexOf("\"Math\"") < json.indexOf("\"Strings\""), "modules sorted by name: " + json);
+    assertTrue(json.contains("double") && json.contains("shout"), json);
+  }
 }
