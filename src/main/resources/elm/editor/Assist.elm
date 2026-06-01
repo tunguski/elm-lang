@@ -1,4 +1,4 @@
-module Assist exposing (completions, wordAt, squiggleFor)
+module Assist exposing (completions, wordAt, accept, errorName, squiggleFor)
 
 {-| Editor assistance as pure functions the browser UI calls — no DOM, no effects, so it is fully
 testable. Two features:
@@ -56,6 +56,46 @@ wordAt source offset =
         |> Tuple.first
         |> List.reverse
         |> String.fromList
+
+
+{-| Accepts a completion: replaces the word ending at character `offset` in `source` with
+`completion`, returning the new source and the new caret offset (just past the inserted text). -}
+accept : String -> Int -> String -> ( String, Int )
+accept source offset completion =
+    let
+        prefix =
+            wordAt source offset
+
+        start =
+            offset - String.length prefix
+    in
+    ( String.left start source ++ completion ++ String.dropLeft offset source
+    , start + String.length completion
+    )
+
+
+{-| The offending identifier named in an error message, for locating a squiggle. Errors read like
+"undefined variable: nope" or "Naming error: foo is not in scope" — the name follows the last colon.
+`Nothing` if the message names nothing. -}
+errorName : String -> Maybe String
+errorName message =
+    case List.reverse (String.split ":" message) of
+        tail :: _ :: _ ->
+            let
+                ( word, _ ) =
+                    spanWhile isIdentChar (String.toList (String.trimLeft tail))
+
+                w =
+                    String.fromList word
+            in
+            if w == "" then
+                Nothing
+
+            else
+                Just w
+
+        _ ->
+            Nothing
 
 
 {-| Where the identifier `name` first appears in `source` as a whole word, as a 0-based

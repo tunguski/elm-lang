@@ -381,6 +381,27 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void acceptInsertsACompletionAtTheCaret() {
+    // accept source caret completion -> (newSource, newCaret): the half-typed word is replaced.
+    String src = "main = List.ma";
+    Object r = Apply.applyAll(EDITOR.value("Assist", "accept"), src, (long) src.length(), "List.map");
+    ElmTuple t = (ElmTuple) pl.matsuo.elm.interp.Thunk.resolve(r);
+    assertEquals("main = List.map", String.valueOf(pl.matsuo.elm.interp.Thunk.resolve(t.get(0))));
+    assertEquals(15L, pl.matsuo.elm.interp.Thunk.resolve(t.get(1)));
+  }
+
+  @Test
+  void errorNameExtractsTheOffendingIdentifier() {
+    assertTrue(
+        Show.plain(Apply.apply(EDITOR.value("Assist", "errorName"), "undefined variable: nope"))
+            .contains("nope"),
+        "names the variable after the colon");
+    assertEquals(
+        "Nothing",
+        Show.plain(Apply.apply(EDITOR.value("Assist", "errorName"), "all is well, no name here")));
+  }
+
+  @Test
   void squiggleLocatesAnOffendingIdentifier() {
     // The error "undefined variable: nope" should point at `nope` on line 1 (0-based), column 8.
     String src = "x = 1\ny = nope + x";
@@ -397,5 +418,27 @@ class EditorInterpreterTest {
     // The editor is a multi-module Browser.sandbox program; the JS backend must bundle all modules.
     String page = JsCompiler.htmlPageProject(null, moduleSources());
     assertTrue(page.contains("$start"), "editor compiles to a runnable JS bundle");
+  }
+
+  /** The full editor app (including Editor.elm and its Assist-wired autocomplete + error ribbon) must
+   * compile to a JS bundle for the browser. Guards the UI wiring (custom event decoders, dropdown). */
+  @Test
+  void fullEditorAppWithAssistCompiles() {
+    String[] paths = {
+      "/elm/editor/Lang.elm",
+      "/elm/editor/Lexer.elm",
+      "/elm/editor/Parser.elm",
+      "/elm/editor/Eval.elm",
+      "/elm/editor/Highlight.elm",
+      "/elm/editor/Assist.elm",
+      "/elm/editor/Editor.elm",
+      "/elm/editor/Main.elm",
+    };
+    String[] sources = new String[paths.length];
+    for (int i = 0; i < paths.length; i++) {
+      sources[i] = Resources.read(paths[i]);
+    }
+    String page = JsCompiler.htmlPageProject(null, sources);
+    assertTrue(page.contains("$start"), "the full editor (with Assist wiring) bundles to JS");
   }
 }

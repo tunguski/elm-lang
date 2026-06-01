@@ -20,8 +20,9 @@ import Json.Decode as Decode
 import Set exposing (Set)
 import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
 import Html.Attributes exposing (placeholder, style, title, value)
-import Html.Events exposing (onClick, onInput)
+import Html.Events exposing (onClick, onInput, onMouseDown, on)
 import Highlight
+import Assist
 import Http
 import Lang exposing (Value(..))
 import Time
@@ -40,12 +41,16 @@ type alias Model =
     , history : List Value -- successive app models (time-travel debugger)
     , msgLog : List Value -- the message that produced each model transition (msgLog[k] -> history[k+1])
     , historyAt : Int -- the index currently shown (last = live)
+    , caret : Int -- the textarea's caret offset (for autocomplete)
+    , completions : List String -- live autocomplete candidates for the word at the caret
     }
 
 
 type Msg
     = SelectFile String
-    | EditSource String
+    | EditAt String Int
+    | AcceptCompletion String
+    | DismissCompletions
     | SetNewName String
     | AddFile
     | OpenFile
@@ -126,6 +131,8 @@ initModel =
         , history = []
         , msgLog = []
         , historyAt = 0
+        , caret = 0
+        , completions = []
         }
 
 
@@ -284,8 +291,37 @@ update msg model =
         SelectFile name ->
             refreshAndRun { model | selected = name }
 
-        EditSource content ->
-            refreshAndRun { model | files = setFile model.selected content model.files }
+        EditAt content caret ->
+            -- Recompute autocomplete candidates for the word the caret sits in, then re-run the file.
+            let
+                word =
+                    Assist.wordAt content caret
+            in
+            refreshAndRun
+                { model
+                    | files = setFile model.selected content model.files
+                    , caret = caret
+                    , completions = Assist.completions content word
+                }
+
+        AcceptCompletion choice ->
+            -- Replace the half-typed word with the chosen completion.
+            let
+                source =
+                    lookup model.selected model.files |> Maybe.withDefault ""
+
+                ( newSource, newCaret ) =
+                    Assist.accept source model.caret choice
+            in
+            refreshAndRun
+                { model
+                    | files = setFile model.selected newSource model.files
+                    , caret = newCaret
+                    , completions = []
+                }
+
+        DismissCompletions ->
+            ( { model | completions = [] }, Cmd.none )
 
         SetNewName n ->
             ( { model | newName = n }, Cmd.none )
@@ -493,7 +529,7 @@ view model =
                         , style "padding" "8px 14px"
                         ]
                         [ text model.selected ]
-                    , codeEditor (lookup model.selected model.files |> Maybe.withDefault "")
+                    , codeEditor model (lookup model.selected model.files |> Maybe.withDefault "")
                     ]
                 , mainPane model
                 ]
@@ -505,34 +541,128 @@ view model =
 and typing) layered over a `<pre>` of coloured `<span>`s. Both share the exact same font, padding and
 wrapping, so the highlighted text underneath stays aligned with what's typed (the react-simple-code-
 editor technique). The `<pre>` is in normal flow and sets the height; the textarea fills it. -}
-codeEditor : String -> Html Msg
-codeEditor source =
-    div [ style "position" "relative", style "background" "#0f1720" ]
-        [ pre
-            (style "margin" "0"
-                :: style "pointer-events" "none"
-                :: style "color" (segColor "")
-                :: codeStyles
-            )
-            (List.map renderSegment (Highlight.segments source) ++ [ text "\n" ])
-        , textarea
-            (onInput EditSource
-                :: value source
-                :: style "position" "absolute"
-                :: style "top" "0"
-                :: style "left" "0"
-                :: style "height" "100%"
-                :: style "color" "transparent"
-                :: style "background" "transparent"
-                :: style "caret-color" "#e6edf3"
-                :: style "border" "none"
-                :: style "outline" "none"
-                :: style "resize" "none"
-                :: style "overflow" "hidden"
-                :: codeStyles
-            )
-            []
+codeEditor : Model -> String -> Html Msg
+codeEditor model source =
+    div [ style "position" "relative" ]
+        [ errorRibbon model source
+        , div [ style "position" "relative", style "background" "#0f1720" ]
+            [ pre
+                (style "margin" "0"
+                    :: style "pointer-events" "none"
+                    :: style "color" (segColor "")
+                    :: codeStyles
+                )
+                (List.map renderSegment (Highlight.segments source) ++ [ text "\n" ])
+            , textarea
+                (onEdit
+                    :: value source
+                    :: style "position" "absolute"
+                    :: style "top" "0"
+                    :: style "left" "0"
+                    :: style "height" "100%"
+                    :: style "color" "transparent"
+                    :: style "background" "transparent"
+                    :: style "caret-color" "#e6edf3"
+                    :: style "border" "none"
+                    :: style "outline" "none"
+                    :: style "resize" "none"
+                    :: style "overflow" "hidden"
+                    :: codeStyles
+                )
+                []
+            , completionBar model
+            ]
         ]
+
+
+{-| A `<textarea>` input handler that captures both the new text and the caret offset
+(`selectionStart`), so autocomplete knows the word being typed. -}
+onEdit : Html.Attribute Msg
+onEdit =
+    on "input"
+        (Decode.map2 EditAt
+            (Decode.at [ "target", "value" ] Decode.string)
+            (Decode.at [ "target", "selectionStart" ] Decode.int)
+        )
+
+
+{-| The autocomplete suggestions for the word at the caret, as a click-to-insert bar. Empty (and so
+invisible) when there are no candidates. -}
+completionBar : Model -> Html Msg
+completionBar model =
+    if List.isEmpty model.completions then
+        text ""
+
+    else
+        div
+            [ style "position" "absolute"
+            , style "bottom" "6px"
+            , style "left" "14px"
+            , style "right" "14px"
+            , style "display" "flex"
+            , style "flex-wrap" "wrap"
+            , style "gap" "6px"
+            , style "background" "#1b2535"
+            , style "border" "1px solid #2f3e54"
+            , style "border-radius" "6px"
+            , style "padding" "6px"
+            ]
+            (List.map completionChip (List.take 12 model.completions))
+
+
+completionChip : String -> Html Msg
+completionChip label =
+    button
+        [ onMouseDown (AcceptCompletion label)
+        , style "background" "#243149"
+        , style "color" "#cbd5e1"
+        , style "border" "1px solid #36507a"
+        , style "border-radius" "4px"
+        , style "padding" "2px 8px"
+        , style "font-family" "monospace"
+        , style "font-size" "12px"
+        , style "cursor" "pointer"
+        ]
+        [ text label ]
+
+
+{-| When the selected file fails to evaluate, surface the error — and, if it names an identifier that
+appears in the source, the line/column where it is (computed by `Assist.squiggleFor`). -}
+errorRibbon : Model -> String -> Html Msg
+errorRibbon model source =
+    case model.app of
+        Err message ->
+            if message == "" then
+                text ""
+
+            else
+                div
+                    [ style "background" "#3a1d1d"
+                    , style "color" "#ffb4b4"
+                    , style "font-family" "monospace"
+                    , style "font-size" "12px"
+                    , style "padding" "6px 14px"
+                    ]
+                    [ text ("⚠ " ++ located model source ++ message) ]
+
+        Ok _ ->
+            text ""
+
+
+{-| A "line N, col C: " prefix locating the offending identifier in the source, or "" if none. -}
+located : Model -> String -> String
+located model source =
+    case model.app of
+        Err message ->
+            case Maybe.andThen (Assist.squiggleFor source) (Assist.errorName message) of
+                Just loc ->
+                    "line " ++ String.fromInt (loc.line + 1) ++ ", col " ++ String.fromInt (loc.column + 1) ++ ": "
+
+                Nothing ->
+                    ""
+
+        Ok _ ->
+            ""
 
 
 {-| The font/size/padding/wrapping shared by the highlight `<pre>` and the editing `<textarea>` so
