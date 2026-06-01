@@ -389,6 +389,8 @@ public final class Signatures {
     g("Browser.Navigation.replaceUrl", "Key -> String -> Cmd msg");
     g("Browser.Navigation.back", "Key -> Int -> Cmd msg");
     g("Browser.Navigation.forward", "Key -> Int -> Cmd msg");
+    g("Browser.Navigation.getHash", "(String -> msg) -> Cmd msg");
+    g("Browser.Navigation.setHash", "String -> Cmd msg");
 
     g("File.decoder", "Decoder File");
     g("File.toUrl", "File -> Task x String");

@@ -289,6 +289,23 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void editorRestoresASharedSessionFromAPermalink() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    // A GotHash carrying an encoded one-file session (Share.encodeFiles format: <len>,<text> per
+    // field) replaces the default starter files with the shared file — the permalink restore path.
+    // The file's main concatenates "RESTO" ++ "RED": the rendered "RESTORED" appears only if the
+    // session was restored AND its main evaluated live (the substring is never literal in the page).
+    String encoded = "10,Shared.elm30,main = text (\"RESTO\" ++ \"RED\")";
+    String driver = "window.$app.dispatch($data('GotHash',['" + encoded + "']));";
+    String dom = renderPage(JsCompiler.htmlPageProject(driver, modules));
+    assertTrue(dom.contains("RESTORED"), "the restored file's main rendered live: " + dom);
+  }
+
+  @Test
   void editorLoadsExamplesOverHttp() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Serve the editor page + example files over real HTTP and confirm the editor fetches them at

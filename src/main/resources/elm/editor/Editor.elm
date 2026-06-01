@@ -14,6 +14,7 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 
 import Browser
 import Browser.Events
+import Browser.Navigation
 import Eval exposing (appInit, appInitCmd, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, fileSelectCmd, fileSelected, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue, taskResult)
 import File
 import Json.Decode as Decode
@@ -45,6 +46,7 @@ type alias Model =
     , caret : Int -- the textarea's caret offset (for autocomplete)
     , completions : List String -- live autocomplete candidates for the word at the caret
     , shareText : String -- the encoded share string (shown to copy, or pasted in to restore)
+    , restored : Bool -- True once a permalink (#hash) session has replaced the defaults
     }
 
 
@@ -70,6 +72,7 @@ type Msg
     | Share
     | ShareInput String
     | Restore
+    | GotHash String
     | NoOp
 
 
@@ -85,7 +88,7 @@ starter =
 program : List String -> Program () Model Msg
 program urls =
     Browser.element
-        { init = \_ -> ( initModel, fetchAll urls )
+        { init = \_ -> ( initModel, Cmd.batch [ Browser.Navigation.getHash GotHash, fetchAll urls ] )
         , update = update
         , view = view
         , subscriptions = subscriptions
@@ -139,6 +142,7 @@ initModel =
         , caret = 0
         , completions = []
         , shareText = ""
+        , restored = False
         }
 
 
@@ -330,11 +334,25 @@ update msg model =
             ( { model | completions = [] }, Cmd.none )
 
         Share ->
-            -- Encode the whole session into a string the user can copy (and later paste to restore).
-            ( { model | shareText = Share.encodeFiles model.files }, Cmd.none )
+            -- Encode the session into a string to copy, and into the URL fragment for a permalink.
+            let
+                encoded =
+                    Share.encodeFiles model.files
+            in
+            ( { model | shareText = encoded }, Browser.Navigation.setHash encoded )
 
         ShareInput text ->
             ( { model | shareText = text }, Cmd.none )
+
+        GotHash hash ->
+            -- A permalink (#hash) opened the editor: restore that session in place of the defaults.
+            case Share.decodeFiles hash of
+                [] ->
+                    ( model, Cmd.none )
+
+                files ->
+                    refreshAndRun
+                        { model | files = files, selected = Tuple.first (firstFile files), restored = True }
 
         Restore ->
             -- Replace the session with the files decoded from the pasted share string.
@@ -463,24 +481,29 @@ update msg model =
                     ( model, Cmd.none )
 
         Loaded url result ->
-            case result of
-                Ok content ->
-                    -- Add (or refresh) the fetched example as an editable file.
-                    let
-                        name =
-                            baseName url
+            if model.restored then
+                -- A permalink session is active; ignore the default examples still arriving over HTTP.
+                ( model, Cmd.none )
 
-                        files =
-                            if hasFile name model.files then
-                                setFile name content model.files
+            else
+                case result of
+                    Ok content ->
+                        -- Add (or refresh) the fetched example as an editable file.
+                        let
+                            name =
+                                baseName url
 
-                            else
-                                model.files ++ [ ( name, content ) ]
-                    in
-                    ( refreshApp { model | files = files }, Cmd.none )
+                            files =
+                                if hasFile name model.files then
+                                    setFile name content model.files
 
-                Err _ ->
-                    ( model, Cmd.none )
+                                else
+                                    model.files ++ [ ( name, content ) ]
+                        in
+                        ( refreshApp { model | files = files }, Cmd.none )
+
+                    Err _ ->
+                        ( model, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
