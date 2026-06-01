@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, appAnimation, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep, httpCmd, httpResult, fileSelectCmd, fileSelected, taskResult)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, appAnimation, appSubHandler, runEventDecoder, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep, httpCmd, httpResult, fileSelectCmd, fileSelected, taskResult)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -502,8 +502,17 @@ runBuiltin globals name args =
             _ ->
                 Ok (VCtor "Sub" [])
 
+    else if name == "onKeyDown" then
+        Ok (VCtor "Sub.keyDown" args)
+
+    else if name == "onKeyUp" then
+        Ok (VCtor "Sub.keyUp" args)
+
+    else if name == "onResize" then
+        Ok (VCtor "Sub.resize" args)
+
     else if List.member name browserEventSubs then
-        -- Other Browser.Events subscriptions: accepted as opaque no-op subs so the program runs.
+        -- Other Browser.Events subscriptions (onMouseMove, …): opaque no-op subs so the program runs.
         Ok (VCtor "Sub" [])
 
     else if name == "WebGL.toHtml" then
@@ -1870,11 +1879,19 @@ appSubscription files model =
 Lets animated programs — like the WebGL examples that orbit a camera over time — actually move. -}
 appAnimation : List ( String, String ) -> Value -> Maybe Value
 appAnimation files model =
+    appSubHandler files model "Sub.animationFrame"
+
+
+{-| The handler carried by the named subscription (if the app subscribes to it, even inside a
+`Sub.batch`): the `toMsg`/decoder of `Sub.animationFrame`/`Sub.keyDown`/`Sub.keyUp`/`Sub.resize`.
+Lets the editor wire keyboard/resize/animation events for a Browser.element app, not just games. -}
+appSubHandler : List ( String, String ) -> Value -> String -> Maybe Value
+appSubHandler files model name =
     case parseProject files of
         Ok globals ->
             case evalGlobal globals "subscriptions" |> Result.andThen (\f -> applyValue globals f model) of
                 Ok subs ->
-                    findAnimationSub subs
+                    findSub name subs
 
                 Err _ ->
                     Nothing
@@ -1883,21 +1900,34 @@ appAnimation files model =
             Nothing
 
 
-{-| Searches a (possibly batched) subscription value for an `onAnimationFrameDelta` sub. -}
-findAnimationSub : Value -> Maybe Value
-findAnimationSub v =
+{-| Searches a (possibly batched) subscription value for the first sub of constructor `name`,
+returning its first argument (the handler). -}
+findSub : String -> Value -> Maybe Value
+findSub name v =
     case v of
-        VCtor "Sub.animationFrame" [ toMsg ] ->
-            Just toMsg
+        VCtor n args ->
+            if n == name then
+                List.head args
 
-        VCtor _ args ->
-            firstJust findAnimationSub args
+            else
+                firstJust (findSub name) args
 
         VList items ->
-            firstJust findAnimationSub items
+            firstJust (findSub name) items
 
         _ ->
             Nothing
+
+
+{-| Runs an event decoder (e.g. a `Browser.Events.onKeyDown` decoder) against a JSON event string
+the editor constructs (like `{"key":"w"}`), yielding the message to dispatch. -}
+runEventDecoder : List ( String, String ) -> Value -> String -> Result String Value
+runEventDecoder files decoder jsonText =
+    parseProject files
+        |> Result.andThen
+            (\globals ->
+                parseJson jsonText |> Result.andThen (\json -> runDecoder globals decoder json)
+            )
 
 
 firstJust : (a -> Maybe b) -> List a -> Maybe b

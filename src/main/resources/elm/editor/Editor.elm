@@ -15,7 +15,7 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 import Browser
 import Browser.Events
 import Browser.Navigation
-import Eval exposing (appAnimation, appInit, appInitCmd, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, fileSelectCmd, fileSelected, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue, taskResult)
+import Eval exposing (appAnimation, appInit, appInitCmd, appSubHandler, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, fileSelectCmd, fileSelected, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue, runEventDecoder, taskResult)
 import File
 import Json.Decode as Decode
 import Set exposing (Set)
@@ -68,6 +68,8 @@ type Msg
     | KeyUp String
     | Frame Float
     | AnimFrame Float
+    | AppKey Bool String
+    | AppResize Int Int
     | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
     | FilePicked Value String String
@@ -113,27 +115,62 @@ subscriptions model =
             case model.app of
                 Ok m ->
                     let
+                        files =
+                            selectedFile model
+
                         -- A live animation-frame loop, for apps subscribing via onAnimationFrameDelta.
                         animSub =
-                            case appAnimation (selectedFile model) m of
+                            case appAnimation files m of
                                 Just _ ->
                                     Browser.Events.onAnimationFrameDelta AnimFrame
 
                                 Nothing ->
                                     Sub.none
 
+                        -- Keyboard subscriptions for Browser.element apps (e.g. first-person's WASD),
+                        -- not just playground games: the app's decoder runs against the real key event.
+                        keyDownSub =
+                            case appSubHandler files m "Sub.keyDown" of
+                                Just _ ->
+                                    Browser.Events.onKeyDown (Decode.map (AppKey True) (Decode.field "key" Decode.string))
+
+                                Nothing ->
+                                    Sub.none
+
+                        keyUpSub =
+                            case appSubHandler files m "Sub.keyUp" of
+                                Just _ ->
+                                    Browser.Events.onKeyUp (Decode.map (AppKey False) (Decode.field "key" Decode.string))
+
+                                Nothing ->
+                                    Sub.none
+
+                        resizeSub =
+                            case appSubHandler files m "Sub.resize" of
+                                Just _ ->
+                                    Browser.Events.onResize AppResize
+
+                                Nothing ->
+                                    Sub.none
+
                         timeSub =
-                            case appSubscription (selectedFile model) m of
+                            case appSubscription files m of
                                 Just ( interval, _ ) ->
                                     Time.every (toFloat interval) (\posix -> Tick (Time.posixToMillis posix))
 
                                 Nothing ->
                                     Sub.none
                     in
-                    Sub.batch [ animSub, timeSub ]
+                    Sub.batch [ animSub, keyDownSub, keyUpSub, resizeSub, timeSub ]
 
                 Err _ ->
                     Sub.none
+
+
+{-| A minimal `keydown`/`keyup` event as JSON for an app's key decoder to run against. -}
+keyEventJson : String -> String
+keyEventJson key =
+    "{\"key\":\"" ++ String.replace "\"" "" key ++ "\"}"
 
 
 fetchAll : List String -> Cmd Msg
@@ -489,6 +526,48 @@ update msg model =
                     case appAnimation (selectedFile model) m of
                         Just toMsg ->
                             case applyMsgIn (selectedFile model) toMsg (VNum dt) of
+                                Ok interpMsg ->
+                                    stepApp 100 model interpMsg
+
+                                Err _ ->
+                                    ( model, Cmd.none )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        AppKey isDown key ->
+            -- A real key event for a Browser.element app: run the subscription's decoder against a
+            -- `{ "key": … }` event and dispatch the message it produces (e.g. first-person's WASD).
+            case shownModel model of
+                Ok m ->
+                    case appSubHandler (selectedFile model) m (if isDown then "Sub.keyDown" else "Sub.keyUp") of
+                        Just decoder ->
+                            case runEventDecoder (selectedFile model) decoder (keyEventJson key) of
+                                Ok interpMsg ->
+                                    stepApp 100 model interpMsg
+
+                                Err _ ->
+                                    ( model, Cmd.none )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        AppResize w h ->
+            -- A window resize for a Browser.element app: apply the sub's (Int -> Int -> msg) toMsg.
+            case shownModel model of
+                Ok m ->
+                    case appSubHandler (selectedFile model) m "Sub.resize" of
+                        Just toMsg ->
+                            case
+                                applyMsgIn (selectedFile model) toMsg (VNum (toFloat w))
+                                    |> Result.andThen (\partial -> applyMsgIn (selectedFile model) partial (VNum (toFloat h)))
+                            of
                                 Ok interpMsg ->
                                     stepApp 100 model interpMsg
 
