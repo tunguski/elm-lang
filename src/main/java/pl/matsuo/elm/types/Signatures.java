@@ -446,6 +446,9 @@ public final class Signatures {
     g("Math.Matrix4.makeOrtho", "Float -> Float -> Float -> Float -> Float -> Float -> Mat4");
     g("Math.Matrix4.transform", "Mat4 -> Vec3 -> Vec3");
     g("WebGL.toHtml", "List (Attribute msg) -> List Entity -> Html msg");
+    // A kernel bridge used by the in-browser editor: turn the interpreter's entity values into a
+    // `$GL` canvas attribute the JS WebGL runtime draws. (`a` is the editor's dynamic value type.)
+    g("WebGL.glAttr", "a -> Attribute msg");
     g("WebGL.toHtmlWith", "List Option -> List (Attribute msg) -> List Entity -> Html msg");
     g("WebGL.entity", "a -> b -> Mesh c -> d -> Entity");
     g("WebGL.triangles", "List ( v, v, v ) -> Mesh v");

@@ -24,6 +24,7 @@ import Highlight
 import Http
 import Lang exposing (Value(..))
 import Time
+import WebGL
 
 
 type alias Model =
@@ -805,6 +806,13 @@ renderHtml files v =
 
         VCtor "Html.node" [ VStr tag, VList attrs, VList children ] ->
             node tag (List.filterMap (renderAttr files) attrs) (List.map (renderHtml files) children)
+
+        VCtor "WebGL.scene" [ VList attrs, entities ] ->
+            -- Render live: a real <canvas> whose entities are handed to the JS WebGL runtime by the
+            -- `WebGL.glAttr` kernel bridge (which converts the interpreter's values to GL data).
+            node "canvas"
+                (List.filterMap (renderAttr files) attrs ++ [ WebGL.glAttr entities ])
+                []
 
         _ ->
             text (renderValue v)

@@ -243,7 +243,8 @@ class EditorInterpreterTest {
   @Test
   void parsesGlslShaderLiteralsAndEvaluatesWebgl() {
     // A multi-line GLSL literal is collapsed to a string so the program parses; WebGL.toHtml
-    // evaluates to a preview node reporting the scene's entity count.
+    // evaluates to a structured `WebGL.scene` value (rendered live in the browser by the editor's
+    // WebGL bridge) carrying its entities — each with shaders, a mesh and uniforms.
     ElmList project =
         files(
             "Scene.elm",
@@ -256,11 +257,20 @@ class EditorInterpreterTest {
                 + "    [glsl| void main () { gl_FragColor = vec4(1.0); } |]\n"
                 + "mesh = WebGL.triangles []\n"
                 + "scene = WebGL.toHtml [] [ WebGL.entity vert frag mesh {}, WebGL.entity vert frag mesh {} ]");
-    String html = evalProject(project, "scene");
-    assertTrue(html.contains("WebGL scene"), html);
-    assertTrue(html.contains("2 entities"), html);
+    String scene = evalProject(project, "scene");
+    assertTrue(scene.contains("WebGL.scene"), scene); // a structured scene, not a text preview
+    // Both entities are present in the scene's entity list.
+    assertEquals(2, countOccurrences(scene, "WebGL.entity"), scene);
     // The shader literal itself evaluates to its (flattened) source string.
     assertTrue(evalProject(project, "frag").contains("gl_FragColor"), "shader body preserved");
+  }
+
+  private static int countOccurrences(String haystack, String needle) {
+    int n = 0;
+    for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length())) {
+      n++;
+    }
+    return n;
   }
 
   /** Calls `Highlight.segments : String -> List (String, String)`. */

@@ -207,6 +207,34 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void editorRendersAWebglProgramToALiveCanvas() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
+    for (int i = 0; i < modules.length; i++) {
+      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    }
+    // Replace the selected file with a small WebGL program (one red triangle behind a perspective
+    // matrix). The editor evaluates it to a WebGL.scene and the bridge mounts a real <canvas> driven
+    // by the GL runtime. We assert the canvas appears and the page didn't error — not the pixels.
+    String program =
+        String.join(
+            "\\n",
+            "vert = [glsl| attribute vec3 position; uniform mat4 camera;"
+                + " void main () { gl_Position = camera * vec4(position, 1.0); } |]",
+            "frag = [glsl| precision mediump float;"
+                + " void main () { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); } |]",
+            "mesh = WebGL.triangles"
+                + " [ ( { position = vec3 0 0 0 }, { position = vec3 1 0 0 }, { position = vec3 0 1 0 } ) ]",
+            "main = WebGL.toHtml [ width 220, height 160 ]"
+                + " [ WebGL.entity vert frag mesh { camera = Mat4.makePerspective 45 1.4 0.1 100 } ]");
+    String driver = "window.$app.dispatch($data('EditSource',[\"" + program + "\"]));";
+    String dom = renderPage(JsCompiler.htmlPageProject(driver, modules));
+    assertTrue(dom.contains("<canvas"), "a live WebGL <canvas> is mounted: " + dom);
+    // The canvas carries the requested size, proving the program's attributes flowed through.
+    assertTrue(dom.contains("width=\"220\"") || dom.contains("width=220"), "canvas sized from the program");
+  }
+
+  @Test
   void editorTimeTravelDebuggerRecordsAndRewinds() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];

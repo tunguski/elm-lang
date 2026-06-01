@@ -248,6 +248,45 @@
   function glNode(attrs, entities, clear){ return $data('$Node',['canvas', $cons($data('$GL',[entities,clear]), attrs), $nil]); }
   $rt['WebGL.toHtml']=function(attrs){ return function(entities){ return glNode(attrs, entities, null); }; };
   $rt['WebGL.toHtmlWith']=function(opts){ return function(attrs){ return function(entities){ var clear=null; $listToArray(opts).forEach(function(o){ if(o&&o.$==='$Opt'&&o._[0]==='clear') clear=o._[1]; }); return glNode(attrs, entities, clear); }; }; };
+  // ---- Editor bridge: turn the Elm-in-Elm interpreter's WebGL values into a $GL canvas attribute.
+  // The editor evaluates a program to dynamic Lang.Values (VCtor/VStr/VNum/VList/VRecord/VTup,
+  // compiled to $data); this converts a list of `WebGL.entity` values into real GL entities so the
+  // renderer above draws them — letting the editor render WebGL live, which typed Elm can't bridge.
+  function $vList(v){ return (v && v._) ? $listToArray(v._[0]) : []; }
+  function $glScalar(v){
+    if (!v || !v.$) return 0;
+    if (v.$ === 'VNum') return v._[0];
+    if (v.$ === 'VCtor' || v.$ === 'VBuiltin'){
+      var name = v._[0], args = $listToArray(v._[1]).map($glScalar);
+      if (name === 'vec2' || name === 'vec3' || name === 'vec4') return args;
+      if (name.indexOf('Mat4.') === 0){
+        var fn = $rt['Math.Matrix4.' + name.slice(5)];
+        if (typeof fn === 'function'){ for (var i=0;i<args.length;i++) fn = fn(args[i]); }
+        return fn; // a Float32Array (or the identity matrix value)
+      }
+      if (name.indexOf('Math.Vector') === 0 || name.indexOf('Math.Matrix') === 0){
+        var f2 = $rt[name];
+        if (typeof f2 === 'function'){ for (var j=0;j<args.length;j++) f2 = f2(args[j]); }
+        return f2;
+      }
+    }
+    return 0;
+  }
+  function $glRecord(v){ var o={}; if (v && v.$ === 'VRecord') $listToArray(v._[0]).forEach(function(t){ o[t.vs[0]] = $glScalar(t.vs[1]); }); return o; }
+  function $glMesh(v){
+    if (!v || v.$ !== 'VCtor') return $data('$Mesh', [$nil]);
+    var a = $listToArray(v._[1]);
+    var tris = $vList(a[0]).map(function(tv){ var vs = $listToArray(tv._[0]); return { vs: [ $glRecord(vs[0]), $glRecord(vs[1]), $glRecord(vs[2]) ] }; });
+    return $data('$Mesh', [ $list(tris) ]);
+  }
+  function $glEntity(ev){
+    var a = $listToArray(ev._[1]); // [ vShader, fShader, mesh, uniforms ]
+    return $data('$Entity', [ $data('$Shader',[ a[0] && a[0]._ ? a[0]._[0] : '' ]),
+                              $data('$Shader',[ a[1] && a[1]._ ? a[1]._[0] : '' ]),
+                              $glMesh(a[2]), $glRecord(a[3]) ]);
+  }
+  $rt['WebGL.glAttr'] = function(entities){ return $data('$GL', [ $list($vList(entities).map($glEntity)), null ]); };
+
   // WebGL.Texture: load an Image; the GL texture is uploaded lazily on first draw.
   $rt['WebGL.Texture.load']=function(url){ return $task(function(ok,err){ var img=new Image(); if(/^https?:/.test(url)) img.crossOrigin='anonymous'; /* only cross-origin URLs need CORS; same-origin assets load untainted */ img.onload=function(){ ok($data('$Texture',[img])); }; img.onerror=function(){ ok($data('$Texture',[null])); /* load failed: succeed with a placeholder so the scene still renders */ }; img.src=url; }); };
   $rt['WebGL.Texture.loadWith']=function(opts){ return $rt['WebGL.Texture.load']; };

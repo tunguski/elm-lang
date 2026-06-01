@@ -438,7 +438,7 @@ runBuiltin globals name args =
     else if name == "WebGL.toHtml" then
         case args of
             [ attrs, entities ] ->
-                Ok (webglPreview attrs entities)
+                Ok (webglScene attrs entities)
 
             _ ->
                 Err "WebGL.toHtml needs attributes and entities"
@@ -446,7 +446,7 @@ runBuiltin globals name args =
     else if name == "WebGL.toHtmlWith" then
         case args of
             [ _, attrs, entities ] ->
-                Ok (webglPreview attrs entities)
+                Ok (webglScene attrs entities)
 
             _ ->
                 Err "WebGL.toHtmlWith needs options, attributes and entities"
@@ -913,32 +913,12 @@ runBuiltin globals name args =
 
 {-| The editor's preview for a `WebGL.toHtml` scene: a labelled box reporting the entity count
 (the small interpreter can't run GPU shaders; the JS backend renders WebGL for real). -}
-webglPreview : Value -> Value -> Value
-webglPreview attrs entities =
-    let
-        n =
-            case entities of
-                VList es ->
-                    List.length es
-
-                _ ->
-                    0
-
-        label =
-            "WebGL scene — "
-                ++ String.fromInt n
-                ++ (if n == 1 then
-                        " entity"
-
-                    else
-                        " entities"
-                   )
-    in
-    VCtor "Html.node"
-        [ VStr "div"
-        , attrs
-        , VList [ VCtor "Html.text" [ VStr label ] ]
-        ]
+{-| A WebGL scene as a structured value: the canvas attributes and the list of entities (each an
+opaque `WebGL.entity` value carrying its shaders/mesh/uniforms). The editor renders this live by
+handing the entities to the JS WebGL runtime; the Java interpreter keeps it as data for tests. -}
+webglScene : Value -> Value -> Value
+webglScene attrs entities =
+    VCtor "WebGL.scene" [ attrs, entities ]
 
 
 asNum : Value -> Maybe Float
