@@ -78,10 +78,12 @@
   $rt['Task.attempt']=function(toMsg){ return function(t){ return $cmd(function(d){ t._[0](function(v){ d(toMsg($data('Ok',[v]))); }, function(e){ d(toMsg($data('Err',[e]))); }); }); }; };
   // Random: generators produce a value on demand (real client-side randomness).
   function $gen(g){ return $data('$Gen',[g]); }
-  $rt['Random.int']=function(lo){ return function(hi){ return $gen(function(){ return lo+Math.floor(Math.random()*(hi-lo+1)); }); }; };
-  $rt['Random.float']=function(lo){ return function(hi){ return $gen(function(){ return lo+Math.random()*(hi-lo); }); }; };
-  $rt['Random.uniform']=function(x){ return function(xs){ var a=[x].concat($listToArray(xs)); return $gen(function(){ return a[Math.floor(Math.random()*a.length)]; }); }; };
-  $rt['Random.weighted']=function(first){ return function(rest){ var ps=[first].concat($listToArray(rest)); return $gen(function(){ var total=0,i; for(i=0;i<ps.length;i++) total+=ps[i].vs[0]; var r=Math.random()*total; for(i=0;i<ps.length;i++){ r-=ps[i].vs[0]; if(r<=0) return ps[i].vs[1]; } return ps[ps.length-1].vs[1]; }); }; };
+  // Generators draw from $rand (default Math.random); Random.step swaps in a seeded PRNG for purity.
+  var $rand = Math.random;
+  $rt['Random.int']=function(lo){ return function(hi){ return $gen(function(){ return lo+Math.floor($rand()*(hi-lo+1)); }); }; };
+  $rt['Random.float']=function(lo){ return function(hi){ return $gen(function(){ return lo+$rand()*(hi-lo); }); }; };
+  $rt['Random.uniform']=function(x){ return function(xs){ var a=[x].concat($listToArray(xs)); return $gen(function(){ return a[Math.floor($rand()*a.length)]; }); }; };
+  $rt['Random.weighted']=function(first){ return function(rest){ var ps=[first].concat($listToArray(rest)); return $gen(function(){ var total=0,i; for(i=0;i<ps.length;i++) total+=ps[i].vs[0]; var r=$rand()*total; for(i=0;i<ps.length;i++){ r-=ps[i].vs[0]; if(r<=0) return ps[i].vs[1]; } return ps[ps.length-1].vs[1]; }); }; };
   $rt['Random.constant']=function(x){ return $gen(function(){ return x; }); };
   $rt['Random.list']=function(n){ return function(g){ return $gen(function(){ var r=[]; for(var i=0;i<n;i++) r.push(g._[0]()); return $list(r); }); }; };
   $rt['Random.pair']=function(a){ return function(b){ return $gen(function(){ return $tuple([a._[0](),b._[0]()]); }); }; };
@@ -90,6 +92,14 @@
   $rt['Random.map3']=function(f){ return function(g1){ return function(g2){ return function(g3){ return $gen(function(){ return f(g1._[0]())(g2._[0]())(g3._[0]()); }); }; }; }; };
   $rt['Random.andThen']=function(f){ return function(g){ return $gen(function(){ return f(g._[0]())._[0](); }); }; };
   $rt['Random.generate']=function(toMsg){ return function(g){ return $cmd(function(d){ d(toMsg(g._[0]())); }); }; };
+  // Pure seeded randomness: a Seed is $Seed[state]; step runs the generator against a seeded PRNG.
+  $rt['Random.initialSeed']=function(n){ var s=(n>>>0)||1; return $data('$Seed',[s]); };
+  $rt['Random.step']=function(gen){ return function(seed){
+    var state=(seed._[0]>>>0)||1, prev=$rand;
+    $rand=function(){ state^=state<<13; state^=state>>>17; state^=state<<5; state=state>>>0; return state/4294967296; };
+    var v; try{ v=gen._[0](); } finally { $rand=prev; }
+    return $tuple([v, $data('$Seed',[state])]); }; };
+  $rt['Random.independentSeed']=$gen(function(){ return $data('$Seed',[Math.floor($rand()*4294967296)]); });
   // Json.Decode: a decoder is $Dec[run] where run(jsValue) -> {ok, v}. (v is the value or error.)
   function $dec(run){ return $data('$Dec',[run]); }
   function $arr(j){ return Array.isArray(j)?j:(j&&typeof j.length==='number'?[].slice.call(j):null); }

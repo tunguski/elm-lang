@@ -316,6 +316,9 @@ public final class Signatures {
     g("Random.map2", "(a -> b -> c) -> Generator a -> Generator b -> Generator c");
     g("Random.constant", "a -> Generator a");
     g("Random.andThen", "(a -> Generator b) -> Generator a -> Generator b");
+    g("Random.initialSeed", "Int -> Seed");
+    g("Random.step", "Generator a -> Seed -> ( a, Seed )");
+    g("Random.independentSeed", "Generator Seed");
 
     g("Time.every", "Float -> (Posix -> msg) -> Sub msg");
     g("Time.millisToPosix", "Int -> Posix");

@@ -495,6 +495,14 @@ public final class Prelude {
     fn("Random.map", 2, a -> d("$Gen_Map", a[0], a[1]));
     fn("Random.map2", 3, a -> d("$Gen_Map2", a[0], a[1], a[2]));
     fn("Random.andThen", 2, a -> d("$Gen_AndThen", a[0], a[1]));
+    // Pure seeded randomness: a Seed is $Seed[state]; step runs a generator deterministically.
+    BUILTINS.put("Random.independentSeed", d("$Gen_IndependentSeed"));
+    fn("Random.initialSeed", 1, a -> d("$Seed", scrambleSeed(Operators.asLong(a[0]))));
+    fn("Random.step", 2, a -> {
+      long state = (Long) ((ElmData) Thunk.resolve(a[1])).arg(0);
+      Object[] r = stepGen(a[0], state);
+      return new ElmTuple(new Object[] {r[0], d("$Seed", r[1])});
+    });
 
     BUILTINS.put("Time.utc", d("$Zone", 0L));
     BUILTINS.put("Time.here", d("$Task_Const", d("$Zone", 0L)));
@@ -829,6 +837,92 @@ public final class Prelude {
     // localStorage is browser-only too; headlessly there is nothing to save to or load from.
     fn("Storage.save", 2, a -> d("$CmdNone"));
     fn("Storage.load", 2, a -> d("$CmdNone"));
+  }
+
+  // --- pure seeded randomness (Random.step) ------------------------------
+  // Mirrors Tea's xorshift64*, but threaded purely: each draw advances the state and the new state
+  // is the returned random word's source. A Seed is $Seed[state] (a Long).
+
+  private static long advance(long s) {
+    s ^= s >>> 12;
+    s ^= s << 25;
+    s ^= s >>> 27;
+    return s;
+  }
+
+  private static long scrambleSeed(long n) {
+    // SplitMix64-style mix so initialSeed 0 (and small values) still give a well-distributed state.
+    long z = n + 0x9E3779B97F4A7C15L;
+    z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+    z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+    return z ^ (z >>> 31);
+  }
+
+  /** Runs {@code gen} from state {@code seed}, returning {@code [value, newState(Long)]}. */
+  private static Object[] stepGen(Object gen, long seed) {
+    ElmData g = (ElmData) Thunk.resolve(gen);
+    switch (g.ctor()) {
+      case "$Gen_Int" -> {
+        long s = advance(seed);
+        long lo = Operators.asLong(Thunk.resolve(g.arg(0)));
+        long hi = Operators.asLong(Thunk.resolve(g.arg(1)));
+        long word = s * 0x2545F4914F6CDD1DL;
+        return new Object[] {lo + Math.floorMod(word, hi - lo + 1), s};
+      }
+      case "$Gen_Float" -> {
+        long s = advance(seed);
+        double lo = ((Number) Thunk.resolve(g.arg(0))).doubleValue();
+        double hi = ((Number) Thunk.resolve(g.arg(1))).doubleValue();
+        double unit = (s >>> 11) * (1.0 / (1L << 53));
+        return new Object[] {lo + unit * (hi - lo), s};
+      }
+      case "$Gen_Uniform" -> {
+        long s = advance(seed);
+        java.util.List<Object> all = new java.util.ArrayList<>();
+        all.add(g.arg(0));
+        all.addAll(((ElmList) Thunk.resolve(g.arg(1))).toJava());
+        long word = s * 0x2545F4914F6CDD1DL;
+        return new Object[] {all.get((int) Math.floorMod(word, all.size())), s};
+      }
+      case "$Gen_List" -> {
+        long n = Operators.asLong(Thunk.resolve(g.arg(0)));
+        java.util.List<Object> out = new java.util.ArrayList<>();
+        long s = seed;
+        for (long i = 0; i < n; i++) {
+          Object[] r = stepGen(g.arg(1), s);
+          out.add(r[0]);
+          s = (Long) r[1];
+        }
+        return new Object[] {ElmList.fromJava(out), s};
+      }
+      case "$Gen_Pair" -> {
+        Object[] a = stepGen(g.arg(0), seed);
+        Object[] b = stepGen(g.arg(1), (Long) a[1]);
+        return new Object[] {new ElmTuple(new Object[] {a[0], b[0]}), b[1]};
+      }
+      case "$Gen_Const" -> {
+        return new Object[] {g.arg(0), seed};
+      }
+      case "$Gen_Map" -> {
+        Object[] r = stepGen(g.arg(1), seed);
+        return new Object[] {Apply.apply(g.arg(0), r[0]), r[1]};
+      }
+      case "$Gen_Map2" -> {
+        Object[] a = stepGen(g.arg(1), seed);
+        Object[] b = stepGen(g.arg(2), (Long) a[1]);
+        return new Object[] {Apply.applyAll(g.arg(0), a[0], b[0]), b[1]};
+      }
+      case "$Gen_AndThen" -> {
+        Object[] r = stepGen(g.arg(1), seed);
+        return stepGen(Apply.apply(g.arg(0), r[0]), (Long) r[1]);
+      }
+      case "$Gen_IndependentSeed" -> {
+        long produced = advance(seed);
+        long next = advance(produced);
+        return new Object[] {d("$Seed", produced), next};
+      }
+      default -> throw new pl.matsuo.elm.error.ElmRuntimeError("Unsupported generator: " + g.ctor());
+    }
   }
 
   /** Unwraps a {@code Json.Encode.Value} ($Json) to its underlying Java JSON tree. */
