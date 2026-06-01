@@ -523,6 +523,13 @@ public final class Prelude {
     fn("Task.perform", 2, a -> d("$Cmd_Task", a[1], a[0])); // (toMsg, task) -> [task, toMsg]
     fn("Task.attempt", 2, a -> d("$Cmd_TaskAttempt", a[1], a[0])); // delivers Ok value / Err
     fn("Task.succeed", 1, a -> d("$Task_Const", a[0]));
+    fn("Task.fail", 1, a -> d("$Task_Fail", a[0]));
+    fn("Task.map", 2, a -> d("$Task_Map", a[0], a[1]));
+    fn("Task.andThen", 2, a -> d("$Task_AndThen", a[0], a[1]));
+    fn("Task.mapError", 2, a -> d("$Task_MapError", a[0], a[1]));
+    fn("Task.onError", 2, a -> d("$Task_OnError", a[0], a[1]));
+    // Process.sleep: headlessly there is no real delay; it succeeds immediately with ().
+    fn("Process.sleep", 1, a -> d("$Task_Const", pl.matsuo.elm.runtime.ElmUnit.INSTANCE));
 
     // Browser.Events: subscriptions to input/animation. Headlessly, the Tea driver fires
     // animation-frame and keyboard/mouse subs on demand; onResize/onVisibilityChange are inert.

@@ -370,7 +370,13 @@ public final class Signatures {
     g("Task.perform", "(a -> msg) -> Task x a -> Cmd msg");
     g("Task.attempt", "(Result x a -> msg) -> Task x a -> Cmd msg");
     g("Task.succeed", "a -> Task x a");
+    g("Task.fail", "x -> Task x a");
+    g("Task.map", "(a -> b) -> Task x a -> Task x b");
+    g("Task.andThen", "(a -> Task x b) -> Task x a -> Task x b");
+    g("Task.mapError", "(x -> y) -> Task x a -> Task y a");
+    g("Task.onError", "(x -> Task y a) -> Task x a -> Task y a");
     g("Task.sequence", "List (Task x a) -> Task x (List a)");
+    g("Process.sleep", "Float -> Task x ()");
 
     g("Http.get", "{ url : String, expect : Expect msg } -> Cmd msg");
     g("Http.expectString", "(Result Error String -> msg) -> Expect msg");

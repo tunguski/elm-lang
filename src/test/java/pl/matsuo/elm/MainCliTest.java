@@ -220,6 +220,35 @@ class MainCliTest {
   }
 
   @Test
+  void taskOnErrorRecoversAFailedTask() throws Exception {
+    // A failing task recovered with Task.onError, run on init and reflected in the view.
+    Path f =
+        tempElm(
+            """
+            import Browser
+            import Html exposing (text)
+            import Task
+
+            type Msg = Got (Result String String)
+
+            main = Browser.element { init = init, update = update, view = view, subscriptions = \\_ -> Sub.none }
+
+            init _ = ( "waiting", Task.attempt Got (Task.onError recover (Task.fail "boom")) )
+
+            recover e = Task.succeed ("recovered " ++ e)
+
+            update msg _ =
+                case msg of
+                    Got (Ok v) -> ( v, Cmd.none )
+                    Got (Err e) -> ( "err " ++ e, Cmd.none )
+
+            view m = text m
+            """);
+    String out = run("run", f.toString());
+    assertTrue(out.contains("recovered boom"), out);
+  }
+
+  @Test
   void publishWritesDocsJson() throws Exception {
     Path api = tempElm("module M exposing (inc)\n{-| Adds one. -}\ninc x = x + 1\n");
     Path docs = Files.createTempFile("docs-", ".json");

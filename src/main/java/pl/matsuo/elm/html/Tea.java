@@ -155,12 +155,19 @@ public final class Tea {
         send(Apply.apply(d.arg(1), value));
       }
       case "$Cmd_Task" -> {
-        Object value = runTask(d.arg(0));
-        send(Apply.apply(d.arg(1), value));
+        // Task.perform can't fail; if a (mapped/chained) task does, deliver nothing.
+        try {
+          send(Apply.apply(d.arg(1), runTask(d.arg(0))));
+        } catch (TaskFail ignored) {
+          // no message on failure
+        }
       }
       case "$Cmd_TaskAttempt" -> {
-        Object value = runTask(d.arg(0));
-        send(Apply.apply(d.arg(1), ok(value)));
+        try {
+          send(Apply.apply(d.arg(1), ok(runTask(d.arg(0)))));
+        } catch (TaskFail f) {
+          send(Apply.apply(d.arg(1), err(f.error)));
+        }
       }
       case "$Cmd_Http" -> runHttp((String) d.arg(0), (ElmData) d.arg(1));
       case "$Cmd_SelectFile" -> {
@@ -244,11 +251,42 @@ public final class Tea {
     return new ElmData("Err", new Object[] {e});
   }
 
+  /** A task that failed, carrying its error value (caught by onError/mapError/attempt). */
+  private static final class TaskFail extends RuntimeException {
+    final Object error;
+
+    TaskFail(Object error) {
+      super(null, null, false, false);
+      this.error = error;
+    }
+  }
+
   private Object runTask(Object task) {
     if (task instanceof ElmData d) {
       switch (d.ctor()) {
         case "$Task_Const" -> {
           return d.arg(0);
+        }
+        case "$Task_Fail" -> throw new TaskFail(d.arg(0));
+        case "$Task_Map" -> {
+          return Apply.apply(d.arg(0), runTask(d.arg(1)));
+        }
+        case "$Task_AndThen" -> {
+          return runTask(Apply.apply(d.arg(0), runTask(d.arg(1))));
+        }
+        case "$Task_MapError" -> {
+          try {
+            return runTask(d.arg(1));
+          } catch (TaskFail f) {
+            throw new TaskFail(Apply.apply(d.arg(0), f.error));
+          }
+        }
+        case "$Task_OnError" -> {
+          try {
+            return runTask(d.arg(1));
+          } catch (TaskFail f) {
+            return runTask(Apply.apply(d.arg(0), f.error));
+          }
         }
         case "$Task_Seq" -> {
           List<Object> out = new ArrayList<>();
