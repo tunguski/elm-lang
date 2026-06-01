@@ -202,14 +202,33 @@ class JsonRoundTripTest {
     assertTrue(
         decode(head + "result = D.decodeString (D.null 0) (E.encode 0 (E.int 1))\n")
             .startsWith("Err"));
-    // fail always fails with the given message.
+    // fail always fails; the structured error renders to the message via errorToString.
     assertEquals(
         "Err \"nope\"",
-        decode(head + "result = D.decodeString (D.fail \"nope\") (E.encode 0 (E.int 1))\n"));
+        decode(
+            head
+                + "result = Result.mapError D.errorToString"
+                + " (D.decodeString (D.fail \"nope\") (E.encode 0 (E.int 1)))\n"));
     // lazy forces the thunk and then decodes.
     assertEquals(
         "Ok 5",
         decode(head + "result = D.decodeString (D.lazy (\\_ -> D.int)) (E.encode 0 (E.int 5))\n"));
+  }
+
+  @Test
+  void errorToStringReportsTheFieldAndIndexPath() {
+    String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
+    // A wrong type two levels deep: errorToString names the json path (json.user.tags[0]).
+    String json =
+        "json = E.encode 0 (E.object [ ( \"user\", E.object "
+            + "[ ( \"tags\", E.list E.int [ 1 ] ) ] ) ])\n";
+    String dec = "dec = D.at [ \"user\", \"tags\" ] (D.index 0 D.string)\n";
+    String r =
+        decode(head + json + dec
+            + "result = Result.mapError D.errorToString (D.decodeString dec json)\n");
+    assertTrue(r.startsWith("Err"), r);
+    assertTrue(r.contains("json.user.tags[0]"), r); // the path is in the message
+    assertTrue(r.contains("STRING"), r); // and the underlying failure
   }
 
   @Test

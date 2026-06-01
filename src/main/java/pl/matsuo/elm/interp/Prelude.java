@@ -794,6 +794,7 @@ public final class Prelude {
     });
     fn("Json.Decode.decodeValue", 2, a ->
         pl.matsuo.elm.json.DecoderRunner.run(a[0], jsonTree(a[1])));
+    fn("Json.Decode.errorToString", 1, a -> decodeErrorToString((ElmData) Thunk.resolve(a[0]), ""));
 
     // Json.Encode: a Value is $Json wrapping a plain Java tree; encode serializes it.
     fn("Json.Encode.int", 1, a -> d("$Json", a[0]));
@@ -937,6 +938,36 @@ public final class Prelude {
         return new Object[] {d("$Seed", produced), next};
       }
       default -> throw new pl.matsuo.elm.error.ElmRuntimeError("Unsupported generator: " + g.ctor());
+    }
+  }
+
+  /** Renders a Json.Decode.Error (Field/Index/OneOf/Failure) to a message with its json path. */
+  private static String decodeErrorToString(ElmData error, String path) {
+    switch (error.ctor()) {
+      case "Field" -> {
+        String name = (String) Thunk.resolve(error.arg(0));
+        String step = name.matches("[a-zA-Z_][a-zA-Z0-9_]*") ? "." + name : "['" + name + "']";
+        return decodeErrorToString((ElmData) Thunk.resolve(error.arg(1)), path + step);
+      }
+      case "Index" -> {
+        return decodeErrorToString((ElmData) Thunk.resolve(error.arg(1)),
+            path + "[" + Operators.asLong(Thunk.resolve(error.arg(0))) + "]");
+      }
+      case "OneOf" -> {
+        java.util.List<Object> errs = ((ElmList) Thunk.resolve(error.arg(0))).toJava();
+        if (errs.isEmpty()) {
+          return "Ran into a Json.Decode.oneOf with no possibilities" + (path.isEmpty() ? "" : " at json" + path);
+        }
+        StringBuilder sb = new StringBuilder("oneOf failed" + (path.isEmpty() ? "" : " at json" + path) + ":");
+        for (Object e : errs) {
+          sb.append("\n  - ").append(decodeErrorToString((ElmData) Thunk.resolve(e), ""));
+        }
+        return sb.toString();
+      }
+      default -> { // Failure message value
+        String message = (String) Thunk.resolve(error.arg(0));
+        return path.isEmpty() ? message : "Problem with the value at json" + path + ":\n\n    " + message;
+      }
     }
   }
 

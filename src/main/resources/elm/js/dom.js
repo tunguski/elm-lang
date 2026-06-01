@@ -157,6 +157,12 @@
   $rt['Storage.load']=function(key){ return function(toMsg){ return $cmd(function(d){ var v=null; try{ v=localStorage.getItem(key); }catch(e){} d(toMsg(v==null?$data('Nothing',[]):$data('Just',[v]))); }); }; };
   $rt['Json.Decode.decodeString']=function(dec){ return function(s){ try{ var x=dec._[0](JSON.parse(s)); return x.ok?$data('Ok',[x.v]):$data('Err',[$data('Failure',[String(x.v)])]); }catch(e){ return $data('Err',[$data('Failure',[String(e)])]); } }; };
   $rt['Json.Decode.decodeValue']=function(dec){ return function(j){ var x=dec._[0](j); return x.ok?$data('Ok',[x.v]):$data('Err',[$data('Failure',[String(x.v)])]); }; };
+  function $errStr(e,path){ switch(e.$){
+    case 'Field': { var n=e._[0]; return $errStr(e._[1], path + (/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)?'.'+n:"['"+n+"']")); }
+    case 'Index': return $errStr(e._[1], path+'['+e._[0]+']');
+    case 'OneOf': { var es=$listToArray(e._[0]); if(es.length===0) return 'oneOf with no possibilities'; return es.map(function(x){return $errStr(x,'');}).join('\n  - '); }
+    default: { var m=e._[0]; return path===''?m:'Problem with the value at json'+path+':\n\n    '+m; } } }
+  $rt['Json.Decode.errorToString']=function(e){ return $errStr(e,''); };
   // Http: real fetch; any failure maps to an Http.Error so update's error branch renders.
   $rt['Http.expectString']=function(toMsg){ return $data('$Expect',['string',toMsg,null]); };
   $rt['Http.expectJson']=function(toMsg){ return function(dec){ return $data('$Expect',['json',toMsg,dec]); }; };

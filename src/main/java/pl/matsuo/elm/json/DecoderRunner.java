@@ -19,11 +19,23 @@ public final class DecoderRunner {
     return new ElmData("Ok", new Object[] {v});
   }
 
+  /** A structured failure: {@code Err (Failure message value)} — the leaf of a decode error. */
   private static ElmData err(String message) {
-    return new ElmData("Err", new Object[] {message});
+    return new ElmData("Err",
+        new Object[] {new ElmData("Failure", new Object[] {message, JsonParse.NULL})});
   }
 
-  /** Returns an Elm {@code Result String a}: {@code Ok value} or {@code Err message}. */
+  private static boolean isErr(ElmData r) {
+    return r.ctor().equals("Err");
+  }
+
+  /** Wraps an {@code Err} with a path step ({@code Field name} / {@code Index i}). */
+  private static ElmData wrap(String step, Object key, ElmData errResult) {
+    return new ElmData("Err", new Object[] {new ElmData(step, new Object[] {key, errResult.arg(0)})});
+  }
+
+  /** Returns an Elm {@code Result Error a}: {@code Ok value} or {@code Err error}, where the error is
+   * a structured {@code Json.Decode.Error} (Field/Index/OneOf/Failure) carrying the path. */
   public static ElmData run(Object decoder, Object json) {
     ElmData d = (ElmData) decoder;
     switch (d.ctor()) {
@@ -53,18 +65,19 @@ public final class DecoderRunner {
         if (!(json instanceof Map<?, ?> map) || !map.containsKey(name)) {
           return err("expecting an OBJECT with a field named '" + name + "'");
         }
-        return run(d.arg(1), map.get(name));
+        ElmData r = run(d.arg(1), map.get(name));
+        return isErr(r) ? wrap("Field", name, r) : r;
       }
       case "$Dec_List" -> {
         if (!(json instanceof List<?> arr)) {
           return err("expecting a LIST");
         }
         List<Object> out = new ArrayList<>();
-        for (Object item : arr) {
+        for (int i = 0; i < arr.size(); i++) {
           // Json.Decode.list carries the element decoder as its single argument (arg 0).
-          ElmData r = run(d.arg(0), item);
-          if (r.ctor().equals("Err")) {
-            return r;
+          ElmData r = run(d.arg(0), arr.get(i));
+          if (isErr(r)) {
+            return wrap("Index", (long) i, r);
           }
           out.add(r.arg(0));
         }
@@ -121,14 +134,17 @@ public final class DecoderRunner {
       case "$Dec_At" -> {
         // at : List String -> Decoder a -> Decoder a — drill through nested object fields.
         Object node = json;
+        List<String> consumed = new ArrayList<>();
         for (Object fieldObj : ((ElmList) d.arg(0)).toJava()) {
           String name = (String) fieldObj;
           if (!(node instanceof Map<?, ?> map) || !map.containsKey(name)) {
-            return err("expecting an OBJECT with a field named '" + name + "'");
+            return wrapPath(consumed, err("expecting an OBJECT with a field named '" + name + "'"));
           }
+          consumed.add(name);
           node = map.get(name);
         }
-        return run(d.arg(1), node);
+        ElmData r = run(d.arg(1), node);
+        return isErr(r) ? wrapPath(consumed, r) : r;
       }
       case "$Dec_Index" -> {
         // index : Int -> Decoder a -> Decoder a — decode the element at a list position.
@@ -139,18 +155,20 @@ public final class DecoderRunner {
         if (i < 0 || i >= arr.size()) {
           return err("expecting a LIST with index " + i);
         }
-        return run(d.arg(1), arr.get(i));
+        ElmData r = run(d.arg(1), arr.get(i));
+        return isErr(r) ? wrap("Index", (long) i, r) : r;
       }
       case "$Dec_OneOf" -> {
-        // oneOf : List (Decoder a) -> Decoder a — first decoder that succeeds wins.
-        ElmData last = err("oneOf: no decoders");
+        // oneOf : List (Decoder a) -> Decoder a — first decoder that succeeds wins; else OneOf errors.
+        List<Object> errors = new ArrayList<>();
         for (Object dec : ((ElmList) d.arg(0)).toJava()) {
-          last = run(dec, json);
-          if (!last.ctor().equals("Err")) {
-            return last;
+          ElmData r = run(dec, json);
+          if (!isErr(r)) {
+            return r;
           }
+          errors.add(r.arg(0));
         }
-        return last;
+        return new ElmData("Err", new Object[] {new ElmData("OneOf", new Object[] {ElmList.fromJava(errors)})});
       }
       case "$Dec_Value" -> {
         // value : Decoder Value — keep the raw JSON tree as an opaque Value ($Json wrapper).
@@ -165,8 +183,8 @@ public final class DecoderRunner {
             pl.matsuo.elm.runtime.ElmDict.empty(pl.matsuo.elm.interp.Operators::compareValues);
         for (Map.Entry<?, ?> e : map.entrySet()) {
           ElmData r = run(d.arg(0), e.getValue());
-          if (r.ctor().equals("Err")) {
-            return r;
+          if (isErr(r)) {
+            return wrap("Field", e.getKey(), r);
           }
           out = out.insert(e.getKey(), r.arg(0));
         }
@@ -180,8 +198,8 @@ public final class DecoderRunner {
         List<Object> pairs = new ArrayList<>();
         for (Map.Entry<?, ?> e : map.entrySet()) {
           ElmData r = run(d.arg(0), e.getValue());
-          if (r.ctor().equals("Err")) {
-            return r;
+          if (isErr(r)) {
+            return wrap("Field", e.getKey(), r);
           }
           pairs.add(new pl.matsuo.elm.runtime.ElmTuple(new Object[] {e.getKey(), r.arg(0)}));
         }
@@ -191,5 +209,14 @@ public final class DecoderRunner {
         return err("unsupported decoder " + d.ctor());
       }
     }
+  }
+
+  /** Wraps an {@code Err} in a {@code Field} step for each segment (outermost first). */
+  private static ElmData wrapPath(List<String> segments, ElmData errResult) {
+    ElmData result = errResult;
+    for (int i = segments.size() - 1; i >= 0; i--) {
+      result = wrap("Field", segments.get(i), result);
+    }
+    return result;
   }
 }
