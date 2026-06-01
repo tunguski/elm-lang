@@ -67,4 +67,12 @@ class ErrorMessageTest {
     assertTrue(m.contains("naem") && m.contains("name"), m);
     assertTrue(m.contains("Did you mean `name`?"), m);
   }
+
+  @Test
+  void overApplicationHintsAboutArgumentCount() {
+    // `not` takes one argument but is given two — a function/non-function mismatch with a hint.
+    String src = "main = not True False\n";
+    String m = error(src).getMessage();
+    assertTrue(m.contains("Hint:") && m.contains("arguments"), m);
+  }
 }

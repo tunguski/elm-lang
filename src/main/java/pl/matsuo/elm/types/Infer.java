@@ -786,6 +786,10 @@ public final class Infer {
       return "Two records must have the same set of fields. A `{ r | … }` annotation only requires the"
           + " fields it names; check for a missing, extra or misspelled field.";
     }
+    if (m.startsWith("Type mismatch") && m.contains("->")) {
+      return "If this is a function call, check the number of arguments — a function/non-function"
+          + " mismatch usually means it was applied to too many (or too few) arguments.";
+    }
     return null;
   }
 
