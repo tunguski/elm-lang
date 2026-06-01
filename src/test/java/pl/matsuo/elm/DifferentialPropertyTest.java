@@ -324,8 +324,95 @@ class DifferentialPropertyTest {
     }
   }
 
+  @Test
+  void recursionAgreesAcrossAllFiveBackends() throws Exception {
+    // Top-level recursive functions (tail-recursive accumulators, branching tree recursion, and
+    // recursion-as-multiplication) exercised across all five backends. This guards the JS backend's
+    // self-tail-call optimisation as well as recursion through the bytecode VM and both WASM
+    // backends — none of which is reached by the inline-expression grammar above.
+    String helpers =
+        """
+        module M exposing (..)
+        sumTo : Int -> Int -> Int
+        sumTo n acc = if n <= 0 then acc else sumTo (n - 1) (acc + n)
+        fib : Int -> Int
+        fib n = if n < 2 then n else fib (n - 1) + fib (n - 2)
+        pow2 : Int -> Int -> Int
+        pow2 n acc = if n <= 0 then acc else pow2 (n - 1) (acc * 2)
+        mulRec : Int -> Int -> Int -> Int
+        mulRec a b acc = if a <= 0 then acc else mulRec (a - 1) b (acc + b)
+        """;
+    Random rng = new Random(20260601L);
+    List<String> calls = new ArrayList<>();
+    StringBuilder module = new StringBuilder(helpers);
+    for (int i = 0; i < 80; i++) {
+      String call =
+          switch (rng.nextInt(5)) {
+            case 0 -> "sumTo " + rng.nextInt(40) + " 0";
+            case 1 -> "fib " + rng.nextInt(16);
+            case 2 -> "pow2 " + rng.nextInt(20) + " 1";
+            case 3 -> "mulRec " + rng.nextInt(30) + " " + rng.nextInt(30) + " 0";
+            // Nested: a recursive result feeds another recursive call.
+            default -> "sumTo (fib " + rng.nextInt(10) + ") 0";
+          };
+      calls.add(call);
+      // Entry points are named r0..rN (not f0..fN): the linear-WASM backend also exports a positional
+      // "f<index>" alias for every function, which would collide with `f`-prefixed entry names.
+      module.append("r").append(i).append(" = ").append(call).append("\n");
+    }
+    String moduleSrc = module.toString();
+
+    // Interpreter and bytecode VM evaluate each fN within the loaded module (so the recursive
+    // helpers are in scope).
+    Interpreter interpMod = Interpreter.load(moduleSrc);
+    BytecodeInterpreter byteMod = BytecodeInterpreter.load(moduleSrc);
+    List<String> interp = new ArrayList<>();
+    for (int i = 0; i < calls.size(); i++) {
+      String expected = Show.plain(interpMod.value("r" + i));
+      interp.add(expected);
+      assertEquals(expected, Show.plain(byteMod.value("r" + i)), "bytecode: " + calls.get(i));
+    }
+
+    String js = runNodeModule(moduleSrc, calls.size());
+    if (js != null) {
+      String[] r = js.split("\n", -1);
+      for (int i = 0; i < calls.size(); i++) {
+        assertEquals(interp.get(i), r[i], "JS: " + calls.get(i));
+      }
+    }
+    List<String> wasm = runWasm(WasmCompiler.moduleFromSource(moduleSrc), calls.size(), "r");
+    if (wasm != null) {
+      for (int i = 0; i < calls.size(); i++) {
+        assertEquals(interp.get(i), wasm.get(i), "linear WASM: " + calls.get(i));
+      }
+    }
+    List<String> gc = runWasm(WasmGc.module(moduleSrc), calls.size(), "r");
+    if (gc != null) {
+      for (int i = 0; i < calls.size(); i++) {
+        assertEquals(interp.get(i), gc.get(i), "WasmGC: " + calls.get(i));
+      }
+    }
+  }
+
+  /** Compiles a whole module's declarations and prints {@code $show(r0..rN-1)} (one per line). */
+  private static String runNodeModule(String moduleSrc, int count) {
+    StringBuilder p = new StringBuilder(JsCompiler.declarationsScript(moduleSrc));
+    p.append("\nconst $out=[];");
+    for (int i = 0; i < count; i++) {
+      p.append("$out.push($show(_$r").append(i).append("));");
+    }
+    p.append("process.stdout.write($out.join('\\n'));");
+    return runNode(p.toString());
+  }
+
   /** Instantiates a wasm module under Node, runs f0..fN-1, returns results (or null without Node). */
   private static List<String> runWasm(byte[] module, int count) {
+    return runWasm(module, count, "f");
+  }
+
+  /** As {@link #runWasm(byte[], int)} but invoking exports {@code <prefix>0..<prefix>N-1} (a module
+   * may also export positional {@code f<index>} aliases, so a distinct prefix avoids collisions). */
+  private static List<String> runWasm(byte[] module, int count, String prefix) {
     try {
       Path wasm = Files.createTempFile("elm-diff-", ".wasm");
       Files.write(wasm, module);
@@ -336,7 +423,7 @@ class DifferentialPropertyTest {
               + "WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(r=>{"
               + "const ex=r.instance.exports,out=[];for(let i=0;i<"
               + count
-              + ";i++)out.push(ex['f'+i]().toString());"
+              + ";i++)out.push(ex['" + prefix + "'+i]().toString());"
               + "process.stdout.write(out.join('\\n'));}).catch(e=>{console.error(e);process.exit(1);});",
           StandardCharsets.UTF_8);
       Process p =
