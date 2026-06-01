@@ -94,6 +94,42 @@ public final class Project {
     return sb.toString();
   }
 
+  /** A self-contained HTML coverage report: every tracked function, marked hit or miss, with a
+   * percentage summary — suitable as a CI artifact. */
+  public String coverageHtml() {
+    int total = coverable.size();
+    int hit = covered.size();
+    int pct = total == 0 ? 100 : 100 * hit / total;
+    StringBuilder rows = new StringBuilder();
+    for (String name : coverable) {
+      boolean ok = covered.contains(name);
+      rows.append("<li class=\"")
+          .append(ok ? "hit" : "miss")
+          .append("\"><span class=\"mark\">")
+          .append(ok ? "✓" : "✗")
+          .append("</span> ")
+          .append(escapeHtml(name))
+          .append("</li>\n");
+    }
+    return "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+        + "<title>elm test — coverage</title><style>"
+        + "body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:24px;color:#293c4b}"
+        + "h1{font-size:1.4rem}.bar{height:14px;background:#f0d5d5;border-radius:7px;overflow:hidden;max-width:480px}"
+        + ".bar>span{display:block;height:100%;background:#3fae5a}"
+        + "ul{list-style:none;padding:0;max-width:480px}"
+        + "li{padding:4px 8px;border-bottom:1px solid #eee;font-family:monospace}"
+        + ".hit .mark{color:#246b1e}.miss{color:#9a1e1e}.miss .mark{color:#9a1e1e}"
+        + "</style></head><body>"
+        + "<h1>Coverage — " + hit + "/" + total + " functions exercised (" + pct + "%)</h1>"
+        + "<div class=\"bar\"><span style=\"width:" + pct + "%\"></span></div><ul>\n"
+        + rows
+        + "</ul></body></html>\n";
+  }
+
+  private static String escapeHtml(String s) {
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+  }
+
   /** Wraps a top-level function so its invocation records the (unqualified) name as covered. */
   private Object recordingValue(String name, Object value) {
     if (!(value instanceof pl.matsuo.elm.runtime.ElmCallable c)) {

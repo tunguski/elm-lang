@@ -581,6 +581,11 @@ public final class Main implements Runnable {
     boolean coverage;
 
     @Option(
+        names = "--coverage-html",
+        description = "Write an HTML coverage report to this file (implies --coverage).")
+    Path coverageHtml;
+
+    @Option(
         names = "--report",
         description = "Output format: console (default), tap, junit, json.")
     String report = "console";
@@ -603,10 +608,16 @@ public final class Main implements Runnable {
         for (Path p : files) {
           sources.add(readElmSource(p));
         }
+        boolean trackCoverage = coverage || coverageHtml != null;
         var result =
             pl.matsuo.elm.test.TestRunner.run(
-                sources, new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter, coverage, report));
+                sources,
+                new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter, trackCoverage, report));
         System.out.print(result.report());
+        if (coverageHtml != null && result.coverageHtml() != null) {
+          Files.writeString(coverageHtml, result.coverageHtml(), java.nio.charset.StandardCharsets.UTF_8);
+          System.out.println("Wrote HTML coverage to " + coverageHtml);
+        }
         return result.exitCode();
       } catch (IOException e) {
         System.out.println("Error: " + e.getMessage());

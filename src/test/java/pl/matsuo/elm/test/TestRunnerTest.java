@@ -257,6 +257,14 @@ class TestRunnerTest {
     assertTrue(r.report().contains("Coverage"), r.report());
     assertTrue(r.report().contains("✓ used"), r.report()); // exercised by the test
     assertTrue(r.report().contains("✗ unused"), r.report()); // never called
+
+    // An HTML coverage report is also produced (a CI artifact): the bar, the percentage, and a
+    // hit/miss list of the functions.
+    String html = r.coverageHtml();
+    assertTrue(html != null && html.startsWith("<!doctype html>"), String.valueOf(html));
+    assertTrue(html.contains("functions exercised"), html);
+    assertTrue(html.contains("class=\"hit\"") && html.contains("used"), html);
+    assertTrue(html.contains("class=\"miss\"") && html.contains("unused"), html);
   }
 
   @Test

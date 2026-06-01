@@ -23,8 +23,13 @@ public final class TestRunner {
 
   private TestRunner() {}
 
-  /** The outcome of a run: counts and a human-readable report; non-zero exit iff something failed. */
-  public record Result(int passed, int failed, int skipped, String report) {
+  /** The outcome of a run: counts, a human-readable report, and (when coverage was tracked) an HTML
+   * coverage report; non-zero exit iff something failed. */
+  public record Result(int passed, int failed, int skipped, String report, String coverageHtml) {
+    public Result(int passed, int failed, int skipped, String report) {
+      this(passed, failed, skipped, report, null);
+    }
+
     public int exitCode() {
       return failed == 0 ? 0 : 1;
     }
@@ -114,6 +119,7 @@ public final class TestRunner {
     int failed = (int) cases.stream().filter(c -> c.outcome() == Outcome.FAIL).count();
     int skipped = (int) cases.stream().filter(c -> c.outcome() == Outcome.SKIP).count();
     String coverage = opts.coverage() ? project.coverageReport() : null;
+    String coverageHtml = opts.coverage() ? project.coverageHtml() : null;
     String report =
         switch (opts.report()) {
           case "tap" -> tap(cases);
@@ -121,7 +127,7 @@ public final class TestRunner {
           case "json" -> json(cases);
           default -> console(cases, passed, failed, skipped, ms, coverage);
         };
-    return new Result(passed, failed, skipped, report);
+    return new Result(passed, failed, skipped, report, coverageHtml);
   }
 
   /** Fuzz runs at or above this count are evaluated in parallel (the interpreter is thread-safe for
