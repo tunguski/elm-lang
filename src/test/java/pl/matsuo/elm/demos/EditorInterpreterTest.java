@@ -265,6 +265,36 @@ class EditorInterpreterTest {
     assertTrue(evalProject(project, "frag").contains("gl_FragColor"), "shader body preserved");
   }
 
+  @Test
+  void evaluatesFileEffectsToStructuredCommands() {
+    // `File.Select.file` is a command the editor runs by opening a real browser picker; the
+    // interpreter evaluates it (and the rest of the File flow) to structured values.
+    assertTrue(eval("File.Select.file [\"text/*\"] GotFile").contains("Cmd.fileSelect"), "select -> a command");
+    // `Task.perform` wraps a task into a command the editor resolves; `File.toString` on a picked
+    // file yields a task carrying the text.
+    assertTrue(
+        eval("Task.perform GotText (File.toString (File \"n.txt\" \"hi\"))").contains("Cmd.task"),
+        "Task.perform -> command");
+    // `File.name`/`File.toString` work on a picked file value (what the editor delivers).
+    ElmList project =
+        files(
+            "M.elm",
+            "f = File \"notes.txt\" \"hello world\"\n"
+                + "fileName = File.name f\n"
+                + "fileSize = File.size f\n");
+    assertEquals("\"notes.txt\"", evalProject(project, "fileName"));
+    assertEquals("11", evalProject(project, "fileSize"));
+    // A File program (select -> read -> store) loads and its initial model is interpretable.
+    ElmList app =
+        files(
+            "Upload.elm",
+            "init = { text = \"\" }\n"
+                + "loadCmd = File.Select.file [ \"text/*\" ] Got\n"
+                + "view model = text model.text");
+    assertEquals("\"\"", evalProject(app, "init.text"));
+    assertTrue(evalProject(app, "loadCmd").contains("Cmd.fileSelect"), "the load command evaluates");
+  }
+
   private static int countOccurrences(String haystack, String needle) {
     int n = 0;
     for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length())) {

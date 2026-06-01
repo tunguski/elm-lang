@@ -378,6 +378,9 @@ public final class Signatures {
     g("File.mime", "File -> String");
     g("File.Select.file", "List String -> (File -> msg) -> Cmd msg");
     g("File.Select.files", "List String -> (File -> List File -> msg) -> Cmd msg");
+    // A kernel command used by the in-browser editor: open a file picker and hand the chosen file's
+    // name and text content to the message constructor.
+    g("File.openPicker", "(String -> String -> msg) -> Cmd msg");
   }
 
   private static void registerCollections() {

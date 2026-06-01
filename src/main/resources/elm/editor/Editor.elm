@@ -14,7 +14,8 @@ other functions, by design. Reuse it elsewhere with `Editor.program myExampleUrl
 
 import Browser
 import Browser.Events
-import Eval exposing (appInit, appInitCmd, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue)
+import Eval exposing (appInit, appInitCmd, appSubscription, appUpdate, appUpdateCmd, appView, applyHandler, applyMsgIn, fileSelectCmd, fileSelected, gameInitMem, gameStep, gameView, hasApp, httpCmd, httpResult, lookup, mainValue, randomCmd, renderValue, taskResult)
+import File
 import Json.Decode as Decode
 import Set exposing (Set)
 import Html exposing (Html, button, div, input, li, node, pre, span, text, textarea, ul)
@@ -56,6 +57,7 @@ type Msg
     | Frame Float
     | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
+    | FilePicked Value String String
     | NoOp
 
 
@@ -237,7 +239,25 @@ runCmd fuel model cmd =
                     )
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    case taskResult (selectedFile model) cmd of
+                        Just (Ok stepMsg) ->
+                            if fuel <= 0 then
+                                ( model, Cmd.none )
+
+                            else
+                                stepApp (fuel - 1) model stepMsg
+
+                        Just (Err _) ->
+                            ( model, Cmd.none )
+
+                        Nothing ->
+                            case fileSelectCmd cmd of
+                                Just toMsg ->
+                                    -- Open a real browser file picker; the choice returns via FilePicked.
+                                    ( model, File.openPicker (\name content -> FilePicked toMsg name content) )
+
+                                Nothing ->
+                                    ( model, Cmd.none )
 
 
 {-| Refreshes the running app/game from the selected file and issues its `init` command (so a
@@ -327,6 +347,15 @@ update msg model =
         HttpResult toMsg result ->
             -- A real HTTP request finished: build the interpreted message and feed it to `update`.
             case httpResult (selectedFile model) toMsg (Result.toMaybe result) of
+                Ok interpMsg ->
+                    stepApp 100 model interpMsg
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        FilePicked toMsg name content ->
+            -- The user chose a file: apply the program's File handler to it and step the app.
+            case fileSelected (selectedFile model) toMsg name content of
                 Ok interpMsg ->
                     stepApp 100 model interpMsg
 

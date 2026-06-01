@@ -170,6 +170,8 @@
   function selectInput(multiple, mimes){ var inp=document.createElement('input'); inp.type='file'; inp.accept=$listToArray(mimes).join(','); if(multiple) inp.multiple=true; return inp; }
   $rt['File.Select.file']=function(mimes){ return function(toMsg){ return $cmd(function(d){ var inp=selectInput(false,mimes); inp.onchange=function(){ if(inp.files[0]) d(toMsg(inp.files[0])); }; inp.click(); }); }; };
   $rt['File.Select.files']=function(mimes){ return function(toMsg){ return $cmd(function(d){ var inp=selectInput(true,mimes); inp.onchange=function(){ var fs=[].slice.call(inp.files); if(fs.length) d(toMsg(fs[0])($list(fs.slice(1)))); }; inp.click(); }); }; };
+  // Editor bridge: open a picker and hand the chosen file's name and text content to `toMsg`.
+  $rt['File.openPicker']=function(toMsg){ return $cmd(function(d){ var inp=selectInput(false,$nil); inp.onchange=function(){ var f=inp.files&&inp.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ d(toMsg(f.name)(String(r.result))); }; r.readAsText(f); }; inp.click(); }); };
   // Set / Dict: backed by a plain object keyed by $show(key) (a canonical key for comparables).
   function $k(x){ return $show(x); }
   $rt['Set.empty']=$data('$Set',[{}]);

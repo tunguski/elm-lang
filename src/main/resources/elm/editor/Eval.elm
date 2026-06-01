@@ -1,4 +1,4 @@
-module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep, httpCmd, httpResult)
+module Eval exposing (eval, evalProject, debugSteps, lookup, renderValue, appInit, appUpdate, appView, hasApp, renderProgram, mainValue, applyHandler, appInitCmd, appUpdateCmd, appSubscription, randomCmd, applyMsgIn, gameInitMem, gameView, gameStep, httpCmd, httpResult, fileSelectCmd, fileSelected, taskResult)
 
 {-| The evaluator for the interpreted language. Global (top-level) definitions are threaded through
 evaluation so all definitions across the project's files form one mutually-recursive scope. Public
@@ -31,6 +31,7 @@ builtins =
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
+        ++ [ "File.Select.file", "File.Select.files", "File.toString", "File.toUrl", "File.name", "File.mime", "File.size", "Task.perform" ]
         ++ [ "field", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "succeed", "list", "andThen", "oneOf", "nullable" ]
         ++ [ "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object", "Encode.list", "Encode.encode" ]
         ++ webglNames
@@ -90,6 +91,9 @@ arity name =
         1
 
     else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ] then
+        1
+
+    else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
         1
 
     else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
@@ -283,8 +287,9 @@ evalExpr globals env expr =
                         qualified =
                             moduleName ++ "." ++ field
                     in
-                    if moduleName == "Cmd" || moduleName == "Sub" || moduleName == "Task" then
-                        -- Effects are opaque no-ops in the editor (Cmd.none, Sub.none, Task.perform …).
+                    if (moduleName == "Cmd" || moduleName == "Sub" || moduleName == "Task") && not (List.member qualified builtins) then
+                        -- Effects with no editor builtin are opaque no-ops (Cmd.none, Sub.none, …);
+                        -- ones the editor does run (e.g. Task.perform) fall through to the builtin.
                         Ok (VCtor moduleName [])
 
                     else if qualified == "Time.here" || qualified == "Time.now" then
@@ -629,6 +634,35 @@ runBuiltin globals name args =
 
                     _ ->
                         Err "Http.get needs { url : String, expect : … }"
+
+            -- File -----------------------------------------------------------------------------
+            -- `File.Select.file mimes toMsg` is a command the editor runs by opening a real browser
+            -- file picker; the chosen file (a `VCtor "File" [name, content]`) is fed back via toMsg.
+            ( "File.Select.file", [ _, toMsg ] ) ->
+                Ok (VCtor "Cmd.fileSelect" [ toMsg ])
+
+            ( "File.Select.files", [ _, toMsg ] ) ->
+                Ok (VCtor "Cmd.fileSelect" [ toMsg ])
+
+            ( "File.name", [ VCtor "File" [ name, _ ] ] ) ->
+                Ok name
+
+            ( "File.mime", [ VCtor "File" _ ] ) ->
+                Ok (VStr "text/plain")
+
+            ( "File.size", [ VCtor "File" [ _, VStr content ] ] ) ->
+                Ok (VNum (toFloat (String.length content)))
+
+            -- Reading a file's contents: a Task the editor resolves immediately (it already has the
+            -- text), so `Task.perform GotContent (File.toString file)` delivers the content.
+            ( "File.toString", [ VCtor "File" [ _, content ] ] ) ->
+                Ok (VCtor "Task.value" [ content ])
+
+            ( "File.toUrl", [ VCtor "File" [ _, content ] ] ) ->
+                Ok (VCtor "Task.value" [ content ])
+
+            ( "Task.perform", [ toMsg, task ] ) ->
+                Ok (VCtor "Cmd.task" [ toMsg, task ])
 
             ( "field", [ VStr name2, decoder ] ) ->
                 Ok (VCtor "Dec.field" [ VStr name2, decoder ])
@@ -1724,6 +1758,38 @@ httpCmd cmd =
     case cmd of
         VCtor "Cmd.http" [ VStr url, expect ] ->
             Just ( url, expect )
+
+        _ ->
+            Nothing
+
+
+{-| If the command is a `File.Select.file`, the message constructor to apply to the chosen file; the
+editor opens a real browser file picker and feeds the result back through {@link fileSelected}. -}
+fileSelectCmd : Value -> Maybe Value
+fileSelectCmd cmd =
+    case cmd of
+        VCtor "Cmd.fileSelect" [ toMsg ] ->
+            Just toMsg
+
+        _ ->
+            Nothing
+
+
+{-| The message to dispatch once the user picks a file: `toMsg` applied to a `File` value carrying
+the file's name and text content (so `File.name`/`File.toString` work on it). -}
+fileSelected : List ( String, String ) -> Value -> String -> String -> Result String Value
+fileSelected files toMsg name content =
+    applyMsgIn files toMsg (VCtor "File" [ VStr name, VStr content ])
+
+
+{-| Resolves a `Task.perform` command (over an already-evaluated `Task.value`, e.g. from
+`File.toString`) to the message to dispatch — so a script's `Task.perform GotContent (File.toString
+file)` delivers the content. Returns `Nothing` for other commands. -}
+taskResult : List ( String, String ) -> Value -> Maybe (Result String Value)
+taskResult files cmd =
+    case cmd of
+        VCtor "Cmd.task" [ toMsg, VCtor "Task.value" [ v ] ] ->
+            Just (applyMsgIn files toMsg v)
 
         _ ->
             Nothing

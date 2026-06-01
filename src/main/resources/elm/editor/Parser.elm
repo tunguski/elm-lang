@@ -141,6 +141,16 @@ accessTail e tokens =
         TDot :: (TId field) :: rest ->
             accessTail (RecordGet e field) rest
 
+        TDot :: (TUpper seg) :: rest ->
+            -- A nested module segment of a qualified name (e.g. `File.Select.file`): fold it into the
+            -- module Ctor so the final `.lower` resolves to the builtin `File.Select.file`.
+            case e of
+                Ctor m ->
+                    accessTail (Ctor (m ++ "." ++ seg)) rest
+
+                _ ->
+                    Ok ( e, tokens )
+
         _ ->
             Ok ( e, tokens )
 
