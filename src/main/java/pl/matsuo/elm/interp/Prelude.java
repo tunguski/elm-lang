@@ -1235,6 +1235,24 @@ public final class Prelude {
     fn("Html.Events.stopPropagationOn", 2, a -> new ElmData("$On", new Object[] {a[0], a[1]}));
     fn("Html.Events.onFocus", 1, a -> new ElmData("$On", new Object[] {"focus", a[0]}));
     fn("Html.Events.onBlur", 1, a -> new ElmData("$On", new Object[] {"blur", a[0]}));
+    fn("Html.Events.onDoubleClick", 1, a -> new ElmData("$On", new Object[] {"dblclick", a[0]}));
+    fn("Html.Events.onMouseEnter", 1, a -> new ElmData("$On", new Object[] {"mouseenter", a[0]}));
+    fn("Html.Events.onMouseLeave", 1, a -> new ElmData("$On", new Object[] {"mouseleave", a[0]}));
+    fn("Html.Events.onMouseOver", 1, a -> new ElmData("$On", new Object[] {"mouseover", a[0]}));
+    fn("Html.Events.onMouseOut", 1, a -> new ElmData("$On", new Object[] {"mouseout", a[0]}));
+    fn("Html.Attributes.classList", 1, a -> {
+      StringBuilder sb = new StringBuilder();
+      for (Object pair : ((ElmList) a[0]).toJava()) {
+        ElmTuple t = (ElmTuple) Thunk.resolve(pair);
+        if (Boolean.TRUE.equals(Thunk.resolve(t.get(1)))) {
+          if (sb.length() > 0) {
+            sb.append(' ');
+          }
+          sb.append((String) Thunk.resolve(t.get(0)));
+        }
+      }
+      return new ElmData("$Att", new Object[] {"class", sb.toString()});
+    });
   }
 
   private static void registerSvg() {

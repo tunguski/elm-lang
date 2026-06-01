@@ -273,6 +273,13 @@ public final class Signatures {
     g("Html.Events.onSubmit", "msg -> Attribute msg");
     g("Html.Events.onMouseDown", "msg -> Attribute msg");
     g("Html.Events.onMouseUp", "msg -> Attribute msg");
+    g("Html.Events.onDoubleClick", "msg -> Attribute msg");
+    g("Html.Events.onMouseEnter", "msg -> Attribute msg");
+    g("Html.Events.onMouseLeave", "msg -> Attribute msg");
+    g("Html.Events.onMouseOver", "msg -> Attribute msg");
+    g("Html.Events.onMouseOut", "msg -> Attribute msg");
+    g("Html.Events.onFocus", "msg -> Attribute msg");
+    g("Html.Events.onBlur", "msg -> Attribute msg");
     g("Html.Events.on", "String -> Decoder msg -> Attribute msg");
     g("Html.Events.preventDefaultOn", "String -> Decoder ( msg, Bool ) -> Attribute msg");
     g("Html.Events.stopPropagationOn", "String -> Decoder ( msg, Bool ) -> Attribute msg");

@@ -219,6 +219,26 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void classListAndDoubleClickWork() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // classList renders only the true classes; onDoubleClick drives an update.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (div, text)\n"
+            + "import Html.Attributes exposing (classList)\n"
+            + "import Html.Events exposing (onDoubleClick)\n"
+            + "type Msg = Hit\n"
+            + "main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }\n"
+            + "view active =\n"
+            + "    div [ classList [ ( \"on\", active ), ( \"off\", not active ) ], onDoubleClick Hit ]\n"
+            + "        [ text (if active then \"ACTIVE\" else \"idle\") ]\n";
+    String dom = renderPage(JsCompiler.htmlPage(app, "document.querySelector('.off').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));"));
+    assertTrue(dom.contains("ACTIVE"), "double-click updated the model: " + dom);
+    assertTrue(dom.contains("class=\"on\""), "classList rendered the active class only: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);

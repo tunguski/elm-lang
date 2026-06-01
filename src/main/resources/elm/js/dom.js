@@ -25,6 +25,12 @@
   $rt['Html.Events.onSubmit']=function(m){ return $data('$On',['submit',m]); };
   $rt['Html.Events.on']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
   $rt['Html.Events.preventDefaultOn']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
+  // More plain-message event handlers ($On[domEvent, msg]).
+  ['onDoubleClick:dblclick','onMouseDown:mousedown','onMouseUp:mouseup','onMouseEnter:mouseenter',
+   'onMouseLeave:mouseleave','onMouseOver:mouseover','onMouseOut:mouseout','onFocus:focus','onBlur:blur'
+  ].forEach(function(spec){ var p=spec.split(':'); $rt['Html.Events.'+p[0]]=function(m){ return $data('$On',[p[1],m]); }; });
+  // classList: a class attribute of the classes whose flag is True.
+  $rt['Html.Attributes.classList']=function(pairs){ var cs=[]; $listToArray(pairs).forEach(function(p){ if(p.vs[1]) cs.push(p.vs[0]); }); return $data('$Att',['class', cs.join(' ')]); };
   // Html.map / Svg.map: rebuild a virtual node, routing every event's message through f.
   function $mapAttr(f, a){
     if (a.$!=='$On') return a;
