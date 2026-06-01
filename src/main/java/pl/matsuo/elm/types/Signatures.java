@@ -410,6 +410,8 @@ public final class Signatures {
     g("Dict.fromList", "List ( comparable, v ) -> Dict comparable v");
     g("Dict.map", "(k -> a -> b) -> Dict k a -> Dict k b");
     g("Dict.foldl", "(k -> v -> b -> b) -> b -> Dict k v -> b");
+    g("Dict.partition", "(comparable -> v -> Bool) -> Dict comparable v -> ( Dict comparable v, Dict comparable v )");
+    g("Dict.merge", "(comparable -> a -> r -> r) -> (comparable -> a -> b -> r -> r) -> (comparable -> b -> r -> r) -> Dict comparable a -> Dict comparable b -> r -> r");
 
     g("Set.empty", "Set a");
     g("Set.singleton", "comparable -> Set comparable");
@@ -419,6 +421,7 @@ public final class Signatures {
     g("Set.size", "Set a -> Int");
     g("Set.toList", "Set a -> List a");
     g("Set.fromList", "List comparable -> Set comparable");
+    g("Set.partition", "(comparable -> Bool) -> Set comparable -> ( Set comparable, Set comparable )");
 
     g("Array.empty", "Array a");
     g("Array.fromList", "List a -> Array a");

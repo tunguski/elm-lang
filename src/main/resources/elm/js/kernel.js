@@ -113,6 +113,10 @@ var $rt = {
   'Dict.intersect': function(a){ return function(b){ return {$:'Dict',a:a.a.filter(function(e){return $dictFind(b.a,e[0])>=0;})}; }; },
   'Dict.diff': function(a){ return function(b){ return {$:'Dict',a:a.a.filter(function(e){return $dictFind(b.a,e[0])<0;})}; }; },
   'Dict.update': function(k){ return function(f){ return function(d){ var i=$dictFind(d.a,k); var cur=i>=0?$data('Just',[d.a[i][1]]):$data('Nothing',[]); var r=f(cur); if(r.$==='Just'){ return $dictInsert(d,k,r._[0]); } if(i<0)return d; var a=d.a.slice(); a.splice(i,1); return {$:'Dict',a:a}; }; }; },
+  'Dict.partition': function(f){ return function(d){ var yes=[],no=[]; d.a.forEach(function(e){ (f(e[0])(e[1])?yes:no).push(e); }); return $tuple([{$:'Dict',a:yes},{$:'Dict',a:no}]); }; },
+  'Dict.merge': function(left){ return function(both){ return function(right){ return function(la){ return function(rb){ return function(acc){ var L=la.a,R=rb.a,i=0,j=0;
+    while(i<L.length&&j<R.length){ var c=$cmp(L[i][0],R[j][0]); if(c<0){acc=left(L[i][0])(L[i][1])(acc);i++;} else if(c>0){acc=right(R[j][0])(R[j][1])(acc);j++;} else {acc=both(L[i][0])(L[i][1])(R[j][1])(acc);i++;j++;} }
+    for(;i<L.length;i++)acc=left(L[i][0])(L[i][1])(acc); for(;j<R.length;j++)acc=right(R[j][0])(R[j][1])(acc); return acc; }; }; }; }; }; },
   'Set.empty': {$:'Set',a:[]},
   'Set.singleton': function(x){ return {$:'Set',a:[x]}; },
   'Set.insert': function(x){ return function(s){ return $setInsert(s,x); }; },
@@ -126,6 +130,7 @@ var $rt = {
   'Set.foldr': function(f){ return function(acc){ return function(s){ for(var i=s.a.length-1;i>=0;i--) acc=f(s.a[i])(acc); return acc; }; }; },
   'Set.map': function(f){ return function(s){ var r={$:'Set',a:[]}; s.a.forEach(function(x){ r=$setInsert(r,f(x)); }); return r; }; },
   'Set.filter': function(f){ return function(s){ return {$:'Set',a:s.a.filter(function(x){return f(x);})}; }; },
+  'Set.partition': function(f){ return function(s){ var yes=[],no=[]; s.a.forEach(function(x){ (f(x)?yes:no).push(x); }); return $tuple([{$:'Set',a:yes},{$:'Set',a:no}]); }; },
   'Set.union': function(a){ return function(b){ var s=a; b.a.forEach(function(x){ s=$setInsert(s,x); }); return s; }; },
   'Set.intersect': function(a){ return function(b){ return {$:'Set',a:a.a.filter(function(x){return $setFind(b.a,x)>=0;})}; }; },
   'Set.diff': function(a){ return function(b){ return {$:'Set',a:a.a.filter(function(x){return $setFind(b.a,x)<0;})}; }; },

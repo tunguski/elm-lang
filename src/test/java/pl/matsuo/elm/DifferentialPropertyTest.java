@@ -405,7 +405,13 @@ class DifferentialPropertyTest {
             "String.any (\\c -> c == 'l') \"hello\"",
             "String.any (\\c -> c == 'z') \"hello\"",
             "String.all (\\c -> c /= 'z') \"hello\"",
-            "String.all (\\c -> c == 'l') \"hello\"");
+            "String.all (\\c -> c == 'l') \"hello\"",
+            // Dict.partition / Set.partition (rendered as a pair of collections) and Dict.merge.
+            "Dict.partition (\\k _ -> k > 1) (Dict.fromList [ ( 1, \"a\" ), ( 2, \"b\" ), ( 3, \"c\" ) ])",
+            "Set.partition (\\x -> modBy 2 x == 0) (Set.fromList [ 1, 2, 3, 4, 5 ])",
+            "Dict.merge (\\k v acc -> acc ++ [ ( k, v ) ]) (\\k a b acc -> acc ++ [ ( k, a + b ) ]) "
+                + "(\\k v acc -> acc ++ [ ( k, v ) ]) (Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]) "
+                + "(Dict.fromList [ ( 2, 200 ), ( 3, 30 ) ]) []");
 
     List<String> interp = new ArrayList<>();
     for (String e : exprs) {

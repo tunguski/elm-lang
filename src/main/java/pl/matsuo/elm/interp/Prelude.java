@@ -307,6 +307,50 @@ public final class Prelude {
       }
       return out;
     });
+    fn("Dict.partition", 2, a -> {
+      ElmDict yes = ElmDict.empty(CMP);
+      ElmDict no = ElmDict.empty(CMP);
+      for (Map.Entry<Object, Object> e : asDict(a[1]).entries().entrySet()) {
+        if ((Boolean) Apply.applyAll(a[0], e.getKey(), e.getValue())) {
+          yes = yes.insert(e.getKey(), e.getValue());
+        } else {
+          no = no.insert(e.getKey(), e.getValue());
+        }
+      }
+      return new ElmTuple(new Object[] {yes, no});
+    });
+    // Dict.merge leftStep bothStep rightStep leftDict rightDict initial -> result. Steps the two
+    // dicts in ascending key order, calling leftStep / bothStep / rightStep per key.
+    fn("Dict.merge", 6, a -> {
+      List<Map.Entry<Object, Object>> ls = new ArrayList<>(asDict(a[3]).entries().entrySet());
+      List<Map.Entry<Object, Object>> rs = new ArrayList<>(asDict(a[4]).entries().entrySet());
+      Object acc = a[5];
+      int i = 0;
+      int j = 0;
+      while (i < ls.size() && j < rs.size()) {
+        Map.Entry<Object, Object> l = ls.get(i);
+        Map.Entry<Object, Object> r = rs.get(j);
+        int c = CMP.compare(l.getKey(), r.getKey());
+        if (c < 0) {
+          acc = Apply.applyAll(a[0], l.getKey(), l.getValue(), acc);
+          i++;
+        } else if (c > 0) {
+          acc = Apply.applyAll(a[2], r.getKey(), r.getValue(), acc);
+          j++;
+        } else {
+          acc = Apply.applyAll(a[1], l.getKey(), l.getValue(), r.getValue(), acc);
+          i++;
+          j++;
+        }
+      }
+      for (; i < ls.size(); i++) {
+        acc = Apply.applyAll(a[0], ls.get(i).getKey(), ls.get(i).getValue(), acc);
+      }
+      for (; j < rs.size(); j++) {
+        acc = Apply.applyAll(a[2], rs.get(j).getKey(), rs.get(j).getValue(), acc);
+      }
+      return acc;
+    });
   }
 
   private static ElmSet asSet(Object o) {
@@ -371,6 +415,18 @@ public final class Prelude {
         }
       }
       return out;
+    });
+    fn("Set.partition", 2, a -> {
+      ElmSet yes = ElmSet.empty(CMP);
+      ElmSet no = ElmSet.empty(CMP);
+      for (Object x : asSet(a[1]).elements()) {
+        if ((Boolean) Apply.apply(a[0], x)) {
+          yes = yes.insert(x);
+        } else {
+          no = no.insert(x);
+        }
+      }
+      return new ElmTuple(new Object[] {yes, no});
     });
     fn("Set.foldl", 3, a -> {
       Object acc = a[1];
