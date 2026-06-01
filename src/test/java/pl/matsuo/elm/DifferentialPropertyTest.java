@@ -41,6 +41,25 @@ class DifferentialPropertyTest {
       if (depth <= 0 || rng.nextInt(100) < 25) {
         return Integer.toString(rng.nextInt(20)); // small non-negative literal
       }
+      if (closureSafe) {
+        // First-class functions WasmGC now supports (and interp / bytecode / JS): multi-argument
+        // lambdas, currying, and higher-order application of a multi-arg function value.
+        return switch (rng.nextInt(8)) {
+          case 0 -> "(" + expr(depth - 1) + " + " + expr(depth - 1) + ")";
+          case 1 -> "(" + expr(depth - 1) + " * " + expr(depth - 1) + ")";
+          case 2 -> "(" + expr(depth - 1) + " - " + expr(depth - 1) + ")";
+          case 3 ->
+              "(if " + expr(depth - 1) + " < " + expr(depth - 1) + " then "
+                  + expr(depth - 1) + " else " + expr(depth - 1) + ")";
+          case 4 -> // immediately-applied two-argument lambda
+              "((\\a b -> a + b - " + expr(depth - 1) + ") " + expr(depth - 1) + " " + expr(depth - 1) + ")";
+          case 5 -> // explicitly curried lambda
+              "((\\a -> \\b -> a * b) " + expr(depth - 1) + " " + expr(depth - 1) + ")";
+          case 6 -> // higher-order: apply a 2-arg function value
+              "((\\f -> f " + expr(depth - 1) + " " + expr(depth - 1) + ") (\\a b -> a - b))";
+          default -> "(let g = (\\a b -> a + b) in g " + expr(depth - 1) + " " + expr(depth - 1) + ")";
+        };
+      }
       if (gcSafe) {
         // The fragment all five backends share, including WasmGC: arithmetic, `if`, value `let`, and
         // an immediately-applied capture-free lambda (higher-order: ref.func + call_ref on WasmGC).
@@ -81,6 +100,7 @@ class DifferentialPropertyTest {
 
     boolean wasmSafe = false;
     boolean gcSafe = false;
+    boolean closureSafe = false;
 
     /**
      * Generates expressions that evaluate to <em>compound</em> values — tuples, lists, records,
@@ -249,6 +269,42 @@ class DifferentialPropertyTest {
     if (wasm != null) {
       for (int i = 0; i < exprs.size(); i++) {
         assertEquals(interp.get(i), wasm.get(i), "WASM: " + exprs.get(i));
+      }
+    }
+    List<String> gc = runWasm(WasmGc.module(module.toString()), exprs.size());
+    if (gc != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), gc.get(i), "WasmGC: " + exprs.get(i));
+      }
+    }
+  }
+
+  @Test
+  void closuresAgreeAcrossInterpBytecodeJsAndWasmGc() throws Exception {
+    // Fuzzes first-class functions (multi-arg lambdas, currying, higher-order application) across the
+    // four backends that support them. Guards this session's WasmGC closure/currying work. (The
+    // linear-memory WASM backend has no closures yet, so it's excluded here.)
+    Gen gen = new Gen(20260601L);
+    gen.closureSafe = true;
+    List<String> exprs = new ArrayList<>();
+    StringBuilder module = new StringBuilder();
+    for (int i = 0; i < 80; i++) {
+      String e = gen.expr(4);
+      exprs.add(e);
+      module.append("f").append(i).append(" = ").append(e).append("\n");
+    }
+
+    List<String> interp = new ArrayList<>();
+    for (String e : exprs) {
+      interp.add(Show.plain(Interpreter.eval(e)));
+      assertEquals(interp.get(interp.size() - 1), Show.plain(BytecodeInterpreter.eval(e)), "bytecode: " + e);
+    }
+
+    String js = runNode(JsCompiler.expressionsProgram(exprs));
+    if (js != null) {
+      String[] r = js.split("\n", -1);
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), r[i], "JS: " + exprs.get(i));
       }
     }
     List<String> gc = runWasm(WasmGc.module(module.toString()), exprs.size());
