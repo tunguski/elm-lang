@@ -1,8 +1,6 @@
 package pl.matsuo.elm.site;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,16 +38,10 @@ public final class SiteGen {
    */
   public static int generateGallery(Path examplesDir, Path playground, Path outDir, Path docsDir)
       throws IOException {
+    // SiteGenerator.generate now compiles the artifacts + manifest AND runs the Elm gallery
+    // generator (which owns index.html + styles.css), so building the site is a single call.
     SiteGenerator.generate(examplesDir, playground, outDir, docsDir);
-    Object main =
-        Project.load(
-                Resources.read("/elm/site/Gallery.elm"),
-                Resources.read("/elm/lib/Posix.elm"),
-                Resources.read("/elm/lib/Bash.elm"),
-                Resources.read("/elm/lib/Site.elm"))
-            .main();
-    return pl.matsuo.elm.script.ScriptRunner.run(
-        main, List.of(outDir.toString()), new BufferedReader(new StringReader("")), System.out);
+    return 0;
   }
 
   /** Renders a site definition's pages, plus (for any {@code apiDirs}) grouped per-module API docs,

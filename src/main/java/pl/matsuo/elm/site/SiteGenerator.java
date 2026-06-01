@@ -1,12 +1,16 @@
 package pl.matsuo.elm.site;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import pl.matsuo.elm.script.ScriptRunner;
+import pl.matsuo.elm.util.Resources;
 import pl.matsuo.elm.codegen.js.JsCompiler;
 import pl.matsuo.elm.codegen.wasm.WasmCompiler;
 import pl.matsuo.elm.html.HtmlRender;
@@ -119,27 +123,59 @@ public final class SiteGenerator {
   private record DocPage(String slug, String title) {}
 
   /**
-   * Writes a tab-separated manifest of the compiled example artifacts (slug, title, category, demo
-   * path, method) that the Elm gallery generator reads to produce the HTML/CSS. This is the data
-   * contract between the Java compiler (which produces the demos) and the Elm site generator.
+   * Writes the tab-separated manifest that is the data contract between the Java side (which compiles
+   * the artifacts) and the Elm gallery generator (which owns all of the index's HTML/CSS). Typed
+   * lines, one per row:
+   *
+   * <pre>
+   * example  slug  title  category  demoPath  method
+   * aux      href  label                              (backends / playground / editor / … pages)
+   * doc      href  label                              (a rendered documentation page)
+   * stat     live  total                              (how many demos run as live compiled JS)
+   * </pre>
    */
-  private void writeManifest(List<Built> built) throws IOException {
+  private void writeManifest(List<Built> built, List<DocPage> docs, boolean rts) throws IOException {
     StringBuilder sb = new StringBuilder();
     for (Built b : built) {
-      sb.append(b.example.slug())
-          .append('\t')
-          .append(b.example.title())
-          .append('\t')
-          .append(b.example.category())
-          .append('\t')
-          .append("demos/")
-          .append(b.example.slug())
-          .append(".html")
-          .append('\t')
-          .append(b.method.label)
-          .append('\n');
+      sb.append("example\t").append(b.example.slug()).append('\t').append(b.example.title())
+          .append('\t').append(b.example.category()).append('\t')
+          .append("demos/").append(b.example.slug()).append(".html").append('\t')
+          .append(b.method.label).append('\n');
     }
+    sb.append("aux\tbackends.html\tJS vs WASM\n");
+    sb.append("aux\tplayground.html\tPlayground\n");
+    sb.append("aux\ttodomvc.html\tTodoMVC\n");
+    sb.append("aux\teditor.html\tElm-in-Elm editor\n");
+    if (rts) {
+      sb.append("aux\trts.html\tRTS Mini game\n");
+    }
+    for (DocPage d : docs) {
+      sb.append("doc\t").append(d.slug()).append(".html\t").append(d.title()).append('\n');
+    }
+    long live = built.stream().filter(b -> b.method == Method.LIVE).count();
+    sb.append("stat\t").append(live).append('\t').append(built.size()).append('\n');
     Files.writeString(outDir.resolve("manifest.tsv"), sb.toString(), StandardCharsets.UTF_8);
+  }
+
+  /**
+   * Runs the Elm gallery generator ({@code Gallery.elm}) against the manifest in {@code outDir},
+   * which writes {@code index.html} and {@code styles.css} — i.e. all of the index's HTML/CSS is
+   * produced by Elm via the {@code Site} library, not by Java.
+   */
+  static void renderGalleryIndex(Path outDir) {
+    Object main =
+        Project.load(
+                Resources.read("/elm/site/Gallery.elm"),
+                Resources.read("/elm/lib/Posix.elm"),
+                Resources.read("/elm/lib/Bash.elm"),
+                Resources.read("/elm/lib/Site.elm"))
+            .main();
+    int code =
+        ScriptRunner.run(
+            main, List.of(outDir.toString()), new BufferedReader(new StringReader("")), System.out);
+    if (code != 0) {
+      throw new IllegalStateException("Elm gallery generator failed with exit code " + code);
+    }
   }
 
   private void run() throws IOException {
@@ -155,8 +191,12 @@ public final class SiteGenerator {
     writeEditorPage();
     boolean rts = writeRtsPage();
     List<DocPage> docs = writeDocPages();
-    writeIndex(built, docs, rts);
-    writeManifest(built);
+    // The index page (index.html + styles.css) is owned by the Elm gallery generator: write the
+    // manifest of artifacts, then let the Elm side render all of the gallery's HTML/CSS from it.
+    writeManifest(built, docs, rts);
+    renderGalleryIndex(outDir);
+    // GitHub Pages: skip Jekyll so files/dirs are served verbatim.
+    Files.writeString(outDir.resolve(".nojekyll"), "", StandardCharsets.UTF_8);
     System.out.println("Site written to " + outDir.toAbsolutePath());
     for (Built b : built) {
       System.out.printf("  %-16s %-22s %s%n", b.example.slug(), b.method.label, b.note);
@@ -819,92 +859,7 @@ public final class SiteGenerator {
 
   private static final String BACKENDS_STYLE = style("/elm/css/backends.css");
 
-  private void writeIndex(List<Built> built, List<DocPage> docs, boolean rts) throws IOException {
-    StringBuilder cards = new StringBuilder();
-    String currentCategory = null;
-    for (Built b : built) {
-      if (!b.example.category().equals(currentCategory)) {
-        if (currentCategory != null) {
-          cards.append("</div>\n");
-        }
-        currentCategory = b.example.category();
-        cards.append("<h2>").append(escape(currentCategory)).append("</h2>\n<div class=\"grid\">\n");
-      }
-      cards
-          .append("<a class=\"card\" href=\"")
-          .append(b.example.slug())
-          .append(".html\">")
-          .append("<span class=\"thumb\"><iframe tabindex=\"-1\" scrolling=\"no\" src=\"demos/")
-          .append(b.example.slug())
-          .append(".html\" loading=\"lazy\"></iframe></span>")
-          .append("<span class=\"meta\"><strong>")
-          .append(escape(b.example.title()))
-          .append("</strong><span class=\"badge ")
-          .append(b.method.css)
-          .append("\">")
-          .append(b.method.label)
-          .append("</span></span></a>\n");
-    }
-    if (currentCategory != null) {
-      cards.append("</div>\n");
-    }
-
-    StringBuilder docLinks = new StringBuilder();
-    for (DocPage d : docs) {
-      docLinks
-          .append("\n          <a href=\"")
-          .append(d.slug())
-          .append(".html\">")
-          .append(escape(d.title()))
-          .append(" &#8594;</a> ·");
-    }
-
-    long live = built.stream().filter(b -> b.method == Method.LIVE).count();
-    String index =
-        """
-        <!doctype html>
-        <html lang="en">
-        <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>elm-lang — example gallery</title>
-        %STYLE%
-        </head>
-        <body>
-        <header class="hero">
-          <h1>elm-lang</h1>
-          <p>A from-scratch Elm implementation in Java — a Truffle JIT interpreter, a bytecode VM,
-          and a compiler to JavaScript. Every example below is the <strong>JavaScript-compiled</strong>
-          output running live in your browser; the multi-module Playground games and a couple of
-          GPU-bound programs fall back to a server-side-rendered initial frame.</p>
-          <p class="stats">%LIVE% of %TOTAL% examples run as live compiled JavaScript ·
-          <a href="backends.html">JS vs WASM &#8594;</a> ·
-          <a href="playground.html">Playground &#8594;</a> ·
-          <a href="todomvc.html">TodoMVC &#8594;</a> ·
-          <a href="editor.html">Elm-in-Elm editor &#8594;</a> ·%RTS%%DOCS%
-          <a href="https://github.com/tunguski/elm-lang">source on GitHub</a></p>
-        </header>
-        <main>
-        %CARDS%
-        </main>
-        <footer>Generated from the test corpus by <code>SiteGenerator</code>.</footer>
-        </body>
-        </html>
-        """
-            .replace("%STYLE%", INDEX_STYLE)
-            .replace("%CARDS%", cards.toString())
-            .replace("%RTS%", rts ? "\n          <a href=\"rts.html\">RTS Mini game &#8594;</a> ·" : "")
-            .replace("%DOCS%", docLinks.toString())
-            .replace("%LIVE%", Long.toString(live))
-            .replace("%TOTAL%", Integer.toString(built.size()));
-    Files.writeString(outDir.resolve("index.html"), index, StandardCharsets.UTF_8);
-    // GitHub Pages: skip Jekyll so files/dirs are served verbatim.
-    Files.writeString(outDir.resolve(".nojekyll"), "", StandardCharsets.UTF_8);
-  }
-
   // --- styling -----------------------------------------------------------
-
-  private static final String INDEX_STYLE = style("/elm/css/index.css");
 
   private static final String PAGE_STYLE = style("/elm/css/page.css");
 

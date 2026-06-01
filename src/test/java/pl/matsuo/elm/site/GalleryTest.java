@@ -23,8 +23,10 @@ class GalleryTest {
     Path out = Files.createTempDirectory("gallery-manifest-");
     SiteGenerator.generate(EXAMPLES, PLAYGROUND, out);
     String manifest = Files.readString(out.resolve("manifest.tsv"), StandardCharsets.UTF_8);
-    // Each line: slug \t title \t category \t demoPath \t method.
-    assertTrue(manifest.contains("hello\tHello\tHTML\tdemos/hello.html\t"), manifest);
+    // Typed lines: example rows, the auxiliary-page links, and a live/total stat.
+    assertTrue(manifest.contains("example\thello\tHello\tHTML\tdemos/hello.html\t"), manifest);
+    assertTrue(manifest.contains("aux\tbackends.html\tJS vs WASM"), manifest);
+    assertTrue(manifest.lines().anyMatch(l -> l.startsWith("stat\t")), manifest);
     assertTrue(Files.exists(out.resolve("demos/hello.html")), "the demo artifact exists");
   }
 
@@ -34,12 +36,16 @@ class GalleryTest {
     int code = SiteGen.generateGallery(EXAMPLES, PLAYGROUND, out, null);
     assertTrue(code == 0, "the Elm gallery generator succeeded");
 
-    // The index.html is now produced by the Elm generator (from the manifest), via the Site library.
+    // The index.html is now produced entirely by the Elm generator (from the manifest), via the Site
+    // library — hero, stats with auxiliary-page links, and the searchable per-category card grid.
     String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
-    assertTrue(index.contains("Example gallery"), index.substring(0, Math.min(200, index.length())));
+    assertTrue(index.contains("<h1>elm-lang</h1>"), index.substring(0, Math.min(200, index.length())));
+    assertTrue(index.contains("examples run as live compiled JavaScript"), "stats line rendered");
+    assertTrue(index.contains("href=\"backends.html\""), "links the JS-vs-WASM page from the index");
     assertTrue(index.contains("<h2>HTML</h2>"), "examples grouped by category");
-    assertTrue(index.contains(">Hello</a>") && index.contains("href=\"demos/hello.html\""),
-        "an example links its compiled demo artifact");
+    assertTrue(index.contains("href=\"hello.html\"") && index.contains("src=\"demos/hello.html\""),
+        "a card links its wrapper page and embeds the compiled demo as a thumbnail");
+    assertTrue(index.contains(">Hello</strong>"), "the card shows the example title");
     assertTrue(index.contains("href=\"styles.css\""), "links the generated stylesheet");
     // Client-side search box, dark-mode toggle and the script that drives them.
     assertTrue(index.contains("id=\"search\""), "has a search box");
