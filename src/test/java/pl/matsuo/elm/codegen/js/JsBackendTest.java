@@ -226,6 +226,10 @@ class JsBackendTest {
     same("Maybe.map3 (\\a b c -> a + b + c) (Just 1) (Just 2) (Just 3)");
     same("Maybe.map3 (\\a b c -> a + b + c) (Just 1) Nothing (Just 3)"); // Nothing
     same("Maybe.map4 (\\a b c d -> a + b + c + d) (Just 1) (Just 2) (Just 3) (Just 4)");
+    same("Maybe.map5 (\\a b c d e -> a + b + c + d + e) (Just 1) (Just 2) (Just 3) (Just 4) (Just 5)");
+    same("Result.map4 (\\a b c d -> a + b + c + d) (Ok 1) (Ok 2) (Ok 3) (Ok 4)");
+    same("Result.map5 (\\a b c d e -> a + b + c + d + e) (Ok 1) (Ok 2) (Ok 3) (Ok 4) (Err \"x\")"); // Err
+    same("List.unzip3 [ ( 1, \"a\", True ), ( 2, \"b\", False ) ]");
     same("Result.map2 (\\a b -> a + b) (Ok 1) (Ok 2)");
     same("Result.map2 (\\a b -> a + b) (Err \"e\") (Ok 2)"); // short-circuits to the Err
     same("Result.map3 (\\a b c -> a + b + c) (Ok 1) (Ok 2) (Ok 3)");

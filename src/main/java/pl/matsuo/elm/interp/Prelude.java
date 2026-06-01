@@ -1051,6 +1051,19 @@ public final class Prelude {
       }
       return new ElmTuple(new Object[] {ElmList.fromJava(firsts), ElmList.fromJava(seconds)});
     });
+    fn("List.unzip3", 1, a -> {
+      List<Object> as = new ArrayList<>();
+      List<Object> bs = new ArrayList<>();
+      List<Object> cs = new ArrayList<>();
+      for (Object triple : javaList(a[0])) {
+        ElmTuple t = (ElmTuple) triple;
+        as.add(t.get(0));
+        bs.add(t.get(1));
+        cs.add(t.get(2));
+      }
+      return new ElmTuple(
+          new Object[] {ElmList.fromJava(as), ElmList.fromJava(bs), ElmList.fromJava(cs)});
+    });
     fn("List.intersperse", 2, a -> {
       List<Object> out = new ArrayList<>();
       boolean first = true;
@@ -1539,6 +1552,13 @@ public final class Prelude {
       }
       return NOTHING;
     });
+    fn("Maybe.map5", 6, a -> {
+      if (isJust(a[1]) && isJust(a[2]) && isJust(a[3]) && isJust(a[4]) && isJust(a[5])) {
+        return just(Apply.applyAll(a[0], justValue(a[1]), justValue(a[2]), justValue(a[3]),
+            justValue(a[4]), justValue(a[5])));
+      }
+      return NOTHING;
+    });
   }
 
   private static boolean isJust(Object o) {
@@ -1580,6 +1600,24 @@ public final class Prelude {
       }
       return new ElmData("Ok", new Object[] {
           Apply.applyAll(a[0], ((ElmData) a[1]).arg(0), ((ElmData) a[2]).arg(0), ((ElmData) a[3]).arg(0))});
+    });
+    fn("Result.map4", 5, a -> {
+      for (int i = 1; i <= 4; i++) {
+        if (!isOk(a[i])) {
+          return a[i];
+        }
+      }
+      return new ElmData("Ok", new Object[] {Apply.applyAll(a[0],
+          ((ElmData) a[1]).arg(0), ((ElmData) a[2]).arg(0), ((ElmData) a[3]).arg(0), ((ElmData) a[4]).arg(0))});
+    });
+    fn("Result.map5", 6, a -> {
+      for (int i = 1; i <= 5; i++) {
+        if (!isOk(a[i])) {
+          return a[i];
+        }
+      }
+      return new ElmData("Ok", new Object[] {Apply.applyAll(a[0], ((ElmData) a[1]).arg(0),
+          ((ElmData) a[2]).arg(0), ((ElmData) a[3]).arg(0), ((ElmData) a[4]).arg(0), ((ElmData) a[5]).arg(0))});
     });
     fn("Result.toMaybe", 1, a -> isOk(a[0]) ? just(((ElmData) a[0]).arg(0)) : NOTHING);
     fn("Result.fromMaybe", 2, a ->

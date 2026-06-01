@@ -128,6 +128,7 @@ public final class Signatures {
     g("List.append", "List a -> List a -> List a");
     g("List.partition", "(a -> Bool) -> List a -> ( List a, List a )");
     g("List.unzip", "List ( a, b ) -> ( List a, List b )");
+    g("List.unzip3", "List ( a, b, c ) -> ( List a, List b, List c )");
     g("List.intersperse", "a -> List a -> List a");
     g("List.concat", "List (List a) -> List a");
     g("List.concatMap", "(a -> List b) -> List a -> List b");
@@ -195,11 +196,20 @@ public final class Signatures {
     g("Maybe.map2", "(a -> b -> v) -> Maybe a -> Maybe b -> Maybe v");
     g("Maybe.map3", "(a -> b -> c -> v) -> Maybe a -> Maybe b -> Maybe c -> Maybe v");
     g("Maybe.map4", "(a -> b -> c -> d -> v) -> Maybe a -> Maybe b -> Maybe c -> Maybe d -> Maybe v");
+    g(
+        "Maybe.map5",
+        "(a -> b -> c -> d -> e -> v) -> Maybe a -> Maybe b -> Maybe c -> Maybe d -> Maybe e -> Maybe v");
     g("Maybe.andThen", "(a -> Maybe b) -> Maybe a -> Maybe b");
     g("Result.withDefault", "a -> Result e a -> a");
     g("Result.map", "(a -> b) -> Result e a -> Result e b");
     g("Result.map2", "(a -> b -> v) -> Result e a -> Result e b -> Result e v");
     g("Result.map3", "(a -> b -> c -> v) -> Result e a -> Result e b -> Result e c -> Result e v");
+    g(
+        "Result.map4",
+        "(a -> b -> c -> d -> v) -> Result x a -> Result x b -> Result x c -> Result x d -> Result x v");
+    g(
+        "Result.map5",
+        "(a -> b -> c -> d -> e -> v) -> Result x a -> Result x b -> Result x c -> Result x d -> Result x e -> Result x v");
     g("Result.andThen", "(a -> Result e b) -> Result e a -> Result e b");
     g("Result.mapError", "(e -> f) -> Result e a -> Result f a");
     g("Result.toMaybe", "Result e a -> Maybe a");
