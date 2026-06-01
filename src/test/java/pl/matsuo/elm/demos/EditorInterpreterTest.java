@@ -152,6 +152,8 @@ class EditorInterpreterTest {
           "Texture.load \"u\"",
           "Texture.nearest",
           "Dom.getViewport",
+          "Time.now",
+          "Time.here",
           "E.onAnimationFrameDelta",
           "E.onResize",
           // Json.Decode under an import alias (image-previews uses `import Json.Decode as D`).

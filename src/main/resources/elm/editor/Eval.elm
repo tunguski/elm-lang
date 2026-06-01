@@ -322,9 +322,15 @@ evalExpr globals env expr =
                         -- ones the editor does run (e.g. Task.perform) fall through to the builtin.
                         Ok (VCtor moduleName [])
 
-                    else if qualified == "Time.here" || qualified == "Time.now" then
-                        -- These effectful Time values are opaque (they only feed a discarded Cmd).
-                        Ok (VCtor "Cmd" [])
+                    else if qualified == "Time.now" then
+                        -- A Task yielding the current time. The pure interpreter has no clock, so it
+                        -- resolves to epoch 0; a `Time.every` subscription (which the editor drives
+                        -- with the real clock) then advances it — enough for the clock/time examples.
+                        Ok (VCtor "Task.value" [ VNum 0 ])
+
+                    else if qualified == "Time.here" then
+                        -- A Task yielding the local Zone, modelled (like Time.utc) as a 0 offset.
+                        Ok (VCtor "Task.value" [ VNum 0 ])
 
                     else if qualified == "Time.utc" then
                         Ok (VNum 0)
