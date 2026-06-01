@@ -220,6 +220,35 @@ class MainCliTest {
   }
 
   @Test
+  void publishWritesDocsJson() throws Exception {
+    Path api = tempElm("module M exposing (inc)\n{-| Adds one. -}\ninc x = x + 1\n");
+    Path docs = Files.createTempFile("docs-", ".json");
+    Result r = invoke("publish", api.toString(), "--out", docs.toString());
+    assertTrue(r.code() == 0, r.out() + r.err());
+    assertTrue(r.out().contains("wrote " + docs), r.out());
+    String json = Files.readString(docs);
+    assertTrue(json.contains("\"inc\""), json); // the exposed value is in docs.json
+  }
+
+  @Test
+  void publishRejectsAVersionThatDoesntMatchTheBump() throws Exception {
+    Path oldApi = tempElm("module M exposing (inc)\ninc x = x + 1\n");
+    Path newApi = tempElm("module M exposing (dec)\ndec x = x - 1\n"); // removed inc -> MAJOR
+    // Intending 1.1.0 (a MINOR) for a MAJOR change must fail.
+    Result bad =
+        invoke("publish", newApi.toString(), "--bump-from", oldApi.toString(),
+            "--from-version", "1.0.0", "--version", "1.1.0");
+    assertTrue(bad.code() == 1, bad.out());
+    assertTrue(bad.out().contains("not the required next version 2.0.0"), bad.out());
+    // The correct next version passes.
+    Result ok =
+        invoke("publish", newApi.toString(), "--bump-from", oldApi.toString(),
+            "--from-version", "1.0.0", "--version", "2.0.0");
+    assertTrue(ok.code() == 0, ok.out());
+    assertTrue(ok.out().contains("matches the required bump"), ok.out());
+  }
+
+  @Test
   void bumpReadsCurrentVersionFromASiblingElmJson() throws Exception {
     Path dir = Files.createTempDirectory("cli-bump-");
     Files.writeString(dir.resolve("old.elm"), "module M exposing (inc)\ninc x = x + 1\n");

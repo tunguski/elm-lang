@@ -874,18 +874,27 @@ public final class Main implements Runnable {
 
   @Command(
       name = "publish",
-      description = "Dry-run publish checks: type-check, generate docs, and (with --bump-from) the next version.",
+      description = "Publish preflight: type-check, write docs.json, and (with --bump-from) derive and validate the next version.",
       footerHeading = "%nExample:%n",
-      footer = {"  elm publish src/Main.elm --bump-from prev/Main.elm --from-version 1.2.0"})
+      footer = {
+        "  elm publish src/Main.elm --out docs.json",
+        "  elm publish src/Main.elm --bump-from prev/Main.elm --from-version 1.2.0 --version 1.3.0",
+      })
   static final class Publish implements Callable<Integer> {
     @Parameters(index = "0", description = "The .elm module to publish.")
     Path file;
+
+    @Option(names = "--out", description = "Write the module's docs.json to this file.")
+    Path out;
 
     @Option(names = "--bump-from", description = "A baseline .elm of the previously published API; reports the semver bump.")
     Path bumpFrom;
 
     @Option(names = "--from-version", description = "Current published version, used with --bump-from (default 1.0.0).")
     String fromVersion = "1.0.0";
+
+    @Option(names = "--version", description = "The version you intend to publish; checked against the bump (with --bump-from).")
+    String version;
 
     @Override
     public Integer call() throws IOException {
@@ -900,6 +909,10 @@ public final class Main implements Runnable {
       var api = pl.matsuo.elm.doc.ApiDocs.of(source);
       int entries = api.values().size() + api.unions().size() + api.aliases().size();
       System.out.println("ok docs.json: " + entries + " exposed entr" + (entries == 1 ? "y" : "ies"));
+      if (out != null) {
+        Files.writeString(out, api.toJson(), StandardCharsets.UTF_8);
+        System.out.println("ok wrote " + out);
+      }
       if (bumpFrom != null) {
         var diff =
             pl.matsuo.elm.pkg.ApiDiff.compare(
@@ -907,8 +920,18 @@ public final class Main implements Runnable {
         var next =
             pl.matsuo.elm.pkg.ApiDiff.bump(pl.matsuo.elm.pkg.Version.parse(fromVersion), diff.magnitude());
         System.out.println("-> " + diff.magnitude() + " change: " + fromVersion + " -> " + next);
+        diff.changes().forEach(c -> System.out.println("    " + c));
+        if (version != null && !version.equals(next.toString())) {
+          System.out.println(
+              "x version " + version + " is not the required next version " + next
+                  + " for a " + diff.magnitude() + " change");
+          return 1;
+        }
+        if (version != null) {
+          System.out.println("ok version " + version + " matches the required bump");
+        }
       }
-      System.out.println("Dry run OK - ready to publish.");
+      System.out.println("Preflight OK - ready to publish.");
       return 0;
     }
   }
