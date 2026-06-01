@@ -51,6 +51,8 @@ public final class Installer {
     newDirect.add(pkg);
     elm.setSolution(newDirect, solution);
     Files.writeString(elmJsonPath, elm.render(), StandardCharsets.UTF_8);
+    // Pin the exact solution with integrity hashes so the install is reproducible and tamper-evident.
+    Lockfile.write(projectDir, solution, registry);
     return new Result(solution.get(pkg), false, elm.direct(), elm.indirect());
   }
 

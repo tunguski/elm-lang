@@ -73,6 +73,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Gallery.class,
       Main.Init.class,
       Main.Install.class,
+      Main.Verify.class,
       Main.Diff.class,
       Main.Bump.class,
       Main.Publish.class,
@@ -1188,6 +1189,43 @@ public final class Main implements Runnable {
         System.err.println("Install interrupted while downloading.");
         return 1;
       }
+    }
+  }
+
+  @Command(
+      name = "verify",
+      description = "Check elm.lock against elm.json and the registry (reproducible, tamper-evident).",
+      footerHeading = "%nExample:%n",
+      footer = {
+        "  elm verify                     # verify the lockfile in the current project",
+        "  elm verify -d path/to/project  # against an explicit registry with --registry",
+        "",
+        "Confirms every locked package still resolves to the same integrity hash and that elm.json's",
+        "pinned versions match the lockfile. Exits non-zero (listing the problems) on any mismatch.",
+      })
+  static final class Verify implements Callable<Integer> {
+    @Option(
+        names = "--registry",
+        description = "Package-cache directory (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
+    @Option(
+        names = {"-d", "--dir"},
+        description = "Project directory containing elm.json/elm.lock (default: current directory).")
+    Path dir = Path.of(".");
+
+    @Override
+    public Integer call() throws IOException {
+      Path registryRoot = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+      pl.matsuo.elm.pkg.Registry reg = new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
+      var problems = pl.matsuo.elm.pkg.Lockfile.verifyProject(dir, reg);
+      if (problems.isEmpty()) {
+        System.out.println("elm.lock verified: all dependencies match and check out.");
+        return 0;
+      }
+      System.err.println("Lockfile verification failed:");
+      problems.forEach(p -> System.err.println("  - " + p));
+      return 1;
     }
   }
 

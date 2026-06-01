@@ -65,6 +65,15 @@ class InstallerTest {
     assertTrue(written.contains("\"elm/core\": \"1.0.5\""), written);
     ElmJson reparsed = ElmJson.parse(written);
     assertEquals(Version.parse("1.0.0"), reparsed.direct().get("elm/regex"));
+
+    // A lockfile is written pinning the whole solution, and it verifies against the registry.
+    Path lock = project.resolve(Lockfile.FILENAME);
+    assertTrue(Files.exists(lock), "elm.lock written");
+    String lockText = Files.readString(lock, StandardCharsets.UTF_8);
+    assertTrue(lockText.contains("elm/regex 1.0.0 sha256-"), lockText);
+    assertTrue(lockText.contains("elm/core 1.0.5 sha256-"), lockText);
+    assertTrue(Lockfile.verifyProject(project, new DirectoryRegistry(registry)).isEmpty(),
+        "the freshly written lockfile verifies");
   }
 
   @Test
