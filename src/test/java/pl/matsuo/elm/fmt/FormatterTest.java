@@ -3,16 +3,71 @@ package pl.matsuo.elm.fmt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.html.HtmlRender;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
+import pl.matsuo.elm.parser.AstSexpr;
+import pl.matsuo.elm.parser.Parser;
 
 class FormatterTest {
+
+  /**
+   * Corpus fuzz: format every real {@code .elm} file in the repo and assert two properties — the
+   * formatter is idempotent ({@code format(format(x)) == format(x)}), and it doesn't change the AST
+   * (the position-insensitive module signature is identical before and after). Catches both layout
+   * instability and any semantic drift across actual code, not just hand-picked snippets.
+   */
+  @Test
+  void formattingIsIdempotentAndPreservesAstAcrossTheCorpus() throws IOException {
+    List<Path> roots = List.of(Path.of("src/main/resources/elm"), Path.of("examples"));
+    int checked = 0;
+    List<String> failures = new ArrayList<>();
+    for (Path root : roots) {
+      if (!Files.isDirectory(root)) {
+        continue;
+      }
+      try (var walk = Files.walk(root)) {
+        for (Path file : walk.filter(p -> p.toString().endsWith(".elm")).sorted().toList()) {
+          String src = Files.readString(file, StandardCharsets.UTF_8);
+          Module before;
+          try {
+            before = Parser.parseModule(src);
+          } catch (RuntimeException notStandalone) {
+            continue; // doesn't parse on its own — not the formatter's concern
+          }
+          String once;
+          Module after;
+          try {
+            once = Formatter.format(src);
+            after = Parser.parseModule(once);
+          } catch (RuntimeException e) {
+            failures.add(file + ": formatting/parse threw " + e);
+            continue;
+          }
+          if (!once.equals(Formatter.format(once))) {
+            failures.add(file + ": not idempotent");
+          }
+          if (!AstSexpr.module(before).equals(AstSexpr.module(after))) {
+            failures.add(file + ": AST changed by formatting");
+          }
+          checked++;
+        }
+      }
+    }
+    assertTrue(checked >= 20, "expected to check a meaningful corpus, checked " + checked);
+    assertTrue(failures.isEmpty(), "formatter issues:\n" + String.join("\n", failures));
+  }
 
   private static String example(String slug) {
     try (InputStream in = FormatterTest.class.getResourceAsStream("/examples/" + slug + ".elm")) {

@@ -38,8 +38,8 @@ final class Pretty {
     return switch (e) {
       case Expr.IntLit i -> Long.toString(i.value());
       case Expr.FloatLit f -> trimFloat(f.value());
-      case Expr.StrLit s -> "\"" + s.value().replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-      case Expr.CharLit c -> "'" + new String(Character.toChars(c.codePoint())) + "'";
+      case Expr.StrLit s -> "\"" + escapeString(s.value()) + "\"";
+      case Expr.CharLit c -> "'" + escapeChar(c.codePoint()) + "'";
       case Expr.Unit ignored -> "()";
       case Expr.Var v -> v.module() == null ? v.name() : v.module() + "." + v.name();
       case Expr.Ctor c -> c.module() == null ? c.name() : c.module() + "." + c.name();
@@ -92,7 +92,7 @@ final class Pretty {
   }
 
   private static String lambda(Expr.Lambda l, int ind) {
-    String params = l.params().stream().map(Pretty::pattern).collect(Collectors.joining(" "));
+    String params = l.params().stream().map(Pretty::patternArg).collect(Collectors.joining(" "));
     return "\\" + params + " -> " + expr(l.body(), 0, ind);
   }
 
@@ -138,8 +138,8 @@ final class Pretty {
       String params =
           v.params().isEmpty()
               ? ""
-              : " " + v.params().stream().map(Pretty::pattern).collect(Collectors.joining(" "));
-      String head = v.name() + params + " =";
+              : " " + v.params().stream().map(Pretty::patternArg).collect(Collectors.joining(" "));
+      String head = declName(v.name()) + params + " =";
       String body = expr(v.body(), 0, ind + 4);
       // A short body stays on the same line; blocks/long bodies move to the next indented line.
       if (!body.contains("\n") && body.length() + head.length() < 80) {
@@ -159,8 +159,8 @@ final class Pretty {
       case Pattern.Wildcard ignored -> "_";
       case Pattern.Unit ignored -> "()";
       case Pattern.IntLit i -> Long.toString(i.value());
-      case Pattern.StrLit s -> "\"" + s.value() + "\"";
-      case Pattern.CharLit c -> "'" + new String(Character.toChars(c.codePoint())) + "'";
+      case Pattern.StrLit s -> "\"" + escapeString(s.value()) + "\"";
+      case Pattern.CharLit c -> "'" + escapeChar(c.codePoint()) + "'";
       case Pattern.Tuple t ->
           "( " + t.items().stream().map(Pretty::pattern).collect(Collectors.joining(", ")) + " )";
       case Pattern.ListPat l ->
@@ -180,12 +180,13 @@ final class Pretty {
     };
   }
 
-  /** A constructor argument pattern, parenthesized when it is itself a constructor with arguments. */
-  private static String patternArg(Pattern p) {
+  /** A pattern in "atom" position — a constructor argument, or a function/lambda parameter —
+   * parenthesized when it isn't already atomic: a constructor with arguments, a cons, or an alias. */
+  static String patternArg(Pattern p) {
     if (p instanceof Pattern.Ctor c && !c.args().isEmpty()) {
       return "(" + pattern(p) + ")";
     }
-    if (p instanceof Pattern.Cons) {
+    if (p instanceof Pattern.Cons || p instanceof Pattern.Alias) {
       return "(" + pattern(p) + ")";
     }
     return pattern(p);
@@ -200,5 +201,34 @@ final class Pretty {
       return (long) d + ".0";
     }
     return Double.toString(d);
+  }
+
+  /** A definition's name, wrapping an operator (a non-identifier name) in parentheses: {@code (|=)}. */
+  static String declName(String name) {
+    boolean ident = !name.isEmpty() && (Character.isLetter(name.charAt(0)) || name.charAt(0) == '_');
+    return ident ? name : "(" + name + ")";
+  }
+
+  /** Re-escapes a string literal's value so the printed form re-parses to the same string (the AST
+   * holds the decoded value, e.g. a real newline for {@code \n}). Backslash first, then the rest. */
+  static String escapeString(String s) {
+    return s.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("\r", "\\r");
+  }
+
+  /** Re-escapes a character literal's code point (so {@code '\n'} prints as {@code '\n'}, not a raw
+   * newline that would break the literal). */
+  static String escapeChar(int codePoint) {
+    return switch (codePoint) {
+      case '\\' -> "\\\\";
+      case '\'' -> "\\'";
+      case '\n' -> "\\n";
+      case '\t' -> "\\t";
+      case '\r' -> "\\r";
+      default -> new String(Character.toChars(codePoint));
+    };
   }
 }

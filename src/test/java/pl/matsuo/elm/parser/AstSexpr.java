@@ -1,18 +1,43 @@
 package pl.matsuo.elm.parser;
 
 import java.util.stream.Collectors;
+import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
+import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Pattern;
 
 /**
- * Renders an {@link Expr}/{@link Pattern} to a compact S-expression string. Test-only helper that
- * makes precedence/associativity and shape assertions easy to read.
+ * Renders an {@link Expr}/{@link Pattern}/{@link Module} to a compact S-expression string. Test-only
+ * helper that makes precedence/associativity and shape assertions easy to read — and, being
+ * position-insensitive, lets tests compare two ASTs ignoring layout (e.g. before/after formatting).
  */
-final class AstSexpr {
+public final class AstSexpr {
 
   private AstSexpr() {}
 
-  static String show(Expr e) {
+  /** A position-insensitive signature of a whole module: every declaration's shape, in order. Two
+   * modules with the same signature are structurally equal regardless of layout/positions. */
+  public static String module(Module m) {
+    StringBuilder sb = new StringBuilder();
+    for (Decl d : m.decls()) {
+      switch (d) {
+        case Decl.Value v -> {
+          sb.append("val ").append(v.name());
+          for (Pattern p : v.params()) {
+            sb.append(' ').append(showPat(p));
+          }
+          sb.append(" = ").append(show(v.body())).append('\n');
+        }
+        case Decl.Union u -> sb.append("type ").append(u.name()).append('/').append(u.variants().size()).append('\n');
+        case Decl.TypeAlias a -> sb.append("alias ").append(a.name()).append('\n');
+        case Decl.Port p -> sb.append("port ").append(p.name()).append('\n');
+        case Decl.Destructure de -> sb.append("destr ").append(showPat(de.pattern())).append(" = ").append(show(de.body())).append('\n');
+      }
+    }
+    return sb.toString();
+  }
+
+  public static String show(Expr e) {
     return switch (e) {
       case Expr.IntLit i -> Long.toString(i.value());
       case Expr.FloatLit f -> Double.toString(f.value());
@@ -72,7 +97,7 @@ final class AstSexpr {
     };
   }
 
-  static String showPat(Pattern p) {
+  public static String showPat(Pattern p) {
     return switch (p) {
       case Pattern.Wildcard ignored -> "_";
       case Pattern.Var v -> v.name();

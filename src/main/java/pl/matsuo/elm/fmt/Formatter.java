@@ -151,14 +151,23 @@ public final class Formatter {
   }
 
   private static String exposing(Module.Exposing e) {
-    return e.open() ? ".." : String.join(", ", e.names());
+    if (e.open()) {
+      return "..";
+    }
+    return e.names().stream().map(Formatter::exposedName).collect(Collectors.joining(", "));
+  }
+
+  /** An exposed name, wrapping operators in parentheses: {@code (|=)}, {@code (++)}. */
+  private static String exposedName(String name) {
+    boolean ident = !name.isEmpty() && (Character.isLetter(name.charAt(0)) || name.charAt(0) == '_');
+    return ident ? name : "(" + name + ")";
   }
 
   private static String declaration(Decl d) {
     return switch (d) {
       case Decl.Value v -> {
         StringBuilder sb = new StringBuilder();
-        v.annotation().ifPresent(t -> sb.append(v.name()).append(" : ").append(type(t, false)).append("\n"));
+        v.annotation().ifPresent(t -> sb.append(Pretty.declName(v.name())).append(" : ").append(type(t, false)).append("\n"));
         sb.append(Pretty.decl(v, 0));
         yield sb.toString();
       }
