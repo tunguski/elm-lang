@@ -74,6 +74,7 @@ public final class BuildRunner {
       case "Remove" -> "remove " + str(task.arg(0));
       case "WriteFile" -> "writeFile " + str(task.arg(0));
       case "Copy" -> "copy " + str(task.arg(0)) + " -> " + str(task.arg(1));
+      case "Archive" -> "archive " + str(task.arg(0)) + " -> " + str(task.arg(1));
       case "Run" -> "exec " + str(task.arg(0)) + " " + String.join(" ", strings(task.arg(1)));
       case "Check" -> "check " + str(task.arg(0));
       case "CompileModule" ->
@@ -103,6 +104,7 @@ public final class BuildRunner {
           Files.writeString(target, str(task.arg(1)), StandardCharsets.UTF_8);
         }
         case "Copy" -> copy(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))));
+        case "Archive" -> archive(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))), out);
         case "Run" -> {
           return exec(str(task.arg(0)), strings(task.arg(1)), baseDir, out);
         }
@@ -196,6 +198,29 @@ public final class BuildRunner {
       out.print(output);
     }
     return code;
+  }
+
+  /** Zips a directory tree (or a single file) into {@code zip}, with entries relative to {@code src}. */
+  private static void archive(Path src, Path zip, PrintStream out) throws IOException {
+    if (!Files.exists(src)) {
+      throw new IOException("nothing to archive at " + src);
+    }
+    if (zip.getParent() != null) {
+      Files.createDirectories(zip.getParent());
+    }
+    Path baseForEntries = Files.isDirectory(src) ? src : src.getParent();
+    try (var zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(zip));
+        var walk = Files.walk(src)) {
+      for (Path p : walk.filter(Files::isRegularFile).sorted().toList()) {
+        String entry =
+            (baseForEntries == null ? p.getFileName() : baseForEntries.relativize(p)).toString()
+                .replace('\\', '/');
+        zos.putNextEntry(new java.util.zip.ZipEntry(entry));
+        Files.copy(p, zos);
+        zos.closeEntry();
+      }
+    }
+    out.println("  archived " + src + " -> " + zip);
   }
 
   /** Copies a file (or, recursively, a directory tree), creating parent directories. */

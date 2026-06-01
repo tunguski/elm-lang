@@ -21,6 +21,7 @@ module Build exposing
     , check
     , compile
     , test
+    , archive
     , copy
     , makeDir
     , remove
@@ -132,6 +133,7 @@ type Task
     | Check String
     | CompileModule Backend String String
     | RunTests String
+    | Archive String String
     | Copy String String
     | MakeDir String
     | Remove String
@@ -242,6 +244,12 @@ test =
     RunTests
 
 
+{-| Zip a directory tree into an archive file. -}
+archive : String -> String -> Task
+archive =
+    Archive
+
+
 copy : String -> String -> Task
 copy =
     Copy
@@ -330,14 +338,16 @@ phasesUpTo target =
 
 {-| The default lifecycle bindings, used for any module that declares no goals of its own: validate
 type-checks the entry, compile makes the output dir and emits a JS bundle, test runs the module's
-`tests/` directory, and package logs the produced artifact. Include them explicitly
-(`defaultGoals ++ yours`) to keep them when you add your own. -}
+`tests/` directory, package zips the output to `dist/<name>.zip`, and install copies that archive
+into `build-repo/`. Include them explicitly (`defaultGoals ++ yours`) to keep them when you add your
+own. -}
 defaultGoals : List Goal
 defaultGoals =
     [ goal Validate "validate" (\m -> [ check m.entry ])
     , goal Compile "compile" (\m -> [ makeDir m.output, compile JS m.entry (m.output ++ "/" ++ m.name ++ ".js") ])
     , goal Test "test" (\m -> [ test (m.path ++ "/tests") ])
-    , goal Package "package" (\m -> [ log ("package " ++ m.name ++ " " ++ m.output) ])
+    , goal Package "package" (\m -> [ makeDir "dist", archive m.output ("dist/" ++ m.name ++ ".zip") ])
+    , goal Install "install" (\m -> [ makeDir "build-repo", copy ("dist/" ++ m.name ++ ".zip") ("build-repo/" ++ m.name ++ ".zip") ])
     ]
 
 

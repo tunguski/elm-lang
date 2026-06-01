@@ -130,6 +130,33 @@ class BuildRunnerTest {
   }
 
   @Test
+  void defaultPackageAndInstallProduceRealArtifacts() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-pkg-");
+    Files.createDirectories(dir.resolve("src"));
+    Files.writeString(
+        dir.resolve("src/Main.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"hi\"\n");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "." |> withEntry "src/Main.elm" |> withOutput "out" ]
+        """);
+    Result r = build(dir, "install"); // the whole lifecycle, including package + install
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("archived"), r.out());
+    Path zip = dir.resolve("dist/app.zip");
+    assertTrue(Files.exists(zip) && Files.size(zip) > 0, "package produced a non-empty archive");
+    assertTrue(Files.exists(dir.resolve("build-repo/app.zip")), "install copied the archive to the repo");
+  }
+
+  @Test
   void cleanRemovesEachModulesOutput() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-clean-");
     Files.createDirectories(dir.resolve("out"));
