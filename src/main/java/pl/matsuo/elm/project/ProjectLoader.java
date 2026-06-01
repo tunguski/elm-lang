@@ -13,6 +13,7 @@ import java.util.stream.Stream;
 import pl.matsuo.elm.json.JsonParse;
 import pl.matsuo.elm.pkg.ElmJson;
 import pl.matsuo.elm.pkg.Installer;
+import pl.matsuo.elm.pkg.Lockfile;
 import pl.matsuo.elm.pkg.Version;
 
 /**
@@ -57,8 +58,17 @@ public final class ProjectLoader {
   }
 
   /** Accepts a path to an {@code elm.json} file or a directory containing one, plus the cache root. */
-  @SuppressWarnings("unchecked")
   public static List<String> loadSources(Path elmJsonOrDir, Path registryRoot) {
+    return loadSources(elmJsonOrDir, registryRoot, false);
+  }
+
+  /**
+   * Loads a project's sources, first checking {@code elm.lock} against {@code elm.json}: when the
+   * locked versions don't match (or no lockfile exists for a project that has dependencies), this
+   * warns to stderr — or, when {@code frozen} is set, fails. Keeps builds reproducible.
+   */
+  @SuppressWarnings("unchecked")
+  public static List<String> loadSources(Path elmJsonOrDir, Path registryRoot, boolean frozen) {
     Path elmJson =
         Files.isDirectory(elmJsonOrDir) ? elmJsonOrDir.resolve("elm.json") : elmJsonOrDir;
     Path root = elmJson.toAbsolutePath().getParent();
@@ -68,6 +78,8 @@ public final class ProjectLoader {
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
+
+    checkLockfile(root, text, frozen);
 
     List<String> sources = new ArrayList<>();
 
@@ -98,6 +110,42 @@ public final class ProjectLoader {
       }
     }
     return sources;
+  }
+
+  /**
+   * Verifies {@code elm.lock} against {@code elm.json}'s resolved dependencies. A project with
+   * dependencies but no lockfile, or whose lock disagrees on a version, is a warning by default and a
+   * hard error under {@code frozen}. A project with no dependencies needs no lockfile.
+   */
+  private static void checkLockfile(Path root, String elmJsonText, boolean frozen) {
+    Map<String, Version> deps = resolvedDependencies(elmJsonText);
+    if (deps.isEmpty()) {
+      return; // nothing to lock
+    }
+    Path lockPath = root.resolve(Lockfile.FILENAME);
+    if (!Files.exists(lockPath)) {
+      reportLock(frozen, List.of("no " + Lockfile.FILENAME + " (run `elm install` to create one)"));
+      return;
+    }
+    try {
+      Lockfile lock = Lockfile.parse(Files.readString(lockPath, StandardCharsets.UTF_8));
+      reportLock(frozen, lock.checkVersions(deps));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private static void reportLock(boolean frozen, List<String> problems) {
+    if (problems.isEmpty()) {
+      return;
+    }
+    if (frozen) {
+      throw new IllegalStateException(
+          "Frozen build: lockfile is out of date:\n  - " + String.join("\n  - ", problems));
+    }
+    for (String p : problems) {
+      System.err.println("warning: " + p);
+    }
   }
 
   /** The pinned dependencies (direct + indirect) of an application {@code elm.json}; empty if it

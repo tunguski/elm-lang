@@ -244,6 +244,11 @@ public final class Main implements Runnable {
         description = "Package cache for dependency sources (default: $ELM_REGISTRY or ~/.elm/registry).")
     Path registry;
 
+    @Option(
+        names = "--frozen",
+        description = "Fail (instead of warning) if elm.lock is missing or disagrees with elm.json.")
+    boolean frozen;
+
     @Override
     public Integer call() throws IOException, InterruptedException {
       if (watch) {
@@ -258,10 +263,8 @@ public final class Main implements Runnable {
         List<String> sources = new ArrayList<>();
         if (project != null) {
           // Local modules + installed dependency package sources (so `import`ed packages compile in).
-          sources.addAll(
-              registry != null
-                  ? pl.matsuo.elm.project.ProjectLoader.loadSources(project, registry)
-                  : pl.matsuo.elm.project.ProjectLoader.loadSources(project));
+          Path reg = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+          sources.addAll(pl.matsuo.elm.project.ProjectLoader.loadSources(project, reg, frozen));
         }
         if (files != null) {
           for (Path p : files) {
@@ -318,14 +321,15 @@ public final class Main implements Runnable {
     @Option(names = "--registry", description = "Package cache for dependency sources (default: $ELM_REGISTRY or ~/.elm/registry).")
     Path registry;
 
+    @Option(names = "--frozen", description = "Fail (instead of warning) if elm.lock is missing or disagrees with elm.json.")
+    boolean frozen;
+
     @Override
     public Integer call() throws IOException {
       List<String> sources = new ArrayList<>();
       if (project != null) {
-        sources.addAll(
-            registry != null
-                ? pl.matsuo.elm.project.ProjectLoader.loadSources(project, registry)
-                : pl.matsuo.elm.project.ProjectLoader.loadSources(project));
+        Path reg = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+        sources.addAll(pl.matsuo.elm.project.ProjectLoader.loadSources(project, reg, frozen));
       }
       if (files != null) {
         for (Path p : files) {

@@ -120,4 +120,57 @@ class ProjectLoaderTest {
         sources.stream().noneMatch(s -> s.contains("module Sentinel")),
         "bundled-package sources must not be loaded from the cache");
   }
+
+  @Test
+  void frozenBuildSucceedsWithAMatchingLockfile(@TempDir Path root) throws IOException {
+    Path registry = root.resolve("registry");
+    writeAcmeStrings(registry);
+    Path app =
+        writeApp(root, "module Main exposing (main)\n\nimport Acme.Strings\n\nmain = 1\n");
+    // Write a lockfile pinning exactly what elm.json resolves.
+    pl.matsuo.elm.pkg.Lockfile.write(
+        app,
+        java.util.Map.of("acme/strings", pl.matsuo.elm.pkg.Version.parse("1.0.0")),
+        new pl.matsuo.elm.pkg.DirectoryRegistry(registry));
+
+    // Frozen build does not throw and loads the package sources.
+    List<String> sources = ProjectLoader.loadSources(app, registry, true);
+    assertTrue(sources.stream().anyMatch(s -> s.contains("module Acme.Strings")));
+  }
+
+  @Test
+  void frozenBuildFailsWhenTheLockfileIsStale(@TempDir Path root) throws IOException {
+    Path registry = root.resolve("registry");
+    writeAcmeStrings(registry);
+    Path app =
+        writeApp(root, "module Main exposing (main)\n\nimport Acme.Strings\n\nmain = 1\n");
+    // Lockfile pins a different version than elm.json's 1.0.0.
+    pl.matsuo.elm.pkg.Lockfile.write(
+        app,
+        java.util.Map.of("acme/strings", pl.matsuo.elm.pkg.Version.parse("2.0.0")),
+        new pl.matsuo.elm.pkg.DirectoryRegistry(registry));
+
+    var ex =
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalStateException.class, () -> ProjectLoader.loadSources(app, registry, true));
+    assertTrue(ex.getMessage().contains("out of date"), ex.getMessage());
+    // Without --frozen the same stale lock is only a warning — loading still succeeds.
+    assertTrue(
+        ProjectLoader.loadSources(app, registry, false).stream()
+            .anyMatch(s -> s.contains("module Acme.Strings")),
+        "a stale lock is non-fatal without --frozen");
+  }
+
+  @Test
+  void frozenBuildFailsWhenTheLockfileIsMissing(@TempDir Path root) throws IOException {
+    Path registry = root.resolve("registry");
+    writeAcmeStrings(registry);
+    Path app =
+        writeApp(root, "module Main exposing (main)\n\nimport Acme.Strings\n\nmain = 1\n");
+    // No elm.lock written.
+    var ex =
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalStateException.class, () -> ProjectLoader.loadSources(app, registry, true));
+    assertTrue(ex.getMessage().contains("no elm.lock"), ex.getMessage());
+  }
 }

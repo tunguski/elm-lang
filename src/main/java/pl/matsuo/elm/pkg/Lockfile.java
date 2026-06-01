@@ -121,6 +121,27 @@ public final class Lockfile {
   }
 
   /**
+   * Checks that a set of resolved dependencies (from {@code elm.json}) matches this lockfile: every
+   * dependency must be locked at the same version. Returns the problems found (empty = consistent).
+   * Unlike {@link #verify}, this needs no registry — it's the reproducibility check a build can run
+   * cheaply (the integrity-hash check is {@link #verify} / {@code elm verify}).
+   */
+  public List<String> checkVersions(Map<String, Version> deps) {
+    List<String> problems = new ArrayList<>();
+    deps.forEach(
+        (pkg, version) -> {
+          Entry locked = packages.get(pkg);
+          if (locked == null) {
+            problems.add(pkg + " " + version + " is in elm.json but not locked");
+          } else if (!locked.version().equals(version)) {
+            problems.add(
+                pkg + " is " + version + " in elm.json but " + locked.version() + " in the lockfile");
+          }
+        });
+    return problems;
+  }
+
+  /**
    * Checks that {@code elm.json}'s resolved dependencies match {@code elm.lock} and that every locked
    * package still verifies against the registry. Returns the problems found (empty = all good).
    */
