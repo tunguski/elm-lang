@@ -1194,6 +1194,14 @@ public final class Prelude {
     fn("Html.Keyed.ul", 2, a -> node("ul", a[0], keyedChildren(a[1])));
     fn("Html.Keyed.ol", 2, a -> node("ol", a[0], keyedChildren(a[1])));
     fn("Svg.Keyed.node", 3, a -> node((String) a[0], a[1], keyedChildren(a[2])));
+    // Lazy nodes: the interpreter renders statically, so just force the view (memoization is a
+    // live-DOM optimization only).
+    fn("Html.Lazy.lazy", 2, a -> Apply.apply(a[0], a[1]));
+    fn("Html.Lazy.lazy2", 3, a -> Apply.applyAll(a[0], a[1], a[2]));
+    fn("Html.Lazy.lazy3", 4, a -> Apply.applyAll(a[0], a[1], a[2], a[3]));
+    fn("Svg.Lazy.lazy", 2, a -> Apply.apply(a[0], a[1]));
+    fn("Svg.Lazy.lazy2", 3, a -> Apply.applyAll(a[0], a[1], a[2]));
+    fn("Svg.Lazy.lazy3", 4, a -> Apply.applyAll(a[0], a[1], a[2], a[3]));
     for (String spec : HTML_TAGS) {
       String[] nt = split(spec);
       String tag = nt[1];

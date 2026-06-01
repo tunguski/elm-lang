@@ -50,6 +50,15 @@
   $rt['Html.Keyed.ul']=$rt['Html.Keyed.node']('ul');
   $rt['Html.Keyed.ol']=$rt['Html.Keyed.node']('ol');
   $rt['Svg.Keyed.node']=$rt['Html.Keyed.node'];
+  // Lazy nodes: $Lazy[fn, args]. The view fn is re-run only when an arg changes (=== identity).
+  $rt['Html.Lazy.lazy']=function(f){ return function(a){ return $data('$Lazy',[f,[a]]); }; };
+  $rt['Html.Lazy.lazy2']=function(f){ return function(a){ return function(b){ return $data('$Lazy',[f,[a,b]]); }; }; };
+  $rt['Html.Lazy.lazy3']=function(f){ return function(a){ return function(b){ return function(c){ return $data('$Lazy',[f,[a,b,c]]); }; }; }; };
+  $rt['Svg.Lazy.lazy']=$rt['Html.Lazy.lazy'];
+  $rt['Svg.Lazy.lazy2']=$rt['Html.Lazy.lazy2'];
+  $rt['Svg.Lazy.lazy3']=$rt['Html.Lazy.lazy3'];
+  function $forceLazy(v){ var r=v._[0]; v._[1].forEach(function(a){ r=r(a); }); return r; }
+  function $sameArgs(a,b){ if(!a||a.length!==b.length) return false; for(var i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; } return true; }
   Object.keys(SVG_TAGS).forEach(function(t){ $rt['Svg.'+t]=node(t); });
   $rt['Svg.text']=function(s){ return $data('$Text',[s]); };
   var svgAttrs=['width','height','viewBox','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
@@ -467,6 +476,7 @@
   }
   window.$toDom = function(v){
     if (v.$==='$Text') return document.createTextNode(String(v._[0]));
+    if (v.$==='$Lazy'){ var inner=$forceLazy(v); var el=window.$toDom(inner); el.$lazyArgs=v._[1]; el.$lazyInner=inner; return el; }
     if (v.$==='$Keyed') return $keyedToDom(v);
     var tag=v._[0];
     var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
@@ -483,6 +493,11 @@
     if (newV==null){ if(dom) parent.removeChild(dom); return null; }
     if (!$sameType(oldV,newV)){ var n=window.$toDom(newV); parent.replaceChild(n,dom); return n; }
     if (newV.$==='$Text'){ var s=String(newV._[0]); if(dom.nodeValue!==s) dom.nodeValue=s; return dom; }
+    if (newV.$==='$Lazy'){
+      if ($sameArgs(dom.$lazyArgs, newV._[1])) return dom; // args unchanged: skip the view + diff
+      var inner=$forceLazy(newV); var p=$patch(parent, dom, dom.$lazyInner, inner);
+      p.$lazyArgs=newV._[1]; p.$lazyInner=inner; return p;
+    }
     if (newV.$==='$Keyed'){ return $patchKeyed(dom, newV); }
     applyProps(dom, $listToArray(newV._[1]));
     var oldKids=$listToArray(oldV._[2]), newKids=$listToArray(newV._[2]);

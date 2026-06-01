@@ -239,6 +239,29 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void htmlLazyMemoizesWhenItsArgumentIsUnchanged() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The lazy subtree's arg (the constant 5) doesn't change when the counter bumps, so its view is
+    // not re-run and its DOM node is reused — proven by a marker set via JS surviving the re-render.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (div, text)\n"
+            + "import Html.Attributes exposing (id)\n"
+            + "import Html.Lazy exposing (lazy)\n"
+            + "type Msg = Inc\n"
+            + "main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }\n"
+            + "staticView _ = div [ id \"static\" ] [ text \"S\" ]\n"
+            + "view n = div [] [ lazy staticView 5, div [ id \"count\" ] [ text (String.fromInt n) ] ]\n";
+    String driver =
+        "document.getElementById('static').setAttribute('data-kept','yes');"
+            + "window.$app.dispatch($data('Inc',[]));";
+    String dom = renderPage(JsCompiler.htmlPage(app, driver));
+    assertTrue(dom.contains("data-kept=\"yes\""), "lazy node was reused (not re-rendered): " + dom);
+    assertTrue(dom.contains("id=\"count\">1") || dom.contains(">1</div>"), "counter still updated: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);
