@@ -60,6 +60,19 @@ class SiteGenTest {
   }
 
   @Test
+  void generatedDocsLinkTheRtsGameAndItsApiDocs(@TempDir Path out) throws IOException {
+    String src = Files.readString(Path.of("examples/site/ElmLang.elm"), StandardCharsets.UTF_8);
+    SiteGen.generate(src, out, List.of(Path.of("examples/rts")));
+    String examples = Files.readString(out.resolve("examples.html"), StandardCharsets.UTF_8);
+    assertTrue(examples.contains("href=\"rts.html\""), "examples page links the playable game");
+    assertTrue(examples.contains("href=\"api/RTS.Model.html\""), "examples page links the RTS API docs");
+    assertTrue(Files.exists(out.resolve("api/RTS.Model.html")), "RTS.Model API doc generated");
+    assertTrue(
+        Files.readString(out.resolve("api/index.html"), StandardCharsets.UTF_8).contains("RTS"),
+        "API index has the RTS group");
+  }
+
+  @Test
   void purposeGroupsAreDerivedFromPaths() {
     assertTrue(SiteGen.purpose(Path.of("src/main/resources/elm/lib/Server.elm")).contains("Backend"));
     assertTrue(SiteGen.purpose(Path.of("src/main/resources/elm/lib/Bash.elm")).contains("Scripting"));

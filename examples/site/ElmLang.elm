@@ -102,4 +102,13 @@ examplesPage =
             , ( "editor.html", "Open the editor" )
             , ( "todomvc.html", "TodoMVC" )
             ]
+        , h2 "RTS Mini — documentation"
+        , text "The game is split into focused modules; read their generated API docs:"
+        , links
+            [ ( "rts.html", "Play the game" )
+            , ( "api/RTS.Model.html", "RTS.Model" )
+            , ( "api/RTS.Logic.html", "RTS.Logic" )
+            , ( "api/RTS.View.html", "RTS.View" )
+            , ( "api/RTS.Backend.html", "RTS.Backend" )
+            ]
         ]
