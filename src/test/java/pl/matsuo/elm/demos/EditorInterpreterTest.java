@@ -97,6 +97,20 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsCharLiteralsAndOperations() {
+    assertEquals("'a'", eval("'a'"));
+    assertEquals("97", eval("Char.toCode 'a'"));
+    assertEquals("'A'", eval("Char.toUpper 'a'"));
+    assertEquals("True", eval("Char.isDigit '7'"));
+    assertEquals("['a', 'b', 'c']", eval("String.toList \"abc\""));
+    assertEquals("\"abc\"", eval("String.fromList ['a', 'b', 'c']"));
+    assertEquals("\"hi\"", eval("String.cons 'h' \"i\""));
+    assertEquals("True", eval("'a' < 'b'"));
+    // case over a char literal pattern
+    assertEquals("1", eval("case 'x' of\n    'x' -> 1\n    _ -> 0"));
+  }
+
+  @Test
   void interpretsIfLetAndLambdas() {
     assertEquals("3", eval("if 1 < 2 then 3 else 4"));
     assertEquals("42", eval("let double = \\x -> x * 2 in double 21"));

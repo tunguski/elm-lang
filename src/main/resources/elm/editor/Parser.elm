@@ -183,6 +183,9 @@ startsAtom tokens =
         (TStr _) :: _ ->
             True
 
+        (TChar _) :: _ ->
+            True
+
         TLParen :: _ ->
             True
 
@@ -210,6 +213,9 @@ parseAtom tokens =
 
         (TStr s) :: rest ->
             Ok ( Str s, rest )
+
+        (TChar ch) :: rest ->
+            Ok ( CharLit ch, rest )
 
         (TUpper "True") :: rest ->
             Ok ( Boolean True, rest )
@@ -583,6 +589,9 @@ startsPatternAtom tokens =
         (TStr _) :: _ ->
             True
 
+        (TChar _) :: _ ->
+            True
+
         TLParen :: _ ->
             True
 
@@ -654,6 +663,9 @@ parsePatternAtom tokens =
 
         (TStr s) :: rest ->
             Ok ( PStr s, rest )
+
+        (TChar ch) :: rest ->
+            Ok ( PChar ch, rest )
 
         TLBracket :: TRBracket :: rest ->
             Ok ( PNil, rest )

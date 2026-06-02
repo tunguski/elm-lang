@@ -9,6 +9,7 @@ expressions, which use layout rather than explicit separators, parse correctly).
 type Token
     = TNum Float
     | TStr String
+    | TChar Char
     | TId String
     | TUpper String
     | TOp String
@@ -267,6 +268,14 @@ tokenizeHelp chars acc =
                 in
                 tokenizeHelp (Tuple.second taken) (TStr (Tuple.first taken) :: acc)
 
+            else if c == '\'' then
+                case takeChar rest of
+                    Just ( ch, after ) ->
+                        tokenizeHelp after (TChar ch :: acc)
+
+                    Nothing ->
+                        Err "bad character literal"
+
             else if isOpChar c then
                 let
                     taken =
@@ -339,6 +348,37 @@ takeWhile pred chars acc =
 
         [] ->
             ( acc, chars )
+
+
+{-| Reads a character literal `'c'` (or an escape like `'\n'`), given the opening `'` was consumed.
+Returns the character and the input after the closing `'`, or `Nothing` if it is malformed. -}
+takeChar : List Char -> Maybe ( Char, List Char )
+takeChar chars =
+    case chars of
+        '\\' :: e :: '\'' :: rest ->
+            Just ( unescapeChar e, rest )
+
+        c :: '\'' :: rest ->
+            Just ( c, rest )
+
+        _ ->
+            Nothing
+
+
+unescapeChar : Char -> Char
+unescapeChar e =
+    case e of
+        'n' ->
+            '\n'
+
+        't' ->
+            '\t'
+
+        'r' ->
+            '\u{000D}'
+
+        _ ->
+            e
 
 
 takeString : List Char -> String -> ( String, List Char )

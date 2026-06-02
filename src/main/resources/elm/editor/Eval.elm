@@ -27,6 +27,8 @@ builtins =
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
+        ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
+        ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
@@ -116,6 +118,9 @@ arity name =
     else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
         1
 
+    else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ] then
+        1
+
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
         1
 
@@ -183,6 +188,9 @@ evalExpr globals env expr =
 
         Str s ->
             Ok (VStr s)
+
+        CharLit ch ->
+            Ok (VChar ch)
 
         Boolean b ->
             Ok (VBool b)
@@ -1062,8 +1070,50 @@ runBuiltin globals name args =
             ( "String.isEmpty", [ VStr s ] ) ->
                 Ok (VBool (String.isEmpty s))
 
-            ( "String.fromChar", [ VStr s ] ) ->
-                Ok (VStr s)
+            ( "String.fromChar", [ VChar c ] ) ->
+                Ok (VStr (String.fromChar c))
+
+            ( "String.toList", [ VStr s ] ) ->
+                Ok (VList (List.map VChar (String.toList s)))
+
+            ( "String.fromList", [ VList xs ] ) ->
+                Ok (VStr (String.fromList (List.filterMap charOf xs)))
+
+            ( "String.cons", [ VChar c, VStr s ] ) ->
+                Ok (VStr (String.cons c s))
+
+            ( "String.uncons", [ VStr s ] ) ->
+                Ok (maybeValue (Maybe.map (\( c, rest ) -> VTup [ VChar c, VStr rest ]) (String.uncons s)))
+
+            ( "Char.toCode", [ VChar c ] ) ->
+                Ok (VNum (toFloat (Char.toCode c)))
+
+            ( "Char.fromCode", [ VNum n ] ) ->
+                Ok (VChar (Char.fromCode (round n)))
+
+            ( "Char.toUpper", [ VChar c ] ) ->
+                Ok (VChar (Char.toUpper c))
+
+            ( "Char.toLower", [ VChar c ] ) ->
+                Ok (VChar (Char.toLower c))
+
+            ( "Char.isDigit", [ VChar c ] ) ->
+                Ok (VBool (Char.isDigit c))
+
+            ( "Char.isUpper", [ VChar c ] ) ->
+                Ok (VBool (Char.isUpper c))
+
+            ( "Char.isLower", [ VChar c ] ) ->
+                Ok (VBool (Char.isLower c))
+
+            ( "Char.isAlpha", [ VChar c ] ) ->
+                Ok (VBool (Char.isAlpha c))
+
+            ( "Char.isAlphaNum", [ VChar c ] ) ->
+                Ok (VBool (Char.isAlphaNum c))
+
+            ( "Char.isSpace", [ VChar c ] ) ->
+                Ok (VBool (c == ' ' || c == '\n' || c == '\t' || c == '\u{000D}'))
 
             ( "String.toInt", [ VStr s ] ) ->
                 Ok (maybeValue (Maybe.map (\n -> VNum (toFloat n)) (String.toInt (String.trim s))))
@@ -1354,6 +1404,13 @@ matchPattern pat value =
             else
                 Nothing
 
+        ( PChar x, VChar y ) ->
+            if x == y then
+                Just []
+
+            else
+                Nothing
+
         ( PNil, VList [] ) ->
             Just []
 
@@ -1462,6 +1519,10 @@ applyOp op a b =
             ( VNum x, VNum y ) ->
                 arithOrCompare op x y
 
+            ( VChar x, VChar y ) ->
+                -- Chars are comparable by code point (<, <=, >, >=).
+                arithOrCompare op (toFloat (Char.toCode x)) (toFloat (Char.toCode y))
+
             _ ->
                 Err (op ++ " needs two numbers")
 
@@ -1507,6 +1568,17 @@ arithOrCompare op x y =
         Err ("unknown operator: " ++ op)
 
 
+{-| A `VChar`'s character, for `String.fromList` over a list of chars. -}
+charOf : Value -> Maybe Char
+charOf v =
+    case v of
+        VChar c ->
+            Just c
+
+        _ ->
+            Nothing
+
+
 valueEq : Value -> Value -> Bool
 valueEq a b =
     case ( a, b ) of
@@ -1517,6 +1589,9 @@ valueEq a b =
             x == y
 
         ( VStr x, VStr y ) ->
+            x == y
+
+        ( VChar x, VChar y ) ->
             x == y
 
         ( VList x, VList y ) ->
@@ -1591,6 +1666,9 @@ renderValue v =
 
         VStr s ->
             "\"" ++ s ++ "\""
+
+        VChar c ->
+            "'" ++ String.fromChar c ++ "'"
 
         VList items ->
             "[" ++ String.join ", " (List.map renderValue items) ++ "]"

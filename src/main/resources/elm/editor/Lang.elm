@@ -9,6 +9,7 @@ type Value
     = VNum Float
     | VBool Bool
     | VStr String
+    | VChar Char
     | VList (List Value)
     | VCtor String (List Value)
     | VRecord (List ( String, Value ))
@@ -21,6 +22,7 @@ type Value
 type Expr
     = Num Float
     | Str String
+    | CharLit Char
     | Boolean Bool
     | ListE (List Expr)
     | Var String
@@ -44,6 +46,7 @@ type Pattern
     | PInt Float
     | PBool Bool
     | PStr String
+    | PChar Char
     | PCtor String (List Pattern)
     | PNil
     | PCons Pattern Pattern
