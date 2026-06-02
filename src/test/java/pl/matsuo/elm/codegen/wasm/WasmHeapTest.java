@@ -442,6 +442,11 @@ class WasmHeapTest {
   }
 
   @Test
+  void listMap5Compiles() throws Exception {
+    agrees("main = List.sum (List.map5 (\\a b c d e -> a + b + c + d + e) [ 1 ] [ 2 ] [ 3 ] [ 4 ] [ 5 ])\n"); // 15
+  }
+
+  @Test
   void listUnzipCompiles() throws Exception {
     // unzip [(1,4),(2,5),(3,6)] -> ([1,2,3],[4,5,6]); encode as sum(firsts)*100 + sum(seconds).
     agrees("main =\n    case List.unzip [ ( 1, 4 ), ( 2, 5 ), ( 3, 6 ) ] of\n        ( xs, ys ) -> List.sum xs * 100 + List.sum ys\n"); // 615

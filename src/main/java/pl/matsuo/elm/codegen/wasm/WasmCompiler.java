@@ -181,6 +181,17 @@ public final class WasmCompiler {
                   hz :: tz -> case ws of
                       [] -> []
                       hw :: tw -> f hx hy hz hw :: listMap4 f tx ty tz tw
+      listMap5 f xs ys zs ws vs = case xs of
+          [] -> []
+          hx :: tx -> case ys of
+              [] -> []
+              hy :: ty -> case zs of
+                  [] -> []
+                  hz :: tz -> case ws of
+                      [] -> []
+                      hw :: tw -> case vs of
+                          [] -> []
+                          hv :: tv -> f hx hy hz hw hv :: listMap5 f tx ty tz tw tv
       stringIsEmpty s = String.length s == 0
       stringRepeat n s = if n <= 0 then "" else String.append s (stringRepeat (n - 1) s)
       stringConcat xs = listFoldr (\\x acc -> String.append x acc) "" xs
@@ -267,6 +278,7 @@ public final class WasmCompiler {
           Map.entry("List.filterMap", "listFilterMap"),
           Map.entry("List.map3", "listMap3"),
           Map.entry("List.map4", "listMap4"),
+          Map.entry("List.map5", "listMap5"),
           Map.entry("List.intersperse", "listIntersperse"),
           Map.entry("List.partition", "listPartition"),
           Map.entry("List.unzip", "listUnzip"),
