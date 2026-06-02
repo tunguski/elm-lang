@@ -134,4 +134,31 @@ class ReactorServerTest {
     assertTrue(page.contains("2 | main = \"x\" + 1"), page); // source excerpt
     assertTrue(page.contains("^"), page); // caret under the offending expression
   }
+
+  @Test
+  void compilesOnceThenServesAnUnchangedProjectFromCache(@TempDir Path dir) throws Exception {
+    Files.writeString(
+        dir.resolve("Main.elm"),
+        "module Main exposing (main)\nimport Html\nmain = Html.text \"hi\"\n",
+        StandardCharsets.UTF_8);
+    ReactorServer.clearCache();
+    String first = ReactorServer.compilePage(dir, "Main.elm", 1);
+    long hits = ReactorServer.cacheHits();
+    // A second request for the unchanged project is a cache hit (no recompile).
+    String second = ReactorServer.compilePage(dir, "Main.elm", 2);
+    assertEquals(hits + 1, ReactorServer.cacheHits());
+    assertTrue(first.contains("hi") && second.contains("hi"));
+    // The generation is still injected fresh per request even on a hit.
+    assertTrue(second.contains("2"), second);
+
+    // Editing the source changes the digest, so it recompiles instead of hitting the cache.
+    Files.writeString(
+        dir.resolve("Main.elm"),
+        "module Main exposing (main)\nimport Html\nmain = Html.text \"bye\"\n",
+        StandardCharsets.UTF_8);
+    long before = ReactorServer.cacheHits();
+    String third = ReactorServer.compilePage(dir, "Main.elm", 3);
+    assertEquals(before, ReactorServer.cacheHits()); // recompiled, not served from cache
+    assertTrue(third.contains("bye"), third);
+  }
 }
