@@ -42,6 +42,7 @@ type alias Model =
     , gameMem : Maybe Value
     , gameKeys : Set String
     , gameTime : Float
+    , gameError : Maybe String -- a runtime error from the last `update`, so the loop reports it rather than silently freezing
     , history : List Value -- successive app models (time-travel debugger)
     , msgLog : List Value -- the message that produced each model transition (msgLog[k] -> history[k+1])
     , historyAt : Int -- the index currently shown (last = live)
@@ -234,6 +235,7 @@ initModel =
         , gameMem = Nothing
         , gameKeys = Set.empty
         , gameTime = 0
+        , gameError = Nothing
         , history = []
         , msgLog = []
         , historyAt = 0
@@ -275,6 +277,7 @@ refreshApp model =
         , gameMem = gameInitMem (selectedFile model)
         , gameKeys = Set.empty
         , gameTime = 0
+        , gameError = Nothing
         , history = app |> Result.map (\m -> [ m ]) |> Result.withDefault []
         , msgLog = []
         , historyAt = 0
@@ -663,10 +666,12 @@ update msg model =
                     in
                     case gameStep (selectedFile model) (Set.toList model.gameKeys) time mem of
                         Ok mem2 ->
-                            ( { model | gameMem = Just mem2, gameTime = time }, Cmd.none )
+                            ( { model | gameMem = Just mem2, gameTime = time, gameError = Nothing }, Cmd.none )
 
-                        Err _ ->
-                            ( { model | gameTime = time }, Cmd.none )
+                        Err e ->
+                            -- `update` errored on this state: surface it instead of silently keeping
+                            -- the old memory (which looks like the game has frozen for no reason).
+                            ( { model | gameTime = time, gameError = Just e }, Cmd.none )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -1058,12 +1063,19 @@ mainPane model =
 {-| Renders a running `game`'s current frame (its `view computer memory`). -}
 gamePane : Model -> Value -> Html Msg
 gamePane model mem =
-    case gameView (selectedFile model) (Set.toList model.gameKeys) model.gameTime mem of
-        Ok html ->
-            renderHtml (selectedFile model) html
+    case model.gameError of
+        Just e ->
+            -- `update` raised a runtime error and the simulation can't advance; show why instead of
+            -- appearing to freeze on the last good frame.
+            errorBox ("Game stopped — error in update: " ++ e)
 
-        Err e ->
-            errorBox e
+        Nothing ->
+            case gameView (selectedFile model) (Set.toList model.gameKeys) model.gameTime mem of
+                Ok html ->
+                    renderHtml (selectedFile model) html
+
+                Err e ->
+                    errorBox e
 
 
 liveApp : Model -> Html Msg
