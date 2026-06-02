@@ -202,6 +202,12 @@ public final class WasmCompiler {
       max a b = maxOf a b
       min a b = minOf a b
       clamp lo hi x = maxOf lo (minOf hi x)
+      listIntersperse sep xs = case xs of
+          [] -> []
+          h :: t -> h :: prependEach sep t
+      prependEach sep xs = case xs of
+          [] -> []
+          h :: t -> sep :: h :: prependEach sep t
       """;
 
   /** Maps qualified standard-library names to the prelude function that implements them. */
@@ -236,6 +242,7 @@ public final class WasmCompiler {
           Map.entry("List.tail", "listTail"),
           Map.entry("List.filterMap", "listFilterMap"),
           Map.entry("List.map3", "listMap3"),
+          Map.entry("List.intersperse", "listIntersperse"),
           Map.entry("String.isEmpty", "stringIsEmpty"),
           Map.entry("String.fromInt", "stringFromInt"),
           Map.entry("String.repeat", "stringRepeat"),

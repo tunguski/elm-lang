@@ -428,6 +428,13 @@ class WasmHeapTest {
   }
 
   @Test
+  void listIntersperseCompiles() throws Exception {
+    assertEquals("[1,0,2,0,3]", decodeList("main = List.intersperse 0 [ 1, 2, 3 ]\n"));
+    assertEquals("[]", decodeList("main = List.intersperse 0 []\n"));
+    assertEquals("[7]", decodeList("main = List.intersperse 0 [ 7 ]\n"));
+  }
+
+  @Test
   void maxMinClampCompile() throws Exception {
     agrees("main = max 3 5\n"); // 5
     agrees("main = min 3 5\n"); // 3
