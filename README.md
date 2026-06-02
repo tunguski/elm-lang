@@ -24,9 +24,10 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    memory and no manual reclamation — covering `Int`/`Bool`/`Float`, `String`, lists of any element,
    tuples, closed records, nullary and **argument-carrying custom types** (including recursive ones)
    and **polymorphic** custom types (monomorphised to their use), including the built-in
-   `Maybe`/`Result`, plus **first-class functions** (unary top-level functions and capture-free
-   lambdas via `ref.func`/`call_ref` — higher-order `map`/`filter` over GC lists). Capturing
-   lambdas and currying still need the linear-memory path.
+   `Maybe`/`Result`, plus **first-class functions** — top-level functions as values, capturing
+   lambdas (lifted to closure structs that carry their captures), multi-parameter lambdas and
+   **currying** (a closure chain applied one argument at a time via `call_ref`), and destructuring
+   parameters.
 
 See **[docs/backends.md](docs/backends.md)** for how the backends compare and when to use each.
 

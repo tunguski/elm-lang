@@ -67,9 +67,10 @@ A second WASM code path that targets host-**garbage-collected** `struct`/`array`
 linear memory, no manual reclamation. It covers `Int`/`Bool`/`Float`, `String`, lists of any element,
 tuples, closed records, nullary and **argument-carrying custom types** (including recursive and
 **polymorphic** ones, monomorphised to their uses — including built-in `Maybe`/`Result`), `case` over
-all of those plus scalar literals, list `(++)`, and **first-class functions** for unary top-level
-functions and capture-free lambdas (`ref.func`/`call_ref`, so higher-order `map`/`filter` over GC
-lists work). Capturing lambdas and currying still need the linear-memory path.
+all of those plus scalar literals, list `(++)`, destructuring parameters, and **first-class
+functions** — top-level functions as values, capturing lambdas (lifted to closure structs that carry
+their captures), multi-parameter lambdas and **currying** (a closure chain applied one argument at a
+time via `call_ref`).
 
 ## Choosing
 

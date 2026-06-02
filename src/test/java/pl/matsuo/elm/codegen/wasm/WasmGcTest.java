@@ -391,6 +391,14 @@ class WasmGcTest {
         scaleAll k xs = map (\\x -> x * k) xs
         main = sum (scaleAll 3 [1, 2, 3])
         """); // 3+6+9 = 18
+    // A MULTI-parameter capturing lambda passed as a value and curried through a higher-order
+    // function: `\a b -> a + b + k` captures `k`, then is applied to two arguments.
+    agrees(
+        """
+        apply2 f x y = f x y
+        addWith k = \\a b -> a + b + k
+        main = apply2 (addWith 100) 3 4
+        """); // 107
   }
 
   @Test
