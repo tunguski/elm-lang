@@ -41,7 +41,15 @@ class ParserLibTest {
           + "    loop [] (\\acc -> oneOf\n"
           + "        [ succeed (\\d -> Loop (d :: acc)) |= (getChompedString (chompIf Char.isDigit) |> andThen (\\s -> succeed s))\n"
           + "        , succeed (Done (List.reverse acc)) ])\n"
-          + "loopOk = run digits \"123\"\n";
+          + "loopOk = run digits \"123\"\n"
+          + "commentBody = run (getChompedString (chompUntil \"-}\")) \"abc-}rest\"\n"
+          + "chompUntilBad = run (chompUntil \"xx\") \"abc\"\n"
+          + "countAs = run as_ \"aaa\"\n"
+          + "as_ =\n"
+          + "    oneOf\n"
+          + "        [ succeed (\\n -> n + 1) |. symbol \"a\" |= lazy (\\_ -> as_)\n"
+          + "        , succeed 0\n"
+          + "        ]\n";
 
   @Test
   void parsesAnIntegerAndReportsFailure() {
@@ -69,5 +77,12 @@ class ParserLibTest {
     assertTrue(value(PROGRAM, "chompIfBad").startsWith("Err"), value(PROGRAM, "chompIfBad"));
     assertEquals("Ok ()", value(PROGRAM, "tokenOk"));
     assertEquals("Ok [\"1\",\"2\",\"3\"]", value(PROGRAM, "loopOk")); // loop collects each digit
+  }
+
+  @Test
+  void lazyEnablesRecursionAndChompUntilStopsAtASubstring() {
+    assertEquals("Ok \"abc\"", value(PROGRAM, "commentBody")); // chompUntil stops before "-}"
+    assertTrue(value(PROGRAM, "chompUntilBad").startsWith("Err"), value(PROGRAM, "chompUntilBad"));
+    assertEquals("Ok 3", value(PROGRAM, "countAs")); // lazy lets the parser recurse on itself
   }
 }

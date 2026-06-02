@@ -18,8 +18,10 @@ module Parser exposing
     , spaces
     , chompWhile
     , chompIf
+    , chompUntil
     , getChompedString
     , backtrackable
+    , lazy
     , Step(..)
     , loop
     , end
@@ -227,6 +229,36 @@ backtrackable p =
 
 
 {-| Consumes zero or more characters while the predicate holds. -}
+{-| Defers building a parser until it runs, so a parser can refer to itself (recursive grammars).
+
+    term = lazy (\_ -> oneOf [ int, parens expr ])
+
+-}
+lazy : (() -> Parser a) -> Parser a
+lazy thunk =
+    Parser
+        (\s ->
+            case thunk () of
+                Parser p ->
+                    p s
+        )
+
+
+{-| Chomp zero or more characters until the given (non-empty) substring is next, leaving the cursor
+just before it; fails if the substring never appears. -}
+chompUntil : String -> Parser ()
+chompUntil str =
+    Parser
+        (\s ->
+            case List.head (String.indexes str (String.dropLeft s.offset s.src)) of
+                Just i ->
+                    Ok ( (), { s | offset = s.offset + i } )
+
+                Nothing ->
+                    Err ("expected to find " ++ str)
+        )
+
+
 chompWhile : (Char -> Bool) -> Parser ()
 chompWhile pred =
     Parser
