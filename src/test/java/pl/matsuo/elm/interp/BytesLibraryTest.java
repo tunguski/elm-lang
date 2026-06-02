@@ -14,7 +14,7 @@ class BytesLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (widths, raw, roundTrip8, roundTrip16BE, roundTrip16LE, roundTrip32, pair, overrun)
+      module Main exposing (widths, raw, roundTrip8, roundTrip16BE, roundTrip16LE, roundTrip32, pair, overrun, signed8, signed16, strRoundTrip, bytesRoundTrip)
 
       import Bytes exposing (Endianness(..))
       import Bytes.Encode as E
@@ -46,6 +46,18 @@ class BytesLibraryTest {
 
       overrun : Maybe Int
       overrun = D.decode (D.unsignedInt32 BE) (E.encode (E.unsignedInt8 1))
+
+      signed8 : Maybe Int
+      signed8 = D.decode D.signedInt8 (E.encode (E.signedInt8 (-5)))
+
+      signed16 : Maybe Int
+      signed16 = D.decode (D.signedInt16 BE) (E.encode (E.signedInt16 BE (-1000)))
+
+      strRoundTrip : Maybe String
+      strRoundTrip = D.decode (D.string 2) (E.encode (E.sequence [ E.unsignedInt8 72, E.unsignedInt8 105 ]))
+
+      bytesRoundTrip : Maybe (List Int)
+      bytesRoundTrip = Maybe.map Bytes.toByteValues (D.decode (D.bytes 2) (E.encode (E.sequence [ E.unsignedInt8 9, E.unsignedInt8 8, E.unsignedInt8 7 ])))
       """;
 
   private static String value(String name) {
@@ -70,5 +82,13 @@ class BytesLibraryTest {
   void combinesDecodersAndFailsOnOverrun() {
     assertEquals("Just (258,3)", value("pair")); // bytes [1,2,3]: unsignedInt16 BE [1,2]=258, then 3
     assertEquals("Nothing", value("overrun")); // a 32-bit read on 1 byte runs off the end
+  }
+
+  @Test
+  void signedBytesAndStringRoundTrips() {
+    assertEquals("Just (-5)", value("signed8")); // two's-complement wrap round-trips
+    assertEquals("Just (-1000)", value("signed16"));
+    assertEquals("Just \"Hi\"", value("strRoundTrip")); // 72,105 -> "Hi"
+    assertEquals("Just [9,8]", value("bytesRoundTrip")); // bytes 2 takes the first two
   }
 }

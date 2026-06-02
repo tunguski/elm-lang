@@ -5,6 +5,8 @@ module Bytes.Encode exposing
     , unsignedInt16
     , unsignedInt32
     , signedInt8
+    , signedInt16
+    , signedInt32
     , bytes
     , sequence
     )
@@ -55,6 +57,18 @@ unsignedInt16 endianness n =
 unsignedInt32 : Endianness -> Int -> Encoder
 unsignedInt32 endianness n =
     Encoder (order endianness [ byteAt 3 n, byteAt 2 n, byteAt 1 n, byteAt 0 n ])
+
+
+{-| Two bytes for a signed 16-bit integer (negatives wrap two's-complement into `0..65535`). -}
+signedInt16 : Endianness -> Int -> Encoder
+signedInt16 endianness n =
+    unsignedInt16 endianness (modBy 65536 n)
+
+
+{-| Four bytes for a signed 32-bit integer (negatives wrap two's-complement into `0..2^32-1`). -}
+signedInt32 : Endianness -> Int -> Encoder
+signedInt32 endianness n =
+    unsignedInt32 endianness (modBy 4294967296 n)
 
 
 {-| Re-encodes an existing `Bytes` value. -}

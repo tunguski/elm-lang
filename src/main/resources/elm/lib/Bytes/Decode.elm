@@ -4,10 +4,16 @@ module Bytes.Decode exposing
     , unsignedInt8
     , unsignedInt16
     , unsignedInt32
+    , signedInt8
+    , signedInt16
+    , signedInt32
+    , bytes
+    , string
     , succeed
     , fail
     , map
     , map2
+    , map3
     , andThen
     )
 
@@ -81,6 +87,56 @@ unsignedInt32 endianness =
         )
 
 
+{-| Reads one signed byte (two's complement, `-128..127`). -}
+signedInt8 : Decoder Int
+signedInt8 =
+    map (signed 8) unsignedInt8
+
+
+{-| Reads a signed 16-bit integer in the given byte order. -}
+signedInt16 : Endianness -> Decoder Int
+signedInt16 endianness =
+    map (signed 16) (unsignedInt16 endianness)
+
+
+{-| Reads a signed 32-bit integer in the given byte order. -}
+signedInt32 : Endianness -> Decoder Int
+signedInt32 endianness =
+    map (signed 32) (unsignedInt32 endianness)
+
+
+{-| Reads the next `n` bytes as a `Bytes` value. -}
+bytes : Int -> Decoder Bytes
+bytes n =
+    Decoder
+        (\bs ->
+            if List.length bs >= n && n >= 0 then
+                Just ( Bytes.fromByteValues (List.take n bs), List.drop n bs )
+
+            else
+                Nothing
+        )
+
+
+{-| Reads `n` bytes as a string (each byte a code point — Latin-1/ASCII). -}
+string : Int -> Decoder String
+string n =
+    Decoder
+        (\bs ->
+            if List.length bs >= n && n >= 0 then
+                Just ( String.fromList (List.map Char.fromCode (List.take n bs)), List.drop n bs )
+
+            else
+                Nothing
+        )
+
+
+{-| Runs three decoders in sequence and combines their results. -}
+map3 : (a -> b -> c -> d) -> Decoder a -> Decoder b -> Decoder c -> Decoder d
+map3 f da db dc =
+    andThen (\a -> map2 (f a) db dc) da
+
+
 {-| A decoder that consumes nothing and always yields `a`. -}
 succeed : a -> Decoder a
 succeed a =
@@ -125,6 +181,16 @@ andThen f (Decoder g) =
 
 
 -- INTERNAL
+
+
+{-| Reinterprets an unsigned `width`-bit integer as two's-complement signed. -}
+signed : Int -> Int -> Int
+signed width n =
+    if n >= 2 ^ (width - 1) then
+        n - 2 ^ width
+
+    else
+        n
 
 
 {-| Combines bytes (listed in read order) into an integer, honouring endianness. -}
