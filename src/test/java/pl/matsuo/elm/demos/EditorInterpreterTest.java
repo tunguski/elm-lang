@@ -183,6 +183,17 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void bundledAwkLibraryResolvesInScope() {
+    // The editor merges the selected file with the bundled Awk lib; a program importing it and using
+    // it unqualified resolves against those merged definitions (Awk runs on the string subset).
+    ElmList awk =
+        files(
+            "Main.elm", "import Awk exposing (..)\nmain = column 2 \"a 1\\nb 2\"",
+            "Awk.elm", Resources.read("/elm/lib/Awk.elm"));
+    assertEquals("\"1\\n2\"", evalProject(awk, "main"));
+  }
+
+  @Test
   void parsesTheWebglExamples() throws Exception {
     // triangle/crate/thwomp/cube use unit, record and tuple-destructuring patterns plus `[glsl| … |]`
     // shader literals; the editor must at least parse them and evaluate `main` to a program record.

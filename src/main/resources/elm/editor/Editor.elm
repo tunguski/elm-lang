@@ -34,6 +34,7 @@ import WebGL
 
 type alias Model =
     { files : List ( String, String )
+    , libs : List ( String, String ) -- bundled, hidden library modules (Awk/M4/Sed/Csv) merged into scope
     , selected : String
     , app : Result String Value
     , newName : String
@@ -73,6 +74,7 @@ type Msg
     | AppMouse Float Float
     | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
+    | LoadedLib String (Result Http.Error String)
     | FilePicked Value Bool String String
     | Share
     | ShareInput String
@@ -94,11 +96,25 @@ starter =
 program : List String -> Program () Model Msg
 program urls =
     Browser.element
-        { init = \_ -> ( initModel, Cmd.batch [ Browser.Navigation.getHash GotHash, Storage.load sessionKey LoadedSession, fetchAll urls ] )
+        { init = \_ -> ( initModel, Cmd.batch [ Browser.Navigation.getHash GotHash, Storage.load sessionKey LoadedSession, fetchAll urls, fetchLibs scriptingLibs ] )
         , update = update
         , view = view
         , subscriptions = subscriptions
         }
+
+
+{-| The bundled scripting libraries, fetched into `model.libs` at startup and merged into every
+file's evaluation scope (hidden from the file list) so a program can `import Awk`. (Awk runs on the
+in-browser interpreter's string subset; M4/Sed/Csv use `List Char`, which the small interpreter does
+not model, so they ship for `elm script` rather than the playground.) -}
+scriptingLibs : List String
+scriptingLibs =
+    [ "examples/Awk.elm" ]
+
+
+fetchLibs : List String -> Cmd Msg
+fetchLibs urls =
+    Cmd.batch (List.map (\url -> Http.get { url = url, expect = Http.expectString (LoadedLib (baseName url)) }) urls)
 
 
 {-| Wires live effects: a `game`'s keyboard + animation-frame loop, or a `Time.every` tick. -}
@@ -210,6 +226,7 @@ initModel : Model
 initModel =
     refreshApp
         { files = [ starter ]
+        , libs = []
         , selected = Tuple.first starter
         , app = Err ""
         , newName = ""
@@ -233,9 +250,12 @@ baseName url =
     url |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault url
 
 
+{-| The file set evaluated for the selected file: the selected file first (so its definitions win),
+followed by the bundled scripting libraries — which define no `main`, so they only add `import`-able
+definitions to the scope. -}
 selectedFile : Model -> List ( String, String )
 selectedFile model =
-    [ ( model.selected, lookup model.selected model.files |> Maybe.withDefault "" ) ]
+    ( model.selected, lookup model.selected model.files |> Maybe.withDefault "" ) :: model.libs
 
 
 {-| Re-initialises the running app from the selected file (its model becomes `init`) when that file
@@ -675,6 +695,24 @@ update msg model =
 
                     Err _ ->
                         ( model, Cmd.none )
+
+        LoadedLib name result ->
+            -- A bundled scripting library arrived: keep it in `libs` (merged into scope, hidden from
+            -- the file list) and re-run so a program that imports it picks it up.
+            case result of
+                Ok content ->
+                    let
+                        libs =
+                            if hasFile name model.libs then
+                                setFile name content model.libs
+
+                            else
+                                model.libs ++ [ ( name, content ) ]
+                    in
+                    ( refreshApp { model | libs = libs }, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )

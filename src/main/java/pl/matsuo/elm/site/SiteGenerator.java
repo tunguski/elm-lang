@@ -624,6 +624,14 @@ public final class SiteGenerator {
         dir.resolve("todomvc.elm"),
         pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm"),
         StandardCharsets.UTF_8);
+    // The scripting libraries the editor fetches into its hidden lib scope (so a program can
+    // `import Awk`/`M4`/`Sed`/`Csv` in the playground).
+    for (String lib : new String[] {"Awk", "M4", "Sed", "Csv"}) {
+      Files.writeString(
+          dir.resolve(lib + ".elm"),
+          pl.matsuo.elm.util.Resources.read("/elm/lib/" + lib + ".elm"),
+          StandardCharsets.UTF_8);
+    }
   }
 
   /** Compiles the bundled TodoMVC demo to a live, interactive page (the flagship TEA showcase). */

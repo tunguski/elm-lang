@@ -26,7 +26,7 @@ builtins =
         ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Result.withDefault", "Result.map", "Result.andThen", "Result.toMaybe" ]
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
-        ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim" ]
+        ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
@@ -110,7 +110,7 @@ htmlBoolAttrs =
 {-| How many arguments a builtin consumes before it runs. -}
 arity : String -> Int
 arity name =
-    if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
+    if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
     else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
@@ -1052,6 +1052,12 @@ runBuiltin globals name args =
 
             ( "String.split", [ VStr sep, VStr s ] ) ->
                 Ok (VList (List.map VStr (String.split sep s)))
+
+            ( "String.words", [ VStr s ] ) ->
+                Ok (VList (List.map VStr (String.words s)))
+
+            ( "String.indexes", [ VStr sub, VStr s ] ) ->
+                Ok (VList (List.map (\i -> VNum (toFloat i)) (String.indexes sub s)))
 
             ( "String.isEmpty", [ VStr s ] ) ->
                 Ok (VBool (String.isEmpty s))
