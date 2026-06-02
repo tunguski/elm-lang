@@ -78,6 +78,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Upgrade.class,
       Main.Uninstall.class,
       Main.Outdated.class,
+      Main.Doctest.class,
       Main.Verify.class,
       Main.Diff.class,
       Main.Bump.class,
@@ -1605,6 +1606,30 @@ public final class Main implements Runnable {
         System.err.println("Uninstall failed: " + e.getMessage());
         return 1;
       }
+    }
+  }
+
+  @Command(
+      name = "doctest",
+      description = "Run the executable examples (expr followed by a `-->` line) in modules' doc comments.")
+  static final class Doctest implements Callable<Integer> {
+    @Parameters(arity = "1..*", description = "Elm files whose doc comments' examples to verify.")
+    List<Path> files;
+
+    @Override
+    public Integer call() throws IOException {
+      int passed = 0;
+      int failed = 0;
+      for (Path f : files) {
+        var result = pl.matsuo.elm.doc.DocTest.run(java.nio.file.Files.readString(f));
+        passed += result.passed();
+        failed += result.failed();
+        for (String fail : result.failures()) {
+          System.out.println(f.getFileName() + ": " + fail);
+        }
+      }
+      System.out.println(passed + " passed, " + failed + " failed");
+      return failed == 0 ? 0 : 1;
     }
   }
 

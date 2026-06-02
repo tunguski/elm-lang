@@ -1,5 +1,6 @@
 package pl.matsuo.elm;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -47,6 +48,21 @@ class MainCliTest {
     Path f = Files.createTempFile("cli-", ".elm");
     Files.writeString(f, source, StandardCharsets.UTF_8);
     return f;
+  }
+
+  @Test
+  void doctestRunsDocCommentExamples() throws Exception {
+    Path good = tempElm(
+        "module M exposing (double)\n\n{-| Doubles.\n\n    double 21\n    --> 42\n-}\ndouble n =\n    n * 2\n");
+    Result okRun = invoke("doctest", good.toString());
+    assertEquals(0, okRun.code(), okRun.out());
+    assertTrue(okRun.out().contains("1 passed, 0 failed"), okRun.out());
+
+    Path bad = tempElm(
+        "module M exposing (triple)\n\n{-| Triples.\n\n    triple 2\n    --> 7\n-}\ntriple n =\n    n * 3\n");
+    Result badRun = invoke("doctest", bad.toString());
+    assertEquals(1, badRun.code(), badRun.out());
+    assertTrue(badRun.out().contains("0 passed, 1 failed"), badRun.out());
   }
 
   @Test
