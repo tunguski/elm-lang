@@ -76,6 +76,8 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Init.class,
       Main.Install.class,
       Main.Upgrade.class,
+      Main.Uninstall.class,
+      Main.Outdated.class,
       Main.Verify.class,
       Main.Diff.class,
       Main.Bump.class,
@@ -1572,6 +1574,62 @@ public final class Main implements Runnable {
         return 0;
       } catch (pl.matsuo.elm.pkg.Solver.Unsolvable | IllegalStateException e) {
         System.err.println("Upgrade failed: " + e.getMessage());
+        return 1;
+      }
+    }
+  }
+
+  @Command(name = "uninstall", description = "Remove a direct dependency and re-solve the rest.")
+  static final class Uninstall implements Callable<Integer> {
+    @Parameters(index = "0", description = "Package to remove, as author/name.")
+    String pkg;
+
+    @Option(names = "--registry", description = "Package-cache directory (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
+    @Option(names = {"-d", "--dir"}, description = "Project directory containing elm.json (default: current).")
+    Path dir = Path.of(".");
+
+    @Override
+    public Integer call() throws IOException {
+      Path registryRoot = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+      try {
+        var result = pl.matsuo.elm.pkg.Installer.uninstall(dir, pkg, new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot));
+        if (!result.wasPresent()) {
+          System.out.println(pkg + " is not a direct dependency.");
+          return 0;
+        }
+        System.out.println("Removed " + pkg + ". Direct dependencies: " + result.direct().size() + ".");
+        return 0;
+      } catch (pl.matsuo.elm.pkg.Solver.Unsolvable | IllegalStateException e) {
+        System.err.println("Uninstall failed: " + e.getMessage());
+        return 1;
+      }
+    }
+  }
+
+  @Command(name = "outdated", description = "Report direct dependencies with a newer version in the registry.")
+  static final class Outdated implements Callable<Integer> {
+    @Option(names = "--registry", description = "Package-cache directory (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
+    @Option(names = {"-d", "--dir"}, description = "Project directory containing elm.json (default: current).")
+    Path dir = Path.of(".");
+
+    @Override
+    public Integer call() throws IOException {
+      Path registryRoot = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+      try {
+        var result = pl.matsuo.elm.pkg.Installer.outdated(dir, new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot));
+        if (result.behind().isEmpty()) {
+          System.out.println("All direct dependencies are up to date.");
+          return 0;
+        }
+        System.out.println("Outdated:");
+        result.behind().forEach((p, v) -> System.out.println("  " + p + "  " + v[0] + " -> " + v[1]));
+        return 0;
+      } catch (IllegalStateException e) {
+        System.err.println("Outdated failed: " + e.getMessage());
         return 1;
       }
     }

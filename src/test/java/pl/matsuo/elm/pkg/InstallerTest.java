@@ -141,4 +141,44 @@ class InstallerTest {
         Files.readString(project.resolve("elm.json"), StandardCharsets.UTF_8).contains("1.0.5"),
         "upgrade writes the new pin");
   }
+
+  @Test
+  void uninstallRemovesADirectDependency(@TempDir Path root) throws IOException {
+    Path registry = root.resolve("registry");
+    writePackage(registry, "elm/core", "1.0.5", "{}");
+    writePackage(registry, "elm/regex", "1.0.0", "{ \"elm/core\": \"1.0.0 <= v < 2.0.0\" }");
+
+    Path project = root.resolve("project");
+    Files.createDirectories(project);
+    Files.writeString(project.resolve("elm.json"), APP_ELM_JSON, StandardCharsets.UTF_8);
+    Installer.install(project, "elm/regex", new DirectoryRegistry(registry));
+
+    Installer.Uninstall r = Installer.uninstall(project, "elm/regex", new DirectoryRegistry(registry));
+    assertTrue(r.wasPresent());
+    assertFalse(r.direct().containsKey("elm/regex"));
+    String written = Files.readString(project.resolve("elm.json"), StandardCharsets.UTF_8);
+    assertFalse(written.contains("\"elm/regex\""), written);
+
+    // Removing something that isn't a direct dependency is a no-op.
+    assertFalse(Installer.uninstall(project, "elm/nope", new DirectoryRegistry(registry)).wasPresent());
+  }
+
+  @Test
+  void outdatedReportsNewerVersions(@TempDir Path root) throws IOException {
+    Path registry = root.resolve("registry");
+    writePackage(registry, "elm/core", "1.0.0", "{}");
+    writePackage(registry, "elm/core", "1.0.5", "{}");
+
+    Path project = root.resolve("project");
+    Files.createDirectories(project);
+    Files.writeString(
+        project.resolve("elm.json"),
+        APP_ELM_JSON.replace("\"direct\": {}", "\"direct\": { \"elm/core\": \"1.0.0\" }"),
+        StandardCharsets.UTF_8);
+
+    Installer.Outdated r = Installer.outdated(project, new DirectoryRegistry(registry));
+    assertTrue(r.behind().containsKey("elm/core"));
+    assertEquals(Version.parse("1.0.0"), r.behind().get("elm/core")[0]);
+    assertEquals(Version.parse("1.0.5"), r.behind().get("elm/core")[1]);
+  }
 }

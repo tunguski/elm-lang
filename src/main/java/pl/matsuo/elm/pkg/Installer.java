@@ -109,6 +109,63 @@ public final class Installer {
     return new Upgrade(before, after);
   }
 
+  /** The outcome of an uninstall: whether the package was a direct dependency, and the new direct
+   *  dependency set after re-solving. */
+  public record Uninstall(boolean wasPresent, Map<String, Version> direct) {}
+
+  /** Removes {@code pkg} from the application's direct dependencies and re-solves the rest, writing
+   *  elm.json and the lockfile. A no-op (wasPresent=false) if it isn't a direct dependency. -}*/
+  public static Uninstall uninstall(Path projectDir, String pkg, Registry registry)
+      throws IOException {
+    Path elmJsonPath = projectDir.resolve("elm.json");
+    if (!Files.exists(elmJsonPath)) {
+      throw new IllegalStateException("no elm.json in " + projectDir.toAbsolutePath());
+    }
+    ElmJson elm = ElmJson.parse(Files.readString(elmJsonPath, StandardCharsets.UTF_8));
+    if (!elm.direct().containsKey(pkg)) {
+      return new Uninstall(false, elm.direct());
+    }
+    Map<String, Constraint> roots = new TreeMap<>();
+    elm.direct().forEach((p, v) -> {
+      if (!p.equals(pkg)) {
+        roots.put(p, Constraint.parse(v.toString()));
+      }
+    });
+    Map<String, Version> solution = new Solver(registry).solve(roots);
+    Set<String> newDirect = new TreeSet<>(elm.direct().keySet());
+    newDirect.remove(pkg);
+    elm.setSolution(newDirect, solution);
+    Files.writeString(elmJsonPath, elm.render(), StandardCharsets.UTF_8);
+    Lockfile.write(projectDir, solution, registry);
+    Map<String, Version> direct = new TreeMap<>();
+    for (String p : newDirect) {
+      direct.put(p, solution.get(p));
+    }
+    return new Uninstall(true, direct);
+  }
+
+  /** Direct dependencies for which the registry has a newer version: pkg -> {current, latest}. */
+  public record Outdated(Map<String, Version[]> behind) {}
+
+  public static Outdated outdated(Path projectDir, Registry registry) throws IOException {
+    Path elmJsonPath = projectDir.resolve("elm.json");
+    if (!Files.exists(elmJsonPath)) {
+      throw new IllegalStateException("no elm.json in " + projectDir.toAbsolutePath());
+    }
+    ElmJson elm = ElmJson.parse(Files.readString(elmJsonPath, StandardCharsets.UTF_8));
+    Map<String, Version[]> behind = new TreeMap<>();
+    for (var e : elm.direct().entrySet()) {
+      var available = registry.versions(e.getKey());
+      if (!available.isEmpty()) {
+        Version latest = available.get(available.size() - 1);
+        if (latest.compareTo(e.getValue()) > 0) {
+          behind.put(e.getKey(), new Version[] {e.getValue(), latest});
+        }
+      }
+    }
+    return new Outdated(behind);
+  }
+
   /** The default package-cache directory: {@code $ELM_REGISTRY} if set, else {@code ~/.elm/registry}. */
   public static Path defaultRegistryRoot() {
     String env = System.getenv("ELM_REGISTRY");
