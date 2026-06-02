@@ -822,7 +822,16 @@ public final class Parser {
       expect(TokenType.ARROW, "'->'");
       Expr body = withIndent(branchCol, this::parseExpr);
       branches.add(new Expr.Case.Branch(pattern, body));
-      if (atNewLine() && peek().col() == branchCol && startsPatternAtom()) {
+      // A following branch starts a pattern at the branch column. Also accept a leading `-` (a
+      // negative literal pattern, e.g. `-1 ->`): a bare `-` never begins a pattern elsewhere, so
+      // recognising it here lets consecutive negative-pattern branches parse (the body above already
+      // stopped at the dedent rather than absorbing the `-` as subtraction).
+      boolean nextIsBranch =
+          startsPatternAtom()
+              || (peek().type() == TokenType.OPERATOR
+                  && peek().text().equals("-")
+                  && peek(1).type() == TokenType.INT);
+      if (atNewLine() && peek().col() == branchCol && nextIsBranch) {
         continue;
       }
       break;
