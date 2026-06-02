@@ -232,6 +232,9 @@ class EditorInterpreterTest {
     assertEquals("[\"b\"]", eval("Dict.keys (Dict.intersect (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ]) (Dict.singleton \"b\" 0))"));
     assertEquals("Just 6", eval("Dict.get \"a\" (Dict.update \"a\" (Maybe.map (\\n -> n + 1)) (Dict.singleton \"a\" 5))"));
     assertEquals("0", eval("Dict.size (Dict.update \"a\" (\\_ -> Nothing) (Dict.singleton \"a\" 5))"));
+    // foldr and partition
+    assertEquals("6", eval("Dict.foldr (\\k v acc -> acc + v) 0 (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ), ( \"c\", 3 ) ])"));
+    assertEquals("([1, 3], [2])", eval("(\\( yes, no ) -> ( Dict.values yes, Dict.values no )) (Dict.partition (\\k v -> modBy 2 v == 1) (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ), ( \"c\", 3 ) ]))"));
   }
 
   @Test

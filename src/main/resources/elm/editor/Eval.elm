@@ -33,7 +33,7 @@ builtins =
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit" ]
         ++ [ "Debug.toString", "Debug.log", "Debug.todo" ]
-        ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl", "Dict.union", "Dict.diff", "Dict.intersect", "Dict.update" ]
+        ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl", "Dict.foldr", "Dict.partition", "Dict.union", "Dict.diff", "Dict.intersect", "Dict.update" ]
         ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
         ++ [ "Array.empty", "Array.initialize", "Array.repeat", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.get", "Array.set", "Array.push", "Array.append", "Array.length", "Array.isEmpty", "Array.slice", "Array.map", "Array.indexedMap", "Array.foldl", "Array.foldr", "Array.filter" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
@@ -138,7 +138,7 @@ arity name =
     else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip", "Set.fromList", "Set.toList", "Set.size", "Set.isEmpty", "Set.singleton", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.length", "Array.isEmpty" ] then
         1
 
-    else if List.member name [ "Dict.insert", "Dict.foldl", "Dict.update", "Set.foldl", "Set.foldr", "Array.foldl", "Array.foldr", "Array.set", "Array.slice", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
+    else if List.member name [ "Dict.insert", "Dict.foldl", "Dict.foldr", "Dict.update", "Set.foldl", "Set.foldr", "Array.foldl", "Array.foldr", "Array.set", "Array.slice", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
         3
 
     else if name == "List.map3" then
@@ -657,6 +657,38 @@ filterDict globals f pairs =
 
         _ :: rest ->
             filterDict globals f rest
+
+
+{-| `Dict.partition`: splits pairs into (predicate holds, predicate fails) as two Dicts. -}
+partitionDict : Globals -> Value -> List Value -> Result String Value
+partitionDict globals f pairs =
+    case pairs of
+        [] ->
+            Ok (VTup [ mkDict [], mkDict [] ])
+
+        ((VTup [ k, v ]) as p) :: rest ->
+            applyValue globals f k
+                |> Result.andThen (\g -> applyValue globals g v)
+                |> Result.andThen
+                    (\keep ->
+                        partitionDict globals f rest
+                            |> Result.map
+                                (\split ->
+                                    case split of
+                                        VTup [ yes, no ] ->
+                                            if keep == VBool True then
+                                                VTup [ mkDict (p :: dictPairs yes), no ]
+
+                                            else
+                                                VTup [ yes, mkDict (p :: dictPairs no) ]
+
+                                        _ ->
+                                            split
+                                )
+                    )
+
+        _ :: rest ->
+            partitionDict globals f rest
 
 
 foldlDict : Globals -> Value -> Value -> List Value -> Result String Value
@@ -1663,6 +1695,13 @@ runBuiltin globals name args =
 
             ( "Dict.foldl", [ f, acc, d ] ) ->
                 foldlDict globals f acc (dictPairs d)
+
+            ( "Dict.foldr", [ f, acc, d ] ) ->
+                foldlDict globals f acc (List.reverse (dictPairs d))
+
+            ( "Dict.partition", [ f, d ] ) ->
+                -- (matching, non-matching) by the key/value predicate, preserving order
+                partitionDict globals f (dictPairs d)
 
             ( "Dict.union", [ a, b ] ) ->
                 -- Left-biased: a's entries win on a key collision.
