@@ -34,5 +34,5 @@ exampleUrls =
             [ "hello", "groceries", "shapes", "buttons", "text-fields", "forms", "numbers", "cards"
             , "positions", "book", "quotes", "time", "clock", "upload", "drag-and-drop"
             , "image-previews", "triangle", "cube", "crate", "thwomp", "first-person", "picture"
-            , "animation", "mouse", "keyboard", "turtle", "mario"
+            , "animation", "mouse", "keyboard", "turtle", "mario", "life"
             ]

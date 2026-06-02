@@ -140,6 +140,65 @@ class EditorInterpreterTest {
     return ((pl.matsuo.elm.runtime.ElmData) maybe).arg(0); // Just x -> x
   }
 
+  private static Object okValue(Object result) {
+    return ((pl.matsuo.elm.runtime.ElmData) result).arg(0); // Ok x -> x
+  }
+
+  private static int countMatches(String s, String sub) {
+    int c = 0;
+    for (int i = s.indexOf(sub); i >= 0; i = s.indexOf(sub, i + sub.length())) {
+      c++;
+    }
+    return c;
+  }
+
+  private String renderGame(ElmList fs, List<String> keys, double time, Object mem) {
+    return Show.plain(
+        okValue(
+            Apply.applyAll(
+                EDITOR.value("Eval", "gameView"),
+                fs,
+                ElmList.fromJava(new ArrayList<Object>(keys)),
+                time,
+                mem)));
+  }
+
+  @Test
+  void lifeExampleEvolvesAGliderAndSwitchesSetups() throws Exception {
+    // Conway's Game of Life (life.elm) must run under the editor's game loop: a glider conserves its
+    // five cells across a generation, time advances `gen`, and a number key swaps the starting setup.
+    String src =
+        java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/test/resources/examples/life.elm"));
+    ElmList fs = files("Main.elm", src);
+    ElmList none = ElmList.fromJava(new ArrayList<>());
+
+    Object mem = unwrapJust(Apply.apply(EDITOR.value("Eval", "gameInitMem"), fs));
+    // Initial frame: 5 glider cells + 1 background rectangle = 6 <rect>.
+    String frame0 = renderGame(fs, List.of(), 0.0, mem);
+    assertEquals(6, countMatches(frame0, "VStr \"rect\""), "glider draws 5 cells: " + frame0);
+
+    // stepEvery (5) frames advance exactly one Conway generation.
+    for (int i = 0; i < 5; i++) {
+      mem = okValue(Apply.applyAll(EDITOR.value("Eval", "gameStep"), fs, none, (double) (i * 16), mem));
+    }
+    String afterGen = Show.plain(mem);
+    assertTrue(afterGen.contains("(\"gen\",VNum 1)"), "one generation elapsed: " + afterGen);
+    assertEquals(
+        6,
+        countMatches(renderGame(fs, List.of(), 80.0, mem), "VStr \"rect\""),
+        "a glider still has 5 live cells after a generation");
+
+    // Holding "3" loads the pulsar setup: many cells, generation reset to 0.
+    Object pulsar =
+        okValue(
+            Apply.applyAll(
+                EDITOR.value("Eval", "gameStep"), fs, ElmList.fromJava(List.of("3")), 96.0, mem));
+    assertTrue(Show.plain(pulsar).contains("(\"gen\",VNum 0)"), "loading a setup resets gen");
+    assertTrue(
+        countMatches(renderGame(fs, List.of(), 0.0, pulsar), "VStr \"rect\"") > 30, "pulsar has many cells");
+  }
+
   @Test
   void animationProgramRendersAndIsDrivable() {
     // The editor's builtin `animation` must render an initial frame AND be drivable by the frame
