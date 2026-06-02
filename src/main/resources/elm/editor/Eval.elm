@@ -23,7 +23,7 @@ builtins =
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
         ++ [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product" ]
         ++ [ "List.filter", "List.append", "List.member", "List.filterMap", "List.take", "List.drop", "List.any", "List.all", "List.indexedMap", "List.repeat", "List.sortBy", "List.foldl", "List.foldr", "List.map2", "List.concatMap" ]
-        ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Result.withDefault", "Result.map", "Result.andThen", "Result.toMaybe" ]
+        ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.andThen", "Result.toMaybe" ]
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
@@ -141,6 +141,15 @@ arity name =
 
     else if name == "List.map3" then
         4
+
+    else if name == "Maybe.map3" then
+        4
+
+    else if name == "Maybe.map4" then
+        5
+
+    else if name == "Maybe.map5" then
+        6
 
     else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
         3
@@ -682,6 +691,33 @@ setInsert x xs =
         xs ++ [ x ]
 
 
+{-| `Maybe.mapN`: if every argument is `Just`, apply `f` to the unwrapped values; otherwise
+`Nothing`. (Elm tuples max out at three elements, so this avoids a 4-/5-tuple pattern.) -}
+maybeMapN : Globals -> Value -> List Value -> Result String Value
+maybeMapN globals f margs =
+    case allJust margs of
+        Just xs ->
+            List.foldl (\x acc -> acc |> Result.andThen (\g -> applyValue globals g x)) (Ok f) xs
+                |> Result.map (\y -> VCtor "Just" [ y ])
+
+        Nothing ->
+            Ok (VCtor "Nothing" [])
+
+
+{-| The unwrapped values if every element is `Just _`, else `Nothing`. -}
+allJust : List Value -> Maybe (List Value)
+allJust margs =
+    case margs of
+        [] ->
+            Just []
+
+        (VCtor "Just" [ x ]) :: rest ->
+            Maybe.map (\xs -> x :: xs) (allJust rest)
+
+        _ ->
+            Nothing
+
+
 -- ARRAY (a 0-indexed sequence, wrapped as `VCtor "Array" [ VList elems ]`) ------------------------
 
 
@@ -1183,6 +1219,15 @@ runBuiltin globals name args =
 
                     _ ->
                         Ok (VCtor "Nothing" [])
+
+            ( "Maybe.map3", [ f, a, b, c ] ) ->
+                maybeMapN globals f [ a, b, c ]
+
+            ( "Maybe.map4", [ f, a, b, c, d ] ) ->
+                maybeMapN globals f [ a, b, c, d ]
+
+            ( "Maybe.map5", [ f, a, b, c, d, e ] ) ->
+                maybeMapN globals f [ a, b, c, d, e ]
 
             ( "Result.withDefault", [ dflt, v ] ) ->
                 case v of

@@ -248,6 +248,15 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsMaybeMapN() {
+    assertEquals("Just 6", eval("Maybe.map3 (\\a b c -> a + b + c) (Just 1) (Just 2) (Just 3)"));
+    assertEquals("Nothing", eval("Maybe.map3 (\\a b c -> a + b + c) (Just 1) Nothing (Just 3)"));
+    assertEquals("Just 10", eval("Maybe.map4 (\\a b c d -> a + b + c + d) (Just 1) (Just 2) (Just 3) (Just 4)"));
+    assertEquals("Just 15", eval("Maybe.map5 (\\a b c d e -> a + b + c + d + e) (Just 1) (Just 2) (Just 3) (Just 4) (Just 5)"));
+    assertEquals("Nothing", eval("Maybe.map5 (\\a b c d e -> a) (Just 1) (Just 2) (Just 3) (Just 4) Nothing"));
+  }
+
+  @Test
   void interpretsDebug() {
     assertEquals("\"42\"", eval("Debug.toString 42"));
     assertEquals("\"[1, 2, 3]\"", eval("Debug.toString [ 1, 2, 3 ]"));
