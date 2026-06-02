@@ -248,6 +248,17 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void lexesStringAndCharEscapes() {
+    assertEquals("3", eval("String.length \"a\\nb\"")); // \n is one (newline) character
+    assertEquals("2", eval("List.length (String.lines \"a\\nb\")")); // the \n really splits lines
+    assertEquals("3", eval("String.length \"x\\ty\"")); // \t tab
+    assertEquals("1", eval("String.length \"\\\\\"")); // \\ -> a single backslash
+    // Unicode brace-escapes: built by concatenation so the Java source never contains the escape.
+    assertEquals("True", eval("\"\\" + "u{41}\" == \"A\"")); // code 0x41 is 'A'
+    assertEquals("True", eval("'\\" + "u{42}' == 'B'")); // code 0x42 is 'B'
+  }
+
+  @Test
   void interpretsResultCombinators() {
     assertEquals("Err \"BOOM\"", eval("Result.mapError String.toUpper (Err \"boom\")"));
     assertEquals("Ok 5", eval("Result.mapError String.toUpper (Ok 5)"));

@@ -355,6 +355,19 @@ Returns the character and the input after the closing `'`, or `Nothing` if it is
 takeChar : List Char -> Maybe ( Char, List Char )
 takeChar chars =
     case chars of
+        '\\' :: 'u' :: '{' :: rest ->
+            -- A Unicode escape `'\u{HHHH}'`.
+            let
+                ( hex, afterHex ) =
+                    takeWhile (\c -> c /= '}') rest ""
+            in
+            case afterHex of
+                '}' :: '\'' :: more ->
+                    Just ( Char.fromCode (hexToInt hex), more )
+
+                _ ->
+                    Nothing
+
         '\\' :: e :: '\'' :: rest ->
             Just ( unescapeChar e, rest )
 
@@ -387,11 +400,50 @@ takeString chars acc =
         '"' :: rest ->
             ( acc, rest )
 
+        '\\' :: 'u' :: '{' :: rest ->
+            -- A Unicode escape `\u{HHHH}`: read hex digits up to the closing brace.
+            let
+                ( hex, afterHex ) =
+                    takeWhile (\c -> c /= '}') rest ""
+            in
+            case afterHex of
+                '}' :: more ->
+                    takeString more (acc ++ String.fromChar (Char.fromCode (hexToInt hex)))
+
+                _ ->
+                    takeString rest (acc ++ "\\u{")
+
+        '\\' :: e :: rest ->
+            -- A backslash escape (`\n`, `\t`, `\r`, `\\`, `\"`, …); unescapeChar leaves others as-is.
+            takeString rest (acc ++ String.fromChar (unescapeChar e))
+
         c :: rest ->
             takeString rest (acc ++ String.fromChar c)
 
         [] ->
             ( acc, [] )
+
+
+{-| Parses a string of hex digits to an Int (case-insensitive); unknown digits count as 0. -}
+hexToInt : String -> Int
+hexToInt hex =
+    String.foldl (\c acc -> acc * 16 + hexDigit c) 0 hex
+
+
+hexDigit : Char -> Int
+hexDigit c =
+    let
+        code =
+            Char.toCode (Char.toLower c)
+    in
+    if code >= 48 && code <= 57 then
+        code - 48
+
+    else if code >= 97 && code <= 102 then
+        code - 87
+
+    else
+        0
 
 
 classifyOp : String -> Result String Token
