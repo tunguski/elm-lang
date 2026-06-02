@@ -1418,6 +1418,11 @@ matchPattern pat value =
             matchPattern hp h
                 |> Maybe.andThen (\hb -> matchPattern tp (VList t) |> Maybe.map (\tb -> hb ++ tb))
 
+        ( PAlias inner name, _ ) ->
+            -- `(pattern as name)` matches the inner pattern and also binds the whole value to `name`.
+            matchPattern inner value
+                |> Maybe.map (\binds -> ( name, value ) :: binds)
+
         ( PCtor name pats, VCtor vname vargs ) ->
             if name == vname && List.length pats == List.length vargs then
                 matchAll pats vargs

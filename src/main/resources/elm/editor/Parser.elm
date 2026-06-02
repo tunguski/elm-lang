@@ -544,12 +544,27 @@ parseBranches tokens acc =
 
 parsePattern : List Token -> Result String ( Pattern, List Token )
 parsePattern tokens =
+    -- `as` binds loosest, so it wraps a whole (cons) pattern: `x :: xs as all`.
+    parseConsPattern tokens
+        |> Result.andThen
+            (\r ->
+                case Tuple.second r of
+                    (TId "as") :: (TId name) :: rest ->
+                        Ok ( PAlias (Tuple.first r) name, rest )
+
+                    _ ->
+                        Ok r
+            )
+
+
+parseConsPattern : List Token -> Result String ( Pattern, List Token )
+parseConsPattern tokens =
     parsePatternApp tokens
         |> Result.andThen
             (\r ->
                 case Tuple.second r of
                     (TOp "::") :: rest ->
-                        parsePattern rest
+                        parseConsPattern rest
                             |> Result.map (\r2 -> ( PCons (Tuple.first r) (Tuple.first r2), Tuple.second r2 ))
 
                     _ ->

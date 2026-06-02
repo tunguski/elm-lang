@@ -52,6 +52,7 @@ type Pattern
     | PCons Pattern Pattern
     | PTup (List Pattern)
     | PRecord (List String)
+    | PAlias Pattern String
 
 
 {-| A top-level definition `name args = body`. -}

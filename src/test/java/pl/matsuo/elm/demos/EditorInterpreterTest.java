@@ -97,6 +97,15 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsAsPatterns() {
+    // `as` binds the whole matched value alongside the inner pattern.
+    assertEquals("10", eval("case 5 of\n    n as m -> n + m\n    _ -> 0"));
+    assertEquals(
+        "4",
+        eval("case [ 1, 2, 3 ] of\n    (x :: _) as whole -> x + List.length whole\n    _ -> 0"));
+  }
+
+  @Test
   void interpretsOperatorsAsFunctions() {
     assertEquals("6", eval("List.foldl (+) 0 [ 1, 2, 3 ]"));
     assertEquals("[2, 4, 6]", eval("List.map ((*) 2) [ 1, 2, 3 ]"));
