@@ -25,7 +25,7 @@ builtins =
         ++ [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product" ]
         ++ [ "List.filter", "List.append", "List.member", "List.filterMap", "List.take", "List.drop", "List.any", "List.all", "List.indexedMap", "List.repeat", "List.sortBy", "List.foldl", "List.foldr", "List.map2", "List.concatMap" ]
         ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.map2", "Result.map3", "Result.map4", "Result.map5", "Result.andThen", "Result.toMaybe", "Result.mapError", "Result.fromMaybe" ]
-        ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "Tuple.mapFirst", "Tuple.mapSecond", "Tuple.mapBoth", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
+        ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "Tuple.mapFirst", "Tuple.mapSecond", "Tuple.mapBoth", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp", "xor" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
         ++ [ "String.concat", "String.trimLeft", "String.trimRight", "String.any", "String.all" ]
@@ -1512,6 +1512,9 @@ runBuiltin globals name args =
             ( "Tuple.mapBoth", [ f, g, VTup [ a, b ] ] ) ->
                 applyValue globals f a
                     |> Result.andThen (\x -> applyValue globals g b |> Result.map (\y -> VTup [ x, y ]))
+
+            ( "xor", [ VBool a, VBool b ] ) ->
+                Ok (VBool (xor a b))
 
             ( "identity", [ v ] ) ->
                 Ok v

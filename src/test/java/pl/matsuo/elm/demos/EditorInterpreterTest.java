@@ -313,6 +313,13 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsXor() {
+    assertEquals("True", eval("xor True False"));
+    assertEquals("False", eval("xor True True"));
+    assertEquals("False", eval("xor False False"));
+  }
+
+  @Test
   void interpretsBitwise() {
     assertEquals("12", eval("Bitwise.and 14 13")); // 1110 & 1101 = 1100
     assertEquals("15", eval("Bitwise.or 12 3")); // 1100 | 0011 = 1111
