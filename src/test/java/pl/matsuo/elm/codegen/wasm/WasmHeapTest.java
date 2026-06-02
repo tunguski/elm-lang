@@ -497,6 +497,34 @@ class WasmHeapTest {
   }
 
   @Test
+  void matchesOnIntegerLiterals() throws Exception {
+    // A case over Int literals with a catch-all: an i64.eq if/else chain, no heap involved.
+    String classify =
+        """
+        classify n =
+            case n of
+                0 -> 100
+                1 -> 200
+                2 -> 300
+                _ -> n
+        main = classify (%d)
+        """;
+    agrees(classify.formatted(0)); // 100
+    agrees(classify.formatted(1)); // 200
+    agrees(classify.formatted(2)); // 300
+    agrees(classify.formatted(7)); // 7 (catch-all binds nothing)
+    // A variable catch-all that binds and uses the scrutinee.
+    agrees(
+        """
+        f n =
+            case n of
+                0 -> 0
+                k -> k * k
+        main = f 6
+        """); // 36
+  }
+
+  @Test
   void recursesOverACustomTypeTree() throws Exception {
     // A recursive ADT (binary tree) built and summed entirely in wasm.
     agrees(

@@ -320,6 +320,23 @@ class WasmGcTest {
   }
 
   @Test
+  void matchesOnIntegerLiterals() throws Exception {
+    String classify =
+        """
+        classify n =
+            case n of
+                0 -> 100
+                1 -> 200
+                _ -> n
+        main = classify (%d)
+        """;
+    agrees(classify.formatted(0)); // 100
+    agrees(classify.formatted(1)); // 200
+    agrees(classify.formatted(9)); // 9
+    agrees("f n = case n of\n    0 -> 0\n    k -> k * k\nmain = f 6\n"); // 36
+  }
+
+  @Test
   void listAppendOperator() throws Exception {
     // `++` on lists reverses the left spine then conses it onto the (shared) right list.
     String sum =

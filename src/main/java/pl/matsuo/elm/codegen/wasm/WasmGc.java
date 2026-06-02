@@ -1891,9 +1891,54 @@ public final class WasmGc {
       } else if (c.branches().stream()
           .anyMatch(br -> br.pattern() instanceof Pattern.Ctor ct && tuples.variantOf(ct.name()) != null)) {
         adtCase(c, body);
+      } else if (c.branches().stream()
+          .anyMatch(br -> br.pattern() instanceof Pattern.IntLit
+              || br.pattern() instanceof Pattern.CharLit)) {
+        literalCase(c, body);
       } else {
         listCase(c, body);
       }
+    }
+
+    /** A {@code case} over a scalar literal ({@code Int}/{@code Char}, both i64): a chain of
+     *  {@code i64.eq} tests on the scrutinee, with a trailing wildcard/var branch as the default. */
+    private void literalCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
+      int s = freshLocal("$lit" + code.size(), INT);
+      gen(c.scrutinee());
+      code.write(0x21);
+      leb(code, s);
+      emitLiteralChain(c.branches(), 0, s, wOf(nodeType(c), tuples), body);
+    }
+
+    private void emitLiteralChain(
+        List<Expr.Case.Branch> branches, int i, int s, W result,
+        java.util.function.Consumer<Expr> body) {
+      Expr.Case.Branch br = branches.get(i);
+      boolean last = i == branches.size() - 1;
+      if (last || br.pattern() instanceof Pattern.Wildcard || br.pattern() instanceof Pattern.Var) {
+        if (br.pattern() instanceof Pattern.Var v) {
+          get(s);
+          setLocal(freshLocal(v.name(), INT)); // bind the whole value
+        }
+        body.accept(br.body());
+        return;
+      }
+      long value =
+          switch (br.pattern()) {
+            case Pattern.IntLit lit -> lit.value();
+            case Pattern.CharLit lit -> lit.codePoint();
+            default -> throw unsupported("literal case pattern (only Int/Char)");
+          };
+      get(s);
+      code.write(0x42);
+      sleb(code, value);
+      code.write(0x51); // i64.eq
+      code.write(0x04); // if
+      writeType(code, result);
+      body.accept(br.body());
+      code.write(0x05); // else
+      emitLiteralChain(branches, i + 1, s, result, body);
+      code.write(0x0B);
     }
 
     /** A {@code case} over a nullary custom type: a chain of {@code i64.eq} tests on the tag, with a

@@ -1050,9 +1050,68 @@ public final class WasmCompiler {
         intAdtCase(c, body);
       } else if (c.branches().stream().anyMatch(b -> b.pattern() instanceof Pattern.Tuple)) {
         intTupleCase(c, body);
+      } else if (c.branches().stream()
+          .anyMatch(b -> b.pattern() instanceof Pattern.IntLit
+              || b.pattern() instanceof Pattern.CharLit)) {
+        intLiteralCase(c, body);
       } else {
         intListCase(c, body);
       }
+    }
+
+    /**
+     * Compiles a {@code case} over a scalar literal (an {@code Int} or {@code Char}, both i64): load
+     * the scrutinee once, then an if/else chain comparing it to each literal with {@code i64.eq}. A
+     * variable or wildcard branch matches unconditionally (the catch-all), so it ends the chain.
+     */
+    private void intLiteralCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
+      int s = freshLocal();
+      intExpr(c.scrutinee());
+      code.write(0x21);
+      leb(code, s); // local.set scrutinee
+      emitLiteralBranches(c.branches(), 0, s, body);
+    }
+
+    private void emitLiteralBranches(
+        List<Expr.Case.Branch> branches, int idx, int s, java.util.function.Consumer<Expr> body) {
+      if (idx >= branches.size()) {
+        code.write(0x00); // unreachable: a well-typed literal case ends in a catch-all
+        return;
+      }
+      Expr.Case.Branch br = branches.get(idx);
+      switch (br.pattern()) {
+        case Pattern.Var v -> {
+          code.write(0x20);
+          leb(code, s);
+          code.write(0x21);
+          leb(code, local(v.name())); // bind the whole value
+          body.accept(br.body());
+        }
+        case Pattern.Wildcard ignored -> body.accept(br.body());
+        case Pattern.IntLit lit -> emitLiteralTest(lit.value(), branches, idx, s, body);
+        case Pattern.CharLit lit -> emitLiteralTest(lit.codePoint(), branches, idx, s, body);
+        default -> throw unsupported("literal case pattern in WASM");
+      }
+    }
+
+    /** {@code if scrutinee == value then <this body> else <remaining branches>}. */
+    private void emitLiteralTest(
+        long value,
+        List<Expr.Case.Branch> branches,
+        int idx,
+        int s,
+        java.util.function.Consumer<Expr> body) {
+      code.write(0x20);
+      leb(code, s); // local.get s — the scalar value itself (not a heap pointer)
+      code.write(0x42);
+      sleb(code, value); // i64.const value
+      code.write(0x51); // i64.eq
+      code.write(0x04);
+      code.write(I64); // if -> i64
+      body.accept(branches.get(idx).body());
+      code.write(0x05); // else
+      emitLiteralBranches(branches, idx + 1, s, body);
+      code.write(0x0B); // end
     }
 
     /**
