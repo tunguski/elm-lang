@@ -32,13 +32,15 @@ public final class DocGenerator {
         .append("code{background:#f5f7fa;padding:1px 5px;border-radius:4px;font-size:.95em}")
         .append(".entry{margin:18px 0;padding-top:8px;border-top:1px solid #f0f0f0}")
         .append(".sig{font-size:1.05em}.sig .nm{color:#3a7bd5;font-weight:600}")
-        .append(".doc{color:#52606d;white-space:pre-wrap}")
+        .append(".doc{color:#52606d}")
+        .append(".doc pre{background:#f5f7fa;padding:10px;border-radius:6px;overflow:auto}")
+        .append(".doc code{background:#f5f7fa}")
         .append("#q{width:100%;padding:8px;font-size:1em;border:1px solid #cbd2d9;border-radius:6px;margin:12px 0}")
         .append("a{color:#3a7bd5;text-decoration:none}.toc{columns:2;font-size:.95em}")
         .append("</style></head><body>\n");
     h.append("<h1>").append(esc(api.moduleName())).append("</h1>\n");
     if (!api.moduleComment().isEmpty()) {
-      h.append("<p class=\"doc\">").append(esc(api.moduleComment())).append("</p>\n");
+      h.append("<div class=\"doc\">").append(DocMarkdown.toHtml(api.moduleComment())).append("</div>\n");
     }
     h.append("<input id=\"q\" placeholder=\"Filter by name…\" autofocus>\n");
     // Table of contents.
@@ -77,7 +79,7 @@ public final class DocGenerator {
         .append("<div class=\"sig\" id=\"").append(esc(name)).append("\"><code>")
         .append(esc(signature)).append("</code></div>");
     if (!doc.isEmpty()) {
-      h.append("<div class=\"doc\">").append(esc(doc)).append("</div>");
+      h.append("<div class=\"doc\">").append(DocMarkdown.toHtml(doc)).append("</div>");
     }
     h.append("</div>\n");
   }

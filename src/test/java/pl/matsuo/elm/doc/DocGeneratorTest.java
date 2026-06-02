@@ -1,5 +1,6 @@
 package pl.matsuo.elm.doc;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -119,5 +120,65 @@ class DocGeneratorTest {
     assertTrue(json.contains("\"Math\"") && json.contains("\"Strings\""), json);
     assertTrue(json.indexOf("\"Math\"") < json.indexOf("\"Strings\""), "modules sorted by name: " + json);
     assertTrue(json.contains("double") && json.contains("shout"), json);
+  }
+
+  @Test
+  void rendersMarkdownInDocHtml() {
+    String src =
+        """
+        module M exposing (f)
+
+        {-| Doubles with **emphasis** and a `code` span.
+
+        ```
+        f 2
+        ```
+
+        - first
+        - second
+        -}
+        f n =
+            n * 2
+        """;
+    String html = DocGenerator.html(src);
+    assertTrue(html.contains("<strong>emphasis</strong>"), html);
+    assertTrue(html.contains("<code>code</code>"), html);
+    assertTrue(html.contains("<pre><code>") && html.contains("f 2"), html); // fenced code block
+    assertTrue(html.contains("<li>first</li>") && html.contains("<li>second</li>"), html);
+  }
+
+  @Test
+  void docMarkdownEscapesHtmlAndLinks() {
+    String html = DocMarkdown.toHtml("see [docs](https://example.com) and <b>raw</b>");
+    assertTrue(html.contains("<a href=\"https://example.com\">docs</a>"), html);
+    assertTrue(html.contains("&lt;b&gt;raw&lt;/b&gt;"), html); // raw HTML is escaped, not injected
+  }
+
+  @Test
+  void doctestVerifiesDocCommentExamples() {
+    String src =
+        """
+        module M exposing (double, triple)
+
+        {-| Doubles a number.
+
+            double 21
+            --> 42
+        -}
+        double n =
+            n * 2
+
+        {-| Triples a number.
+
+            triple 2
+            --> 7
+        -}
+        triple n =
+            n * 3
+        """;
+    DocTest.Result r = DocTest.run(src);
+    assertEquals(1, r.passed(), r.failures().toString()); // double 21 --> 42 holds
+    assertEquals(1, r.failed(), r.failures().toString()); // triple 2 --> 7 is wrong (it's 6)
+    assertTrue(r.failures().get(0).contains("triple 2"), r.failures().toString());
   }
 }
