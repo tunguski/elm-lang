@@ -167,9 +167,13 @@ class DifferentialPropertyTest {
       if (depth <= 0 || rng.nextInt(100) < 30) {
         return Integer.toString(rng.nextInt(20));
       }
-      return switch (rng.nextInt(7)) {
+      return switch (rng.nextInt(8)) {
         case 0 -> "(" + compoundInt(depth - 1) + " + " + compoundInt(depth - 1) + ")";
         case 1 -> "(" + compoundInt(depth - 1) + " - " + compoundInt(depth - 1) + ")";
+        case 6 -> // a scalar-literal `case` with a binding catch-all
+            "(let lc = " + compoundInt(depth - 1) + " in case lc of\n    0 -> "
+                + compoundInt(depth - 1) + "\n    1 -> " + compoundInt(depth - 1)
+                + "\n    n -> n + " + compoundInt(depth - 1) + ")";
         case 2 -> // record literal + field access
             "(let cr = { a = " + compoundInt(depth - 1) + ", b = " + compoundInt(depth - 1)
                 + " } in cr.a + cr.b)";
@@ -259,6 +263,42 @@ class DifferentialPropertyTest {
       for (int i = 0; i < exprs.size(); i++) {
         assertEquals(interp.get(i), js[i], "interp vs JS: " + exprs.get(i));
       }
+    }
+  }
+
+  @Test
+  void richPatternsAndPartialCtorsAgreeOnInterpreterAndVm() throws Exception {
+    // Nested constructor/tuple patterns, scalar-literal case and partially-applied constructors must
+    // agree on the Truffle interpreter and the bytecode VM. (Linear-memory WASM coverage of these
+    // shapes lives in WasmHeapTest, which drives `main` — the differential WASM harness here keys on
+    // positional f0..fN exports, which the synthesized $mk$ constructor wrappers would misalign.)
+    String module =
+        """
+        type Tree = Leaf Int | Node Tree Tree
+        type Box = Box ( Int, Int )
+        sumLeaves t =
+            case t of
+                Node (Leaf a) r -> a + sumLeaves r
+                Node l r -> sumLeaves l + sumLeaves r
+                Leaf n -> n
+        unbox b =
+            case b of
+                Box ( a, c ) -> a + c
+        classify n =
+            case n of
+                0 -> 100
+                1 -> 200
+                _ -> n
+        apply f = f 5
+        nested = sumLeaves (Node (Node (Leaf 1) (Leaf 2)) (Leaf 3))
+        tupleCtor = unbox (Box ( 4, 5 ))
+        literal = classify 0 + classify 7
+        partial = Maybe.withDefault 0 (apply Just)
+        """;
+    Interpreter interp = Interpreter.load(module);
+    BytecodeInterpreter bytecode = BytecodeInterpreter.load(module);
+    for (String n : List.of("nested", "tupleCtor", "literal", "partial")) {
+      assertEquals(Show.plain(interp.value(n)), Show.plain(bytecode.value(n)), "bytecode " + n);
     }
   }
 
