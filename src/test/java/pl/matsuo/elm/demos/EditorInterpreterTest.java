@@ -248,6 +248,17 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsResultCombinators() {
+    assertEquals("Err \"BOOM\"", eval("Result.mapError String.toUpper (Err \"boom\")"));
+    assertEquals("Ok 5", eval("Result.mapError String.toUpper (Ok 5)"));
+    assertEquals("Ok 1", eval("Result.fromMaybe \"none\" (Just 1)"));
+    assertEquals("Err \"none\"", eval("Result.fromMaybe \"none\" Nothing"));
+    assertEquals("Ok 3", eval("Result.map2 (+) (Ok 1) (Ok 2)"));
+    assertEquals("Err \"e\"", eval("Result.map2 (+) (Ok 1) (Err \"e\")"));
+    assertEquals("Ok 6", eval("Result.map3 (\\a b c -> a + b + c) (Ok 1) (Ok 2) (Ok 3)"));
+  }
+
+  @Test
   void interpretsMaybeMapN() {
     assertEquals("Just 6", eval("Maybe.map3 (\\a b c -> a + b + c) (Just 1) (Just 2) (Just 3)"));
     assertEquals("Nothing", eval("Maybe.map3 (\\a b c -> a + b + c) (Just 1) Nothing (Just 3)"));

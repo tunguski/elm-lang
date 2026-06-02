@@ -23,7 +23,7 @@ builtins =
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
         ++ [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product" ]
         ++ [ "List.filter", "List.append", "List.member", "List.filterMap", "List.take", "List.drop", "List.any", "List.all", "List.indexedMap", "List.repeat", "List.sortBy", "List.foldl", "List.foldr", "List.map2", "List.concatMap" ]
-        ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.andThen", "Result.toMaybe" ]
+        ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.map2", "Result.map3", "Result.andThen", "Result.toMaybe", "Result.mapError", "Result.fromMaybe" ]
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
@@ -150,6 +150,12 @@ arity name =
 
     else if name == "Maybe.map5" then
         6
+
+    else if name == "Result.map2" then
+        3
+
+    else if name == "Result.map3" then
+        4
 
     else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
         3
@@ -1260,6 +1266,50 @@ runBuiltin globals name args =
 
                     _ ->
                         Ok (VCtor "Nothing" [])
+
+            ( "Result.mapError", [ f, v ] ) ->
+                case v of
+                    VCtor "Err" [ x ] ->
+                        applyValue globals f x |> Result.map (\y -> VCtor "Err" [ y ])
+
+                    _ ->
+                        Ok v
+
+            ( "Result.fromMaybe", [ err, v ] ) ->
+                case v of
+                    VCtor "Just" [ x ] ->
+                        Ok (VCtor "Ok" [ x ])
+
+                    _ ->
+                        Ok (VCtor "Err" [ err ])
+
+            ( "Result.map2", [ f, va, vb ] ) ->
+                case ( va, vb ) of
+                    ( VCtor "Ok" [ a ], VCtor "Ok" [ b ] ) ->
+                        applyValue globals f a |> Result.andThen (\g -> applyValue globals g b) |> Result.map (\y -> VCtor "Ok" [ y ])
+
+                    ( VCtor "Err" [ x ], _ ) ->
+                        Ok (VCtor "Err" [ x ])
+
+                    ( _, err ) ->
+                        Ok err
+
+            ( "Result.map3", [ f, va, vb, vc ] ) ->
+                case ( va, vb, vc ) of
+                    ( VCtor "Ok" [ a ], VCtor "Ok" [ b ], VCtor "Ok" [ c ] ) ->
+                        applyValue globals f a
+                            |> Result.andThen (\g -> applyValue globals g b)
+                            |> Result.andThen (\h -> applyValue globals h c)
+                            |> Result.map (\y -> VCtor "Ok" [ y ])
+
+                    ( VCtor "Err" [ x ], _, _ ) ->
+                        Ok (VCtor "Err" [ x ])
+
+                    ( _, VCtor "Err" [ x ], _ ) ->
+                        Ok (VCtor "Err" [ x ])
+
+                    ( _, _, err ) ->
+                        Ok err
 
             -- Tuple / Basics -----------------------------------------------------------------
             ( "Tuple.first", [ VTup (a :: _) ] ) ->
