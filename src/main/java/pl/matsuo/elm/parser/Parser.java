@@ -896,6 +896,15 @@ public final class Parser {
         advance();
         return new Pattern.IntLit((Long) t.value());
       }
+      case OPERATOR -> {
+        // A negative integer literal pattern, e.g. `case n of -1 -> …`.
+        if (t.text().equals("-") && peek(1).type() == TokenType.INT) {
+          advance(); // -
+          Token n = advance(); // INT
+          return new Pattern.IntLit(-(Long) n.value());
+        }
+        throw error("Expected a pattern");
+      }
       case STRING -> {
         advance();
         return new Pattern.StrLit((String) t.value());

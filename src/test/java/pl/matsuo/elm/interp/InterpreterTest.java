@@ -30,6 +30,15 @@ class InterpreterTest {
   }
 
   @Test
+  void negativeIntegerPatterns() {
+    assertEquals(100L, eval("case -1 of\n  -1 -> 100\n  _ -> 0"));
+    assertEquals(0L, eval("case 5 of\n  -1 -> 100\n  _ -> 0"));
+    assertEquals(22L, eval("case -2 of\n  -2 -> 22\n  _ -> 0"));
+    // also valid as a function parameter / let scrutinee
+    assertEquals(1L, eval("(\\n -> case n of\n  -1 -> 1\n  _ -> 0) -1"));
+  }
+
+  @Test
   void booleansAndComparison() {
     assertEquals(true, eval("3 < 5 && 2 == 2"));
     assertEquals(false, eval("3 > 5 || False"));
