@@ -112,6 +112,35 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void gameKeyboardMovesStateOnArrowKeys() {
+    // A playground `game`: stepping with ArrowUp held must change the memory (proving the keyboard
+    // -> computer.keyboard -> toY path works end to end in the editor's game loop).
+    String src =
+        "module Main exposing (main)\n"
+            + "import Playground exposing (..)\n"
+            + "main = game view update { y = 0 }\n"
+            + "view computer mem = [ rectangle red 10 10 |> moveUp mem.y ]\n"
+            + "update computer mem = { y = mem.y + toY computer.keyboard }\n";
+    ElmList fs = files("Main.elm", src);
+    Object mem0 = unwrapJust(Apply.apply(EDITOR.value("Eval", "gameInitMem"), fs));
+    // Step once with ArrowUp held.
+    String stepped =
+        Show.plain(
+            Apply.applyAll(
+                EDITOR.value("Eval", "gameStep"),
+                fs,
+                ElmList.fromJava(List.of("ArrowUp")),
+                16.0,
+                mem0));
+    assertTrue(stepped.contains("Ok"), stepped);
+    assertTrue(stepped.contains("1"), "ArrowUp moved the memory's y to 1: " + stepped);
+  }
+
+  private static Object unwrapJust(Object maybe) {
+    return ((pl.matsuo.elm.runtime.ElmData) maybe).arg(0); // Just x -> x
+  }
+
+  @Test
   void animationProgramRendersAndIsDrivable() {
     // The editor's builtin `animation` must render an initial frame AND be drivable by the frame
     // loop (gameInitMem returns a memory so the editor keeps advancing time) — not a static one-shot.
