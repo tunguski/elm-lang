@@ -432,6 +432,24 @@ class TestRunnerTest {
   }
 
   @Test
+  void expectNotWithin() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (describe, test)
+        suite =
+            describe "notWithin"
+                [ test "far apart passes" (\\_ -> Expect.notWithin 0.1 1.0 5.0)
+                , test "close together fails" (\\_ -> Expect.notWithin 0.1 1.0 1.05)
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src));
+    assertEquals(1, r.passed(), r.report());
+    assertEquals(1, r.failed(), r.report());
+  }
+
+  @Test
   void noTestsIsACleanPass() {
     TestRunner.Result r = TestRunner.run(List.of("module M exposing (..)\nanswer = 42\n"));
     assertEquals(0, r.passed());

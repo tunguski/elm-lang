@@ -14,6 +14,7 @@ module Expect exposing
     , isTrue
     , isFalse
     , within
+    , notWithin
     , all
     , ok
     , err
@@ -205,6 +206,16 @@ within tolerance expected actual =
 
     else
         Fail (Debug.toString actual ++ " is not within " ++ Debug.toString tolerance ++ " of " ++ Debug.toString expected)
+
+
+{-| Passes when two Floats are NOT within `tolerance` of each other (the complement of `within`). -}
+notWithin : Float -> Float -> Float -> Expectation
+notWithin tolerance expected actual =
+    if abs (expected - actual) > tolerance then
+        Pass
+
+    else
+        Fail (Debug.toString actual ++ " is within " ++ Debug.toString tolerance ++ " of " ++ Debug.toString expected)
 
 
 {-| Runs several checks against the same subject, failing with the first that fails. Handy for
