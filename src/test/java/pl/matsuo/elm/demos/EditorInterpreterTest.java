@@ -97,6 +97,21 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsMoreStringAndListBuiltins() {
+    // (the editor's string lexer doesn't process \\n escapes, so build the newline from a char)
+    assertEquals("[\"a\", \"b\"]", eval("String.lines (String.fromList [ 'a', '\\n', 'b' ])"));
+    assertEquals("\"AXBXC\"", eval("String.replace \" \" \"X\" \"A B C\""));
+    assertEquals("\"--7\"", eval("String.padLeft 3 '-' \"7\""));
+    assertEquals("\"ABC\"", eval("String.map Char.toUpper \"abc\""));
+    assertEquals("\"ac\"", eval("String.filter (\\c -> c /= 'b') \"abc\""));
+    assertEquals("6", eval("String.foldl (\\c acc -> acc + Char.toCode c - Char.toCode 'a' + 1) 0 \"abc\""));
+    assertEquals("([2, 4], [1, 3])", eval("List.partition (\\n -> modBy 2 n == 0) [ 1, 2, 3, 4 ]"));
+    assertEquals("[1, 0, 2, 0, 3]", eval("List.intersperse 0 [ 1, 2, 3 ]"));
+    assertEquals("([1, 2], [\"a\", \"b\"])", eval("List.unzip [ ( 1, \"a\" ), ( 2, \"b\" ) ]"));
+    assertEquals("[5, 7, 9]", eval("List.map3 (\\a b c -> a + b + c) [ 1, 2, 3 ] [ 1, 2, 3 ] [ 3, 3, 3 ]"));
+  }
+
+  @Test
   void interpretsDict() {
     assertEquals("Just 2", eval("Dict.get \"b\" (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])"));
     assertEquals("Nothing", eval("Dict.get \"z\" (Dict.fromList [ ( \"a\", 1 ) ])"));

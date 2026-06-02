@@ -27,6 +27,8 @@ builtins =
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
+        ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ]
+        ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
         ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl" ]
@@ -128,11 +130,14 @@ arity name =
     else if name == "Dict.empty" then
         0
 
-    else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty" ] then
+    else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip" ] then
         1
 
-    else if List.member name [ "Dict.insert", "Dict.foldl" ] then
+    else if List.member name [ "Dict.insert", "Dict.foldl", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
         3
+
+    else if name == "List.map3" then
+        4
 
     else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
         3
@@ -1269,6 +1274,49 @@ runBuiltin globals name args =
             ( "String.toFloat", [ VStr s ] ) ->
                 Ok (maybeValue (Maybe.map VNum (String.toFloat (String.trim s))))
 
+            ( "String.lines", [ VStr s ] ) ->
+                Ok (VList (List.map VStr (String.lines s)))
+
+            ( "String.replace", [ VStr from, VStr to, VStr s ] ) ->
+                Ok (VStr (String.replace from to s))
+
+            ( "String.padLeft", [ VNum n, VChar c, VStr s ] ) ->
+                Ok (VStr (String.padLeft (round n) c s))
+
+            ( "String.padRight", [ VNum n, VChar c, VStr s ] ) ->
+                Ok (VStr (String.padRight (round n) c s))
+
+            ( "String.map", [ f, VStr s ] ) ->
+                mapValues globals f (List.map VChar (String.toList s))
+                    |> Result.map (\ys -> VStr (String.fromList (List.filterMap charOf ys)))
+
+            ( "String.filter", [ f, VStr s ] ) ->
+                filterValues globals f (List.map VChar (String.toList s))
+                    |> Result.map (\ys -> VStr (String.fromList (List.filterMap charOf ys)))
+
+            ( "String.foldl", [ f, acc, VStr s ] ) ->
+                foldlValues globals f acc (List.map VChar (String.toList s))
+
+            ( "String.foldr", [ f, acc, VStr s ] ) ->
+                foldlValues globals f acc (List.reverse (List.map VChar (String.toList s)))
+
+            ( "List.intersperse", [ sep, VList xs ] ) ->
+                Ok (VList (List.intersperse sep xs))
+
+            ( "List.partition", [ f, VList xs ] ) ->
+                partitionValues globals f xs
+
+            ( "List.unzip", [ VList xs ] ) ->
+                Ok
+                    (VTup
+                        [ VList (List.filterMap pairKey xs)
+                        , VList (List.filterMap pairValue xs)
+                        ]
+                    )
+
+            ( "List.map3", [ f, VList xs, VList ys, VList zs ] ) ->
+                map3Values globals f xs ys zs |> Result.map VList
+
             -- Dict: a Dict is `VCtor "Dict" [ VList pairs ]` where each pair is `VTup [ key, value ]`
             -- and keys are unique (an association list; lookups scan it).
             ( "Dict.empty", [] ) ->
@@ -1360,6 +1408,85 @@ mapValues globals f xs =
         x :: rest ->
             applyValue globals f x
                 |> Result.andThen (\y -> mapValues globals f rest |> Result.map (\ys -> y :: ys))
+
+
+{-| Keeps the elements for which `f` returns `True`. -}
+filterValues : Globals -> Value -> List Value -> Result String (List Value)
+filterValues globals f xs =
+    case xs of
+        [] ->
+            Ok []
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen
+                    (\keep ->
+                        filterValues globals f rest
+                            |> Result.map
+                                (\ys ->
+                                    if keep == VBool True then
+                                        x :: ys
+
+                                    else
+                                        ys
+                                )
+                    )
+
+
+{-| Left fold over values: `f x acc`, threading `acc`. -}
+foldlValues : Globals -> Value -> Value -> List Value -> Result String Value
+foldlValues globals f acc xs =
+    case xs of
+        [] ->
+            Ok acc
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen (\g -> applyValue globals g acc)
+                |> Result.andThen (\acc2 -> foldlValues globals f acc2 rest)
+
+
+{-| Splits a list into (matching, non-matching) by `f`. -}
+partitionValues : Globals -> Value -> List Value -> Result String Value
+partitionValues globals f xs =
+    case xs of
+        [] ->
+            Ok (VTup [ VList [], VList [] ])
+
+        x :: rest ->
+            applyValue globals f x
+                |> Result.andThen
+                    (\keep ->
+                        partitionValues globals f rest
+                            |> Result.map
+                                (\r ->
+                                    case r of
+                                        VTup [ VList yes, VList no ] ->
+                                            if keep == VBool True then
+                                                VTup [ VList (x :: yes), VList no ]
+
+                                            else
+                                                VTup [ VList yes, VList (x :: no) ]
+
+                                        _ ->
+                                            r
+                                )
+                    )
+
+
+{-| `List.map3`: applies `f` across three lists, stopping at the shortest. -}
+map3Values : Globals -> Value -> List Value -> List Value -> List Value -> Result String (List Value)
+map3Values globals f xs ys zs =
+    case ( xs, ys, zs ) of
+        ( x :: xr, y :: yr, z :: zr ) ->
+            applyValue globals f x
+                |> Result.andThen (\g -> applyValue globals g y)
+                |> Result.andThen (\h -> applyValue globals h z)
+                |> Result.andThen
+                    (\v -> map3Values globals f xr yr zr |> Result.map (\vs -> v :: vs))
+
+        _ ->
+            Ok []
 
 
 {-| `Maybe a` as an interpreter value (`Nothing`/`Just`). -}
