@@ -68,6 +68,20 @@ class BytecodePortabilityTest {
   }
 
   @Test
+  void compilesAndRunsAMultiModuleProgram() {
+    // A two-file project: Main imports a helper exposed by Util. loadAll merges them into one
+    // program; the cross-file (unqualified) call resolves through the shared top-level scope.
+    String util = "module Util exposing (double)\ndouble x = x * 2\n";
+    String main = "module Main exposing (main)\nimport Util exposing (double)\nmain = double 20 + 2\n";
+    BytecodeInterpreter direct = BytecodeInterpreter.loadAll(java.util.List.of(main, util));
+    assertEquals("42", Show.plain(direct.value("main")));
+    // The merged program serializes and reloads from bytes like any other.
+    byte[] bytes = BytecodeWriter.toBytes(direct.toProgram());
+    BytecodeInterpreter reloaded = BytecodeInterpreter.fromProgram(BytecodeReader.fromBytes(bytes));
+    assertEquals("42", Show.plain(reloaded.value("main")));
+  }
+
+  @Test
   void disassemblesToAReadableListing() {
     BytecodeInterpreter compiled =
         BytecodeInterpreter.load("sq x = x * x\nmain = sq 7\n");

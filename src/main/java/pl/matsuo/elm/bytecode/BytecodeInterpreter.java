@@ -32,29 +32,46 @@ public final class BytecodeInterpreter {
   private final List<BytecodeProgram.Def> defs = new java.util.ArrayList<>();
 
   private BytecodeInterpreter(Module module) {
+    this(List.of(module));
+  }
+
+  /** Loads one or more modules into a single program (a flat merge of their top-level definitions —
+   *  the first module is the primary one carrying `main`). Cross-file references resolve through the
+   *  shared top-level scope; this covers multi-file projects whose modules share a flat namespace. */
+  private BytecodeInterpreter(List<Module> modules) {
+    Module primary = modules.get(0);
     this.ctorArity = Prelude.defaultCtorArity();
     this.recordCtors = new HashMap<>();
-    pl.matsuo.elm.interp.TypeDecls.scanModule(module, ctorArity, recordCtors);
     this.unqualified = Prelude.defaultUnqualified();
     this.aliases = new HashMap<>();
-    for (Module.Import imp : module.imports()) {
-      imp.alias().ifPresent(a -> aliases.put(a, imp.module()));
-      if (imp.exposing().open()) {
-        String prefix = imp.module() + ".";
-        for (String key : Prelude.builtins().keySet()) {
-          if (key.startsWith(prefix)) {
-            unqualified.put(key.substring(prefix.length()), key);
+    for (Module module : modules) {
+      pl.matsuo.elm.interp.TypeDecls.scanModule(module, ctorArity, recordCtors);
+      for (Module.Import imp : module.imports()) {
+        imp.alias().ifPresent(a -> aliases.put(a, imp.module()));
+        if (imp.exposing().open()) {
+          String prefix = imp.module() + ".";
+          for (String key : Prelude.builtins().keySet()) {
+            if (key.startsWith(prefix)) {
+              unqualified.put(key.substring(prefix.length()), key);
+            }
           }
-        }
-      } else {
-        for (String name : imp.exposing().names()) {
-          unqualified.put(name, imp.module() + "." + name);
+        } else {
+          for (String name : imp.exposing().names()) {
+            unqualified.put(name, imp.module() + "." + name);
+          }
         }
       }
     }
-    this.moduleName = module.name();
+    this.moduleName = primary.name();
     this.env = new RuntimeEnv(Prelude.builtins(), unqualified, aliases, ctorArity, recordCtors, moduleName);
-    load(module);
+    // All functions (closures) first, then all values (thunks) — across every module, so any
+    // definition can reference any other regardless of file or declaration order.
+    for (Module module : modules) {
+      loadFunctions(module);
+    }
+    for (Module module : modules) {
+      loadValues(module);
+    }
   }
 
   /** Rebuilds an interpreter from a deserialized portable program: the pre-compiled chunks and name
@@ -74,6 +91,11 @@ public final class BytecodeInterpreter {
 
   public static BytecodeInterpreter load(String source) {
     return new BytecodeInterpreter(Parser.parseModule(source));
+  }
+
+  /** Compiles several module sources into one program (a flat merge; the first source is primary). */
+  public static BytecodeInterpreter loadAll(List<String> sources) {
+    return new BytecodeInterpreter(sources.stream().map(Parser::parseModule).toList());
   }
 
   /** Rebuilds a runnable interpreter from a portable bytecode program (e.g. read from {@code .elmbc}). */
@@ -96,7 +118,8 @@ public final class BytecodeInterpreter {
     return empty().evalExpr(expression);
   }
 
-  private void load(Module module) {
+  /** Compiles and binds a module's functions (value decls with parameters) as closures. */
+  private void loadFunctions(Module module) {
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && !v.params().isEmpty()) {
         Chunk chunk = compiler.compileChunk(v.params(), v.body(), v.name());
@@ -104,6 +127,10 @@ public final class BytecodeInterpreter {
         defineFromChunk(v.name(), chunk);
       }
     }
+  }
+
+  /** Compiles and binds a module's parameterless values as lazily-evaluated thunks. */
+  private void loadValues(Module module) {
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && v.params().isEmpty()) {
         Chunk chunk = compiler.compileChunk(List.of(), v.body(), v.name());

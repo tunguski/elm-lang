@@ -392,8 +392,12 @@ public final class Main implements Runnable {
         "  elm bytecode main.elmbc --value main     Run a value straight from the artifact",
       })
   static final class Bytecode implements Callable<Integer> {
-    @Parameters(index = "0", description = "A .elm module to compile, or a .elmbc artifact to run.")
-    Path file;
+    @Parameters(
+        arity = "1..*",
+        description =
+            "A .elm module to compile (plus any sibling modules it needs; first is primary), or a "
+                + "single .elmbc artifact to run.")
+    List<Path> files;
 
     @Option(names = {"-o", "--output"}, description = "Write the compiled .elmbc artifact to this path.")
     Path output;
@@ -408,9 +412,9 @@ public final class Main implements Runnable {
 
     @Override
     public Integer call() throws IOException {
-      if (file.toString().endsWith(".elmbc")) {
+      if (files.size() == 1 && files.get(0).toString().endsWith(".elmbc")) {
         // A portable artifact — no source, no recompilation.
-        BytecodeProgram program = BytecodeReader.fromBytes(Files.readAllBytes(file));
+        BytecodeProgram program = BytecodeReader.fromBytes(Files.readAllBytes(files.get(0)));
         if (disassemble) {
           System.out.println(BytecodeDisassembler.disassemble(program));
         } else {
@@ -418,7 +422,11 @@ public final class Main implements Runnable {
         }
         return 0;
       }
-      BytecodeInterpreter compiled = BytecodeInterpreter.load(Files.readString(file));
+      List<String> sources = new ArrayList<>();
+      for (Path f : files) {
+        sources.add(Files.readString(f));
+      }
+      BytecodeInterpreter compiled = BytecodeInterpreter.loadAll(sources);
       if (disassemble) {
         System.out.println(BytecodeDisassembler.disassemble(compiled.toProgram()));
       } else if (output != null) {
