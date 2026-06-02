@@ -682,6 +682,23 @@ public final class WasmGc {
    * monomorphised to the one instantiation the program uses. A constructor applied at two different
    * representations in the same module has no single layout, so that is reported as unsupported.
    */
+  /** A human-readable description of a constructor's field representations, for the unsupported
+   *  multi-representation error (e.g. "Int" vs "a reference (String/List/record/union)"). */
+  private static String describeRep(List<W> fields) {
+    if (fields.isEmpty()) {
+      return "no fields";
+    }
+    List<String> parts = new ArrayList<>();
+    for (W w : fields) {
+      if (w instanceof Sca s) {
+        parts.add(s.valtype() == I64 ? "Int/Bool/Char" : "Float");
+      } else {
+        parts.add("a reference (String/List/record/union)");
+      }
+    }
+    return String.join(", ", parts);
+  }
+
   private static Map<String, List<W>> inferredConstructorFields(
       List<Decl.Union> unions, Map<Expr, Ty> nodeTypes, Tuples tuples) {
     Map<String, Integer> arity = new HashMap<>();
@@ -726,8 +743,14 @@ public final class WasmGc {
       List<W> prev = out.put(ct.name(), fields);
       if (prev != null && !prev.equals(fields)) {
         throw unsupported(
-            "a polymorphic custom type instantiated at more than one representation (constructor "
-                + ct.name() + ")");
+            "the constructor "
+                + ct.name()
+                + " is used at two different representations in one module ("
+                + describeRep(prev)
+                + " vs "
+                + describeRep(fields)
+                + ") — the WasmGC backend monomorphises each union to a single layout, so use it at"
+                + " one representation, or wrap the differing uses in distinct types");
       }
     }
     return out;

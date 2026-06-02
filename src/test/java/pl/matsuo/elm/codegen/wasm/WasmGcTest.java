@@ -196,21 +196,24 @@ class WasmGcTest {
   @Test
   void polymorphicUnionAtTwoRepresentationsIsRejected() {
     // No single wasm layout exists for `Wrap` used at both Int and String in one module — reported
-    // as unsupported rather than miscompiled.
-    org.junit.jupiter.api.Assertions.assertThrows(
-        RuntimeException.class,
-        () ->
-            WasmGc.module(
-                """
-                type Box a = Wrap a | Empty
-                asInt b = case b of
-                    Wrap x -> x
-                    Empty -> 0
-                asLen b = case b of
-                    Wrap s -> String.length s
-                    Empty -> 0
-                main = asInt (Wrap 1) + asLen (Wrap "x")
-                """));
+    // as unsupported rather than miscompiled, with an actionable message naming the clash.
+    RuntimeException e =
+        org.junit.jupiter.api.Assertions.assertThrows(
+            RuntimeException.class,
+            () ->
+                WasmGc.module(
+                    """
+                    type Box a = Wrap a | Empty
+                    asInt b = case b of
+                        Wrap x -> x
+                        Empty -> 0
+                    asLen b = case b of
+                        Wrap s -> String.length s
+                        Empty -> 0
+                    main = asInt (Wrap 1) + asLen (Wrap "x")
+                    """));
+    assertTrue(e.getMessage().contains("Wrap"), e.getMessage());
+    assertTrue(e.getMessage().contains("Int") && e.getMessage().contains("reference"), e.getMessage());
   }
 
   @Test
