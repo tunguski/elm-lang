@@ -435,14 +435,19 @@
   function attrSize(v){ return Array.isArray(v)?v.length:1; }
   function setUniform(gl,loc,v,texUnit){ if(v instanceof Float32Array && v.length===16){ gl.uniformMatrix4fv(loc,false,v); } else if(Array.isArray(v)){ if(v.length===2)gl.uniform2fv(loc,new Float32Array(v)); else if(v.length===3)gl.uniform3fv(loc,new Float32Array(v)); else if(v.length===4)gl.uniform4fv(loc,new Float32Array(v)); } else if(typeof v==='number'){ gl.uniform1f(loc,v); } else if(v&&v.$==='$Texture'){ bindTexture(gl,loc,v,texUnit); } }
   function bindTexture(gl,loc,t,unit){
-    if(!t.$tex){
-      var tx=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tx);
+    var img=t._[0];
+    // An <img> only has usable pixels once it has actually finished loading; uploading one that is
+    // still loading (or failed / is cross-origin-tainted) yields an empty BLACK texture. The editor
+    // resolves `Texture.load` immediately with an unloaded Image, so without the readiness check the
+    // crate cached that black texture forever. Upload a checkerboard placeholder until the image is
+    // genuinely ready, then re-upload the real pixels the first frame they become available.
+    var ready=img&&img.complete&&img.naturalWidth>0;
+    if(!t.$tex||(ready&&!t.$loaded)){
+      var tx=t.$tex||gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tx);
       // Images have a top-left origin but GL texture coords a bottom-left one, so flip Y on upload
       // (elm-explorations/webgl's default) — otherwise textures render vertically mirrored.
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-      // Upload the loaded image; if it's missing or cross-origin-tainted (texImage2D throws),
-      // fall back to a 2x2 checkerboard so the geometry still renders textured.
-      try{ if(!t._[0]) throw 0; gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,t._[0]); }
+      try{ if(!ready) throw 0; gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img); t.$loaded=true; }
       catch(e){ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,2,2,0,gl.RGBA,gl.UNSIGNED_BYTE,
         new Uint8Array([200,200,200,255, 120,120,120,255, 120,120,120,255, 200,200,200,255])); }
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
