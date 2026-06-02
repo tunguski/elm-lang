@@ -126,6 +126,24 @@ class DifferentialPropertyTest {
       };
     }
 
+    /**
+     * Generates {@code List Int} expressions emphasising {@code ++} concatenation, plus range/map/
+     * filter/append — for the backends that support lists and the list prelude (interpreter, bytecode
+     * VM, JS and linear-memory WASM). The caller reduces with {@code List.sum} to an observable Int.
+     */
+    String listInt(int depth) {
+      if (depth <= 0 || rng.nextInt(100) < 30) {
+        return "(List.range " + rng.nextInt(4) + " " + (3 + rng.nextInt(5)) + ")";
+      }
+      return switch (rng.nextInt(5)) {
+        case 0 -> "(" + listInt(depth - 1) + " ++ " + listInt(depth - 1) + ")";
+        case 1 -> "(" + listInt(depth - 1) + " ++ [ " + rng.nextInt(9) + " ])";
+        case 2 -> "(List.map (\\n -> n + " + rng.nextInt(5) + ") " + listInt(depth - 1) + ")";
+        case 3 -> "(List.filter (\\n -> n < " + (2 + rng.nextInt(6)) + ") " + listInt(depth - 1) + ")";
+        default -> "([] ++ " + listInt(depth - 1) + ")";
+      };
+    }
+
     private String leaf() {
       return switch (rng.nextInt(3)) {
         case 0 -> Integer.toString(rng.nextInt(20));
@@ -240,6 +258,39 @@ class DifferentialPropertyTest {
       assertEquals(exprs.size(), js.length, "JS produced a result per expression");
       for (int i = 0; i < exprs.size(); i++) {
         assertEquals(interp.get(i), js[i], "interp vs JS: " + exprs.get(i));
+      }
+    }
+  }
+
+  @Test
+  void listAppendAndOpsAgreeAcrossListBackends() throws Exception {
+    // Random List Int expressions (heavy on `++`) reduced with List.sum, compared on the backends
+    // that support lists + the list prelude: interpreter, bytecode VM, JS, and linear-memory WASM.
+    Gen gen = new Gen(20260603L);
+    List<String> exprs = new ArrayList<>();
+    StringBuilder module = new StringBuilder();
+    for (int i = 0; i < 80; i++) {
+      String e = "(List.sum " + gen.listInt(4) + ")";
+      exprs.add(e);
+      module.append("f").append(i).append(" = ").append(e).append("\n");
+    }
+
+    List<String> interp = new ArrayList<>();
+    for (String e : exprs) {
+      interp.add(Show.plain(Interpreter.eval(e)));
+      assertEquals(interp.get(interp.size() - 1), Show.plain(BytecodeInterpreter.eval(e)), "bytecode: " + e);
+    }
+    String js = runNode(JsCompiler.expressionsProgram(exprs));
+    if (js != null) {
+      String[] r = js.split("\n", -1);
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), r[i], "JS: " + exprs.get(i));
+      }
+    }
+    List<String> linear = runWasm(WasmCompiler.moduleFromSource(module.toString()), exprs.size());
+    if (linear != null) {
+      for (int i = 0; i < exprs.size(); i++) {
+        assertEquals(interp.get(i), linear.get(i), "linear WASM: " + exprs.get(i));
       }
     }
   }
