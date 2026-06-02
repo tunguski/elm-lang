@@ -27,6 +27,7 @@ builtins =
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "Tuple.mapFirst", "Tuple.mapSecond", "Tuple.mapBoth", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
+        ++ [ "String.concat", "String.trimLeft", "String.trimRight", "String.any", "String.all" ]
         ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ]
         ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3", "List.map4", "List.map5", "List.sortWith", "compare" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
@@ -119,7 +120,7 @@ htmlBoolAttrs =
 {-| How many arguments a builtin consumes before it runs. -}
 arity : String -> Int
 arity name =
-    if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
+    if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.trimLeft", "String.trimRight", "String.concat", "String.words", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
     else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
@@ -1563,6 +1564,23 @@ runBuiltin globals name args =
             ( "String.filter", [ f, VStr s ] ) ->
                 filterValues globals f (List.map VChar (String.toList s))
                     |> Result.map (\ys -> VStr (String.fromList (List.filterMap charOf ys)))
+
+            ( "String.concat", [ VList xs ] ) ->
+                Ok (VStr (String.concat (List.map renderStr xs)))
+
+            ( "String.trimLeft", [ VStr s ] ) ->
+                Ok (VStr (String.trimLeft s))
+
+            ( "String.trimRight", [ VStr s ] ) ->
+                Ok (VStr (String.trimRight s))
+
+            ( "String.any", [ f, VStr s ] ) ->
+                mapValues globals f (List.map VChar (String.toList s))
+                    |> Result.map (\bs -> VBool (List.any (\b -> b == VBool True) bs))
+
+            ( "String.all", [ f, VStr s ] ) ->
+                mapValues globals f (List.map VChar (String.toList s))
+                    |> Result.map (\bs -> VBool (List.all (\b -> b == VBool True) bs))
 
             ( "String.foldl", [ f, acc, VStr s ] ) ->
                 foldlValues globals f acc (List.map VChar (String.toList s))

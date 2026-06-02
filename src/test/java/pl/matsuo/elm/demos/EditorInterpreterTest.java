@@ -235,6 +235,17 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsMoreStringBuiltins() {
+    assertEquals("\"abc\"", eval("String.concat [ \"a\", \"b\", \"c\" ]"));
+    assertEquals("\"hi  \"", eval("String.trimLeft \"  hi  \""));
+    assertEquals("\"  hi\"", eval("String.trimRight \"  hi  \""));
+    assertEquals("True", eval("String.all Char.isDigit \"12345\""));
+    assertEquals("False", eval("String.all Char.isDigit \"12a45\""));
+    assertEquals("True", eval("String.any Char.isUpper \"abcD\""));
+    assertEquals("False", eval("String.any Char.isUpper \"abcd\""));
+  }
+
+  @Test
   void interpretsCharHexOctPredicates() {
     assertEquals("True", eval("Char.isHexDigit 'f'"));
     assertEquals("True", eval("Char.isHexDigit 'F'"));
