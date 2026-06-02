@@ -171,6 +171,9 @@ public final class BuildRunner {
       case "MakeDir" -> "makeDir " + str(task.arg(0));
       case "Remove" -> "remove " + str(task.arg(0));
       case "WriteFile" -> "writeFile " + str(task.arg(0));
+      case "ReplaceInFile" ->
+          "replaceInFile " + str(task.arg(0)) + " (" + quote(str(task.arg(1))) + " -> "
+              + quote(str(task.arg(2))) + ")";
       case "Copy" -> "copy " + str(task.arg(0)) + " -> " + str(task.arg(1));
       case "Archive" -> "archive " + str(task.arg(0)) + " -> " + str(task.arg(1));
       case "Bundle" -> "bundle " + String.join(" + ", strings(task.arg(0))) + " -> " + str(task.arg(1));
@@ -204,6 +207,7 @@ public final class BuildRunner {
           }
           Files.writeString(target, str(task.arg(1)), StandardCharsets.UTF_8);
         }
+        case "ReplaceInFile" -> replaceInFile(str(task.arg(0)), str(task.arg(1)), str(task.arg(2)), baseDir, out);
         case "Copy" -> copy(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))));
         case "Archive" -> archive(at(baseDir, str(task.arg(0))), at(baseDir, str(task.arg(1))), incremental, out);
         case "Bundle" -> bundle(strings(task.arg(0)), str(task.arg(1)), baseDir, out);
@@ -315,6 +319,17 @@ public final class BuildRunner {
     TestRunner.Result result = TestRunner.run(sources);
     out.print(result.report());
     return result.exitCode();
+  }
+
+  /** Replaces every occurrence of {@code find} with {@code replacement} in an existing file — the
+   *  build-tool counterpart of the site generator's {@code html.replace("</head>", …)}. */
+  private static void replaceInFile(
+      String file, String find, String replacement, Path baseDir, PrintStream out)
+      throws IOException {
+    Path target = at(baseDir, file);
+    String content = Files.readString(target, StandardCharsets.UTF_8);
+    Files.writeString(target, content.replace(find, replacement), StandardCharsets.UTF_8);
+    out.println("  patched " + file);
   }
 
   /** Renders a Markdown file to an HTML-fragment file with the same renderer the doc pages use. */

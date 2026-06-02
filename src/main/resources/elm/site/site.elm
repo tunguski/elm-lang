@@ -5,10 +5,12 @@ counterpart of the Java `SiteGenerator`. Run it with:
 
     elm build -f site.elm package
 
-It compiles each example to a live, self-contained JS page (`compile JS …`), renders the Markdown
-guides to HTML fragments (`markdown …`), writes the artifact manifest, copies the static stylesheets
-and scripts, and finally runs the Elm gallery generator (`Gallery.elm`) over the manifest to lay out
-`index.html`, the per-example wrapper pages and the doc pages — all with no Java glue.
+It compiles each example to a live, self-contained JS page (`compile JS …`), injects the shared
+light/dark theme into each one (`replaceInFile …`, the build-tool counterpart of the generator's
+`html.replace("</body>", …)`), renders the Markdown guides to HTML fragments (`markdown …`), writes
+the artifact manifest, copies the static stylesheets and scripts, and finally runs the Elm gallery
+generator (`Gallery.elm`) over the manifest to lay out `index.html`, the per-example wrapper pages
+and the doc pages — all with no Java glue.
 
 This covers the heart of the showcase (live demos + guides + the Elm-laid-out gallery). The
 JS-backend can't yet bundle the GPU/WebGL programs or the multi-module Playground games, and the
@@ -65,10 +67,14 @@ buildTasks =
            ]
 
 
-{-| Per example: compile it to a live page and copy its source (the wrapper page shows the source). -}
+{-| Per example: compile it to a live page, inject the shared theme script (so the standalone demo
+honours the site's light/dark toggle), and copy its source (the wrapper page shows the source). -}
 demoTasks : { slug : String, title : String, category : String } -> List Task
 demoTasks e =
     [ compile JS ("examples/" ++ e.slug ++ ".elm") ("out/demos/" ++ e.slug ++ ".html")
+    , replaceInFile ("out/demos/" ++ e.slug ++ ".html")
+        "</body>"
+        "<script src=\"../theme.js\"></script></body>"
     , copy ("examples/" ++ e.slug ++ ".elm") ("out/examples/" ++ e.slug ++ ".elm")
     ]
 

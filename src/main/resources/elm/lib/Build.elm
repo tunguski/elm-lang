@@ -30,6 +30,7 @@ module Build exposing
     , makeDir
     , remove
     , writeFile
+    , replaceInFile
     , log
     , markdown
     , script
@@ -150,6 +151,7 @@ type Task
     | MakeDir String
     | Remove String
     | WriteFile String String
+    | ReplaceInFile String String String
     | Log String
     | Markdown String String
     | Script String (List String)
@@ -308,6 +310,14 @@ remove =
 writeFile : String -> String -> Task
 writeFile =
     WriteFile
+
+
+{-| Replace every occurrence of a substring in an already-written file — the build-tool counterpart
+of the site generator's `html.replace("</head>", …)` post-processing, e.g. injecting a stylesheet
+link or a `<script>` into a freshly `compile`d HTML page. -}
+replaceInFile : String -> String -> String -> Task
+replaceInFile =
+    ReplaceInFile
 
 
 log : String -> Task

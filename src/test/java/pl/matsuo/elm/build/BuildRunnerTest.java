@@ -75,6 +75,66 @@ class BuildRunnerTest {
   }
 
   @Test
+  void replaceInFilePostProcessesAWrittenFile() throws Exception {
+    // The native task SiteGenerator needs: post-process a freshly written file the way the generator
+    // injects a <script>/<link> with html.replace("</body>", …).
+    Path dir = Files.createTempDirectory("elm-build-patch-");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "."
+                    |> withOutput "out"
+                    |> withGoals
+                        [ goal Compile "page"
+                            (\\m ->
+                                [ makeDir m.output
+                                , writeFile (m.output ++ "/page.html") "<body><h1>hi</h1></body>"
+                                , replaceInFile (m.output ++ "/page.html")
+                                    "</body>"
+                                    "<script src=\\"theme.js\\"></script></body>"
+                                ]
+                            )
+                        ]
+                ]
+        """);
+    Result r = build(dir, "compile");
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("patched out/page.html"), r.out());
+    String html = Files.readString(dir.resolve("out/page.html"), StandardCharsets.UTF_8);
+    assertEquals("<body><h1>hi</h1><script src=\"theme.js\"></script></body>", html);
+  }
+
+  @Test
+  void dryRunDescribesReplaceInFile() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-patch-dry-");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "."
+                    |> withOutput "out"
+                    |> withGoals [ goal Compile "p" (\\m -> [ replaceInFile "x.html" "a" "b" ]) ]
+                ]
+        """);
+    Result r = build(dir, "compile", "--dry-run");
+    assertEquals(0, r.code(), r.out());
+    assertTrue(r.out().contains("replaceInFile x.html"), r.out());
+  }
+
+  @Test
   void defaultCompileGoalCompilesAModuleToAJsPage() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-js-");
     Files.createDirectories(dir.resolve("src"));
