@@ -241,6 +241,15 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsDebug() {
+    assertEquals("\"42\"", eval("Debug.toString 42"));
+    assertEquals("\"[1, 2, 3]\"", eval("Debug.toString [ 1, 2, 3 ]"));
+    assertEquals("\"\"hi\"\"", eval("Debug.toString \"hi\"")); // strings are quoted, like Elm
+    assertEquals("7", eval("Debug.log \"x\" 7")); // log returns its value (no console here)
+    assertTrue(eval("Debug.todo \"unfinished\"").startsWith("Error"), eval("Debug.todo \"unfinished\""));
+  }
+
+  @Test
   void interpretsArray() {
     assertEquals("Just 30", eval("Array.get 2 (Array.fromList [ 10, 20, 30 ])"));
     assertEquals("Nothing", eval("Array.get 5 (Array.fromList [ 10, 20, 30 ])"));

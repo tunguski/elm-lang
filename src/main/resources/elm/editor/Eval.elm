@@ -31,6 +31,7 @@ builtins =
         ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
+        ++ [ "Debug.toString", "Debug.log", "Debug.todo" ]
         ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl" ]
         ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
         ++ [ "Array.empty", "Array.initialize", "Array.repeat", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.get", "Array.set", "Array.push", "Array.append", "Array.length", "Array.isEmpty", "Array.slice", "Array.map", "Array.indexedMap", "Array.foldl", "Array.foldr", "Array.filter" ]
@@ -123,7 +124,7 @@ arity name =
     else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
         1
 
-    else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ] then
+    else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Debug.toString", "Debug.todo" ] then
         1
 
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
@@ -1496,6 +1497,17 @@ runBuiltin globals name args =
                                 , mkSet (List.filter (\x -> not (List.any (valueEq x) yes)) (setElems s))
                                 ]
                         )
+
+            -- Debug: toString renders any value; log returns its value (no console in the editor);
+            -- todo aborts with the message (as Elm's Debug.todo crashes at runtime).
+            ( "Debug.toString", [ v ] ) ->
+                Ok (VStr (renderValue v))
+
+            ( "Debug.log", [ _, v ] ) ->
+                Ok v
+
+            ( "Debug.todo", [ VStr msg ] ) ->
+                Err ("TODO: " ++ msg)
 
             -- Array: a 0-indexed sequence, `VCtor "Array" [ VList elems ]`.
             ( "Array.empty", [] ) ->
