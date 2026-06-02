@@ -235,6 +235,16 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsCharHexOctPredicates() {
+    assertEquals("True", eval("Char.isHexDigit 'f'"));
+    assertEquals("True", eval("Char.isHexDigit 'F'"));
+    assertEquals("True", eval("Char.isHexDigit '9'"));
+    assertEquals("False", eval("Char.isHexDigit 'g'"));
+    assertEquals("True", eval("Char.isOctDigit '7'"));
+    assertEquals("False", eval("Char.isOctDigit '8'"));
+  }
+
+  @Test
   void lexesTripleQuotedStrings() {
     assertEquals("3", eval("String.length \"\"\"abc\"\"\""));
     assertEquals("5", eval("String.length \"\"\"ab\ncd\"\"\"")); // a real newline is kept verbatim

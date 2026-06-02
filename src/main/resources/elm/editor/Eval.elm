@@ -30,7 +30,7 @@ builtins =
         ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ]
         ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3", "List.map4", "List.map5", "List.sortWith", "compare" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
-        ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
+        ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit" ]
         ++ [ "Debug.toString", "Debug.log", "Debug.todo" ]
         ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl", "Dict.union", "Dict.diff", "Dict.intersect", "Dict.update" ]
         ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
@@ -125,7 +125,7 @@ arity name =
     else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
         1
 
-    else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Debug.toString", "Debug.todo" ] then
+    else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit", "Debug.toString", "Debug.todo" ] then
         1
 
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
@@ -1531,6 +1531,12 @@ runBuiltin globals name args =
 
             ( "Char.isSpace", [ VChar c ] ) ->
                 Ok (VBool (c == ' ' || c == '\n' || c == '\t' || c == '\u{000D}'))
+
+            ( "Char.isHexDigit", [ VChar c ] ) ->
+                Ok (VBool (Char.isDigit c || (Char.toLower c >= 'a' && Char.toLower c <= 'f')))
+
+            ( "Char.isOctDigit", [ VChar c ] ) ->
+                Ok (VBool (c >= '0' && c <= '7'))
 
             ( "String.toInt", [ VStr s ] ) ->
                 Ok (maybeValue (Maybe.map (\n -> VNum (toFloat n)) (String.toInt (String.trim s))))
