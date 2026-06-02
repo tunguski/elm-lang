@@ -585,6 +585,35 @@ class WasmHeapTest {
   }
 
   @Test
+  void partiallyAppliedConstructors() throws Exception {
+    // A bare constructor passed as a first-class value, then applied through $apply.
+    agrees("apply f x = f x\nmain = Maybe.withDefault 0 (apply Just 5)\n"); // 5
+    // `List.map Just` maps a bare constructor over a list (the constructor is a closure value).
+    agrees("main = List.sum (List.map (\\m -> Maybe.withDefault 0 m) (List.map Just [ 1, 2, 3 ]))\n"); // 6
+    // A user constructor partially applied (one of two args), completed via a higher-order call.
+    agrees(
+        """
+        type Pair = Pair Int Int
+        fst p =
+            case p of
+                Pair a b -> a
+        apply f x = f x
+        main = fst (apply (Pair 3) 4)
+        """); // 3
+  }
+
+  @Test
+  void recordUpdateOnTopLevelValue() throws Exception {
+    // The update's base is a top-level (zero-arg) record value, not a local — emitted by calling it.
+    agrees(
+        """
+        origin = { x = 0, y = 7 }
+        shifted = { origin | x = 5 }
+        main = shifted.x + shifted.y
+        """); // 5 + 7 = 12
+  }
+
+  @Test
   void updatesARecordImmutably() throws Exception {
     agrees(
         """

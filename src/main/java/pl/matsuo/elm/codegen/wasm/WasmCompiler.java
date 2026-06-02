@@ -349,6 +349,23 @@ public final class WasmCompiler {
         funcs.add(new Func(v.name(), params, v.body()));
       }
     }
+    // Constructor wrappers: for each constructor of arity n ≥ 1, a function
+    // `$mk$Name p0 … p{n-1} = Name p0 … p{n-1}`. A bare or partially-applied constructor then
+    // becomes a closure over this wrapper (the saturated call still inlines the cell directly).
+    pl.matsuo.elm.error.Position synth = new pl.matsuo.elm.error.Position(1, 1, 0);
+    for (Map.Entry<String, Integer> e : ctorArity.entrySet()) {
+      int n = e.getValue();
+      if (n == 0 || e.getKey().equals("True") || e.getKey().equals("False")) {
+        continue;
+      }
+      List<String> ps = new ArrayList<>();
+      Expr body = new Expr.Ctor(null, e.getKey(), synth);
+      for (int i = 0; i < n; i++) {
+        ps.add("$p" + i);
+        body = new Expr.App(body, new Expr.Var(null, "$p" + i, synth), synth);
+      }
+      funcs.add(new Func("$mk$" + e.getKey(), ps, body));
+    }
     // One synthetic module holding the merged declarations, for cross-module type inference.
     pl.matsuo.elm.ast.Module module =
         new pl.matsuo.elm.ast.Module(
@@ -691,7 +708,15 @@ public final class WasmCompiler {
         // Booleans are first-class i64 values (0/1), so they can be stored, returned and compared.
         case Expr.Ctor c when c.name().equals("True") -> { code.write(0x42); sleb(code, 1); }
         case Expr.Ctor c when c.name().equals("False") -> { code.write(0x42); sleb(code, 0); }
-        case Expr.Ctor c when ctorTag.containsKey(c.name()) -> emitCtor(c.name(), List.of());
+        case Expr.Ctor c when ctorTag.containsKey(c.name()) -> {
+          int n = ctorArity.getOrDefault(c.name(), 0);
+          if (n == 0) {
+            emitCtor(c.name(), List.of()); // a nullary constructor is just its tagged cell
+          } else {
+            // A constructor used as a value: a closure over its wrapper (apply args later).
+            makeClosure(funcs.get("$mk$" + c.name())[0], n, List.of());
+          }
+        }
         case Expr.Case c -> intCase(c, this::intExpr);
         case Expr.Record r -> emitRecord(r);
         case Expr.RecordAccess a -> emitRecordAccess(a);
@@ -884,11 +909,15 @@ public final class WasmCompiler {
     /** {@code { base | f = v, … }}: chained {@code $recordSet} calls, each replacing one field. */
     private void emitRecordUpdate(Expr.RecordUpdate up) {
       Integer baseLocal = locals.get(up.base());
-      if (baseLocal == null) {
+      if (baseLocal != null) {
+        code.write(0x20);
+        leb(code, baseLocal); // a local record pointer
+      } else if (funcs.containsKey(up.base()) && funcs.get(up.base())[1] == 0) {
+        code.write(0x10); // call a zero-arg top-level record value
+        leb(code, funcs.get(up.base())[0]);
+      } else {
         throw unsupported("record update of non-local '" + up.base() + "'");
       }
-      code.write(0x20);
-      leb(code, baseLocal); // the base record pointer
       for (Expr.Record.Field f : up.fields()) {
         code.write(0x42); // i64.const fieldId
         sleb(code, fieldId(f.name()));
@@ -1474,9 +1503,15 @@ public final class WasmCompiler {
         args.add(0, a.arg());
         head = a.fn();
       }
-      // A constructor application `Ctor a b` -> a tagged heap cell {tag, a, b}.
+      // A constructor application: saturated -> a tagged heap cell {tag, a, b}; partial -> a closure
+      // over the constructor's wrapper that captures the supplied arguments.
       if (head instanceof Expr.Ctor ctor && ctorTag.containsKey(ctor.name())) {
-        emitCtor(ctor.name(), args);
+        int n = ctorArity.getOrDefault(ctor.name(), 0);
+        if (args.size() < n) {
+          makeClosure(funcs.get("$mk$" + ctor.name())[0], n, args);
+        } else {
+          emitCtor(ctor.name(), args);
+        }
         return;
       }
       // `String.append a b` is `a ++ b` on strings. The polymorphic prelude function can't be
