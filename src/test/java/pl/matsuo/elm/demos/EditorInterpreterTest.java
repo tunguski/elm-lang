@@ -97,6 +97,18 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsDict() {
+    assertEquals("Just 2", eval("Dict.get \"b\" (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])"));
+    assertEquals("Nothing", eval("Dict.get \"z\" (Dict.fromList [ ( \"a\", 1 ) ])"));
+    assertEquals("2", eval("Dict.size (Dict.insert \"b\" 2 (Dict.singleton \"a\" 1))"));
+    assertEquals("1", eval("Dict.size (Dict.insert \"a\" 9 (Dict.singleton \"a\" 1))")); // key replaced
+    assertEquals("0", eval("Dict.size (Dict.remove \"a\" (Dict.singleton \"a\" 1))"));
+    assertEquals("True", eval("Dict.member \"a\" Dict.empty == False"));
+    assertEquals("[1, 2]", eval("Dict.values (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])"));
+    assertEquals("6", eval("Dict.foldl (\\k v acc -> acc + v) 0 (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ), ( \"c\", 3 ) ])"));
+  }
+
+  @Test
   void interpretsAsPatterns() {
     // `as` binds the whole matched value alongside the inner pattern.
     assertEquals("10", eval("case 5 of\n    n as m -> n + m\n    _ -> 0"));

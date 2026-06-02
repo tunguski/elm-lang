@@ -29,6 +29,7 @@ builtins =
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
+        ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
@@ -123,6 +124,15 @@ arity name =
 
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
         1
+
+    else if name == "Dict.empty" then
+        0
+
+    else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty" ] then
+        1
+
+    else if List.member name [ "Dict.insert", "Dict.foldl" ] then
+        3
 
     else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
         3
@@ -356,7 +366,12 @@ evalExpr globals env expr =
                         Ok (VBuiltin "File.Select.file" [])
 
                     else if List.member qualified builtins then
-                        Ok (VBuiltin qualified [])
+                        -- A zero-argument builtin (e.g. `Dict.empty`) evaluates immediately.
+                        if arity qualified == 0 then
+                            runBuiltin globals qualified []
+
+                        else
+                            Ok (VBuiltin qualified [])
 
                     else if List.member field browserEventSubs then
                         -- A Browser.Events subscription under any import alias (E, Events, …): resolve
@@ -494,6 +509,139 @@ applyValue globals fn arg =
 
         _ ->
             Err "cannot apply a non-function value"
+
+
+
+-- DICT (an association list of unique keys, wrapped as `VCtor "Dict" [ VList pairs ]`) --------------
+
+
+mkDict : List Value -> Value
+mkDict pairs =
+    VCtor "Dict" [ VList pairs ]
+
+
+dictPairs : Value -> List Value
+dictPairs v =
+    case v of
+        VCtor "Dict" [ VList ps ] ->
+            ps
+
+        _ ->
+            []
+
+
+pairKey : Value -> Maybe Value
+pairKey p =
+    case p of
+        VTup [ k, _ ] ->
+            Just k
+
+        _ ->
+            Nothing
+
+
+pairValue : Value -> Maybe Value
+pairValue p =
+    case p of
+        VTup [ _, v ] ->
+            Just v
+
+        _ ->
+            Nothing
+
+
+pairKeyEq : Value -> Value -> Bool
+pairKeyEq k p =
+    case pairKey p of
+        Just pk ->
+            valueEq k pk
+
+        Nothing ->
+            False
+
+
+dictGet : Value -> List Value -> Maybe Value
+dictGet k pairs =
+    case List.filter (pairKeyEq k) pairs of
+        p :: _ ->
+            pairValue p
+
+        [] ->
+            Nothing
+
+
+{-| Insert/replace, keeping keys unique and preserving insertion order (new entry appended). -}
+dictSet : Value -> Value -> List Value -> List Value
+dictSet k v pairs =
+    List.filter (\p -> not (pairKeyEq k p)) pairs ++ [ VTup [ k, v ] ]
+
+
+dictInsertPair : Value -> Value -> Value
+dictInsertPair pair d =
+    case pair of
+        VTup [ k, v ] ->
+            mkDict (dictSet k v (dictPairs d))
+
+        _ ->
+            d
+
+
+mapDict : Globals -> Value -> List Value -> Result String Value
+mapDict globals f pairs =
+    case pairs of
+        [] ->
+            Ok (mkDict [])
+
+        (VTup [ k, v ]) :: rest ->
+            applyValue globals f k
+                |> Result.andThen (\g -> applyValue globals g v)
+                |> Result.andThen
+                    (\v2 -> mapDict globals f rest |> Result.map (\d -> mkDict (VTup [ k, v2 ] :: dictPairs d)))
+
+        _ :: rest ->
+            mapDict globals f rest
+
+
+filterDict : Globals -> Value -> List Value -> Result String Value
+filterDict globals f pairs =
+    case pairs of
+        [] ->
+            Ok (mkDict [])
+
+        ((VTup [ k, v ]) as p) :: rest ->
+            applyValue globals f k
+                |> Result.andThen (\g -> applyValue globals g v)
+                |> Result.andThen
+                    (\keep ->
+                        filterDict globals f rest
+                            |> Result.map
+                                (\d ->
+                                    if keep == VBool True then
+                                        mkDict (p :: dictPairs d)
+
+                                    else
+                                        d
+                                )
+                    )
+
+        _ :: rest ->
+            filterDict globals f rest
+
+
+foldlDict : Globals -> Value -> Value -> List Value -> Result String Value
+foldlDict globals f acc pairs =
+    case pairs of
+        [] ->
+            Ok acc
+
+        (VTup [ k, v ]) :: rest ->
+            applyValue globals f k
+                |> Result.andThen (\g -> applyValue globals g v)
+                |> Result.andThen (\h -> applyValue globals h acc)
+                |> Result.andThen (\acc2 -> foldlDict globals f acc2 rest)
+
+        _ :: rest ->
+            foldlDict globals f acc rest
 
 
 {-| Runs a fully-applied builtin. Html element/attribute builtins produce a structured `Value` tree
@@ -1121,6 +1269,53 @@ runBuiltin globals name args =
             ( "String.toFloat", [ VStr s ] ) ->
                 Ok (maybeValue (Maybe.map VNum (String.toFloat (String.trim s))))
 
+            -- Dict: a Dict is `VCtor "Dict" [ VList pairs ]` where each pair is `VTup [ key, value ]`
+            -- and keys are unique (an association list; lookups scan it).
+            ( "Dict.empty", [] ) ->
+                Ok (mkDict [])
+
+            ( "Dict.singleton", [ k, v ] ) ->
+                Ok (mkDict [ VTup [ k, v ] ])
+
+            ( "Dict.fromList", [ VList ps ] ) ->
+                Ok (List.foldl (\p acc -> dictInsertPair p acc) (mkDict []) ps)
+
+            ( "Dict.toList", [ d ] ) ->
+                Ok (VList (dictPairs d))
+
+            ( "Dict.keys", [ d ] ) ->
+                Ok (VList (List.filterMap pairKey (dictPairs d)))
+
+            ( "Dict.values", [ d ] ) ->
+                Ok (VList (List.filterMap pairValue (dictPairs d)))
+
+            ( "Dict.size", [ d ] ) ->
+                Ok (VNum (toFloat (List.length (dictPairs d))))
+
+            ( "Dict.isEmpty", [ d ] ) ->
+                Ok (VBool (List.isEmpty (dictPairs d)))
+
+            ( "Dict.member", [ k, d ] ) ->
+                Ok (VBool (dictGet k (dictPairs d) /= Nothing))
+
+            ( "Dict.get", [ k, d ] ) ->
+                Ok (maybeValue (dictGet k (dictPairs d)))
+
+            ( "Dict.insert", [ k, v, d ] ) ->
+                Ok (mkDict (dictSet k v (dictPairs d)))
+
+            ( "Dict.remove", [ k, d ] ) ->
+                Ok (mkDict (List.filter (\p -> not (pairKeyEq k p)) (dictPairs d)))
+
+            ( "Dict.map", [ f, d ] ) ->
+                mapDict globals f (dictPairs d)
+
+            ( "Dict.filter", [ f, d ] ) ->
+                filterDict globals f (dictPairs d)
+
+            ( "Dict.foldl", [ f, acc, d ] ) ->
+                foldlDict globals f acc (dictPairs d)
+
             _ ->
                 Err ("bad arguments to " ++ name)
 
@@ -1680,6 +1875,9 @@ renderValue v =
 
         VTup items ->
             "(" ++ String.join ", " (List.map renderValue items) ++ ")"
+
+        VCtor "Dict" [ VList pairs ] ->
+            "Dict.fromList [" ++ String.join "," (List.map renderValue pairs) ++ "]"
 
         VCtor name args ->
             if List.isEmpty args then
