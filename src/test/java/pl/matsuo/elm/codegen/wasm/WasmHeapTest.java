@@ -428,6 +428,12 @@ class WasmHeapTest {
   }
 
   @Test
+  void listPartitionCompiles() throws Exception {
+    // partition splits [1,2,3] by (> 1) into ([2,3], [1]); encode the two lengths as a*10 + b.
+    agrees("main =\n    case List.partition (\\x -> x > 1) [ 1, 2, 3 ] of\n        ( a, b ) -> List.length a * 10 + List.length b\n"); // 21
+  }
+
+  @Test
   void listIntersperseCompiles() throws Exception {
     assertEquals("[1,0,2,0,3]", decodeList("main = List.intersperse 0 [ 1, 2, 3 ]\n"));
     assertEquals("[]", decodeList("main = List.intersperse 0 []\n"));

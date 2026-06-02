@@ -208,6 +208,10 @@ public final class WasmCompiler {
       prependEach sep xs = case xs of
           [] -> []
           h :: t -> sep :: h :: prependEach sep t
+      listPartition pred xs = ( listFilter pred xs, listReject pred xs )
+      listReject pred xs = case xs of
+          [] -> []
+          h :: t -> if pred h then listReject pred t else h :: listReject pred t
       """;
 
   /** Maps qualified standard-library names to the prelude function that implements them. */
@@ -243,6 +247,7 @@ public final class WasmCompiler {
           Map.entry("List.filterMap", "listFilterMap"),
           Map.entry("List.map3", "listMap3"),
           Map.entry("List.intersperse", "listIntersperse"),
+          Map.entry("List.partition", "listPartition"),
           Map.entry("String.isEmpty", "stringIsEmpty"),
           Map.entry("String.fromInt", "stringFromInt"),
           Map.entry("String.repeat", "stringRepeat"),
