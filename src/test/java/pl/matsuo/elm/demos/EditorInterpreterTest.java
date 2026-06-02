@@ -235,6 +235,14 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void lexesTripleQuotedStrings() {
+    assertEquals("3", eval("String.length \"\"\"abc\"\"\""));
+    assertEquals("5", eval("String.length \"\"\"ab\ncd\"\"\"")); // a real newline is kept verbatim
+    assertEquals("3", eval("String.length \"\"\"a\"b\"\"\"")); // a lone quote inside is allowed
+    assertEquals("True", eval("\"\"\"hi\"\"\" == \"hi\""));
+  }
+
+  @Test
   void divisionByZeroFollowsElmSemantics() {
     assertEquals("True", eval("isInfinite (1 / 0)")); // float / 0 -> Infinity, not an error
     assertEquals("True", eval("isNaN (0 / 0)")); // 0 / 0 -> NaN

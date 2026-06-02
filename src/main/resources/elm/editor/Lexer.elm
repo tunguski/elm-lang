@@ -31,7 +31,46 @@ type Token
 
 tokenize : String -> Result String (List Token)
 tokenize src =
-    tokenizeLines (String.lines (inlineShaders src)) []
+    tokenizeLines (String.lines (inlineShaders (inlineTripleStrings src))) []
+
+
+{-| Collapses each triple-quoted string `"""…"""` into an ordinary single-line `"…"` literal so the
+line-based tokenizer can handle it: the body's newlines become `\n` escapes (and existing backslashes
+/ quotes are escaped first), which the string lexer then decodes back — preserving the content. -}
+inlineTripleStrings : String -> String
+inlineTripleStrings src =
+    case String.indexes "\"\"\"" src of
+        [] ->
+            src
+
+        start :: _ ->
+            let
+                before =
+                    String.left start src
+
+                afterOpen =
+                    String.dropLeft (start + 3) src
+            in
+            case String.indexes "\"\"\"" afterOpen of
+                [] ->
+                    src
+
+                close :: _ ->
+                    let
+                        body =
+                            String.left close afterOpen
+
+                        rest =
+                            String.dropLeft (close + 3) afterOpen
+
+                        escaped =
+                            body
+                                |> String.replace "\\" "\\\\"
+                                |> String.replace "\"" "\\\""
+                                |> String.replace "\u{000D}" ""
+                                |> String.replace "\n" "\\n"
+                    in
+                    before ++ "\"" ++ escaped ++ "\"" ++ inlineTripleStrings rest
 
 
 {-| Collapses each multi-line GLSL shader literal `[glsl| … |]` into a single-line string literal so
@@ -254,6 +293,8 @@ tokenizeHelp chars acc =
                 tokenizeHelp rest (TLambda :: acc)
 
             else if c == '"' then
+                -- Triple-quoted strings are flattened to ordinary `"…"` literals by
+                -- inlineTripleStrings before tokenizing, so only single-quoted strings reach here.
                 let
                     taken =
                         takeString rest ""
