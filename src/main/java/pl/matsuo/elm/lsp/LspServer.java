@@ -347,6 +347,46 @@ public final class LspServer {
   }
 
   /**
+   * The {@code {-| … -}} documentation comment attached to the definition on line {@code line0}
+   * (0-based), if any — looking just above the definition, past a type annotation. Returned as the
+   * doc text with the comment markers and a leading {@code |} stripped, for the hover popup.
+   */
+  public Optional<String> docComment(String source, int line0) {
+    String[] lines = source.split("\n", -1);
+    int i = line0 - 1;
+    // Skip blank lines and a single-line type annotation sitting between the doc and the definition.
+    while (i >= 0) {
+      String t = lines[i].strip();
+      if (t.isEmpty() || t.matches("^[a-zA-Z_][\\w']*\\s*:.*")) {
+        i--;
+      } else {
+        break;
+      }
+    }
+    if (i < 0 || !lines[i].stripTrailing().endsWith("-}")) {
+      return Optional.empty();
+    }
+    int start = i;
+    while (start >= 0 && !lines[start].contains("{-")) {
+      start--;
+    }
+    if (start < 0 || !lines[start].contains("{-|")) {
+      return Optional.empty(); // not a doc comment (a plain {- -} block, or unterminated)
+    }
+    StringBuilder block = new StringBuilder();
+    for (int k = start; k <= i; k++) {
+      block.append(lines[k]).append('\n');
+    }
+    int open = block.indexOf("{-|");
+    int close = block.lastIndexOf("-}");
+    if (open < 0 || close < open) {
+      return Optional.empty();
+    }
+    String inner = block.substring(open + 3, close).strip();
+    return inner.isEmpty() ? Optional.empty() : Optional.of(inner);
+  }
+
+  /**
    * The 0-based (line, character) where the name under the cursor is defined, if it is a top-level
    * value, union constructor or type/alias declared in this module. Returns empty otherwise (e.g.
    * the name comes from an import, or the cursor isn't on an identifier).
@@ -1880,12 +1920,18 @@ public final class LspServer {
         Map<String, Object> pos = (Map<String, Object>) params.get("position");
         String uri = (String) td.get("uri");
         int line = ((Number) pos.get("line")).intValue();
-        Optional<String> type = hoverType(docs.getOrDefault(uri, ""), line);
+        String doc = docs.getOrDefault(uri, "");
+        Optional<String> type = hoverType(doc, line);
         Map<String, Object> result = new LinkedHashMap<>();
         if (type.isPresent()) {
+          String value = "```elm\n" + type.get() + "\n```";
+          Optional<String> comment = docComment(doc, line);
+          if (comment.isPresent()) {
+            value += "\n\n" + comment.get(); // the {-| … -} documentation, below the type signature
+          }
           Map<String, Object> contents = new LinkedHashMap<>();
           contents.put("kind", "markdown");
-          contents.put("value", "```elm\n" + type.get() + "\n```");
+          contents.put("value", value);
           result.put("contents", contents);
           reply(out, id, result);
         } else {

@@ -80,6 +80,19 @@ class LspServerTest {
   }
 
   @Test
+  void hoverDocCommentIsFoundAboveADefinitionAndItsAnnotation() {
+    // A {-| … -} doc comment above the annotation is attached to the definition on the def line.
+    String src =
+        "{-| Doubles its argument. -}\ndouble : Int -> Int\ndouble n =\n    n * 2\nmain = double 21\n";
+    assertEquals(Optional.of("Doubles its argument."), server.docComment(src, 2)); // def line `double n =`
+    // No doc comment for `main`.
+    assertEquals(Optional.empty(), server.docComment(src, 4));
+    // A plain (non-doc) block comment is not treated as documentation.
+    String plain = "{- internal note -}\nx = 1\n";
+    assertEquals(Optional.empty(), server.docComment(plain, 1));
+  }
+
+  @Test
   void gotoDefinitionFindsTopLevelValue() {
     String src = "double n = n * 2\nmain = double 21\n";
     // Cursor on the `double` use in line 2 (0-based line 1, char 8) -> its definition on line 1.
