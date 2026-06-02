@@ -313,6 +313,16 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsBitwise() {
+    assertEquals("12", eval("Bitwise.and 14 13")); // 1110 & 1101 = 1100
+    assertEquals("15", eval("Bitwise.or 12 3")); // 1100 | 0011 = 1111
+    assertEquals("6", eval("Bitwise.xor 5 3")); // 0101 ^ 0011 = 0110
+    assertEquals("32", eval("Bitwise.shiftLeftBy 2 8")); // 8 << 2
+    assertEquals("2", eval("Bitwise.shiftRightBy 2 8")); // 8 >> 2
+    assertEquals("True", eval("Bitwise.complement 0 == -1"));
+  }
+
+  @Test
   void interpretsBasicsMath() {
     assertEquals("True", eval("atan2 1 1 > 0.78 && atan2 1 1 < 0.79")); // pi/4 ≈ 0.785
     assertEquals("2", eval("round (logBase 2 4)")); // log2(4) = 2

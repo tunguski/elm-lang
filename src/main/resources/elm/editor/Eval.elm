@@ -5,6 +5,7 @@ evaluation so all definitions across the project's files form one mutually-recur
 entry points: `eval` (one expression), `evalProject` (entry expression against all files) and
 `debugSteps` (fold messages through update for the time-travel debugger). -}
 
+import Bitwise
 import Lang exposing (Decl, Env, Expr(..), Globals, Pattern(..), Value(..))
 import Lexer exposing (tokenize)
 import Parser exposing (parse, parseProject)
@@ -38,6 +39,7 @@ builtins =
         ++ [ "Array.empty", "Array.initialize", "Array.repeat", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.get", "Array.set", "Array.push", "Array.append", "Array.length", "Array.isEmpty", "Array.slice", "Array.map", "Array.indexedMap", "Array.foldl", "Array.foldr", "Array.filter" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "asin", "acos", "atan", "atan2", "logBase", "radians", "turns", "isNaN", "isInfinite" ]
+        ++ [ "Bitwise.and", "Bitwise.or", "Bitwise.xor", "Bitwise.complement", "Bitwise.shiftLeftBy", "Bitwise.shiftRightBy", "Bitwise.shiftRightZfBy" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
@@ -129,7 +131,7 @@ arity name =
     else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit", "Debug.toString", "Debug.todo" ] then
         1
 
-    else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
+    else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size", "Bitwise.complement" ] then
         1
 
     else if List.member name [ "Dict.empty", "Set.empty", "Array.empty" ] then
@@ -1113,6 +1115,28 @@ runBuiltin globals name args =
 
             ( "isInfinite", [ VNum n ] ) ->
                 Ok (VBool (isInfinite n))
+
+            -- Bitwise ops act on the truncated 32-bit integer value of each number.
+            ( "Bitwise.and", [ VNum a, VNum b ] ) ->
+                Ok (VNum (toFloat (Bitwise.and (truncate a) (truncate b))))
+
+            ( "Bitwise.or", [ VNum a, VNum b ] ) ->
+                Ok (VNum (toFloat (Bitwise.or (truncate a) (truncate b))))
+
+            ( "Bitwise.xor", [ VNum a, VNum b ] ) ->
+                Ok (VNum (toFloat (Bitwise.xor (truncate a) (truncate b))))
+
+            ( "Bitwise.complement", [ VNum a ] ) ->
+                Ok (VNum (toFloat (Bitwise.complement (truncate a))))
+
+            ( "Bitwise.shiftLeftBy", [ VNum n, VNum a ] ) ->
+                Ok (VNum (toFloat (Bitwise.shiftLeftBy (truncate n) (truncate a))))
+
+            ( "Bitwise.shiftRightBy", [ VNum n, VNum a ] ) ->
+                Ok (VNum (toFloat (Bitwise.shiftRightBy (truncate n) (truncate a))))
+
+            ( "Bitwise.shiftRightZfBy", [ VNum n, VNum a ] ) ->
+                Ok (VNum (toFloat (Bitwise.shiftRightZfBy (truncate n) (truncate a))))
 
             -- Time: a Posix is modelled as its milliseconds (a VNum); the Zone is ignored (UTC).
             ( "Time.millisToPosix", [ VNum n ] ) ->
