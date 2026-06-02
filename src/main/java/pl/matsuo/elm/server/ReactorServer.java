@@ -305,10 +305,19 @@ public final class ReactorServer {
     t.start();
   }
 
-  /** A cheap fingerprint of the directory's .elm files (names + sizes + mtimes). */
+  /** A cheap fingerprint of the directory's .elm files plus the project manifest/lockfile (names +
+   *  sizes + mtimes). Watching elm.json/elm.lock means adding or changing a dependency triggers a
+   *  rebuild (the next compile re-resolves dependency sources), not just editing .elm files. */
   static long snapshot(Path dir) {
     long h = 1;
-    for (Path p : elmFiles(dir)) {
+    List<Path> watched = new ArrayList<>(elmFiles(dir));
+    for (String manifest : new String[] {"elm.json", "elm.lock"}) {
+      Path m = dir.resolve(manifest);
+      if (Files.isRegularFile(m)) {
+        watched.add(m);
+      }
+    }
+    for (Path p : watched) {
       try {
         h = h * 31 + p.toString().hashCode();
         h = h * 31 + Files.size(p);

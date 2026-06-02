@@ -112,6 +112,29 @@ class ReactorServerTest {
   }
 
   @Test
+  void changingElmJsonBumpsTheReloadGeneration(@TempDir Path dir) throws Exception {
+    Files.writeString(
+        dir.resolve("Main.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"hi\"\n",
+        StandardCharsets.UTF_8);
+    Files.writeString(dir.resolve("elm.json"), "{ \"dependencies\": {} }\n", StandardCharsets.UTF_8);
+    server = ReactorServer.start(dir, 0);
+
+    long before = Long.parseLong(get("/_reload").trim());
+    Thread.sleep(50);
+    // Editing the manifest (e.g. adding a dependency) must trigger a reload, like editing a .elm file.
+    Files.writeString(
+        dir.resolve("elm.json"), "{ \"dependencies\": { \"elm/time\": \"1.0.0\" } }\n", StandardCharsets.UTF_8);
+    long deadline = System.currentTimeMillis() + 5000;
+    long after = before;
+    while (System.currentTimeMillis() < deadline && after == before) {
+      Thread.sleep(150);
+      after = Long.parseLong(get("/_reload").trim());
+    }
+    assertTrue(after > before, "an elm.json change bumped the reload generation");
+  }
+
+  @Test
   void showsACompileErrorPage(@TempDir Path dir) throws Exception {
     Files.writeString(dir.resolve("Bad.elm"), "module Bad exposing (main)\nmain = (1 +\n",
         StandardCharsets.UTF_8);
