@@ -21,7 +21,7 @@ class ScriptGalleryTest {
 
   private static final String[] LIBS = {
     "/elm/lib/Posix.elm", "/elm/lib/Bash.elm", "/elm/lib/Site.elm",
-    "/elm/lib/Awk.elm", "/elm/lib/M4.elm", "/elm/lib/Sed.elm", "/elm/lib/Csv.elm",
+    "/elm/lib/Awk.elm", "/elm/lib/M4.elm", "/elm/lib/Csv.elm",
   };
 
   /** Loads a demo script with the full scripting library set and runs its `main`. */

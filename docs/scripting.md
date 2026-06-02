@@ -131,11 +131,12 @@ exec "git" [ "rev-parse", "--short", "HEAD" ] (\result ->
 HEAD is 7a6146c
 ```
 
-## Text-processing libraries (Awk, M4, Sed, Csv)
+## Text-processing libraries (Awk, M4, Csv)
 
-Four bundled libraries bring the classic Unix text tools to Elm scripts. They're plain
-`String -> String` (or `String -> …`) functions — no `Io` — so they compose inside any handler and
-are easy to test, and they're available to `elm script` without an install.
+These bundled libraries help Elm scripts build text for the classic Unix tools. `Awk` and `M4`
+*compose the tool's own source* (an awk program / m4 macros) as plain `String` values you embed in a
+shell script or pass on a command line — they don't reimplement awk/m4. `Csv` parses and encodes CSV
+data. All are plain functions — no `Io` — so they compose inside any handler and are easy to test.
 
 ### Awk
 
@@ -186,23 +187,6 @@ out =
 ```
 
 `m4-expand.elm` expands a file's macros: `elm script m4-expand.elm config.m4`.
-
-### Sed
-
-[`Sed`](../src/main/resources/elm/lib/Sed.elm) is the common stream-editor one-liners as composable
-functions, applied line by line and backed by `Regex`: `substitute` / `substituteAll` (`s///`,
-`s///g`, with `&` for the match), `deleteMatching` (`/re/d`), `keepMatching` (`-n /re/p`),
-`transliterate` (`y///`) and `lineRange` (`-n a,bp`).
-
-```elm
-import Sed
-
-clean : String -> String
-clean input =
-    input
-        |> Sed.deleteMatching "^#"        -- drop comment lines
-        |> Sed.substituteAll "\\s+" " "    -- squeeze runs of whitespace
-```
 
 ### Csv
 

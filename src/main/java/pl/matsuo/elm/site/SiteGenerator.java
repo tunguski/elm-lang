@@ -625,8 +625,8 @@ public final class SiteGenerator {
         pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm"),
         StandardCharsets.UTF_8);
     // The scripting libraries the editor fetches into its hidden lib scope (so a program can
-    // `import Awk`/`M4`/`Sed`/`Csv` in the playground).
-    for (String lib : new String[] {"Awk", "M4", "Sed", "Csv"}) {
+    // `import Awk`/`M4`/`Csv` if loaded as a project file).
+    for (String lib : new String[] {"Awk", "M4", "Csv"}) {
       Files.writeString(
           dir.resolve(lib + ".elm"),
           pl.matsuo.elm.util.Resources.read("/elm/lib/" + lib + ".elm"),

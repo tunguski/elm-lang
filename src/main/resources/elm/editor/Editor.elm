@@ -34,7 +34,7 @@ import WebGL
 
 type alias Model =
     { files : List ( String, String )
-    , libs : List ( String, String ) -- bundled, hidden library modules (Awk/M4/Sed/Csv) merged into scope
+    , libs : List ( String, String ) -- optional hidden library modules merged into the eval scope
     , selected : String
     , app : Result String Value
     , newName : String
