@@ -26,3 +26,6 @@ native.log
 # maven-shade leftover
 dependency-reduced-pom.xml
 **/dependency-reduced-pom.xml
+
+# Stray build outputs
+out/
