@@ -72,6 +72,22 @@ class MainCliTest {
   }
 
   @Test
+  void bytecodeCompilesAPortableArtifactAndRunsIt() throws Exception {
+    Path src = tempElm("module Main exposing (main)\nmain = List.sum (List.range 1 10)\n");
+    Path artifact = Files.createTempFile("prog-", ".elmbc");
+
+    // Compile the module to a portable .elmbc artifact.
+    Result emit = invoke("bytecode", src.toString(), "-o", artifact.toString());
+    assertEquals(0, emit.code(), emit.out() + emit.err());
+    assertTrue(Files.size(artifact) > 0, "artifact written");
+    byte[] bytes = Files.readAllBytes(artifact);
+    assertTrue(bytes.length > 5 && bytes[0] == 'E' && bytes[4] == 'C', "ELMBC magic header");
+
+    // Run the value straight from the artifact (no source, no recompilation).
+    assertEquals("55", run("bytecode", artifact.toString(), "--value", "main").trim());
+  }
+
+  @Test
   void runRendersBrowserProgram() throws Exception {
     Path f =
         tempElm(

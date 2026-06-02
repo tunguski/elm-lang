@@ -14,6 +14,9 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
+import pl.matsuo.elm.bytecode.BytecodeProgram;
+import pl.matsuo.elm.bytecode.BytecodeReader;
+import pl.matsuo.elm.bytecode.BytecodeWriter;
 import pl.matsuo.elm.codegen.js.JsCompiler;
 import pl.matsuo.elm.error.ElmTypeError;
 import pl.matsuo.elm.html.HtmlRender;
@@ -55,6 +58,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Js.class,
       Main.Make.class,
       Main.Eval.class,
+      Main.Bytecode.class,
       Main.Script.class,
       Main.Serve.class,
       Main.Bundle.class,
@@ -372,6 +376,46 @@ public final class Main implements Runnable {
     public Integer call() {
       Object v = backend.equals("bytecode") ? BytecodeInterpreter.eval(expression) : Interpreter.eval(expression);
       System.out.println(Show.plain(v));
+      return 0;
+    }
+  }
+
+  @Command(
+      name = "bytecode",
+      description =
+          "Compile a module to a portable .elmbc bytecode artifact, or run a value from one. The "
+              + "bytecode is executed by the pure-Java VM, so it runs anywhere — including Android's ART.",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm bytecode Main.elm -o main.elmbc      Compile to a portable artifact",
+        "  elm bytecode main.elmbc --value main     Run a value straight from the artifact",
+      })
+  static final class Bytecode implements Callable<Integer> {
+    @Parameters(index = "0", description = "A .elm module to compile, or a .elmbc artifact to run.")
+    Path file;
+
+    @Option(names = {"-o", "--output"}, description = "Write the compiled .elmbc artifact to this path.")
+    Path output;
+
+    @Option(names = "--value", description = "Top-level name to evaluate and print (default: main).")
+    String value = "main";
+
+    @Override
+    public Integer call() throws IOException {
+      if (file.toString().endsWith(".elmbc")) {
+        // Run a value straight from a portable artifact — no source, no recompilation.
+        BytecodeProgram program = BytecodeReader.fromBytes(Files.readAllBytes(file));
+        System.out.println(Show.plain(BytecodeInterpreter.fromProgram(program).value(value)));
+        return 0;
+      }
+      BytecodeInterpreter compiled = BytecodeInterpreter.load(Files.readString(file));
+      if (output != null) {
+        Files.write(output, BytecodeWriter.toBytes(compiled.toProgram()));
+        System.out.println("Wrote " + output);
+      } else {
+        // No output requested: compile and evaluate, so the command is useful on its own.
+        System.out.println(Show.plain(compiled.value(value)));
+      }
       return 0;
     }
   }
