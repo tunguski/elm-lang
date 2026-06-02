@@ -64,7 +64,8 @@ public final class SiteGenerator {
           new Example("Playground", "Mouse", "mouse"),
           new Example("Playground", "Keyboard", "keyboard"),
           new Example("Playground", "Turtle", "turtle"),
-          new Example("Playground", "Mario", "mario"));
+          new Example("Playground", "Mario", "mario"),
+          new Example("Playground", "Game of Life", "life"));
 
   private enum Method {
     LIVE("Live JS (compiled)"),
