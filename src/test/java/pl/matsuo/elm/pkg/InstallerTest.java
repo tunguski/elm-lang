@@ -92,4 +92,53 @@ class InstallerTest {
     assertTrue(result.alreadyPresent());
     assertEquals(Version.parse("1.0.5"), result.installed());
   }
+
+  @Test
+  void dryRunInstallSolvesButWritesNothing(@TempDir Path root) throws IOException {
+    Path registry = root.resolve("registry");
+    writePackage(registry, "elm/core", "1.0.5", "{}");
+    writePackage(registry, "elm/regex", "1.0.0", "{ \"elm/core\": \"1.0.0 <= v < 2.0.0\" }");
+
+    Path project = root.resolve("project");
+    Files.createDirectories(project);
+    Files.writeString(project.resolve("elm.json"), APP_ELM_JSON, StandardCharsets.UTF_8);
+
+    Installer.Result result =
+        Installer.install(project, "elm/regex", new DirectoryRegistry(registry), true);
+    assertEquals(Version.parse("1.0.0"), result.installed()); // the solve still happens
+
+    // No files were written: elm.json is unchanged and no lockfile exists.
+    assertEquals(APP_ELM_JSON, Files.readString(project.resolve("elm.json"), StandardCharsets.UTF_8));
+    assertFalse(Files.exists(project.resolve(Lockfile.FILENAME)), "dry run writes no lockfile");
+  }
+
+  @Test
+  void upgradeRaisesDirectDependenciesToLatest(@TempDir Path root) throws IOException {
+    Path registry = root.resolve("registry");
+    writePackage(registry, "elm/core", "1.0.0", "{}");
+    writePackage(registry, "elm/core", "1.0.5", "{}");
+
+    Path project = root.resolve("project");
+    Files.createDirectories(project);
+    Files.writeString(
+        project.resolve("elm.json"),
+        APP_ELM_JSON.replace("\"direct\": {}", "\"direct\": { \"elm/core\": \"1.0.0\" }"),
+        StandardCharsets.UTF_8);
+
+    // A dry-run upgrade reports the change but writes nothing.
+    Installer.Upgrade dry = Installer.upgrade(project, new DirectoryRegistry(registry), true);
+    assertTrue(dry.changed());
+    assertEquals(Version.parse("1.0.0"), dry.before().get("elm/core"));
+    assertEquals(Version.parse("1.0.5"), dry.after().get("elm/core"));
+    assertTrue(
+        Files.readString(project.resolve("elm.json"), StandardCharsets.UTF_8).contains("1.0.0"),
+        "dry run leaves the old pin");
+
+    // The real upgrade persists the new pin.
+    Installer.Upgrade done = Installer.upgrade(project, new DirectoryRegistry(registry), false);
+    assertTrue(done.changed());
+    assertTrue(
+        Files.readString(project.resolve("elm.json"), StandardCharsets.UTF_8).contains("1.0.5"),
+        "upgrade writes the new pin");
+  }
 }

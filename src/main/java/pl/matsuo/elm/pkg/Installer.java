@@ -26,6 +26,13 @@ public final class Installer {
 
   /** Installs {@code pkg} into the application {@code elm.json} in {@code projectDir}. */
   public static Result install(Path projectDir, String pkg, Registry registry) throws IOException {
+    return install(projectDir, pkg, registry, false);
+  }
+
+  /** Installs {@code pkg}; when {@code dryRun}, solves the dependencies and reports the result without
+   *  writing {@code elm.json} or the lockfile. */
+  public static Result install(Path projectDir, String pkg, Registry registry, boolean dryRun)
+      throws IOException {
     Path elmJsonPath = projectDir.resolve("elm.json");
     if (!Files.exists(elmJsonPath)) {
       throw new IllegalStateException("no elm.json in " + projectDir.toAbsolutePath()
@@ -47,13 +54,59 @@ public final class Installer {
 
     Map<String, Version> solution = new Solver(registry).solve(roots);
 
-    Set<String> newDirect = new TreeSet<>(elm.direct().keySet());
-    newDirect.add(pkg);
-    elm.setSolution(newDirect, solution);
-    Files.writeString(elmJsonPath, elm.render(), StandardCharsets.UTF_8);
-    // Pin the exact solution with integrity hashes so the install is reproducible and tamper-evident.
-    Lockfile.write(projectDir, solution, registry);
+    if (!dryRun) {
+      Set<String> newDirect = new TreeSet<>(elm.direct().keySet());
+      newDirect.add(pkg);
+      elm.setSolution(newDirect, solution);
+      Files.writeString(elmJsonPath, elm.render(), StandardCharsets.UTF_8);
+      // Pin the exact solution with integrity hashes so the install is reproducible and tamper-evident.
+      Lockfile.write(projectDir, solution, registry);
+    }
     return new Result(solution.get(pkg), false, elm.direct(), elm.indirect());
+  }
+
+  /** The outcome of an upgrade: each direct dependency's version before and after re-solving. */
+  public record Upgrade(Map<String, Version> before, Map<String, Version> after) {
+    public boolean changed() {
+      return !before.equals(after);
+    }
+  }
+
+  /** Re-solves the application's direct dependencies allowing the latest available version of each,
+   *  upgrading their pins. When {@code dryRun}, computes the new versions without writing anything. */
+  public static Upgrade upgrade(Path projectDir, Registry registry, boolean dryRun)
+      throws IOException {
+    Path elmJsonPath = projectDir.resolve("elm.json");
+    if (!Files.exists(elmJsonPath)) {
+      throw new IllegalStateException("no elm.json in " + projectDir.toAbsolutePath()
+          + " — run `elm init` first");
+    }
+    ElmJson elm = ElmJson.parse(Files.readString(elmJsonPath, StandardCharsets.UTF_8));
+    Map<String, Version> before = new TreeMap<>(elm.direct());
+
+    Map<String, Constraint> roots = new TreeMap<>();
+    for (var entry : elm.direct().entrySet()) {
+      var available = registry.versions(entry.getKey());
+      // Allow up to the latest available; if the package is unknown to the registry, keep its pin.
+      roots.put(
+          entry.getKey(),
+          available.isEmpty()
+              ? Constraint.parse(entry.getValue().toString())
+              : Constraint.forNewDependency(available.get(available.size() - 1)));
+    }
+
+    Map<String, Version> solution = new Solver(registry).solve(roots);
+    Map<String, Version> after = new TreeMap<>();
+    for (String p : elm.direct().keySet()) {
+      after.put(p, solution.get(p));
+    }
+
+    if (!dryRun && !before.equals(after)) {
+      elm.setSolution(elm.direct().keySet(), solution);
+      Files.writeString(elmJsonPath, elm.render(), StandardCharsets.UTF_8);
+      Lockfile.write(projectDir, solution, registry);
+    }
+    return new Upgrade(before, after);
   }
 
   /** The default package-cache directory: {@code $ELM_REGISTRY} if set, else {@code ~/.elm/registry}. */

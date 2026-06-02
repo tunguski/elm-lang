@@ -75,6 +75,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.Gallery.class,
       Main.Init.class,
       Main.Install.class,
+      Main.Upgrade.class,
       Main.Verify.class,
       Main.Diff.class,
       Main.Bump.class,
@@ -1465,6 +1466,11 @@ public final class Main implements Runnable {
                 + "With no value, the public registry; pass a URL to point elsewhere.")
     String elm;
 
+    @Option(
+        names = "--dry-run",
+        description = "Solve dependencies and report the result without writing elm.json/lockfile or downloading.")
+    boolean dryRun;
+
     @Override
     public Integer call() throws IOException {
       Path registryRoot = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
@@ -1478,9 +1484,15 @@ public final class Main implements Runnable {
         reg = new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
       }
       try {
-        var result = pl.matsuo.elm.pkg.Installer.install(dir, pkg, reg);
+        var result = pl.matsuo.elm.pkg.Installer.install(dir, pkg, reg, dryRun);
         if (result.alreadyPresent()) {
           System.out.println(pkg + " is already a direct dependency (" + result.installed() + ").");
+          return 0;
+        }
+        if (dryRun) {
+          System.out.println("Would install " + pkg + " " + result.installed()
+              + " (" + result.direct().size() + " direct, " + result.indirect().size()
+              + " indirect). No files changed.");
           return 0;
         }
         if (elm != null || from != null) {
@@ -1509,6 +1521,51 @@ public final class Main implements Runnable {
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         System.err.println("Install interrupted while downloading.");
+        return 1;
+      }
+    }
+  }
+
+  @Command(
+      name = "upgrade",
+      description = "Re-solve direct dependencies to their latest available versions.")
+  static final class Upgrade implements Callable<Integer> {
+    @Option(
+        names = "--registry",
+        description = "Package-cache directory (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
+
+    @Option(
+        names = {"-d", "--dir"},
+        description = "Project directory containing elm.json (default: current directory).")
+    Path dir = Path.of(".");
+
+    @Option(
+        names = "--dry-run",
+        description = "Report the version changes without writing elm.json/lockfile.")
+    boolean dryRun;
+
+    @Override
+    public Integer call() throws IOException {
+      Path registryRoot =
+          registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+      var reg = new pl.matsuo.elm.pkg.DirectoryRegistry(registryRoot);
+      try {
+        var result = pl.matsuo.elm.pkg.Installer.upgrade(dir, reg, dryRun);
+        if (!result.changed()) {
+          System.out.println("All direct dependencies are already at their latest versions.");
+          return 0;
+        }
+        System.out.println((dryRun ? "Would upgrade:" : "Upgraded:"));
+        result.after().forEach((p, v) -> {
+          var was = result.before().get(p);
+          if (!v.equals(was)) {
+            System.out.println("  " + p + "  " + was + " -> " + v);
+          }
+        });
+        return 0;
+      } catch (pl.matsuo.elm.pkg.Solver.Unsolvable | IllegalStateException e) {
+        System.err.println("Upgrade failed: " + e.getMessage());
         return 1;
       }
     }
