@@ -19,6 +19,10 @@ module Awk exposing
     , split
     , toupper
     , tolower
+    , matchingRegex
+    , sub
+    , gsub
+    , splitRegex
     )
 
 {-| A tiny **awk** in Elm: process text a line (record) at a time, split each into fields, and run an
@@ -44,6 +48,8 @@ The default field separator is whitespace (runs of spaces/tabs, like awk); `runW
 explicit separator plus `BEGIN`/`END` blocks.
 
 -}
+
+import Regex exposing (Regex)
 
 
 {-| One input line: its raw text, its split fields, and its 1-based record number (awk's `NR`). -}
@@ -234,6 +240,63 @@ toupper =
 tolower : String -> String
 tolower =
     String.toLower
+
+
+
+
+-- AWK REGEX FUNCTIONS -----------------------------------------------------
+-- awk's regex-driven matching and substitution, backed by the Regex module. In the replacement of
+-- sub/gsub, `&` stands for the matched text (awk's convention).
+
+
+{-| Compiles a regex string, falling back to a never-matching regex on a syntax error. -}
+regex : String -> Regex
+regex re =
+    Maybe.withDefault Regex.never (Regex.fromString re)
+
+
+{-| `awk '/re/'`: keep only the input lines that match the regular expression `re`. -}
+matchingRegex : String -> String -> String
+matchingRegex re input =
+    let
+        r =
+            regex re
+    in
+    run
+        (\record ->
+            if Regex.contains r record.line then
+                [ record.line ]
+
+            else
+                []
+        )
+        input
+
+
+{-| `gsub(re, repl, s)` — replace every match of `re` in `s` with `repl` (where `&` is the match). -}
+gsub : String -> String -> String -> String
+gsub re repl s =
+    Regex.replace (regex re) (\m -> String.replace "&" m.match repl) s
+
+
+{-| `sub(re, repl, s)` — replace the first match of `re` in `s` with `repl` (where `&` is the match). -}
+sub : String -> String -> String -> String
+sub re repl s =
+    Regex.replace (regex re)
+        (\m ->
+            if m.number == 1 then
+                String.replace "&" m.match repl
+
+            else
+                m.match
+        )
+        s
+
+
+{-| Splits `s` on the regular expression `re` — a regex field separator (awk's `FS` as a regex). -}
+splitRegex : String -> String -> List String
+splitRegex re s =
+    Regex.split (regex re) s
 
 
 nth : Int -> List a -> Maybe a

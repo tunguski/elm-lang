@@ -12,7 +12,7 @@ class AwkLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (col1, cols, grepC, total, counted, withEnds, lengths, sub2, caseFns, splitCols)
+      module Main exposing (col1, cols, grepC, total, counted, withEnds, lengths, sub2, caseFns, splitCols, g1, s1, gAmp, mre, splen)
 
       import Awk exposing (..)
 
@@ -55,6 +55,21 @@ class AwkLibraryTest {
 
       splitCols : Int
       splitCols = List.length (split "," "a,b,c,d")
+
+      g1 : String
+      g1 = gsub "[0-9]+" "#" "a1b22c333"
+
+      s1 : String
+      s1 = sub "[0-9]+" "#" "a1b22c333"
+
+      gAmp : String
+      gAmp = gsub "[0-9]+" "[&]" "a12b"
+
+      mre : String
+      mre = matchingRegex "^[0-9]" "1a\\nb2\\n3c"
+
+      splen : Int
+      splen = List.length (splitRegex "[,;]" "a,b;c")
       """;
 
   private static String value(String name) {
@@ -85,5 +100,14 @@ class AwkLibraryTest {
     assertEquals("bcd", value("sub2"));
     assertEquals("AB/ab", value("caseFns"));
     assertEquals("4", value("splitCols"));
+  }
+
+  @Test
+  void regexFunctions() {
+    assertEquals("a#b#c#", value("g1"));
+    assertEquals("a#b22c333", value("s1")); // sub replaces only the first run
+    assertEquals("a[12]b", value("gAmp")); // & is the matched text
+    assertEquals("1a\n3c", value("mre"));
+    assertEquals("3", value("splen"));
   }
 }
