@@ -12,6 +12,13 @@ module Awk exposing
     , columns
     , matching
     , sumColumn
+    , length
+    , substr
+    , substrFrom
+    , index
+    , split
+    , toupper
+    , tolower
     )
 
 {-| A tiny **awk** in Elm: process text a line (record) at a time, split each into fields, and run an
@@ -173,6 +180,60 @@ sumColumn n input =
         |> List.indexedMap (\i line -> toRecord " " (i + 1) line)
         |> List.filterMap (\r -> String.toFloat (field n r))
         |> List.sum
+
+
+
+
+-- AWK STRING FUNCTIONS ----------------------------------------------------
+-- awk's built-in string functions (1-based, like awk). These operate on plain strings, so they work
+-- on `field n record` or any text.
+
+
+{-| `length(s)` — the number of characters in `s`. -}
+length : String -> Int
+length =
+    String.length
+
+
+{-| `substr(s, m, n)` — the `n`-character substring of `s` starting at position `m` (1-based). -}
+substr : Int -> Int -> String -> String
+substr m n s =
+    String.slice (m - 1) (m - 1 + n) s
+
+
+{-| `substr(s, m)` — the substring of `s` from position `m` (1-based) to the end. -}
+substrFrom : Int -> String -> String
+substrFrom m s =
+    String.dropLeft (m - 1) s
+
+
+{-| `index(s, t)` — the 1-based position of the first occurrence of `t` in `s`, or `0` if absent. -}
+index : String -> String -> Int
+index s t =
+    case String.indexes t s of
+        i :: _ ->
+            i + 1
+
+        [] ->
+            0
+
+
+{-| `split(s, fs)` — splits `s` into fields on `fs` (whitespace when `fs` is `" "`). -}
+split : String -> String -> List String
+split fs s =
+    splitFields fs s
+
+
+{-| `toupper(s)` — `s` upper-cased. -}
+toupper : String -> String
+toupper =
+    String.toUpper
+
+
+{-| `tolower(s)` — `s` lower-cased. -}
+tolower : String -> String
+tolower =
+    String.toLower
 
 
 nth : Int -> List a -> Maybe a

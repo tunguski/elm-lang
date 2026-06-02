@@ -12,7 +12,7 @@ class AwkLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (col1, cols, grepC, total, counted, withEnds)
+      module Main exposing (col1, cols, grepC, total, counted, withEnds, lengths, sub2, caseFns, splitCols)
 
       import Awk exposing (..)
 
@@ -43,6 +43,18 @@ class AwkLibraryTest {
               , end = [ "== done ==" ]
               }
               input
+
+      lengths : List Int
+      lengths = [ length "hello", index "hello" "ll", String.length (substr 2 3 "abcdef"), String.length (substrFrom 4 "abcdef") ]
+
+      sub2 : String
+      sub2 = substr 2 3 "abcdef"
+
+      caseFns : String
+      caseFns = toupper "aB" ++ "/" ++ tolower "aB"
+
+      splitCols : Int
+      splitCols = List.length (split "," "a,b,c,d")
       """;
 
   private static String value(String name) {
@@ -65,5 +77,13 @@ class AwkLibraryTest {
   @Test
   void beginAndEndBlocks() {
     assertEquals("== names ==\nalice\nbob\ncarol\n== done ==", value("withEnds"));
+  }
+
+  @Test
+  void stringFunctions() {
+    assertEquals("[5,3,3,3]", value("lengths")); // length, index "ll"->3, substr len, substrFrom len
+    assertEquals("bcd", value("sub2"));
+    assertEquals("AB/ab", value("caseFns"));
+    assertEquals("4", value("splitCols"));
   }
 }
