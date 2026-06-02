@@ -525,6 +525,58 @@ class WasmHeapTest {
   }
 
   @Test
+  void nestedAndStringCasePatterns() throws Exception {
+    // A constructor argument that is itself a constructor pattern (nested, refutable).
+    agrees(
+        """
+        type Pair = Pair Int Int
+        type Wrap = Wrap Pair
+        unwrap w =
+            case w of
+                Wrap (Pair a b) -> a + b
+        main = unwrap (Wrap (Pair 3 4))
+        """); // 7
+    // A constructor argument that is a tuple pattern.
+    agrees(
+        """
+        type Holder = Holder ( Int, Int )
+        total h =
+            case h of
+                Holder ( a, b ) -> a + b
+        main = total (Holder ( 5, 6 ))
+        """); // 11
+    // String-literal case patterns with a catch-all.
+    agrees(
+        """
+        classify s =
+            case s of
+                "yes" -> 1
+                "no" -> 2
+                _ -> 0
+        main = classify "no"
+        """); // 2
+    // Nested cons: bind the first two elements of a list.
+    agrees(
+        """
+        sumFirstTwo xs =
+            case xs of
+                a :: b :: _ -> a + b
+                _ -> 0
+        main = sumFirstTwo [ 10, 20, 30 ]
+        """); // 30
+    // A tuple case with refutable contents over multiple branches.
+    agrees(
+        """
+        describe pair =
+            case pair of
+                ( 0, y ) -> y
+                ( x, 0 ) -> x
+                ( x, y ) -> x + y
+        main = describe ( 0, 9 )
+        """); // 9
+  }
+
+  @Test
   void recursesOverACustomTypeTree() throws Exception {
     // A recursive ADT (binary tree) built and summed entirely in wasm.
     agrees(

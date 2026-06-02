@@ -15,7 +15,7 @@ import pl.matsuo.elm.parser.Parser;
 
 /**
  * A from-scratch compiler from a numeric/boolean subset of Elm directly to a <b>WebAssembly</b>
- * binary module — no external assembler. It is a fourth backend alongside the Truffle interpreter,
+ * binary module â€” no external assembler. It is a fourth backend alongside the Truffle interpreter,
  * the bytecode VM and the JavaScript compiler, and is differential-tested against them.
  *
  * <p>The supported subset is the closed, total {@code Int}/{@code Bool} fragment: integer literals,
@@ -27,15 +27,15 @@ import pl.matsuo.elm.parser.Parser;
  * <p>It also has a <b>heap</b>: a linear-memory bump allocator (which grows memory on demand, so
  * long lists and deep recursion don't trap on the first 64 KiB page) backs cons-lists (built with
  * list literals and {@code ::}, consumed by a {@code case} over {@code []} / {@code head :: tail}),
- * tuples, and <b>tagged custom types</b> — a value {@code Ctor a b} is a cell {@code {tag, a, b}}
+ * tuples, and <b>tagged custom types</b> â€” a value {@code Ctor a b} is a cell {@code {tag, a, b}}
  * whose tag is the constructor's index in its union, and a {@code case} over constructors loads the
  * tag word and dispatches, binding fields by offset (constructor-argument patterns must be
- * variable/wildcard — no nested matching). A heap value is an {@code i64} address, so values stay
+ * variable/wildcard â€” no nested matching). A heap value is an {@code i64} address, so values stay
  * uniformly {@code i64} on the stack. This lets recursive list functions and custom-type matching
  * (e.g. {@code area (Rect 3 4)}) compile and run in wasm.
  *
- * <p><b>First-class functions, closures and currying</b> work via a uniform closure value — a heap
- * block {@code {funcIdx, arity, count, slot…}} — and a generic {@code $apply} runtime. Every
+ * <p><b>First-class functions, closures and currying</b> work via a uniform closure value â€” a heap
+ * block {@code {funcIdx, arity, count, slotâ€¦}} â€” and a generic {@code $apply} runtime. Every
  * function lives in a funcref table; a function used as a value (or a partial application) becomes an
  * under-applied closure, and applying one accumulates arguments until {@code count == arity}, when
  * {@code $apply} invokes it via {@code call_indirect} (dispatched on the arity). Lambdas are
@@ -43,17 +43,17 @@ import pl.matsuo.elm.parser.Parser;
  * and the lambda expression a closure capturing them. So higher-order code, partial application
  * ({@code inc = add 1}) and closures ({@code adder x = \\y -> x + y}) all run in wasm.
  *
- * <p><b>Strings and records</b> are <b>type-directed</b>: the backend runs Hindley–Milner inference
+ * <p><b>Strings and records</b> are <b>type-directed</b>: the backend runs Hindleyâ€“Milner inference
  * over the module and consults each expression's type (see {@code Infer.nodeTypes}). A string is a
- * heap object {@code {byteLength : i64, bytes…}} — literals allocate, {@code String.length} loads
+ * heap object {@code {byteLength : i64, bytesâ€¦}} â€” literals allocate, {@code String.length} loads
  * the length word, and {@code ++}/{@code ==} call two hand-assembled runtime functions
  * ({@code $strConcat}, {@code $strEq}). Because string dispatch is static, {@code ++}/{@code ==}
  * need operands typed concretely as {@code String} at the use site (a polymorphic {@code
  * comparable}/{@code appendable} function does not carry that).
  *
  * <p><b>Records are self-describing</b> and fully <b>row-polymorphic</b>: a record is a heap block
- * {@code {count, fieldId…, value…}} that stores its field-name ids, so the {@code $recordGet} /
- * {@code $recordSet} runtime looks fields up by name — a function that knows only some of a record's
+ * {@code {count, fieldIdâ€¦, valueâ€¦}} that stores its field-name ids, so the {@code $recordGet} /
+ * {@code $recordSet} runtime looks fields up by name â€” a function that knows only some of a record's
  * fields ({@code getX r = r.x}) works on any shape, with no need for a closed type.
  *
  * <p><b>Floats</b> are type-directed too: an {@code f64} is stored as its i64 bit pattern, so values
@@ -61,15 +61,15 @@ import pl.matsuo.elm.parser.Parser;
  * comparisons, {@code negate} and the {@code toFloat}/{@code round}/{@code floor}/{@code
  * ceiling}/{@code truncate} conversions reinterpret to {@code f64} as needed.
  *
- * <p>A small <b>standard library</b> ({@link #WASM_PRELUDE}) — {@code List.map}/{@code foldl}/{@code
+ * <p>A small <b>standard library</b> ({@link #WASM_PRELUDE}) â€” {@code List.map}/{@code foldl}/{@code
  * foldr}/{@code filter}/{@code length}/{@code sum}/{@code range}/{@code reverse}, {@code
- * Maybe}/{@code Result} helpers — is written in this same subset and prepended when a module uses it
+ * Maybe}/{@code Result} helpers â€” is written in this same subset and prepended when a module uses it
  * ({@code Maybe}/{@code Result} constructors are built in). Booleans are first-class {@code i64}
  * values (0/1), so they can be stored in lists, returned and compared like any other value.
  *
  * <p>Memory is a growable bump allocator with a sound <b>arena reclamation</b> (see {@code
  * emitApp}): a call whose result is scalar and which consumes a heap argument has the heap pointer
- * reset afterwards, freeing everything it allocated — correct because the language is pure and a
+ * reset afterwards, freeing everything it allocated â€” correct because the language is pure and a
  * scalar result holds no heap pointer. This keeps "reduce a structure, in a loop" programs bounded.
  * A general moving/mark-sweep collector would need object headers and root scanning (or WasmGC) and
  * remains future work; the other gap is the rest of the larger standard library (most {@code
@@ -282,8 +282,8 @@ public final class WasmCompiler {
   }
 
   /**
-   * Compiles a whole project — the entry module plus its (local or installed-package) dependency
-   * modules — to one wasm binary. The modules' top-level functions are merged into a single
+   * Compiles a whole project â€” the entry module plus its (local or installed-package) dependency
+   * modules â€” to one wasm binary. The modules' top-level functions are merged into a single
    * compilation unit (by simple name, the entry's first), so a cross-module call like {@code
    * Util.square} resolves to the compiled {@code square} (qualifiers are dropped at codegen). This is
    * what lets the WASM backend run code that imports other modules / installed packages.
@@ -299,7 +299,7 @@ public final class WasmCompiler {
   }
 
   /** Whether a source refers to a prelude (List/Maybe/Result/Basics/String) qualified name, or uses
-   *  {@code ++} — which may be a list append, lowered to the prelude's {@code listAppend}. */
+   *  {@code ++} â€” which may be a list append, lowered to the prelude's {@code listAppend}. */
   private static boolean wantsPrelude(String source) {
     return source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
         || source.contains("Basics.") || source.contains("String.") || source.contains("++");
@@ -321,7 +321,7 @@ public final class WasmCompiler {
       imports.addAll(m.imports());
     }
     // Append the standard-library prelude (when referenced) BEFORE inference, so its definitions are
-    // type-inferred too — string-building helpers like stringFromInt need their `++` to type as
+    // type-inferred too â€” string-building helpers like stringFromInt need their `++` to type as
     // String. User decls come first, so a user definition of the same name still wins.
     if (wantPrelude) {
       decls.addAll(pl.matsuo.elm.parser.Parser.parseModule(WASM_PRELUDE).decls());
@@ -349,8 +349,8 @@ public final class WasmCompiler {
         funcs.add(new Func(v.name(), params, v.body()));
       }
     }
-    // Constructor wrappers: for each constructor of arity n ≥ 1, a function
-    // `$mk$Name p0 … p{n-1} = Name p0 … p{n-1}`. A bare or partially-applied constructor then
+    // Constructor wrappers: for each constructor of arity n â‰Ą 1, a function
+    // `$mk$Name p0 â€¦ p{n-1} = Name p0 â€¦ p{n-1}`. A bare or partially-applied constructor then
     // becomes a closure over this wrapper (the saturated call still inlines the cell directly).
     pl.matsuo.elm.error.Position synth = new pl.matsuo.elm.error.Position(1, 1, 0);
     for (Map.Entry<String, Integer> e : ctorArity.entrySet()) {
@@ -373,7 +373,7 @@ public final class WasmCompiler {
             new pl.matsuo.elm.error.Position(1, 1, 0));
     // Per-expression inferred types power the type-directed codegen for records (and strings): the
     // compiler walks the same Expr instances, so an IdentityHashMap keyed by expression resolves
-    // field layouts and operator overloads. Best-effort — if inference can't type the module we just
+    // field layouts and operator overloads. Best-effort â€” if inference can't type the module we just
     // proceed without it (records/strings then fall back to "unsupported").
     Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes;
     try {
@@ -834,7 +834,7 @@ public final class WasmCompiler {
       leb(code, off);
     }
 
-    /** Allocates a custom-type value: a cell {tag, field0, field1, …}, leaving its address (i64). */
+    /** Allocates a custom-type value: a cell {tag, field0, field1, â€¦}, leaving its address (i64). */
     private void emitCtor(String name, List<Expr> args) {
       if (args.size() != ctorArity.getOrDefault(name, -1)) {
         throw unsupported("partially-applied constructor " + name);
@@ -865,7 +865,7 @@ public final class WasmCompiler {
     // --- records: a heap block of one i64 word per field, in canonical (name-sorted) order ------
     // Layout: {count:i64, fieldId_0..fieldId_{n-1}, value_0..value_{n-1}} (fields name-sorted). The
     // stored field-name ids make access and update look fields up by name at runtime, so even a
-    // row-polymorphic function — which knows only some of a record's fields — resolves correctly.
+    // row-polymorphic function â€” which knows only some of a record's fields â€” resolves correctly.
 
     /** A small global integer id for a field name (shared across the module via {@code fieldIds}). */
     private int fieldId(String name) {
@@ -906,7 +906,7 @@ public final class WasmCompiler {
       leb(code, funcs.get("$recordGet")[0]);
     }
 
-    /** {@code { base | f = v, … }}: chained {@code $recordSet} calls, each replacing one field. */
+    /** {@code { base | f = v, â€¦ }}: chained {@code $recordSet} calls, each replacing one field. */
     private void emitRecordUpdate(Expr.RecordUpdate up) {
       Integer baseLocal = locals.get(up.base());
       if (baseLocal != null) {
@@ -927,7 +927,7 @@ public final class WasmCompiler {
       }
     }
 
-    // --- strings: a heap object {byteLength : i64, bytes…}; the value is the i64 pointer ----------
+    // --- strings: a heap object {byteLength : i64, bytesâ€¦}; the value is the i64 pointer ----------
 
     /** Allocates a string literal (length word + the UTF-8 bytes); leaves its i64 pointer. */
     private void emitStringLit(String s) {
@@ -1071,223 +1071,156 @@ public final class WasmCompiler {
       emitApp(app);
     }
 
-    private void intCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
-      boolean adt =
-          c.branches().stream()
-              .anyMatch(b -> b.pattern() instanceof Pattern.Ctor ct && ctorTag.containsKey(ct.name()));
-      if (adt) {
-        intAdtCase(c, body);
-      } else if (c.branches().stream().anyMatch(b -> b.pattern() instanceof Pattern.Tuple)) {
-        intTupleCase(c, body);
-      } else if (c.branches().stream()
-          .anyMatch(b -> b.pattern() instanceof Pattern.IntLit
-              || b.pattern() instanceof Pattern.CharLit)) {
-        intLiteralCase(c, body);
-      } else {
-        intListCase(c, body);
-      }
-    }
-
     /**
-     * Compiles a {@code case} over a scalar literal (an {@code Int} or {@code Char}, both i64): load
-     * the scrutinee once, then an if/else chain comparing it to each literal with {@code i64.eq}. A
-     * variable or wildcard branch matches unconditionally (the catch-all), so it ends the chain.
+     * Compiles a {@code case} as a decision tree. The scrutinee is held in a local; each branch is
+     * wrapped in a {@code $matched}(i64)/{@code $fail}(void) block pair â€” the pattern's tests
+     * {@code br_if $fail} on any mismatch (bindings happen inline as the value is taken apart), and on
+     * a full match the body runs and {@code br}s out with its value; a failed branch falls through to
+     * the next. This handles every pattern shape, including <b>nested</b> and refutable sub-patterns.
      */
-    private void intLiteralCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
+    private void intCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
       int s = freshLocal();
       intExpr(c.scrutinee());
       code.write(0x21);
       leb(code, s); // local.set scrutinee
-      emitLiteralBranches(c.branches(), 0, s, body);
+      emitMatch(c.branches(), 0, s, body);
     }
 
-    private void emitLiteralBranches(
-        List<Expr.Case.Branch> branches, int idx, int s, java.util.function.Consumer<Expr> body) {
-      if (idx >= branches.size()) {
-        code.write(0x00); // unreachable: a well-typed literal case ends in a catch-all
-        return;
-      }
-      Expr.Case.Branch br = branches.get(idx);
-      switch (br.pattern()) {
-        case Pattern.Var v -> {
-          code.write(0x20);
-          leb(code, s);
-          code.write(0x21);
-          leb(code, local(v.name())); // bind the whole value
-          body.accept(br.body());
-        }
-        case Pattern.Wildcard ignored -> body.accept(br.body());
-        case Pattern.IntLit lit -> emitLiteralTest(lit.value(), branches, idx, s, body);
-        case Pattern.CharLit lit -> emitLiteralTest(lit.codePoint(), branches, idx, s, body);
-        default -> throw unsupported("literal case pattern in WASM");
-      }
-    }
-
-    /** {@code if scrutinee == value then <this body> else <remaining branches>}. */
-    private void emitLiteralTest(
-        long value,
-        List<Expr.Case.Branch> branches,
-        int idx,
-        int s,
-        java.util.function.Consumer<Expr> body) {
-      code.write(0x20);
-      leb(code, s); // local.get s — the scalar value itself (not a heap pointer)
-      code.write(0x42);
-      sleb(code, value); // i64.const value
-      code.write(0x51); // i64.eq
-      code.write(0x04);
-      code.write(I64); // if -> i64
-      body.accept(branches.get(idx).body());
-      code.write(0x05); // else
-      emitLiteralBranches(branches, idx + 1, s, body);
-      code.write(0x0B); // end
-    }
-
-    /**
-     * Compiles a {@code case} whose pattern is a tuple. A tuple is the address of n contiguous i64
-     * words (see {@link #emitTuple}); the pattern is irrefutable, so we bind its parts by word offset
-     * (recursing into nested tuple patterns) and run the single branch body.
-     */
-    private void intTupleCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
-      Expr.Case.Branch br =
-          c.branches().stream()
-              .filter(b -> b.pattern() instanceof Pattern.Tuple)
-              .findFirst()
-              .orElseThrow();
-      int s = freshLocal();
-      intExpr(c.scrutinee());
-      code.write(0x21);
-      leb(code, s); // local.set tuple address
-      bindTupleFromLocal(s, (Pattern.Tuple) br.pattern());
-      body.accept(br.body());
-    }
-
-    /** Binds a tuple pattern's parts from the tuple whose address is in {@code addr} (word i -> item i),
-     * recursing into nested tuple patterns. Var binds a local; wildcard is skipped. */
-    private void bindTupleFromLocal(int addr, Pattern.Tuple pat) {
-      List<Pattern> items = pat.items();
-      for (int i = 0; i < items.size(); i++) {
-        switch (items.get(i)) {
-          case Pattern.Var v -> {
-            int l = local(v.name());
-            load(addr, i * 8);
-            code.write(0x21);
-            leb(code, l); // local.set item
-          }
-          case Pattern.Wildcard ignored -> {}
-          case Pattern.Tuple inner -> {
-            int innerAddr = freshLocal();
-            load(addr, i * 8);
-            code.write(0x21);
-            leb(code, innerAddr); // local.set nested tuple address
-            bindTupleFromLocal(innerAddr, inner);
-          }
-          default -> throw unsupported("tuple sub-pattern in WASM");
-        }
-      }
-    }
-
-    /**
-     * Compiles a {@code case} over a custom type: load the value's tag word once, then an if/else
-     * chain comparing it to each constructor's tag, binding fields (by word offset) in the match.
-     * Constructor arguments must be variable/wildcard patterns (no nested matching).
-     */
-    private void intAdtCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
-      int s = freshLocal();
-      intExpr(c.scrutinee());
-      code.write(0x21);
-      leb(code, s); // local.set scrutinee pointer
-      emitAdtBranches(c.branches(), 0, s, body);
-    }
-
-    private void emitAdtBranches(
+    private void emitMatch(
         List<Expr.Case.Branch> branches, int idx, int s, java.util.function.Consumer<Expr> body) {
       if (idx >= branches.size()) {
         code.write(0x00); // unreachable: a well-typed case is exhaustive
         return;
       }
       Expr.Case.Branch br = branches.get(idx);
-      switch (br.pattern()) {
+      code.write(0x02);
+      code.write(I64); // block (result i64) -- $matched
+      code.write(0x02);
+      code.write(0x40); // block -- $fail (br 0 here on a mismatch)
+      emitPatternTest(s, br.pattern());
+      body.accept(br.body());
+      code.write(0x0C);
+      leb(code, 1); // br $matched (success)
+      code.write(0x0B); // end $fail
+      emitMatch(branches, idx + 1, s, body); // the else: try the next branch
+      code.write(0x0B); // end $matched
+    }
+
+    /** Tests {@code pattern} against the value in local {@code scrut}, emitting {@code br_if 0} (to the
+     *  enclosing {@code $fail} block) on any mismatch and binding the pattern's variables inline. No
+     *  blocks are opened here, so every {@code br_if} targets {@code $fail}. */
+    private void emitPatternTest(int scrut, Pattern pattern) {
+      switch (pattern) {
         case Pattern.Var v -> {
-          int local = local(v.name());
           code.write(0x20);
-          leb(code, s);
+          leb(code, scrut);
           code.write(0x21);
-          leb(code, local); // bind the whole value
-          body.accept(br.body());
+          leb(code, local(v.name())); // bind the whole value
         }
-        case Pattern.Wildcard ignored -> body.accept(br.body());
+        case Pattern.Wildcard ignored -> {}
+        case Pattern.Unit ignored -> {}
+        case Pattern.IntLit lit -> emitScalarTest(scrut, lit.value());
+        case Pattern.CharLit lit -> emitScalarTest(scrut, lit.codePoint());
+        case Pattern.StrLit lit -> {
+          code.write(0x20);
+          leb(code, scrut);
+          emitStringLit(lit.value());
+          code.write(0x10); // call $strEq -> i64 (1 if equal)
+          leb(code, funcs.get("$strEq")[0]);
+          code.write(0x50); // i64.eqz -> 1 if NOT equal
+          code.write(0x0D);
+          leb(code, 0); // br_if $fail
+        }
         case Pattern.Ctor ctor -> {
-          load(s, 0); // tag word
+          load(scrut, 0); // tag word
           code.write(0x42);
           sleb(code, ctorTag.get(ctor.name())); // i64.const tag
-          code.write(0x51); // i64.eq
-          code.write(0x04);
-          code.write(I64); // if -> i64
+          code.write(0x52); // i64.ne
+          code.write(0x0D);
+          leb(code, 0); // br_if $fail
           for (int i = 0; i < ctor.args().size(); i++) {
-            if (ctor.args().get(i) instanceof Pattern.Var fv) {
-              int fl = local(fv.name());
-              load(s, (1 + i) * 8); // field i lives at word 1+i
-              code.write(0x21);
-              leb(code, fl);
-            } else if (!(ctor.args().get(i) instanceof Pattern.Wildcard)) {
-              throw unsupported("nested constructor pattern in WASM");
-            }
+            int f = freshLocal();
+            load(scrut, (1 + i) * 8); // field i at word 1+i
+            code.write(0x21);
+            leb(code, f);
+            emitPatternTest(f, ctor.args().get(i));
           }
-          body.accept(br.body());
-          code.write(0x05); // else
-          emitAdtBranches(branches, idx + 1, s, body);
-          code.write(0x0B); // end
         }
-        default -> throw unsupported("custom-type case pattern in WASM");
+        case Pattern.Tuple t -> {
+          for (int i = 0; i < t.items().size(); i++) {
+            int f = freshLocal();
+            load(scrut, i * 8);
+            code.write(0x21);
+            leb(code, f);
+            emitPatternTest(f, t.items().get(i));
+          }
+        }
+        case Pattern.RecordPat r -> {
+          for (String field : r.fields()) {
+            code.write(0x20);
+            leb(code, scrut);
+            code.write(0x42);
+            sleb(code, fieldId(field));
+            code.write(0x10); // call $recordGet
+            leb(code, funcs.get("$recordGet")[0]);
+            code.write(0x21);
+            leb(code, local(field));
+          }
+        }
+        case Pattern.ListPat lp -> {
+          if (lp.items().isEmpty()) {
+            code.write(0x20);
+            leb(code, scrut);
+            code.write(0x50); // i64.eqz (1 if []),
+            code.write(0x45); // i32.eqz -> 1 if NOT []
+            code.write(0x0D);
+            leb(code, 0); // br_if $fail
+          } else {
+            // [a, b, â€¦] is a :: [b, â€¦] â€” reuse the cons logic.
+            emitPatternTest(
+                scrut,
+                new Pattern.Cons(
+                    lp.items().get(0),
+                    new Pattern.ListPat(lp.items().subList(1, lp.items().size()))));
+          }
+        }
+        case Pattern.Cons cons -> {
+          code.write(0x20);
+          leb(code, scrut);
+          code.write(0x50); // i64.eqz (1 if [])
+          code.write(0x0D);
+          leb(code, 0); // br_if $fail â€” a cons can't match []
+          int h = freshLocal();
+          load(scrut, 0);
+          code.write(0x21);
+          leb(code, h);
+          emitPatternTest(h, cons.head());
+          int t = freshLocal();
+          load(scrut, 8);
+          code.write(0x21);
+          leb(code, t);
+          emitPatternTest(t, cons.tail());
+        }
+        case Pattern.Alias a -> {
+          code.write(0x20);
+          leb(code, scrut);
+          code.write(0x21);
+          leb(code, local(a.name())); // bind the whole value
+          emitPatternTest(scrut, a.pattern());
+        }
+        default -> throw unsupported("case pattern in WASM: " + pattern.getClass().getSimpleName());
       }
     }
 
-    /** Compiles a {@code case} over a list: branches for {@code []} and {@code head :: tail}. */
-    private void intListCase(Expr.Case c, java.util.function.Consumer<Expr> body) {
-      Expr nilBody = null;
-      Pattern consHead = null, consTail = null;
-      Expr consBody = null;
-      for (Expr.Case.Branch br : c.branches()) {
-        switch (br.pattern()) {
-          case Pattern.ListPat lp when lp.items().isEmpty() -> nilBody = br.body();
-          case Pattern.Cons cons -> {
-            consHead = cons.head();
-            consTail = cons.tail();
-            consBody = br.body();
-          }
-          case Pattern.Wildcard ignored -> nilBody = nilBody == null ? br.body() : nilBody;
-          default -> throw unsupported("case pattern in WASM (only list [] / :: supported)");
-        }
-      }
-      if (nilBody == null || consBody == null) {
-        throw unsupported("case without both [] and :: branches");
-      }
-      int s = freshLocal();
-      intExpr(c.scrutinee());
-      code.write(0x21);
-      leb(code, s); // local.set scrutinee
+    /** {@code if scrut != value then br $fail} â€” a scalar (Int/Char) literal test. */
+    private void emitScalarTest(int scrut, long value) {
       code.write(0x20);
-      leb(code, s);
-      code.write(0x50); // i64.eqz  (1 if Nil)
-      code.write(0x04);
-      code.write(I64); // if -> i64
-      body.accept(nilBody);
-      code.write(0x05); // else
-      if (consHead instanceof Pattern.Var hv) {
-        int h = local(hv.name());
-        load(s, 0);
-        code.write(0x21);
-        leb(code, h); // local.set head
-      }
-      if (consTail instanceof Pattern.Var tv) {
-        int t = local(tv.name());
-        load(s, 8);
-        code.write(0x21);
-        leb(code, t); // local.set tail
-      }
-      body.accept(consBody);
-      code.write(0x0B); // end
+      leb(code, scrut);
+      code.write(0x42);
+      sleb(code, value);
+      code.write(0x52); // i64.ne
+      code.write(0x0D);
+      leb(code, 0); // br_if $fail
     }
 
     private void intBinOp(Expr.BinOp b) {
@@ -1352,9 +1285,9 @@ public final class WasmCompiler {
      * Compiles an application, with a sound <b>arena reclamation</b>: if the call's result type is a
      * scalar ({@code Int}/{@code Float}/{@code Bool}) and it consumes a heap argument, the heap
      * pointer is saved before the call and restored after. Everything the call allocated is then
-     * reclaimed — provably dead, since a scalar result holds no heap pointer and the language is pure
+     * reclaimed â€” provably dead, since a scalar result holds no heap pointer and the language is pure
      * (no mutation makes those allocations reachable). This keeps memory bounded for the common
-     * "reduce a structure, in a loop" shape (e.g. repeatedly {@code List.sum (List.range …)}).
+     * "reduce a structure, in a loop" shape (e.g. repeatedly {@code List.sum (List.range â€¦)}).
      */
     private void emitApp(Expr.App app) {
       if (!arenaResettable(app)) {
@@ -1582,7 +1515,7 @@ public final class WasmCompiler {
     }
 
     /**
-     * Allocates a closure {@code {funcIdx, arity, count, slot…}} (one i64 word each) with {@code
+     * Allocates a closure {@code {funcIdx, arity, count, slotâ€¦}} (one i64 word each) with {@code
      * count} initially-applied arguments (captures for a lambda, or the leading args of a partial
      * application); leaves its i64 pointer. Closures are always under-applied, so count &lt; arity.
      */
@@ -1739,7 +1672,7 @@ public final class WasmCompiler {
 
   /**
    * {@code $apply(clo, arg) -> i64}: the closure runtime. A closure is a heap block {@code {funcIdx,
-   * arity, count, slot…}}. Applying copies it with one more slot; once {@code count} reaches {@code
+   * arity, count, slotâ€¦}}. Applying copies it with one more slot; once {@code count} reaches {@code
    * arity} the underlying function is invoked via {@code call_indirect} (dispatched on the arity over
    * the arities that exist), otherwise the larger closure is returned. {@code arityTypes} maps each
    * callable arity to its wasm function-type index.
@@ -2117,7 +2050,7 @@ public final class WasmCompiler {
       Map<Expr, pl.matsuo.elm.types.Ty> nodeTypes,
       Map<Expr.Lambda, Lifted> lifted) {
     // One wasm function type per distinct arity: (i64 x arity) -> i64. Computed over the user/lifted
-    // functions plus arity 2 (every native — $strEq, $strConcat, $apply — takes two i64s).
+    // functions plus arity 2 (every native â€” $strEq, $strConcat, $apply â€” takes two i64s).
     List<Integer> arities = new ArrayList<>();
     Map<Integer, Integer> arityType = new HashMap<>();
     for (Func f : funcList) {
@@ -2130,7 +2063,7 @@ public final class WasmCompiler {
     // later access/update agree on each field's id.
     Map<String, Integer> fieldIds = new HashMap<>();
 
-    // The closure runtime ($apply) dispatches over the arities a closure may carry — i.e. the
+    // The closure runtime ($apply) dispatches over the arities a closure may carry â€” i.e. the
     // arities of the user/lifted functions (>= 1), each mapped to its function-type index.
     java.util.SortedMap<Integer, Integer> dispatch = new java.util.TreeMap<>();
     for (Func f : funcList) {
@@ -2194,7 +2127,7 @@ public final class WasmCompiler {
     leb(tableSec, total); // min = number of functions
     section(out, 4, tableSec);
 
-    // Memory section (id 5): one memory, min 1 page (64 KiB), no max — the heap for cons-cells,
+    // Memory section (id 5): one memory, min 1 page (64 KiB), no max â€” the heap for cons-cells,
     // tuples and tagged values. The allocator grows it on demand (see bumpHeap), so the only ceiling
     // is the host's, not a fixed page count.
     ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -2299,7 +2232,7 @@ public final class WasmCompiler {
   /**
    * As {@link #nameSection(ByteArrayOutputStream, List, List)}, plus the GC type-name (subsection 4)
    * and field-name (subsection 10) maps so a disassembler shows {@code (type $tuple2 (struct (field
-   * $item0 …)))} rather than numeric indices. {@code typeNames}/{@code fieldNames} are parallel to
+   * $item0 â€¦)))} rather than numeric indices. {@code typeNames}/{@code fieldNames} are parallel to
    * the module's struct type indices (an empty name / list is skipped).
    */
   static void nameSection(
@@ -2329,7 +2262,7 @@ public final class WasmCompiler {
     leb(content, funcs.size());
     content.writeBytes(funcs.toByteArray());
 
-    // Subsection 2: local names — an indirect name map (funcIdx -> (localIdx -> name)), listing only
+    // Subsection 2: local names â€” an indirect name map (funcIdx -> (localIdx -> name)), listing only
     // the functions that have named locals (their parameters).
     int withLocals = (int) localNames.stream().filter(ns -> !ns.isEmpty()).count();
     if (withLocals > 0) {
@@ -2369,7 +2302,7 @@ public final class WasmCompiler {
       content.writeBytes(types.toByteArray());
     }
 
-    // Subsection 10: field names — an indirect map (typeIdx -> (fieldIdx -> name)).
+    // Subsection 10: field names â€” an indirect map (typeIdx -> (fieldIdx -> name)).
     int typesWithFields = (int) fieldNames.stream().filter(fs -> fs != null && !fs.isEmpty()).count();
     if (typesWithFields > 0) {
       ByteArrayOutputStream fields = new ByteArrayOutputStream();
