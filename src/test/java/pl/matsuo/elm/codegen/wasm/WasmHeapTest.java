@@ -195,6 +195,20 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringAppendConcatenates() throws Exception {
+    agrees("main = String.length (String.append \"ab\" \"cde\")\n"); // 5
+    agrees("main = if String.append \"ab\" \"cd\" == \"abcd\" then 1 else 0\n"); // 1
+  }
+
+  @Test
+  void stringFromInt() throws Exception {
+    agrees("main = String.length (String.fromInt 12345)\n"); // 5
+    agrees("main = if String.fromInt 0 == \"0\" then 1 else 0\n"); // 1
+    agrees("main = if String.fromInt 42 == \"42\" then 1 else 0\n"); // 1
+    agrees("main = if String.fromInt (0 - 7) == \"-7\" then 1 else 0\n"); // "-7"
+  }
+
+  @Test
   void multiExportModuleDecodesEveryKind() throws Exception {
     assumeTrue(NODE, "node not available");
     // Mirrors the JS-vs-WASM gallery page: one module exporting f0..fN of mixed result types, each

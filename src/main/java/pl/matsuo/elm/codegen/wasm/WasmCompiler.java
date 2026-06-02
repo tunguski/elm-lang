@@ -173,6 +173,8 @@ public final class WasmCompiler {
                   [] -> []
                   hz :: tz -> f hx hy hz :: listMap3 f tx ty tz
       stringIsEmpty s = String.length s == 0
+      fromIntDigit d = if d == 1 then "1" else if d == 2 then "2" else if d == 3 then "3" else if d == 4 then "4" else if d == 5 then "5" else if d == 6 then "6" else if d == 7 then "7" else if d == 8 then "8" else if d == 9 then "9" else "0"
+      stringFromInt n = if n < 0 then "-" ++ stringFromInt (0 - n) else if n < 10 then fromIntDigit n else stringFromInt (n // 10) ++ fromIntDigit (modBy 10 n)
       maybeWithDefault d m = case m of
           Just x -> x
           Nothing -> d
@@ -225,6 +227,7 @@ public final class WasmCompiler {
           Map.entry("List.filterMap", "listFilterMap"),
           Map.entry("List.map3", "listMap3"),
           Map.entry("String.isEmpty", "stringIsEmpty"),
+          Map.entry("String.fromInt", "stringFromInt"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
           Map.entry("Maybe.map", "maybeMap"),
           Map.entry("Maybe.andThen", "maybeAndThen"),
@@ -316,6 +319,12 @@ public final class WasmCompiler {
       decls.addAll(m.decls());
       imports.addAll(m.imports());
     }
+    // Append the standard-library prelude (when referenced) BEFORE inference, so its definitions are
+    // type-inferred too — string-building helpers like stringFromInt need their `++` to type as
+    // String. User decls come first, so a user definition of the same name still wins.
+    if (wantPrelude) {
+      decls.addAll(pl.matsuo.elm.parser.Parser.parseModule(WASM_PRELUDE).decls());
+    }
     for (Decl d : decls) {
       if (d instanceof Decl.Union u) {
         for (int i = 0; i < u.variants().size(); i++) {
@@ -356,27 +365,6 @@ public final class WasmCompiler {
     } catch (RuntimeException e) {
       nodeTypes = Map.of();
     }
-    // Prepend the standard-library prelude (List/Maybe/Result helpers) when a module refers to it,
-    // so those qualified names resolve to compiled functions. Gated to keep unrelated modules lean.
-    if (wantPrelude) {
-      for (Decl d : pl.matsuo.elm.parser.Parser.parseModule(WASM_PRELUDE).decls()) {
-        if (d instanceof Decl.Value v && !names(funcs).contains(v.name())) {
-          List<String> params = new ArrayList<>();
-          boolean ok = true;
-          for (Pattern p : v.params()) {
-            if (p instanceof Pattern.Var pv) {
-              params.add(pv.name());
-            } else {
-              ok = false;
-            }
-          }
-          if (ok) {
-            funcs.add(new Func(v.name(), params, v.body()));
-          }
-        }
-      }
-    }
-
     // Lambda-lift: every lambda becomes a top-level function (its captured locals lead its
     // parameters), and the lambda expression a closure that captures those locals. This, together
     // with the closure/$apply runtime, is what gives WASM closures and currying.
@@ -387,14 +375,6 @@ public final class WasmCompiler {
     Map<Expr.Lambda, Lifted> lifted = new java.util.IdentityHashMap<>();
     funcs = liftLambdas(funcs, globalNames, lifted);
     return assemble(funcs, ctorTag, ctorArity, nodeTypes, lifted);
-  }
-
-  private static Set<String> names(List<Func> funcs) {
-    Set<String> out = new HashSet<>();
-    for (Func f : funcs) {
-      out.add(f.name());
-    }
-    return out;
   }
 
   /** A lambda lifted to a top-level function: the function's name, its total arity (captures + own
@@ -1422,6 +1402,18 @@ public final class WasmCompiler {
       // A constructor application `Ctor a b` -> a tagged heap cell {tag, a, b}.
       if (head instanceof Expr.Ctor ctor && ctorTag.containsKey(ctor.name())) {
         emitCtor(ctor.name(), args);
+        return;
+      }
+      // `String.append a b` is `a ++ b` on strings. The polymorphic prelude function can't be
+      // statically dispatched, so intercept the call and emit the $strConcat native directly.
+      if (head instanceof Expr.Var sv
+          && "String".equals(sv.module())
+          && "append".equals(sv.name())
+          && args.size() == 2) {
+        intExpr(args.get(0));
+        intExpr(args.get(1));
+        code.write(0x10); // call $strConcat
+        leb(code, funcs.get("$strConcat")[0]);
         return;
       }
       // A call to a known top-level function (or a qualified stdlib name mapped to a prelude
