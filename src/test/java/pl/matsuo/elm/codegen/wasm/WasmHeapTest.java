@@ -167,6 +167,16 @@ class WasmHeapTest {
   }
 
   @Test
+  void listAppendOperator() throws Exception {
+    // `++` on lists lowers to the prelude's listAppend (copy the left spine onto the shared right).
+    agrees("main = List.sum ([ 1, 2, 3 ] ++ [ 4, 5 ])\n"); // 15
+    agrees("main = List.length ([ 1, 2 ] ++ [ 3, 4, 5 ])\n"); // 5
+    agrees("main = List.sum ([] ++ List.range 1 4)\n"); // 10
+    agrees("main = List.sum (List.range 1 3 ++ [])\n"); // 6
+    assertEquals("[1,2,3,4,5]", decodeList("main = [ 1, 2, 3 ] ++ [ 4, 5 ]\n"));
+  }
+
+  @Test
   void sortingSearchingAndIndexing() throws Exception {
     // Comparison-based prelude additions: maximum/minimum/member/sort/sortBy/indexedMap.
     agrees("main = Maybe.withDefault 0 (List.maximum [ 3, 9, 2, 7 ])\n"); // 9

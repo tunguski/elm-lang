@@ -1420,7 +1420,13 @@ public final class WasmGc {
             });
           }
         }
-        case "++" -> strConcat(b);
+        case "++" -> {
+          if (Types.prune(nodeType(b)) instanceof Ty.Con c && c.name().equals("List")) {
+            listAppend(b);
+          } else {
+            strConcat(b);
+          }
+        }
         case "//" -> {
           gen(b.left());
           gen(b.right());
@@ -1500,6 +1506,72 @@ public final class WasmGc {
 
     /** {@code a ++ b} for strings: a fresh mutable byte array of len(a)+len(b), with a then b
      * copied in (array.copy). Uses only ref locals; lengths are recomputed via array.len. */
+    /**
+     * Compiles {@code a ++ b} on lists. Cons cells are immutable GC structs, so we can't patch a
+     * tail in place: we first reverse {@code a} (cons each head onto an accumulator), then cons those
+     * reversed heads onto {@code b} — yielding {@code a ++ b} with {@code b}'s spine shared.
+     */
+    private void listAppend(Expr.BinOp b) {
+      Ty listTy = Types.prune(nodeType(b));
+      int ci = tupleIndex(listTy); // this list's cons struct type
+      W elemW = listTy instanceof Ty.Con lc ? wOf(listElem(lc), tuples) : INT;
+      Ref consRef = new Ref(ci);
+      int cur = freshLocal("$apc" + code.size(), consRef); // cursor over the left list
+      int rev = freshLocal("$apr" + code.size(), consRef); // left list, reversed
+      int res = freshLocal("$aps" + code.size(), consRef); // the result being built
+      int hd = freshLocal("$aph" + code.size(), elemW); // a head, in transit
+
+      gen(b.left());
+      setLocal(cur);
+      code.write(0xD0); // ref.null ci  -> rev = []
+      leb(code, ci);
+      setLocal(rev);
+      reverseSpine(cur, rev, hd, ci); // rev = reverse(left)
+
+      gen(b.right());
+      setLocal(res);
+      reverseSpine(rev, res, hd, ci); // res = reverse(rev) prepended onto right = left ++ right
+
+      get(res);
+    }
+
+    /** Emits a loop draining the list in local {@code src}, consing each head onto local {@code acc}
+     *  (so {@code acc} ends as the reversal of {@code src} prepended to its initial value). */
+    private void reverseSpine(int src, int acc, int hd, int ci) {
+      code.write(0x02); // block void
+      code.write(0x40);
+      code.write(0x03); // loop void
+      code.write(0x40);
+      get(src);
+      code.write(0xD1); // ref.is_null
+      code.write(0x0D); // br_if 1 -> exit block when src is empty
+      leb(code, 1);
+      get(src); // hd = src.head
+      structGet(ci, 0);
+      setLocal(hd);
+      get(hd); // acc = cons(hd, acc)
+      get(acc);
+      code.write(0xFB);
+      code.write(0x00); // struct.new ci
+      leb(code, ci);
+      setLocal(acc);
+      get(src); // src = src.tail
+      structGet(ci, 1);
+      setLocal(src);
+      code.write(0x0C); // br 0 -> loop
+      leb(code, 0);
+      code.write(0x0B); // end loop
+      code.write(0x0B); // end block
+    }
+
+    /** {@code struct.get ci field} on the cons ref on the stack. */
+    private void structGet(int ci, int field) {
+      code.write(0xFB);
+      code.write(0x02); // struct.get
+      leb(code, ci);
+      leb(code, field);
+    }
+
     private void strConcat(Expr.BinOp b) {
       int si = tupleIndex(nodeType(b)); // the string array type
       int a = freshLocal("$sa" + code.size(), new Ref(si));

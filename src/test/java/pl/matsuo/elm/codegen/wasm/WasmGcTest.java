@@ -320,6 +320,22 @@ class WasmGcTest {
   }
 
   @Test
+  void listAppendOperator() throws Exception {
+    // `++` on lists reverses the left spine then conses it onto the (shared) right list.
+    String sum =
+        """
+        sum xs = case xs of
+            [] -> 0
+            h :: t -> h + sum t
+        main = sum (%s)
+        """;
+    agrees(sum.formatted("[1, 2, 3] ++ [4, 5]")); // 15
+    agrees(sum.formatted("[] ++ [4, 5, 6]")); // 15
+    agrees(sum.formatted("[1, 2, 3] ++ []")); // 6
+    agrees(sum.formatted("([1, 2] ++ [3, 4]) ++ [5]")); // 15
+  }
+
+  @Test
   void capturingLambdasAsClosures() throws Exception {
     // A lambda that closes over an enclosing parameter is lifted to a function taking its captures
     // as struct fields; the closure value carries them and the body reads them via struct.get.

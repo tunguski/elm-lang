@@ -298,10 +298,11 @@ public final class WasmCompiler {
     return compileModules(modules, prelude);
   }
 
-  /** Whether a source refers to a prelude (List/Maybe/Result/Basics/String) qualified name. */
+  /** Whether a source refers to a prelude (List/Maybe/Result/Basics/String) qualified name, or uses
+   *  {@code ++} — which may be a list append, lowered to the prelude's {@code listAppend}. */
   private static boolean wantsPrelude(String source) {
     return source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
-        || source.contains("Basics.") || source.contains("String.");
+        || source.contains("Basics.") || source.contains("String.") || source.contains("++");
   }
 
   private static byte[] compileModules(List<pl.matsuo.elm.ast.Module> modules, boolean wantPrelude) {
@@ -937,6 +938,13 @@ public final class WasmCompiler {
           && c.args().isEmpty();
     }
 
+    /** Whether the recorded type of {@code e} is {@code List _} (so {@code ++} means list append). */
+    private boolean isList(Expr e) {
+      return nodeTypes.get(e) instanceof pl.matsuo.elm.types.Ty.Con c
+          && c.name().equals("List")
+          && c.args().size() == 1;
+    }
+
     // --- floats: an f64 stored as its i64 bit pattern, so values stay uniformly i64 -------------
     // Arithmetic/comparison reinterpret the bits to f64 (0xBF), compute, and (for results) back to
     // i64 (0xBD). Whether an expression is a Float is read from its inferred type.
@@ -1207,14 +1215,22 @@ public final class WasmCompiler {
         return;
       }
       if (b.op().equals("++")) {
-        if (!isString(b.left()) && !isString(b.right())) {
-          throw unsupported("++ on non-strings");
+        if (isString(b.left()) || isString(b.right())) {
+          intExpr(b.left());
+          intExpr(b.right());
+          code.write(0x10); // call $strConcat
+          leb(code, funcs.get("$strConcat")[0]);
+          return;
         }
-        intExpr(b.left());
-        intExpr(b.right());
-        code.write(0x10); // call $strConcat
-        leb(code, funcs.get("$strConcat")[0]);
-        return;
+        if (isList(b.left()) || isList(b.right())) {
+          // List append: copy the left spine onto the (shared) right list via the prelude's listAppend.
+          intExpr(b.left());
+          intExpr(b.right());
+          code.write(0x10); // call listAppend
+          leb(code, funcs.get("listAppend")[0]);
+          return;
+        }
+        throw unsupported("++ on a non-String, non-List type");
       }
       // Float arithmetic: `/` is float-only; `+ - *` are float when the operands are Float.
       if (b.op().equals("/") || ((b.op().equals("+") || b.op().equals("-") || b.op().equals("*"))
