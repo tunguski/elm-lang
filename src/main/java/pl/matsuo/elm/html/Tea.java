@@ -210,6 +210,7 @@ public final class Tea {
     }
     switch (expect.ctor()) {
       case "$Expect_String" -> send(Apply.apply(toMsg, ok(body)));
+      case "$Expect_Whatever" -> send(Apply.apply(toMsg, ok(ElmUnit.INSTANCE)));
       case "$Expect_Json" -> {
         ElmData decoded;
         try {

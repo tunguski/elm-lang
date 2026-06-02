@@ -467,9 +467,23 @@ public final class Signatures {
     g("Process.sleep", "Float -> Task x ()");
 
     g("Http.get", "{ url : String, expect : Expect msg } -> Cmd msg");
-    g("Http.post", "{ url : String, body : body, expect : Expect msg } -> Cmd msg");
+    g("Http.post", "{ url : String, body : Body, expect : Expect msg } -> Cmd msg");
+    g("Http.request",
+        "{ method : String, headers : List Header, url : String, body : Body,"
+            + " expect : Expect msg, timeout : Maybe Float, tracker : Maybe String } -> Cmd msg");
+    g("Http.header", "String -> String -> Header");
+    g("Http.emptyBody", "Body");
+    g("Http.stringBody", "String -> String -> Body");
+    g("Http.jsonBody", "Value -> Body");
     g("Http.expectString", "(Result Error String -> msg) -> Expect msg");
     g("Http.expectJson", "(Result Error a -> msg) -> Decoder a -> Expect msg");
+    g("Http.expectWhatever", "(Result Error () -> msg) -> Expect msg");
+    // Http.Error constructors.
+    g("Http.BadUrl", "String -> Error");
+    g("Http.Timeout", "Error");
+    g("Http.NetworkError", "Error");
+    g("Http.BadStatus", "Int -> Error");
+    g("Http.BadBody", "String -> Error");
 
     g("Json.Decode.string", "Decoder String");
     g("Json.Decode.int", "Decoder Int");

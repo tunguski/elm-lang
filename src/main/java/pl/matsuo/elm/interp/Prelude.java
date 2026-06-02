@@ -759,8 +759,24 @@ public final class Prelude {
       ElmRecord r = (ElmRecord) a[0];
       return d("$Cmd_Http", r.get("url"), r.get("expect"));
     });
+    fn("Http.request", 1, a -> {
+      ElmRecord r = (ElmRecord) a[0];
+      return d("$Cmd_Http", r.get("url"), r.get("expect"));
+    });
     fn("Http.expectString", 1, a -> d("$Expect_String", a[0]));
     fn("Http.expectJson", 2, a -> d("$Expect_Json", a[0], a[1]));
+    fn("Http.expectWhatever", 1, a -> d("$Expect_Whatever", a[0]));
+    // Request building (headers/bodies are opaque markers; the headless runner reads only url+expect).
+    fn("Http.header", 2, a -> d("$Http_Header", a[0], a[1]));
+    BUILTINS.put("Http.emptyBody", d("$Http_Body_Empty"));
+    fn("Http.stringBody", 2, a -> d("$Http_Body_String", a[0], a[1]));
+    fn("Http.jsonBody", 1, a -> d("$Http_Body_Json", a[0]));
+    // Http.Error constructors (also produced by the runner; here so user code can build them).
+    fn("Http.BadUrl", 1, a -> d("BadUrl", a[0]));
+    BUILTINS.put("Http.Timeout", d("Timeout"));
+    BUILTINS.put("Http.NetworkError", d("NetworkError"));
+    fn("Http.BadStatus", 1, a -> d("BadStatus", a[0]));
+    fn("Http.BadBody", 1, a -> d("BadBody", a[0]));
   }
 
   private static void registerJson() {

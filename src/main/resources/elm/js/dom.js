@@ -204,12 +204,22 @@
   // Http: real fetch; any failure maps to an Http.Error so update's error branch renders.
   $rt['Http.expectString']=function(toMsg){ return $data('$Expect',['string',toMsg,null]); };
   $rt['Http.expectJson']=function(toMsg){ return function(dec){ return $data('$Expect',['json',toMsg,dec]); }; };
-  function httpGet(req){ var url=req.url, ex=req.expect; return $cmd(function(d){
-    fetch(url).then(function(r){ if(!r.ok) throw {bad:r.status}; return ex._[0]==='json'? r.json() : r.text(); })
-      .then(function(data){ var msg; if(ex._[0]==='json'){ var x=ex._[2]._[0](data); msg=x.ok? ex._[1]($data('Ok',[x.v])) : ex._[1]($data('Err',[$data('BadBody',[String(x.v)])])); } else { msg=ex._[1]($data('Ok',[data])); } d(msg); })
+  $rt['Http.expectWhatever']=function(toMsg){ return $data('$Expect',['whatever',toMsg,null]); };
+  $rt['Http.header']=function(k){ return function(v){ return {k:k,v:v}; }; };
+  $rt['Http.emptyBody']={t:'empty'};
+  $rt['Http.stringBody']=function(mime){ return function(s){ return {t:'string',mime:mime,body:s}; }; };
+  $rt['Http.jsonBody']=function(v){ return {t:'string',mime:'application/json',body:(typeof $jsonStringify==='function'?$jsonStringify(v):JSON.stringify(v))}; };
+  function httpInit(req){ var o={ method:(req.method||'GET'), headers:{} };
+    var hs=req.headers? $listToArray(req.headers):[]; for(var i=0;i<hs.length;i++) o.headers[hs[i].k]=hs[i].v;
+    var b=req.body; if(b&&b.t==='string'){ o.body=b.body; if(b.mime) o.headers['Content-Type']=b.mime; }
+    return o; }
+  function httpGet(req){ var url=req.url, ex=req.expect, init=httpInit(req); return $cmd(function(d){
+    fetch(url,init).then(function(r){ if(!r.ok) throw {bad:r.status}; return ex._[0]==='json'? r.json() : (ex._[0]==='whatever'? null : r.text()); })
+      .then(function(data){ var msg; if(ex._[0]==='json'){ var x=ex._[2]._[0](data); msg=x.ok? ex._[1]($data('Ok',[x.v])) : ex._[1]($data('Err',[$data('BadBody',[String(x.v)])])); } else if(ex._[0]==='whatever'){ msg=ex._[1]($data('Ok',[$unit])); } else { msg=ex._[1]($data('Ok',[data])); } d(msg); })
       .catch(function(e){ var err = (e&&e.bad)? $data('BadStatus',[e.bad]) : $data('NetworkError',[]); d(ex._[1]($data('Err',[err]))); });
   }); }
   $rt['Http.get']=function(req){ return httpGet(req); };
+  $rt['Http.post']=function(req){ return httpGet(req); };
   $rt['Http.request']=function(req){ return httpGet(req); };
   // Time: real wall clock; subscriptions via setInterval. Zone carries an offset in minutes.
   $rt['Time.millisToPosix']=function(n){ return n; };
