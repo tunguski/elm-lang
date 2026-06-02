@@ -8,16 +8,21 @@ module Fuzz exposing
     , floatRange
     , percentage
     , char
+    , asciiChar
     , string
+    , asciiString
     , constant
     , map
     , map2
     , map3
+    , map4
+    , map5
     , andThen
     , pair
     , triple
     , list
     , listOfLength
+    , listOfLengthBetween
     , sequence
     , array
     , maybe
@@ -174,6 +179,20 @@ char =
     }
 
 
+{-| Any printable ASCII character (codes 32..126); shrinks toward `'a'`. -}
+asciiChar : Fuzzer Char
+asciiChar =
+    { gen = \seed -> Char.fromCode (32 + modBy 95 (hash seed))
+    , shrink =
+        \c ->
+            if c == 'a' then
+                []
+
+            else
+                [ 'a' ]
+    }
+
+
 {-| A short lowercase string (0..11 letters); shrinks toward `""` (dropping characters). -}
 string : Fuzzer String
 string =
@@ -181,6 +200,19 @@ string =
         \seed ->
             String.fromList
                 (List.map (\i -> Char.fromCode (97 + modBy 26 (hash (seed + i))))
+                    (List.range 1 (modBy 12 (hash seed)))
+                )
+    , shrink = shrinkString
+    }
+
+
+{-| A short string of printable ASCII (0..11 characters); shrinks toward `""`. -}
+asciiString : Fuzzer String
+asciiString =
+    { gen =
+        \seed ->
+            String.fromList
+                (List.map (\i -> Char.fromCode (32 + modBy 95 (hash (seed + i))))
                     (List.range 1 (modBy 12 (hash seed)))
                 )
     , shrink = shrinkString
@@ -226,6 +258,33 @@ map2 f fa fb =
 map3 : (a -> b -> c -> d) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d
 map3 f fa fb fc =
     { gen = \seed -> f (fa.gen seed) (fb.gen (hash (seed + 7919))) (fc.gen (hash (seed + 104729)))
+    , shrink = \_ -> []
+    }
+
+
+{-| Combine four fuzzers with a function (each fed a decorrelated seed). Does not shrink. -}
+map4 : (a -> b -> c -> d -> e) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d -> Fuzzer e
+map4 f fa fb fc fd =
+    { gen =
+        \seed ->
+            f (fa.gen seed)
+                (fb.gen (hash (seed + 7919)))
+                (fc.gen (hash (seed + 104729)))
+                (fd.gen (hash (seed + 1299709)))
+    , shrink = \_ -> []
+    }
+
+
+{-| Combine five fuzzers with a function (each fed a decorrelated seed). Does not shrink. -}
+map5 : (a -> b -> c -> d -> e -> g) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d -> Fuzzer e -> Fuzzer g
+map5 f fa fb fc fd fe =
+    { gen =
+        \seed ->
+            f (fa.gen seed)
+                (fb.gen (hash (seed + 7919)))
+                (fc.gen (hash (seed + 104729)))
+                (fd.gen (hash (seed + 1299709)))
+                (fe.gen (hash (seed + 15485863)))
     , shrink = \_ -> []
     }
 
@@ -402,6 +461,37 @@ listOfLength : Int -> Fuzzer a -> Fuzzer (List a)
 listOfLength n fuzzer =
     { gen = \seed -> List.map (\i -> fuzzer.gen (hash (seed + i * 31))) (List.range 1 (max 0 n))
     , shrink = \xs -> shrinkEach fuzzer.shrink xs
+    }
+
+
+{-| A list whose length is in `lo..hi`, from the element fuzzer; shrinks by dropping elements (never
+below `lo`) and by shrinking each element. -}
+listOfLengthBetween : Int -> Int -> Fuzzer a -> Fuzzer (List a)
+listOfLengthBetween lo hi fuzzer =
+    let
+        low =
+            max 0 lo
+    in
+    { gen =
+        \seed ->
+            let
+                n =
+                    if hi <= low then
+                        low
+
+                    else
+                        low + modBy (hi - low + 1) (hash seed)
+            in
+            List.map (\i -> fuzzer.gen (hash (seed + i * 31))) (List.range 1 n)
+    , shrink =
+        \xs ->
+            (if List.length xs > low then
+                removeEach xs
+
+             else
+                []
+            )
+                ++ shrinkEach fuzzer.shrink xs
     }
 
 

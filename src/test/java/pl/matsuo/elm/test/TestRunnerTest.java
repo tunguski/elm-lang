@@ -100,6 +100,34 @@ class TestRunnerTest {
   }
 
   @Test
+  void newFuzzCombinatorsTypeCheckAndRun() {
+    // Exercises the added Fuzz combinators (map4/map5, asciiString, listOfLengthBetween) so they
+    // type-check and produce values the runner can sample. Each property is a tautology -> all pass.
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (Test, describe, fuzz)
+        suite : Test
+        suite =
+            describe "new fuzzers"
+                [ fuzz (Fuzz.map4 (\\a b c d -> a + b + c + d) Fuzz.int Fuzz.int Fuzz.int Fuzz.int)
+                    "map4 produces an Int" (\\n -> Expect.equal n n)
+                , fuzz (Fuzz.map5 (\\a b c d e -> a + b + c + d + e) Fuzz.int Fuzz.int Fuzz.int Fuzz.int Fuzz.int)
+                    "map5 produces an Int" (\\n -> Expect.equal n n)
+                , fuzz Fuzz.asciiString "asciiString chars are printable ASCII"
+                    (\\s -> Expect.equal True (List.all (\\c -> Char.toCode c >= 32 && Char.toCode c <= 126) (String.toList s)))
+                , fuzz (Fuzz.listOfLengthBetween 2 5 Fuzz.int) "list length is within bounds"
+                    (\\xs -> Expect.equal True (List.length xs >= 2 && List.length xs <= 5))
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(50, 7L, null));
+    assertEquals(4, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
+  }
+
+  @Test
   void fuzzFailuresAreShrunkToAMinimalInput() {
     // "every Int is at most 3" fails for any n > 3; shrinking a random 9-digit failure must land on
     // the boundary value 4 — the smallest Int that still violates the property.
