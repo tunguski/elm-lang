@@ -12,7 +12,7 @@ class M4LibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (greet, quoted, ifYes, ifNo, counts, recursive, dnlComment, pre)
+      module Main exposing (greet, quoted, ifYes, ifNo, counts, recursive, dnlComment, pre, arith, strs, undef, defp)
 
       import M4 exposing (..)
 
@@ -39,6 +39,18 @@ class M4LibraryTest {
 
       pre : String
       pre = expandWith [ define "name" "Bob" ] "Hi name"
+
+      arith : String
+      arith = expand "incr(5) decr(5) eval(2 + 3 * 4) eval((2 + 3) * 4)"
+
+      strs : String
+      strs = expand "len(hello) index(hello, ll) index(hello, z) substr(hello, 1, 3) translit(hello, el, ip)"
+
+      undef : String
+      undef = expand "define(a, X)undefine(a)a"
+
+      defp : String
+      defp = expand "define(a, X)ifdef(a, yes, no) ifdef(b, yes, no)"
       """;
 
   private static String value(String name) {
@@ -68,5 +80,22 @@ class M4LibraryTest {
   @Test
   void dnlDeletesToNewline() {
     assertEquals("foo bar", value("dnlComment"));
+  }
+
+  @Test
+  void arithmeticBuiltins() {
+    assertEquals("6 4 14 20", value("arith")); // incr, decr, eval (precedence), eval (parens)
+  }
+
+  @Test
+  void stringBuiltins() {
+    // len, index (0-based), index absent (-1), substr (0-based start,len), translit (tr)
+    assertEquals("5 2 -1 ell hippo", value("strs"));
+  }
+
+  @Test
+  void undefineAndIfdef() {
+    assertEquals("a", value("undef")); // a undefined -> emitted literally
+    assertEquals("yes no", value("defp"));
   }
 }

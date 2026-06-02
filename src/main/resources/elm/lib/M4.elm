@@ -90,7 +90,7 @@ processName : Int -> List ( String, String ) -> String -> List Char -> String
 processName fuel env name afterName =
     let
         known =
-            name == "define" || name == "dnl" || name == "ifelse" || hasMacro name env
+            List.member name builtins || hasMacro name env
 
         ( args, afterArgs ) =
             if known then
@@ -127,16 +127,291 @@ processName fuel env name afterName =
                 scan fuel env afterArgs
 
     else if name == "ifelse" then
-        scan (fuel - 1) env (String.toList (ifelse args) ++ afterArgs)
+        rescan fuel env (ifelse args) afterArgs
+
+    else if name == "undefine" then
+        case args of
+            n :: _ ->
+                scan (fuel - 1) (List.filter (\( k, _ ) -> k /= n) env) afterArgs
+
+            [] ->
+                scan fuel env afterArgs
+
+    else if name == "ifdef" then
+        -- ifdef(name, yes, no): `yes` if the macro is defined, else `no`.
+        case args of
+            n :: yes :: rest ->
+                rescan fuel env
+                    (if hasMacro n env then
+                        yes
+
+                     else
+                        Maybe.withDefault "" (List.head rest)
+                    )
+                    afterArgs
+
+            _ ->
+                scan fuel env afterArgs
+
+    else if name == "incr" then
+        rescan fuel env (String.fromInt (m4int (arg 0 args) + 1)) afterArgs
+
+    else if name == "decr" then
+        rescan fuel env (String.fromInt (m4int (arg 0 args) - 1)) afterArgs
+
+    else if name == "eval" then
+        rescan fuel env (String.fromInt (evalArith (arg 0 args))) afterArgs
+
+    else if name == "len" then
+        rescan fuel env (String.fromInt (String.length (arg 0 args))) afterArgs
+
+    else if name == "index" then
+        -- m4 index(string, substring): 0-based position, or -1 if absent.
+        rescan fuel env (String.fromInt (m4index (arg 0 args) (arg 1 args))) afterArgs
+
+    else if name == "substr" then
+        -- m4 substr(string, start, len): start is 0-based; len optional (to end).
+        rescan fuel env (m4substr args) afterArgs
+
+    else if name == "translit" then
+        -- translit(string, from, to): map each `from` char to the matching `to` char (tr).
+        rescan fuel env (translit (arg 0 args) (arg 1 args) (arg 2 args)) afterArgs
 
     else
         case lookupMacro name env of
             Just body ->
                 -- Substitute the arguments into the body and re-scan the result.
-                scan (fuel - 1) env (String.toList (substitute name args body) ++ afterArgs)
+                rescan fuel env (substitute name args body) afterArgs
 
             Nothing ->
                 name ++ scan fuel env afterArgs
+
+
+{-| The builtin macro names the scanner recognises. -}
+builtins : List String
+builtins =
+    [ "define", "undefine", "ifdef", "dnl", "ifelse", "incr", "decr", "eval", "len", "index", "substr", "translit" ]
+
+
+{-| Re-scans a builtin's `result` (prepended to the rest of the input), so its output can expand
+further — every m4 builtin's value is rescanned. -}
+rescan : Int -> List ( String, String ) -> String -> List Char -> String
+rescan fuel env result afterArgs =
+    scan (fuel - 1) env (String.toList result ++ afterArgs)
+
+
+arg : Int -> List String -> String
+arg i args =
+    nth i args |> Maybe.withDefault ""
+
+
+m4int : String -> Int
+m4int s =
+    String.toInt (String.trim s) |> Maybe.withDefault 0
+
+
+{-| m4 `index(string, substring)`: 0-based first position, or -1 when absent. -}
+m4index : String -> String -> Int
+m4index s t =
+    case String.indexes t s of
+        i :: _ ->
+            i
+
+        [] ->
+            -1
+
+
+{-| m4 `substr(string, start, len)` — 0-based `start`, optional `len` (default: to the end). -}
+m4substr : List String -> String
+m4substr args =
+    case args of
+        s :: startStr :: rest ->
+            let
+                start =
+                    m4int startStr
+            in
+            case rest of
+                lenStr :: _ ->
+                    String.slice start (start + m4int lenStr) s
+
+                [] ->
+                    String.dropLeft start s
+
+        s :: [] ->
+            s
+
+        [] ->
+            ""
+
+
+{-| `translit(s, from, to)`: replace each character of `s` that appears in `from` with the
+character at the same position in `to` (dropped when `to` is shorter — like `tr`). -}
+translit : String -> String -> String -> String
+translit s from to =
+    let
+        fromList =
+            String.toList from
+
+        toList =
+            String.toList to
+    in
+    String.fromList
+        (List.filterMap
+            (\c ->
+                case indexOfChar c fromList 0 of
+                    Just i ->
+                        nthChar i toList
+
+                    Nothing ->
+                        Just c
+            )
+            (String.toList s)
+        )
+
+
+indexOfChar : Char -> List Char -> Int -> Maybe Int
+indexOfChar c chars i =
+    case chars of
+        x :: rest ->
+            if x == c then
+                Just i
+
+            else
+                indexOfChar c rest (i + 1)
+
+        [] ->
+            Nothing
+
+
+nthChar : Int -> List Char -> Maybe Char
+nthChar i chars =
+    List.head (List.drop i chars)
+
+
+{-| Evaluates a small integer arithmetic expression (`+ - * / %` and parentheses), m4's `eval`. -}
+evalArith : String -> Int
+evalArith expr =
+    let
+        ( value, _ ) =
+            parseAddSub (List.filter (\c -> c /= ' ') (String.toList expr))
+    in
+    value
+
+
+parseAddSub : List Char -> ( Int, List Char )
+parseAddSub chars =
+    let
+        ( left, rest ) =
+            parseMulDiv chars
+    in
+    addSubLoop left rest
+
+
+addSubLoop : Int -> List Char -> ( Int, List Char )
+addSubLoop acc chars =
+    case chars of
+        '+' :: rest ->
+            let
+                ( r, rest2 ) =
+                    parseMulDiv rest
+            in
+            addSubLoop (acc + r) rest2
+
+        '-' :: rest ->
+            let
+                ( r, rest2 ) =
+                    parseMulDiv rest
+            in
+            addSubLoop (acc - r) rest2
+
+        _ ->
+            ( acc, chars )
+
+
+parseMulDiv : List Char -> ( Int, List Char )
+parseMulDiv chars =
+    let
+        ( left, rest ) =
+            parseAtom chars
+    in
+    mulDivLoop left rest
+
+
+mulDivLoop : Int -> List Char -> ( Int, List Char )
+mulDivLoop acc chars =
+    case chars of
+        '*' :: rest ->
+            let
+                ( r, rest2 ) =
+                    parseAtom rest
+            in
+            mulDivLoop (acc * r) rest2
+
+        '/' :: rest ->
+            let
+                ( r, rest2 ) =
+                    parseAtom rest
+            in
+            mulDivLoop (acc // safeDiv r) rest2
+
+        '%' :: rest ->
+            let
+                ( r, rest2 ) =
+                    parseAtom rest
+            in
+            mulDivLoop (modBy (safeDiv r) acc) rest2
+
+        _ ->
+            ( acc, chars )
+
+
+parseAtom : List Char -> ( Int, List Char )
+parseAtom chars =
+    case chars of
+        '(' :: rest ->
+            let
+                ( v, rest2 ) =
+                    parseAddSub rest
+            in
+            case rest2 of
+                ')' :: rest3 ->
+                    ( v, rest3 )
+
+                _ ->
+                    ( v, rest2 )
+
+        '-' :: rest ->
+            let
+                ( v, rest2 ) =
+                    parseAtom rest
+            in
+            ( negate v, rest2 )
+
+        _ ->
+            parseNumber chars 0 False
+
+
+parseNumber : List Char -> Int -> Bool -> ( Int, List Char )
+parseNumber chars acc seen =
+    case chars of
+        c :: rest ->
+            if Char.isDigit c then
+                parseNumber rest (acc * 10 + (Char.toCode c - Char.toCode '0')) True
+
+            else
+                ( acc, chars )
+
+        [] ->
+            ( acc, [] )
+
+
+safeDiv : Int -> Int
+safeDiv n =
+    if n == 0 then
+        1
+
+    else
+        n
 
 
 {-| m4's `ifelse(a, b, t)` / `ifelse(a, b, t, e)`: `t` if `a == b`, else `e` (or `""`). -}
