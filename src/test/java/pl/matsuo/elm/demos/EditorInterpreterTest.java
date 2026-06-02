@@ -235,6 +235,14 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void divisionByZeroFollowsElmSemantics() {
+    assertEquals("True", eval("isInfinite (1 / 0)")); // float / 0 -> Infinity, not an error
+    assertEquals("True", eval("isNaN (0 / 0)")); // 0 / 0 -> NaN
+    assertEquals("0", eval("7 // 0")); // Elm defines integer // 0 as 0
+    assertEquals("3", eval("7 // 2")); // normal integer division still truncates
+  }
+
+  @Test
   void interpretsPowerOperator() {
     assertEquals("8", eval("2 ^ 3"));
     assertEquals("512", eval("2 ^ 3 ^ 2")); // right-associative: 2 ^ (3 ^ 2) = 2 ^ 9
@@ -498,7 +506,6 @@ class EditorInterpreterTest {
   @Test
   void reportsErrors() {
     assertTrue(eval("1 +").startsWith("Error"), eval("1 +")); // truncated input
-    assertTrue(eval("1 / 0").contains("division by zero"), eval("1 / 0"));
     assertTrue(eval("(1 + 2").startsWith("Error"), eval("(1 + 2")); // missing )
     assertTrue(eval("nope").contains("undefined variable"), eval("nope"));
   }

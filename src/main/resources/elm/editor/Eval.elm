@@ -2321,15 +2321,13 @@ arithOrCompare op x y =
         Ok (VNum (x ^ y))
 
     else if op == "/" then
-        if y == 0 then
-            Err "division by zero"
-
-        else
-            Ok (VNum (x / y))
+        -- Float division follows Elm: dividing by zero yields Infinity/NaN, it does not error.
+        Ok (VNum (x / y))
 
     else if op == "//" then
+        -- Integer division truncates toward zero; Elm defines `n // 0 == 0`.
         if y == 0 then
-            Err "division by zero"
+            Ok (VNum 0)
 
         else
             Ok (VNum (toFloat (truncate (x / y))))
