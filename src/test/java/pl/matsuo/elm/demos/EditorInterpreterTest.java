@@ -235,6 +235,14 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsPowerOperator() {
+    assertEquals("8", eval("2 ^ 3"));
+    assertEquals("512", eval("2 ^ 3 ^ 2")); // right-associative: 2 ^ (3 ^ 2) = 2 ^ 9
+    assertEquals("18", eval("2 * 3 ^ 2")); // ^ binds tighter than *: 2 * 9
+    assertEquals("True", eval("2 ^ 10 == 1024"));
+  }
+
+  @Test
   void interpretsTupleMappers() {
     assertEquals("(2, \"a\")", eval("Tuple.mapFirst (\\n -> n + 1) ( 1, \"a\" )"));
     assertEquals("(1, \"A\")", eval("Tuple.mapSecond String.toUpper ( 1, \"a\" )"));

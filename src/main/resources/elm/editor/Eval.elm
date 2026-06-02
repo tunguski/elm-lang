@@ -2317,6 +2317,9 @@ arithOrCompare op x y =
     else if op == "*" then
         Ok (VNum (x * y))
 
+    else if op == "^" then
+        Ok (VNum (x ^ y))
+
     else if op == "/" then
         if y == 0 then
             Err "division by zero"

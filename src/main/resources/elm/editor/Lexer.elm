@@ -311,7 +311,7 @@ tokenizeHelp chars acc =
 
 isOpChar : Char -> Bool
 isOpChar c =
-    c == '+' || c == '-' || c == '*' || c == '/' || c == '=' || c == '<' || c == '>' || c == '&' || c == '|' || c == ':'
+    c == '+' || c == '-' || c == '*' || c == '/' || c == '=' || c == '<' || c == '>' || c == '&' || c == '|' || c == ':' || c == '^'
 
 
 isNumChar : Char -> Bool
@@ -519,7 +519,7 @@ classifyOp s =
     else if s == "|" then
         Ok TPipe
 
-    else if List.member s [ "+", "-", "*", "/", "//", "==", "/=", "<", "<=", ">", ">=", "&&", "||", "++", "::", "|>", "<|", ">>", "<<" ] then
+    else if List.member s [ "+", "-", "*", "/", "//", "^", "==", "/=", "<", "<=", ">", ">=", "&&", "||", "++", "::", "|>", "<|", ">>", "<<" ] then
         Ok (TOp s)
 
     else
