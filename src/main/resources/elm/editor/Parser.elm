@@ -700,6 +700,10 @@ parsePatternAtom tokens =
         (TNum n) :: rest ->
             Ok ( PInt n, rest )
 
+        (TOp "-") :: (TNum n) :: rest ->
+            -- A negative literal pattern `-1` (a lone `-` then a number, in pattern position).
+            Ok ( PInt (negate n), rest )
+
         (TStr s) :: rest ->
             Ok ( PStr s, rest )
 

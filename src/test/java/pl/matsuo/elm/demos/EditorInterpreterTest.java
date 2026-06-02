@@ -313,6 +313,13 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void matchesNegativeLiteralPatterns() {
+    assertEquals("100", eval("case -1 of\n  -1 -> 100\n  _ -> 0"));
+    assertEquals("0", eval("case 5 of\n  -1 -> 100\n  _ -> 0"));
+    assertEquals("22", eval("case -2 of\n  -2 -> 22\n  _ -> 0"));
+  }
+
+  @Test
   void interpretsXor() {
     assertEquals("True", eval("xor True False"));
     assertEquals("False", eval("xor True True"));
