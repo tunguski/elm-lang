@@ -199,6 +199,9 @@ public final class WasmCompiler {
           Err e -> Err e
       identity x = x
       always a b = a
+      max a b = maxOf a b
+      min a b = minOf a b
+      clamp lo hi x = maxOf lo (minOf hi x)
       """;
 
   /** Maps qualified standard-library names to the prelude function that implements them. */
@@ -312,7 +315,10 @@ public final class WasmCompiler {
    *  {@code ++} — which may be a list append, lowered to the prelude's {@code listAppend}. */
   private static boolean wantsPrelude(String source) {
     return source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
-        || source.contains("Basics.") || source.contains("String.") || source.contains("++");
+        || source.contains("Basics.") || source.contains("String.") || source.contains("++")
+        // Bare Basics helpers defined in the prelude (max/min/clamp). Over-including the prelude is
+        // harmless: a user definition of the same name wins, and unused helpers just aren't called.
+        || source.contains("max") || source.contains("min") || source.contains("clamp");
   }
 
   private static byte[] compileModules(List<pl.matsuo.elm.ast.Module> modules, boolean wantPrelude) {

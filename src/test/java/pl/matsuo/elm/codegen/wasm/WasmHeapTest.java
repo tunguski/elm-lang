@@ -428,6 +428,15 @@ class WasmHeapTest {
   }
 
   @Test
+  void maxMinClampCompile() throws Exception {
+    agrees("main = max 3 5\n"); // 5
+    agrees("main = min 3 5\n"); // 3
+    agrees("main = clamp 0 10 15\n"); // 10
+    agrees("main = clamp 0 10 (0 - 4)\n"); // 0
+    agrees("main = max (min 7 4) 2\n"); // 4
+  }
+
+  @Test
   void singleAllocationLargerThanOnePageGrowsEnoughPages() throws Exception {
     assumeTrue(NODE, "node not available");
     // A string literal whose single allocation (~140 KB) overruns the current 1-page heap by more
