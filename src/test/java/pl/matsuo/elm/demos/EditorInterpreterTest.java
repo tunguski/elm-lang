@@ -235,6 +235,20 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsBasicsMath() {
+    assertEquals("True", eval("atan2 1 1 > 0.78 && atan2 1 1 < 0.79")); // pi/4 ≈ 0.785
+    assertEquals("2", eval("round (logBase 2 4)")); // log2(4) = 2
+    assertEquals("0", eval("round (asin 0)"));
+    assertEquals("0", eval("round (acos 1)"));
+    assertEquals("0", eval("round (atan 0)"));
+    assertEquals("True", eval("radians 3 == 3")); // radians is the identity
+    assertEquals("True", eval("turns 1 > 6.28 && turns 1 < 6.29")); // 2*pi
+    assertEquals("True", eval("isNaN (sqrt (negate 1))")); // sqrt of a negative is NaN
+    assertEquals("False", eval("isNaN 1.0"));
+    assertEquals("False", eval("isInfinite 1.0"));
+  }
+
+  @Test
   void interpretsSet() {
     assertEquals("3", eval("Set.size (Set.fromList [ 3, 1, 2, 1, 3 ])")); // duplicates collapse
     assertEquals("True", eval("Set.member 2 (Set.fromList [ 1, 2, 3 ])"));

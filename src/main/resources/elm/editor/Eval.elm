@@ -36,6 +36,7 @@ builtins =
         ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
         ++ [ "Array.empty", "Array.initialize", "Array.repeat", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.get", "Array.set", "Array.push", "Array.append", "Array.length", "Array.isEmpty", "Array.slice", "Array.map", "Array.indexedMap", "Array.foldl", "Array.foldr", "Array.filter" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
+        ++ [ "asin", "acos", "atan", "atan2", "logBase", "radians", "turns", "isNaN", "isInfinite" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
@@ -179,7 +180,7 @@ arity name =
     else if name == "WebGL.entityWith" then
         5
 
-    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable", "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object" ] then
+    else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "asin", "acos", "atan", "radians", "turns", "isNaN", "isInfinite", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable", "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object" ] then
         1
 
     else if List.member name [ "toX", "toY", "degrees" ] then
@@ -961,6 +962,33 @@ runBuiltin globals name args =
 
             ( "abs", [ VNum n ] ) ->
                 Ok (VNum (abs n))
+
+            ( "asin", [ VNum n ] ) ->
+                Ok (VNum (asin n))
+
+            ( "acos", [ VNum n ] ) ->
+                Ok (VNum (acos n))
+
+            ( "atan", [ VNum n ] ) ->
+                Ok (VNum (atan n))
+
+            ( "atan2", [ VNum y, VNum x ] ) ->
+                Ok (VNum (atan2 y x))
+
+            ( "logBase", [ VNum b, VNum n ] ) ->
+                Ok (VNum (logBase b n))
+
+            ( "radians", [ VNum n ] ) ->
+                Ok (VNum n)
+
+            ( "turns", [ VNum n ] ) ->
+                Ok (VNum (2 * pi * n))
+
+            ( "isNaN", [ VNum n ] ) ->
+                Ok (VBool (isNaN n))
+
+            ( "isInfinite", [ VNum n ] ) ->
+                Ok (VBool (isInfinite n))
 
             -- Time: a Posix is modelled as its milliseconds (a VNum); the Zone is ignored (UTC).
             ( "Time.millisToPosix", [ VNum n ] ) ->
