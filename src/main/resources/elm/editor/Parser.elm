@@ -245,6 +245,10 @@ parseAtom tokens =
             -- The unit value `()`, modelled as the empty tuple.
             Ok ( Tup [], rest )
 
+        TLParen :: (TOp op) :: TRParen :: rest ->
+            -- An operator used as a function, e.g. `(+)`, `(::)`, `(|>)` — `\a b -> a op b`.
+            Ok ( Lam [ "$opl", "$opr" ] (mkBin op (Var "$opl") (Var "$opr")), rest )
+
         TLParen :: rest ->
             parseExpr rest
                 |> Result.andThen

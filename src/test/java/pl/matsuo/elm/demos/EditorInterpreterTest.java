@@ -97,6 +97,15 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsOperatorsAsFunctions() {
+    assertEquals("6", eval("List.foldl (+) 0 [ 1, 2, 3 ]"));
+    assertEquals("[2, 4, 6]", eval("List.map ((*) 2) [ 1, 2, 3 ]"));
+    assertEquals("[1, 2, 3]", eval("(::) 1 [ 2, 3 ]"));
+    assertEquals("\"ab\"", eval("(++) \"a\" \"b\""));
+    assertEquals("6", eval("((|>) 5) ((+) 1)")); // 5 |> (1 +)  ==  (1 +) 5  ==  6
+  }
+
+  @Test
   void interpretsCharLiteralsAndOperations() {
     assertEquals("'a'", eval("'a'"));
     assertEquals("97", eval("Char.toCode 'a'"));
