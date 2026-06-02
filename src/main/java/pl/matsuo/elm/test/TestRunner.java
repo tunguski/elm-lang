@@ -2,6 +2,8 @@ package pl.matsuo.elm.test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeoutException;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.interp.Apply;
@@ -39,15 +41,20 @@ public final class TestRunner {
    * inputs reproducible, an optional case-insensitive substring filter on a test's full path,
    * whether to report which top-level functions of the test files the suite exercised, and the
    * report format ({@code "console"} / {@code "tap"} / {@code "junit"} / {@code "json"}). */
-  public record Options(int fuzzRuns, long seed, String filter, boolean coverage, String report) {
-    public static final Options DEFAULTS = new Options(100, 0x5eedL, null, false, "console");
+  public record Options(
+      int fuzzRuns, long seed, String filter, boolean coverage, String report, long timeoutMs) {
+    public static final Options DEFAULTS = new Options(100, 0x5eedL, null, false, "console", 0);
 
     public Options(int fuzzRuns, long seed, String filter) {
-      this(fuzzRuns, seed, filter, false, "console");
+      this(fuzzRuns, seed, filter, false, "console", 0);
     }
 
     public Options(int fuzzRuns, long seed, String filter, boolean coverage) {
-      this(fuzzRuns, seed, filter, coverage, "console");
+      this(fuzzRuns, seed, filter, coverage, "console", 0);
+    }
+
+    public Options(int fuzzRuns, long seed, String filter, boolean coverage, String report) {
+      this(fuzzRuns, seed, filter, coverage, report, 0);
     }
   }
 
@@ -133,6 +140,49 @@ public final class TestRunner {
   /** Fuzz runs at or above this count are evaluated in parallel (the interpreter is thread-safe for
    * the pure property evaluation; below this the thread-pool overhead isn't worth it). */
   private static final int PARALLEL_THRESHOLD = 64;
+
+  /** Runs {@code task} under a wall-clock budget. {@code timeoutMs <= 0} disables the limit. On
+   *  overrun a {@link TimeoutException} is thrown (and the runaway thread, which a tight interpreter
+   *  loop won't interrupt cooperatively, is abandoned as a daemon so it can't block JVM exit). */
+  private static <T> T withTimeout(long timeoutMs, Callable<T> task) throws TimeoutException {
+    if (timeoutMs <= 0) {
+      try {
+        return task.call();
+      } catch (RuntimeException | Error e) {
+        throw e;
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }
+    java.util.concurrent.ExecutorService ex =
+        java.util.concurrent.Executors.newSingleThreadExecutor(
+            r -> {
+              Thread thread = new Thread(r, "elm-test");
+              thread.setDaemon(true);
+              return thread;
+            });
+    java.util.concurrent.Future<T> f = ex.submit(task);
+    try {
+      return f.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+    } catch (TimeoutException te) {
+      f.cancel(true);
+      throw te;
+    } catch (java.util.concurrent.ExecutionException ee) {
+      Throwable c = ee.getCause();
+      if (c instanceof RuntimeException re) {
+        throw re;
+      }
+      if (c instanceof Error er) {
+        throw er;
+      }
+      throw new RuntimeException(c);
+    } catch (InterruptedException ie) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException(ie);
+    } finally {
+      ex.shutdownNow();
+    }
+  }
 
   /** A fuzz failure for one input: the reason (the rendered offending value, or an error message),
    * and whether it came from a thrown error rather than a failed expectation. */
@@ -223,7 +273,13 @@ public final class TestRunner {
         }
         Object expectation;
         try {
-          expectation = Thunk.resolve(Apply.apply(Thunk.resolve(t.arg(1)), ElmUnit.INSTANCE));
+          Object body = Thunk.resolve(t.arg(1));
+          expectation =
+              withTimeout(opts.timeoutMs(), () -> Thunk.resolve(Apply.apply(body, ElmUnit.INSTANCE)));
+        } catch (TimeoutException te) {
+          cases.add(new Case(prefix + desc, Outcome.FAIL,
+              "timed out after " + opts.timeoutMs() + "ms", null));
+          return;
         } catch (RuntimeException e) {
           cases.add(new Case(prefix + desc, Outcome.FAIL, "error: " + e.getMessage(), null));
           return;

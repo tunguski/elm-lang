@@ -384,6 +384,29 @@ class TestRunnerTest {
   }
 
   @Test
+  void aTestExceedingTheTimeoutFails() {
+    // `loop n = loop (n + 1)` never terminates; with a short per-test timeout it fails rather than
+    // hanging the whole suite. A second, fast test still passes.
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Test exposing (describe, test)
+        loop n = loop (n + 1)
+        suite =
+            describe "demo"
+                [ test "hangs" (\\_ -> Expect.equal 1 (loop 0))
+                , test "fast" (\\_ -> Expect.equal 2 (1 + 1))
+                ]
+        """;
+    TestRunner.Result r =
+        TestRunner.run(List.of(src), new TestRunner.Options(100, 0L, null, false, "console", 200));
+    assertEquals(1, r.passed(), r.report()); // the fast test
+    assertEquals(1, r.failed(), r.report()); // the hanging test
+    assertTrue(r.report().contains("timed out"), r.report());
+  }
+
+  @Test
   void noTestsIsACleanPass() {
     TestRunner.Result r = TestRunner.run(List.of("module M exposing (..)\nanswer = 42\n"));
     assertEquals(0, r.passed());

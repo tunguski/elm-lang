@@ -602,6 +602,11 @@ public final class Main implements Runnable {
     @Option(names = "--watch", description = "Re-run the suite whenever a test file changes (Ctrl-C to stop).")
     boolean watch;
 
+    @Option(
+        names = "--timeout",
+        description = "Per-test wall-clock limit in milliseconds; a test exceeding it fails (0 = no limit).")
+    long timeout;
+
     @Override
     public Integer call() throws IOException, InterruptedException {
       if (watch) {
@@ -621,7 +626,8 @@ public final class Main implements Runnable {
         var result =
             pl.matsuo.elm.test.TestRunner.run(
                 sources,
-                new pl.matsuo.elm.test.TestRunner.Options(fuzz, seed, filter, trackCoverage, report));
+                new pl.matsuo.elm.test.TestRunner.Options(
+                    fuzz, seed, filter, trackCoverage, report, timeout));
         System.out.print(result.report());
         if (coverageHtml != null && result.coverageHtml() != null) {
           Files.writeString(coverageHtml, result.coverageHtml(), java.nio.charset.StandardCharsets.UTF_8);
