@@ -14,7 +14,7 @@ class BytesLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (widths, raw, roundTrip8, roundTrip16BE, roundTrip16LE, roundTrip32, pair, overrun, signed8, signed16, strRoundTrip, bytesRoundTrip)
+      module Main exposing (widths, raw, roundTrip8, roundTrip16BE, roundTrip16LE, roundTrip32, pair, overrun, signed8, signed16, strRoundTrip, bytesRoundTrip, quad)
 
       import Bytes exposing (Endianness(..))
       import Bytes.Encode as E
@@ -58,6 +58,9 @@ class BytesLibraryTest {
 
       bytesRoundTrip : Maybe (List Int)
       bytesRoundTrip = Maybe.map Bytes.toByteValues (D.decode (D.bytes 2) (E.encode (E.sequence [ E.unsignedInt8 9, E.unsignedInt8 8, E.unsignedInt8 7 ])))
+
+      quad : Maybe Int
+      quad = D.decode (D.map4 (\\a b c d -> a + b + c + d) D.unsignedInt8 D.unsignedInt8 D.unsignedInt8 D.unsignedInt8) (E.encode (E.sequence [ E.unsignedInt8 1, E.unsignedInt8 2, E.unsignedInt8 3, E.unsignedInt8 4 ]))
       """;
 
   private static String value(String name) {
@@ -76,6 +79,11 @@ class BytesLibraryTest {
     assertEquals("Just 4096", value("roundTrip16BE"));
     assertEquals("Just 4096", value("roundTrip16LE"));
     assertEquals("Just 70000", value("roundTrip32"));
+  }
+
+  @Test
+  void map4CombinesFourDecoders() {
+    assertEquals("Just 10", value("quad")); // 1 + 2 + 3 + 4
   }
 
   @Test

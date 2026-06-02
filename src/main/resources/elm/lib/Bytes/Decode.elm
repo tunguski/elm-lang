@@ -14,6 +14,8 @@ module Bytes.Decode exposing
     , map
     , map2
     , map3
+    , map4
+    , map5
     , andThen
     )
 
@@ -135,6 +137,16 @@ string n =
 map3 : (a -> b -> c -> d) -> Decoder a -> Decoder b -> Decoder c -> Decoder d
 map3 f da db dc =
     andThen (\a -> map2 (f a) db dc) da
+
+
+map4 : (a -> b -> c -> d -> e) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e
+map4 f da db dc dd =
+    andThen (\a -> map3 (f a) db dc dd) da
+
+
+map5 : (a -> b -> c -> d -> e -> g) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder g
+map5 f da db dc dd de =
+    andThen (\a -> map4 (f a) db dc dd de) da
 
 
 {-| A decoder that consumes nothing and always yields `a`. -}
