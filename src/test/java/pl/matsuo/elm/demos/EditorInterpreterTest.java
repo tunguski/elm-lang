@@ -251,6 +251,16 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void letBindingsMayCarryTypeAnnotations() {
+    // A type annotation on a let binding is parsed and skipped (the binding still evaluates).
+    assertEquals("6", eval("let\n    x : Int\n    x = 5\nin\nx + 1"));
+    // Multiple annotated bindings.
+    assertEquals("12", eval("let\n    a : Int\n    a = 5\n    b : Int\n    b = 7\nin\na + b"));
+    // A function binding with an annotation.
+    assertEquals("9", eval("let\n    sq : Int -> Int\n    sq n = n * n\nin\nsq 3"));
+  }
+
+  @Test
   void interpretsCharHexOctPredicates() {
     assertEquals("True", eval("Char.isHexDigit 'f'"));
     assertEquals("True", eval("Char.isHexDigit 'F'"));

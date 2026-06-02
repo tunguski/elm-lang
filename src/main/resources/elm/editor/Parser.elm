@@ -386,6 +386,21 @@ parseLet tokens =
             )
 
 
+{-| Drops tokens up to and including the next `TSemi` (a let-binding separator) — used to skip a
+type-annotation line so the following `name = …` binding is parsed. -}
+dropThroughSemi : List Token -> List Token
+dropThroughSemi tokens =
+    case tokens of
+        [] ->
+            []
+
+        TSemi :: rest ->
+            rest
+
+        _ :: rest ->
+            dropThroughSemi rest
+
+
 parseLetBinding : List Token -> Result String ( ( String, Expr ), List Token )
 parseLetBinding tokens =
     case tokens of
@@ -411,6 +426,11 @@ parseLetBinding tokens =
                                             in
                                             ( ( name, value ), Tuple.second rv )
                                         )
+
+                            (TOp ":") :: _ ->
+                                -- A type annotation `name : Type`: skip it (up to the next binding
+                                -- separator) and parse the actual `name = …` binding that follows.
+                                parseLetBinding (dropThroughSemi afterParams)
 
                             _ ->
                                 Err "expected '=' in let binding"

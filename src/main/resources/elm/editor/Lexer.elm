@@ -560,6 +560,11 @@ classifyOp s =
     else if s == "|" then
         Ok TPipe
 
+    else if s == ":" then
+        -- A lone colon: a type annotation marker. Lexing it (rather than erroring) lets the parser
+        -- skip `name : Type` annotations inside `let`; `::` (cons) is lexed as its own op above.
+        Ok (TOp ":")
+
     else if List.member s [ "+", "-", "*", "/", "//", "^", "==", "/=", "<", "<=", ">", ">=", "&&", "||", "++", "::", "|>", "<|", ">>", "<<" ] then
         Ok (TOp s)
 
