@@ -428,6 +428,16 @@ class WasmHeapTest {
   }
 
   @Test
+  void singleAllocationLargerThanOnePageGrowsEnoughPages() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // A string literal whose single allocation (~140 KB) overruns the current 1-page heap by more
+    // than a page: growing only one page would still leave $hp past capacity and trap. The allocator
+    // must grow as many pages as the deficit needs.
+    String big = "a".repeat(140000);
+    assertEquals(140000, Integer.parseInt(runMain("main = String.length \"" + big + "\"\n")));
+  }
+
+  @Test
   void stringConcatJoinRepeatProduceTheRightBytes() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("ababab", runMainString("main = String.repeat 3 \"ab\"\n"));

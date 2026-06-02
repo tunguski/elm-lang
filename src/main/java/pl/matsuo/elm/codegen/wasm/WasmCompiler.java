@@ -808,10 +808,11 @@ public final class WasmCompiler {
     }
 
     /**
-     * Emits {@code $hp += n} (the global heap pointer, an i32) and then grows linear memory by one
-     * page if the new pointer has passed the current capacity. Each allocation is far smaller than a
-     * 64 KiB page, so a single {@code memory.grow 1} always restores {@code $hp <= capacity}; this is
-     * what lets heap-heavy, long-running programs (long lists, deep recursion) run without trapping.
+     * Emits {@code $hp += n} (the global heap pointer, an i32) and then grows linear memory by
+     * <em>as many pages as needed</em> if the new pointer has passed the current capacity. Computing
+     * the exact deficit (rather than always growing one page) means a single allocation larger than a
+     * 64 KiB page — a big string or list literal — no longer overruns capacity and traps; small
+     * allocations still grow exactly one page. This keeps heap-heavy, long-running programs sound.
      */
     private void bumpHeap(int n) {
       code.write(0x23);
@@ -821,7 +822,7 @@ public final class WasmCompiler {
       code.write(0x6A); // i32.add
       code.write(0x24);
       leb(code, 0); // global.set $hp
-      // if ($hp > memory.size * 65536) memory.grow(1)
+      // if ($hp > memory.size * 65536) memory.grow(ceil((hp - capacity) / 65536))
       code.write(0x23);
       leb(code, 0); // global.get $hp
       code.write(0x3F);
@@ -832,10 +833,23 @@ public final class WasmCompiler {
       code.write(0x4B); // i32.gt_u -> $hp > capacity ?
       code.write(0x04);
       code.write(0x40); // if (void)
+      // pages = (($hp - capacity) + 65535) >>> 16  -- enough pages to cover the deficit
+      code.write(0x23);
+      leb(code, 0); // global.get $hp
+      code.write(0x3F);
+      code.write(0x00); // memory.size (pages)
       code.write(0x41);
-      sleb(code, 1); // i32.const 1
+      sleb(code, 16);
+      code.write(0x74); // i32.shl -> capacity in bytes
+      code.write(0x6B); // i32.sub -> deficit
+      code.write(0x41);
+      sleb(code, 65535);
+      code.write(0x6A); // i32.add -> deficit + 65535
+      code.write(0x41);
+      sleb(code, 16);
+      code.write(0x76); // i32.shr_u 16 -> pages needed (ceil)
       code.write(0x40);
-      code.write(0x00); // memory.grow 1
+      code.write(0x00); // memory.grow pages
       code.write(0x1A); // drop the previous-size result
       code.write(0x0B); // end
     }
