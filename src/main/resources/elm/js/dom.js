@@ -54,9 +54,13 @@
   $rt['Html.Lazy.lazy']=function(f){ return function(a){ return $data('$Lazy',[f,[a]]); }; };
   $rt['Html.Lazy.lazy2']=function(f){ return function(a){ return function(b){ return $data('$Lazy',[f,[a,b]]); }; }; };
   $rt['Html.Lazy.lazy3']=function(f){ return function(a){ return function(b){ return function(c){ return $data('$Lazy',[f,[a,b,c]]); }; }; }; };
+  $rt['Html.Lazy.lazy4']=function(f){ return function(a){ return function(b){ return function(c){ return function(d){ return $data('$Lazy',[f,[a,b,c,d]]); }; }; }; }; };
+  $rt['Html.Lazy.lazy5']=function(f){ return function(a){ return function(b){ return function(c){ return function(d){ return function(e){ return $data('$Lazy',[f,[a,b,c,d,e]]); }; }; }; }; }; };
   $rt['Svg.Lazy.lazy']=$rt['Html.Lazy.lazy'];
   $rt['Svg.Lazy.lazy2']=$rt['Html.Lazy.lazy2'];
   $rt['Svg.Lazy.lazy3']=$rt['Html.Lazy.lazy3'];
+  $rt['Svg.Lazy.lazy4']=$rt['Html.Lazy.lazy4'];
+  $rt['Svg.Lazy.lazy5']=$rt['Html.Lazy.lazy5'];
   function $forceLazy(v){ var r=v._[0]; v._[1].forEach(function(a){ r=r(a); }); return r; }
   function $sameArgs(a,b){ if(!a||a.length!==b.length) return false; for(var i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; } return true; }
   Object.keys(SVG_TAGS).forEach(function(t){ $rt['Svg.'+t]=node(t); });

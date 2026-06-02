@@ -304,9 +304,13 @@ public final class Signatures {
     g("Html.Lazy.lazy", "(a -> Html msg) -> a -> Html msg");
     g("Html.Lazy.lazy2", "(a -> b -> Html msg) -> a -> b -> Html msg");
     g("Html.Lazy.lazy3", "(a -> b -> c -> Html msg) -> a -> b -> c -> Html msg");
+    g("Html.Lazy.lazy4", "(a -> b -> c -> d -> Html msg) -> a -> b -> c -> d -> Html msg");
+    g("Html.Lazy.lazy5", "(a -> b -> c -> d -> e -> Html msg) -> a -> b -> c -> d -> e -> Html msg");
     g("Svg.Lazy.lazy", "(a -> Svg msg) -> a -> Svg msg");
     g("Svg.Lazy.lazy2", "(a -> b -> Svg msg) -> a -> b -> Svg msg");
     g("Svg.Lazy.lazy3", "(a -> b -> c -> Svg msg) -> a -> b -> c -> Svg msg");
+    g("Svg.Lazy.lazy4", "(a -> b -> c -> d -> Svg msg) -> a -> b -> c -> d -> Svg msg");
+    g("Svg.Lazy.lazy5", "(a -> b -> c -> d -> e -> Svg msg) -> a -> b -> c -> d -> e -> Svg msg");
     g("Html.Keyed.node", "String -> List (Attribute msg) -> List ( String, Html msg ) -> Html msg");
     g("Html.Keyed.ul", "List (Attribute msg) -> List ( String, Html msg ) -> Html msg");
     g("Html.Keyed.ol", "List (Attribute msg) -> List ( String, Html msg ) -> Html msg");

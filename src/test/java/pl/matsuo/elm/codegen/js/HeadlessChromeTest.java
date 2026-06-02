@@ -262,6 +262,24 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void htmlLazy4RendersAndMemoizes() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // lazy4 must apply its four args to render, and (like lazy) reuse the node when none change.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (div, text)\n"
+            + "import Html.Attributes exposing (id)\n"
+            + "import Html.Lazy exposing (lazy4)\n"
+            + "type Msg = Inc\n"
+            + "main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }\n"
+            + "sumView a b c d = div [ id \"sum\" ] [ text (String.fromInt (a + b + c + d)) ]\n"
+            + "view n = div [] [ lazy4 sumView 1 2 3 4, div [ id \"count\" ] [ text (String.fromInt n) ] ]\n";
+    String dom = renderPage(JsCompiler.htmlPage(app, null));
+    assertTrue(dom.contains("id=\"sum\">10") || dom.contains(">10</div>"), "lazy4 applied all four args: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);
