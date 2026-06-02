@@ -428,6 +428,21 @@ class WasmHeapTest {
   }
 
   @Test
+  void maybeAndResultCombinatorsCompile() throws Exception {
+    agrees("main = Maybe.withDefault 0 (Maybe.map2 (\\a b -> a + b) (Just 3) (Just 4))\n"); // 7
+    agrees("main = Maybe.withDefault 0 (Maybe.map2 (\\a b -> a + b) (Just 3) Nothing)\n"); // 0
+    agrees("main = Maybe.withDefault 0 (Maybe.map3 (\\a b c -> a + b + c) (Just 1) (Just 2) (Just 3))\n"); // 6
+    agrees("main = Result.withDefault 0 (Result.andThen (\\x -> Ok (x + 1)) (Ok 41))\n"); // 42
+    agrees("main = Result.withDefault 0 (Result.map2 (\\a b -> a * b) (Ok 6) (Ok 7))\n"); // 42
+  }
+
+  @Test
+  void listUnzipCompiles() throws Exception {
+    // unzip [(1,4),(2,5),(3,6)] -> ([1,2,3],[4,5,6]); encode as sum(firsts)*100 + sum(seconds).
+    agrees("main =\n    case List.unzip [ ( 1, 4 ), ( 2, 5 ), ( 3, 6 ) ] of\n        ( xs, ys ) -> List.sum xs * 100 + List.sum ys\n"); // 615
+  }
+
+  @Test
   void listPartitionCompiles() throws Exception {
     // partition splits [1,2,3] by (> 1) into ([2,3], [1]); encode the two lengths as a*10 + b.
     agrees("main =\n    case List.partition (\\x -> x > 1) [ 1, 2, 3 ] of\n        ( a, b ) -> List.length a * 10 + List.length b\n"); // 21

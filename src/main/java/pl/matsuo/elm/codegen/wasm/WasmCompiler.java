@@ -212,6 +212,17 @@ public final class WasmCompiler {
       listReject pred xs = case xs of
           [] -> []
           h :: t -> if pred h then listReject pred t else h :: listReject pred t
+      listUnzip pairs = case pairs of
+          [] -> ( [], [] )
+          ( a, b ) :: rest -> case listUnzip rest of
+              ( xs, ys ) -> ( a :: xs, b :: ys )
+      maybeMap2 f ma mb = maybeAndThen (\\a -> maybeMap (f a) mb) ma
+      maybeMap3 f ma mb mc = maybeAndThen (\\a -> maybeMap2 (f a) mb mc) ma
+      resultAndThen f r = case r of
+          Ok x -> f x
+          Err e -> Err e
+      resultMap2 f ra rb = resultAndThen (\\a -> resultMap (f a) rb) ra
+      resultMap3 f ra rb rc = resultAndThen (\\a -> resultMap2 (f a) rb rc) ra
       """;
 
   /** Maps qualified standard-library names to the prelude function that implements them. */
@@ -248,6 +259,12 @@ public final class WasmCompiler {
           Map.entry("List.map3", "listMap3"),
           Map.entry("List.intersperse", "listIntersperse"),
           Map.entry("List.partition", "listPartition"),
+          Map.entry("List.unzip", "listUnzip"),
+          Map.entry("Maybe.map2", "maybeMap2"),
+          Map.entry("Maybe.map3", "maybeMap3"),
+          Map.entry("Result.andThen", "resultAndThen"),
+          Map.entry("Result.map2", "resultMap2"),
+          Map.entry("Result.map3", "resultMap3"),
           Map.entry("String.isEmpty", "stringIsEmpty"),
           Map.entry("String.fromInt", "stringFromInt"),
           Map.entry("String.repeat", "stringRepeat"),
