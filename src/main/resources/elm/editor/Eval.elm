@@ -28,7 +28,7 @@ builtins =
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
         ++ [ "String.concat", "String.trimLeft", "String.trimRight", "String.any", "String.all" ]
-        ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ]
+        ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.pad", "String.replace" ]
         ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3", "List.map4", "List.map5", "List.sortWith", "compare" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit" ]
@@ -138,7 +138,7 @@ arity name =
     else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip", "Set.fromList", "Set.toList", "Set.size", "Set.isEmpty", "Set.singleton", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.length", "Array.isEmpty" ] then
         1
 
-    else if List.member name [ "Dict.insert", "Dict.foldl", "Dict.foldr", "Dict.update", "Set.foldl", "Set.foldr", "Array.foldl", "Array.foldr", "Array.set", "Array.slice", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
+    else if List.member name [ "Dict.insert", "Dict.foldl", "Dict.foldr", "Dict.update", "Set.foldl", "Set.foldr", "Array.foldl", "Array.foldr", "Array.set", "Array.slice", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.pad", "String.replace" ] then
         3
 
     else if name == "List.map3" then
@@ -1629,6 +1629,17 @@ runBuiltin globals name args =
 
             ( "String.padRight", [ VNum n, VChar c, VStr s ] ) ->
                 Ok (VStr (String.padRight (round n) c s))
+
+            ( "String.pad", [ VNum n, VChar c, VStr s ] ) ->
+                -- Pad both sides to width n; the extra character goes on the right when odd.
+                let
+                    total =
+                        Basics.max 0 (round n - String.length s)
+
+                    left =
+                        total // 2
+                in
+                Ok (VStr (String.repeat left (String.fromChar c) ++ s ++ String.repeat (total - left) (String.fromChar c)))
 
             ( "String.map", [ f, VStr s ] ) ->
                 mapValues globals f (List.map VChar (String.toList s))

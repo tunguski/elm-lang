@@ -246,6 +246,8 @@ class EditorInterpreterTest {
     assertEquals("False", eval("String.all Char.isDigit \"12a45\""));
     assertEquals("True", eval("String.any Char.isUpper \"abcD\""));
     assertEquals("False", eval("String.any Char.isUpper \"abcd\""));
+    assertEquals("\"--7--\"", eval("String.pad 5 '-' \"7\"")); // both sides
+    assertEquals("\"-12--\"", eval("String.pad 5 '-' \"12\"")); // odd padding: extra on the right
   }
 
   @Test
