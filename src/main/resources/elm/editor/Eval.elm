@@ -33,6 +33,7 @@ builtins =
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
         ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl" ]
         ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
+        ++ [ "Array.empty", "Array.initialize", "Array.repeat", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.get", "Array.set", "Array.push", "Array.append", "Array.length", "Array.isEmpty", "Array.slice", "Array.map", "Array.indexedMap", "Array.foldl", "Array.foldr", "Array.filter" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
@@ -128,13 +129,13 @@ arity name =
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
         1
 
-    else if List.member name [ "Dict.empty", "Set.empty" ] then
+    else if List.member name [ "Dict.empty", "Set.empty", "Array.empty" ] then
         0
 
-    else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip", "Set.fromList", "Set.toList", "Set.size", "Set.isEmpty", "Set.singleton" ] then
+    else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip", "Set.fromList", "Set.toList", "Set.size", "Set.isEmpty", "Set.singleton", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.length", "Array.isEmpty" ] then
         1
 
-    else if List.member name [ "Dict.insert", "Dict.foldl", "Set.foldl", "Set.foldr", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
+    else if List.member name [ "Dict.insert", "Dict.foldl", "Set.foldl", "Set.foldr", "Array.foldl", "Array.foldr", "Array.set", "Array.slice", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
         3
 
     else if name == "List.map3" then
@@ -678,6 +679,48 @@ setInsert x xs =
 
     else
         xs ++ [ x ]
+
+
+-- ARRAY (a 0-indexed sequence, wrapped as `VCtor "Array" [ VList elems ]`) ------------------------
+
+
+mkArray : List Value -> Value
+mkArray xs =
+    VCtor "Array" [ VList xs ]
+
+
+arrayElems : Value -> List Value
+arrayElems v =
+    case v of
+        VCtor "Array" [ VList xs ] ->
+            xs
+
+        _ ->
+            []
+
+
+{-| `Array.slice from to`: a half-open range, with negative indices counting back from the end (as in
+elm/core). -}
+arraySlice : Int -> Int -> List Value -> List Value
+arraySlice from to xs =
+    let
+        len =
+            List.length xs
+
+        norm i =
+            if i < 0 then
+                Basics.max 0 (len + i)
+
+            else
+                Basics.min i len
+
+        lo =
+            norm from
+
+        hi =
+            norm to
+    in
+    xs |> List.drop lo |> List.take (Basics.max 0 (hi - lo))
 
 
 {-| Runs a fully-applied builtin. Html element/attribute builtins produce a structured `Value` tree
@@ -1454,6 +1497,77 @@ runBuiltin globals name args =
                                 ]
                         )
 
+            -- Array: a 0-indexed sequence, `VCtor "Array" [ VList elems ]`.
+            ( "Array.empty", [] ) ->
+                Ok (mkArray [])
+
+            ( "Array.fromList", [ VList xs ] ) ->
+                Ok (mkArray xs)
+
+            ( "Array.toList", [ a ] ) ->
+                Ok (VList (arrayElems a))
+
+            ( "Array.toIndexedList", [ a ] ) ->
+                Ok (VList (List.indexedMap (\i x -> VTup [ VNum (toFloat i), x ]) (arrayElems a)))
+
+            ( "Array.length", [ a ] ) ->
+                Ok (VNum (toFloat (List.length (arrayElems a))))
+
+            ( "Array.isEmpty", [ a ] ) ->
+                Ok (VBool (List.isEmpty (arrayElems a)))
+
+            ( "Array.repeat", [ VNum n, x ] ) ->
+                Ok (mkArray (List.repeat (round n) x))
+
+            ( "Array.initialize", [ VNum n, f ] ) ->
+                mapValues globals f (List.map (\i -> VNum (toFloat i)) (List.range 0 (round n - 1)))
+                    |> Result.map mkArray
+
+            ( "Array.get", [ VNum i, a ] ) ->
+                let
+                    xs =
+                        arrayElems a
+
+                    idx =
+                        round i
+                in
+                if idx >= 0 && idx < List.length xs then
+                    Ok (maybeValue (List.head (List.drop idx xs)))
+
+                else
+                    Ok (VCtor "Nothing" [])
+
+            ( "Array.set", [ VNum i, x, a ] ) ->
+                let
+                    idx =
+                        round i
+                in
+                Ok (mkArray (List.indexedMap (\j y -> if j == idx then x else y) (arrayElems a)))
+
+            ( "Array.push", [ x, a ] ) ->
+                Ok (mkArray (arrayElems a ++ [ x ]))
+
+            ( "Array.append", [ a, b ] ) ->
+                Ok (mkArray (arrayElems a ++ arrayElems b))
+
+            ( "Array.slice", [ VNum from, VNum to, a ] ) ->
+                Ok (mkArray (arraySlice (round from) (round to) (arrayElems a)))
+
+            ( "Array.map", [ f, a ] ) ->
+                mapValues globals f (arrayElems a) |> Result.map mkArray
+
+            ( "Array.indexedMap", [ f, a ] ) ->
+                indexedMapValues globals f 0 (arrayElems a) |> Result.map mkArray
+
+            ( "Array.filter", [ f, a ] ) ->
+                filterValues globals f (arrayElems a) |> Result.map mkArray
+
+            ( "Array.foldl", [ f, acc, a ] ) ->
+                foldlValues globals f acc (arrayElems a)
+
+            ( "Array.foldr", [ f, acc, a ] ) ->
+                foldlValues globals f acc (List.reverse (arrayElems a))
+
             _ ->
                 Err ("bad arguments to " ++ name)
 
@@ -2098,6 +2212,9 @@ renderValue v =
 
         VCtor "Set" [ VList elems ] ->
             "Set.fromList [" ++ String.join "," (List.map renderValue elems) ++ "]"
+
+        VCtor "Array" [ VList elems ] ->
+            "Array.fromList [" ++ String.join "," (List.map renderValue elems) ++ "]"
 
         VCtor name args ->
             if List.isEmpty args then

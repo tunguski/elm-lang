@@ -241,6 +241,21 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsArray() {
+    assertEquals("Just 30", eval("Array.get 2 (Array.fromList [ 10, 20, 30 ])"));
+    assertEquals("Nothing", eval("Array.get 5 (Array.fromList [ 10, 20, 30 ])"));
+    assertEquals("3", eval("Array.length (Array.push 3 (Array.fromList [ 1, 2 ]))"));
+    assertEquals("[1, 9, 3]", eval("Array.toList (Array.set 1 9 (Array.fromList [ 1, 2, 3 ]))"));
+    assertEquals("[0, 1, 2, 3]", eval("Array.toList (Array.initialize 4 identity)"));
+    assertEquals("[7, 7]", eval("Array.toList (Array.repeat 2 7)"));
+    assertEquals("[2, 4, 6]", eval("Array.toList (Array.map (\\x -> x * 2) (Array.fromList [ 1, 2, 3 ]))"));
+    assertEquals("[20, 30]", eval("Array.toList (Array.slice 1 3 (Array.fromList [ 10, 20, 30, 40 ]))"));
+    assertEquals("[10, 20]", eval("Array.toList (Array.slice 0 -2 (Array.fromList [ 10, 20, 30, 40 ]))"));
+    assertEquals("6", eval("Array.foldl (+) 0 (Array.fromList [ 1, 2, 3 ])"));
+    assertEquals("Array.fromList [1,2]", eval("Array.fromList [ 1, 2 ]"));
+  }
+
+  @Test
   void interpretsAsPatterns() {
     // `as` binds the whole matched value alongside the inner pattern.
     assertEquals("10", eval("case 5 of\n    n as m -> n + m\n    _ -> 0"));
