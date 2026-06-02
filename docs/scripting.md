@@ -131,6 +131,91 @@ exec "git" [ "rev-parse", "--short", "HEAD" ] (\result ->
 HEAD is 7a6146c
 ```
 
+## Text-processing libraries (Awk, M4, Sed, Csv)
+
+Four bundled libraries bring the classic Unix text tools to Elm scripts. They're plain
+`String -> String` (or `String -> …`) functions — no `Io` — so they compose inside any handler and
+are easy to test, and they're available to `elm script` without an install.
+
+### Awk
+
+[`Awk`](../src/main/resources/elm/lib/Awk.elm) processes text a record (line) at a time with split
+fields, mirroring awk: `field 0` is `$0` (the whole line) and `field n` is `$n` (1-based), with `nf`
+(`NF`) and `nr` (`NR`). `run` maps an action over each line and joins what it prints; `runWith` adds
+a field separator and `BEGIN`/`END` blocks. There are convenience helpers (`column`, `columns`,
+`matching`, `sumColumn`), awk's string functions (`length`, `substr`, `index`, `split`, `toupper`,
+`tolower`) and regex ones (`matchingRegex`, `sub`, `gsub`, `splitRegex`).
+
+```elm
+import Awk
+
+-- like `awk '{ print $1 }'`
+names : String -> String
+names =
+    Awk.column 1
+
+-- like `awk '{ s += $2 } END { print s }'`
+total : String -> Float
+total =
+    Awk.sumColumn 2
+```
+
+The bundled `awk-sum.elm` demo sums a column of a file: `elm script awk-sum.elm 2 sales.txt`.
+
+### M4
+
+[`M4`](../src/main/resources/elm/lib/M4.elm) is a small macro processor: `expand` scans text,
+replacing macro calls with their bodies (`$0` is the name, `$1…$9` the arguments, `$#` the count,
+`$*` the joined arguments) and re-scanning the result. Backtick/apostrophe quotes suppress expansion,
+and the `define`, `undefine`, `ifdef`, `ifelse`, `incr`, `decr`, `eval`, `len`, `index`, `substr` and
+`translit` builtins are recognised.
+
+```elm
+import M4
+
+-- "Hello world!"
+out : String
+out =
+    M4.expand "define(greet, Hello $1!)greet(world)"
+```
+
+`m4-expand.elm` expands a file's macros: `elm script m4-expand.elm config.m4`.
+
+### Sed
+
+[`Sed`](../src/main/resources/elm/lib/Sed.elm) is the common stream-editor one-liners as composable
+functions, applied line by line and backed by `Regex`: `substitute` / `substituteAll` (`s///`,
+`s///g`, with `&` for the match), `deleteMatching` (`/re/d`), `keepMatching` (`-n /re/p`),
+`transliterate` (`y///`) and `lineRange` (`-n a,bp`).
+
+```elm
+import Sed
+
+clean : String -> String
+clean input =
+    input
+        |> Sed.deleteMatching "^#"        -- drop comment lines
+        |> Sed.substituteAll "\\s+" " "    -- squeeze runs of whitespace
+```
+
+### Csv
+
+[`Csv`](../src/main/resources/elm/lib/Csv.elm) parses and encodes RFC-4180 CSV: `parse` returns rows
+of fields (honouring quoted fields with embedded commas/newlines), `encode` is the inverse, and
+`parseWithHeader` pairs each row with the header columns (records, looked up with `get`).
+
+```elm
+import Csv
+
+-- [["a","b,c"],["1","2"]]
+rows : List (List String)
+rows =
+    Csv.parse "a,\"b,c\"\n1,2"
+```
+
+`csv-report.elm` renders a CSV as an HTML table page (`Csv` + `Site`):
+`elm script csv-report.elm people.csv > report.html`.
+
 ## How it runs
 
 The handler is pure data, so a script is trivial to test: build the `Io` value and walk it with a
