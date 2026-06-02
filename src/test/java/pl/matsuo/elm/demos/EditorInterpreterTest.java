@@ -112,6 +112,22 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void animationProgramRendersAndIsDrivable() {
+    // The editor's builtin `animation` must render an initial frame AND be drivable by the frame
+    // loop (gameInitMem returns a memory so the editor keeps advancing time) — not a static one-shot.
+    String src =
+        "module Main exposing (main)\n"
+            + "import Playground exposing (..)\n"
+            + "main = animation view\n"
+            + "view time =\n"
+            + "    [ rectangle red 100 100 |> moveUp (wave 0 50 2 time) ]\n";
+    String rendered = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
+    assertTrue(rendered.contains("<svg"), rendered); // an SVG frame, not "animation error"
+    String mem = Show.plain(Apply.apply(EDITOR.value("Eval", "gameInitMem"), files("Main.elm", src)));
+    assertTrue(mem.startsWith("Just"), "animation has a driving memory so frames advance: " + mem);
+  }
+
+  @Test
   void interpretsDict() {
     assertEquals("Just 2", eval("Dict.get \"b\" (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])"));
     assertEquals("Nothing", eval("Dict.get \"z\" (Dict.fromList [ ( \"a\", 1 ) ])"));

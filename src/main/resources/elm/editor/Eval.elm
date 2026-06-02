@@ -3050,6 +3050,15 @@ renderProgram source =
                     Err e ->
                         "game error: " ++ e
 
+            Ok (VCtor "Playground.animation" [ _ ]) ->
+                -- An `animation`: draw its initial frame (time 0).
+                case gameView files [] 0 (VCtor "$Anim" []) of
+                    Ok html ->
+                        htmlToString html
+
+                    Err e ->
+                        "animation error: " ++ e
+
             Ok v ->
                 htmlToString v
 
@@ -3181,17 +3190,9 @@ runPlayground globals name args =
             Ok (pictureSvg shapes)
 
         ( "animation", [ view ] ) ->
-            -- The editor is a one-shot renderer: draw the initial frame (time 0).
-            applyValue globals view (VNum 0)
-                |> Result.andThen
-                    (\frame ->
-                        case frame of
-                            VList shapes ->
-                                Ok (pictureSvg shapes)
-
-                            _ ->
-                                Err "animation view must return a list of shapes"
-                    )
+            -- Preserve the view so the editor can drive an animation-frame loop (advancing `time`);
+            -- a static render (tests / renderProgram) draws the initial frame at time 0.
+            Ok (VCtor "Playground.animation" [ view ])
 
         ( "game", [ view, update, mem ] ) ->
             -- Preserve the parts so the editor can drive the game (keyboard/frames); a static
@@ -3422,43 +3423,77 @@ gameOf files =
             Nothing
 
 
-{-| A game's initial memory (the third argument to `game`), if the project is a game. -}
+{-| The view of a `Playground.animation` main, if the project is one. -}
+animationOf : List ( String, String ) -> Maybe Value
+animationOf files =
+    case mainValue files of
+        Ok (VCtor "Playground.animation" [ view ]) ->
+            Just view
+
+        _ ->
+            Nothing
+
+
+{-| A game's initial memory (the third argument to `game`), if the project is a game; for an
+`animation` a marker memory, so the editor's frame loop (which gates on `gameMem`) drives it too. -}
 gameInitMem : List ( String, String ) -> Maybe Value
 gameInitMem files =
-    gameOf files |> Maybe.map (\( _, _, mem ) -> mem)
+    case gameOf files of
+        Just ( _, _, mem ) ->
+            Just mem
+
+        Nothing ->
+            animationOf files |> Maybe.map (\_ -> VCtor "$Anim" [])
 
 
-{-| Renders a game's `view computer memory` to an SVG value, for the given keys and time. -}
+{-| Renders a game's `view computer memory` (or an `animation`'s `view time`) to SVG, for the given
+keys and time. -}
 gameView : List ( String, String ) -> List String -> Float -> Value -> Result String Value
 gameView files keys time mem =
     case ( parseProject files, gameOf files ) of
         ( Ok globals, Just ( view, _, _ ) ) ->
             applyValue globals view (computerValue keys time)
                 |> Result.andThen (\f -> applyValue globals f mem)
-                |> Result.andThen
-                    (\shapes ->
-                        case shapes of
-                            VList ss ->
-                                Ok (pictureSvg ss)
+                |> Result.andThen (shapesToSvg "game view")
 
-                            _ ->
-                                Err "game view must return a list of shapes"
-                    )
+        ( Ok globals, Nothing ) ->
+            case animationOf files of
+                Just view ->
+                    applyValue globals view (VNum time) |> Result.andThen (shapesToSvg "animation view")
+
+                Nothing ->
+                    Err "not a game"
 
         _ ->
             Err "not a game"
 
 
-{-| Steps a game's `update computer memory`, for the given keys and time, to the next memory. -}
+{-| Renders a list-of-shapes value to an SVG picture, or reports a type error. -}
+shapesToSvg : String -> Value -> Result String Value
+shapesToSvg what shapes =
+    case shapes of
+        VList ss ->
+            Ok (pictureSvg ss)
+
+        _ ->
+            Err (what ++ " must return a list of shapes")
+
+
+{-| Steps a game's `update computer memory` to the next memory; an animation has no state to step. -}
 gameStep : List ( String, String ) -> List String -> Float -> Value -> Result String Value
 gameStep files keys time mem =
-    case ( parseProject files, gameOf files ) of
-        ( Ok globals, Just ( _, update, _ ) ) ->
-            applyValue globals update (computerValue keys time)
-                |> Result.andThen (\f -> applyValue globals f mem)
+    case gameOf files of
+        Just ( _, update, _ ) ->
+            case parseProject files of
+                Ok globals ->
+                    applyValue globals update (computerValue keys time)
+                        |> Result.andThen (\f -> applyValue globals f mem)
 
-        _ ->
-            Err "not a game"
+                Err e ->
+                    Err e
+
+        Nothing ->
+            Ok mem -- an animation: the view depends only on the (externally advanced) time
 
 
 ngonPath : Float -> Float -> String
