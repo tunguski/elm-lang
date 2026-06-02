@@ -534,6 +534,19 @@ class LspServerTest {
   }
 
   @Test
+  void semanticTokensRangeReturnsOnlyTheRequestedLines() {
+    String src = "a = 1\nb = 2\nc = 3\nd = 4\n";
+    // Lines 1..2 (b and c) only: two tokens (the lower names) + their number literals.
+    int[] ranged = server.semanticTokensRange(src, 1, 2);
+    assertEquals(0, ranged.length % 5, "5 ints per token");
+    // The first kept token is `b` on line 1; range encoding restarts, so its first delta is the
+    // absolute line (1), not relative to dropped earlier tokens.
+    assertEquals(1, ranged[0], "first token's delta-line is the absolute start line of the range");
+    // The full document has strictly more tokens than the 2-line slice.
+    assertTrue(server.semanticTokens(src).length > ranged.length, "range is a subset of full");
+  }
+
+  @Test
   void foldingRangesCoverMultiLineDeclarationsAndImports() {
     String src =
         "module M exposing (..)\nimport A\nimport B\nf x =\n    x\n        + 1\ng = 2\n";

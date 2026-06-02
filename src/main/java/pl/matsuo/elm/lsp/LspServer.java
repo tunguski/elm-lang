@@ -1580,13 +1580,32 @@ public final class LspServer {
    * index references {@link #SEMANTIC_TOKEN_TYPES}. Built straight from the lexer.
    */
   public int[] semanticTokens(String source) {
+    return encodeSemanticTokens(semanticTokenRows(source));
+  }
+
+  /** Like {@link #semanticTokens} but only the tokens whose line is in {@code [startLine, endLine]}
+   *  (0-based, inclusive) — the {@code textDocument/semanticTokens/range} request, so a large file
+   *  re-highlights only the visible/edited span. The delta encoding restarts from the first kept
+   *  token, exactly as a full request would for that sub-range. */
+  public int[] semanticTokensRange(String source, int startLine, int endLine) {
+    List<int[]> rows = new ArrayList<>();
+    for (int[] r : semanticTokenRows(source)) {
+      if (r[0] >= startLine && r[0] <= endLine) {
+        rows.add(r);
+      }
+    }
+    return encodeSemanticTokens(rows);
+  }
+
+  /** Absolute token rows {@code {line, col, length, typeIndex}} (0-based), in source order. */
+  private List<int[]> semanticTokenRows(String source) {
     List<pl.matsuo.elm.lexer.Token> tokens;
     try {
       tokens = pl.matsuo.elm.lexer.Lexer.tokenize(source);
     } catch (RuntimeException e) {
-      return new int[0];
+      return List.of();
     }
-    List<int[]> rows = new ArrayList<>(); // {line, col, length, typeIndex} (0-based line/col)
+    List<int[]> rows = new ArrayList<>();
     for (pl.matsuo.elm.lexer.Token t : tokens) {
       int type = semanticType(t.type());
       if (type < 0) {
@@ -1598,6 +1617,11 @@ public final class LspServer {
       }
       rows.add(new int[] {t.line() - 1, t.col() - 1, text.length(), type});
     }
+    return rows;
+  }
+
+  /** Delta-encodes absolute token rows into the LSP semantic-tokens {@code data} layout. */
+  private static int[] encodeSemanticTokens(List<int[]> rows) {
     int[] data = new int[rows.size() * 5];
     int prevLine = 0, prevCol = 0;
     for (int i = 0; i < rows.size(); i++) {
@@ -2228,6 +2252,23 @@ public final class LspServer {
         result.put("data", data);
         reply(out, id, result);
       }
+      case "textDocument/semanticTokens/range" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String uri = (String) td.get("uri");
+        Map<String, Object> rng = (Map<String, Object>) params.get("range");
+        Map<String, Object> start = (Map<String, Object>) rng.get("start");
+        Map<String, Object> end = (Map<String, Object>) rng.get("end");
+        int startLine = ((Number) start.get("line")).intValue();
+        int endLine = ((Number) end.get("line")).intValue();
+        int[] tokens = semanticTokensRange(docs.getOrDefault(uri, ""), startLine, endLine);
+        List<Object> data = new ArrayList<>(tokens.length);
+        for (int v : tokens) {
+          data.add((long) v);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("data", data);
+        reply(out, id, result);
+      }
       case "shutdown" -> reply(out, id, JsonEncode.NULL);
       default -> {
         if (id != null) {
@@ -2276,6 +2317,7 @@ public final class LspServer {
     Map<String, Object> semantic = new LinkedHashMap<>();
     semantic.put("legend", legend);
     semantic.put("full", true);
+    semantic.put("range", true);
     caps.put("semanticTokensProvider", semantic);
 
     Map<String, Object> result = new LinkedHashMap<>();
