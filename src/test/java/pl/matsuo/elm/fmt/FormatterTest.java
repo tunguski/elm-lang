@@ -118,6 +118,28 @@ class FormatterTest {
   }
 
   @Test
+  void wrapsLongImportExposingLists() {
+    String src =
+        "module M exposing (..)\n"
+            + "import Some.Long.Module exposing (alpha, beta, gamma, delta, epsilon, zeta, eta, theta, iota, kappa, lambda, mu, nu)\n"
+            + "x = 1\n";
+    String out = Formatter.format(src);
+    assertTrue(out.contains("import Some.Long.Module exposing\n    ( alpha\n    , beta"), out);
+    assertTrue(out.contains("\n    )\n"), out);
+    assertEquals(out, Formatter.format(out), "wrapped import is stable");
+  }
+
+  @Test
+  void parenthesizesAnAliasOrConsConsHead() {
+    // `((x :: _) as whole) :: rest` round-trips (the cons head needs parens).
+    String src =
+        "module M exposing (f)\nf xs =\n    case xs of\n        ((y :: _) as pair) :: rest -> pair\n        _ -> []\n";
+    String out = Formatter.format(src);
+    assertTrue(out.contains("(y :: _ as pair) :: rest"), out); // head parenthesized (as binds loosest)
+    assertEquals(out, Formatter.format(out), "idempotent");
+  }
+
+  @Test
   void shortAnnotationsStayOnOneLine() {
     String out = Formatter.format("add : Int -> Int -> Int\nadd a b = a + b\n");
     assertTrue(out.contains("add : Int -> Int -> Int"), out);

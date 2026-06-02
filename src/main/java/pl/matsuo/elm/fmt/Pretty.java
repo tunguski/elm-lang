@@ -167,7 +167,14 @@ final class Pretty {
           l.items().isEmpty()
               ? "[]"
               : "[ " + l.items().stream().map(Pretty::pattern).collect(Collectors.joining(", ")) + " ]";
-      case Pattern.Cons cons -> pattern(cons.head()) + " :: " + pattern(cons.tail());
+      case Pattern.Cons cons -> {
+        // A cons head that is itself an alias or cons binds looser than `::`, so it needs parens —
+        // e.g. `((x as y)) :: rest`, `(a :: b) :: rest`.
+        Pattern h = cons.head();
+        String head =
+            (h instanceof Pattern.Alias || h instanceof Pattern.Cons) ? "(" + pattern(h) + ")" : pattern(h);
+        yield head + " :: " + pattern(cons.tail());
+      }
       case Pattern.RecordPat r -> "{ " + String.join(", ", r.fields()) + " }";
       case Pattern.Alias a -> pattern(a.pattern()) + " as " + a.name();
       case Pattern.Ctor c -> {

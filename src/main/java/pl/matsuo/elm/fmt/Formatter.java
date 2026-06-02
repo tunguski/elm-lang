@@ -60,12 +60,24 @@ public final class Formatter {
     if (!imports.isEmpty()) {
       sb.append("\n");
       for (Module.Import imp : imports) {
-        sb.append("import ").append(imp.module());
-        imp.alias().ifPresent(a -> sb.append(" as ").append(a));
+        StringBuilder head = new StringBuilder("import ").append(imp.module());
+        imp.alias().ifPresent(a -> head.append(" as ").append(a));
         if (imp.exposing().open() || !imp.exposing().names().isEmpty()) {
-          sb.append(" exposing (").append(exposing(imp.exposing())).append(")");
+          String oneLine = head + " exposing (" + exposing(imp.exposing()) + ")";
+          if (!imp.exposing().open() && oneLine.length() > MAX_WIDTH) {
+            // A long explicit exposing list wraps one name per line, elm-format style.
+            sb.append(head).append(" exposing\n");
+            List<String> names = imp.exposing().names();
+            for (int i = 0; i < names.size(); i++) {
+              sb.append(i == 0 ? "    ( " : "    , ").append(names.get(i)).append("\n");
+            }
+            sb.append("    )\n");
+          } else {
+            sb.append(oneLine).append("\n");
+          }
+        } else {
+          sb.append(head).append("\n");
         }
-        sb.append("\n");
       }
     }
 
