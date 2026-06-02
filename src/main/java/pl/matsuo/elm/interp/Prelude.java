@@ -637,6 +637,19 @@ public final class Prelude {
   }
 
   private static void registerMath() {
+    // Basics polar conversions on (Float, Float) tuples (the JS backend has these in kernel.js).
+    fn("toPolar", 1, a -> {
+      ElmTuple p = (ElmTuple) a[0];
+      double x = Operators.toDouble(p.get(0));
+      double y = Operators.toDouble(p.get(1));
+      return new ElmTuple(new Object[] {Math.sqrt(x * x + y * y), Math.atan2(y, x)});
+    });
+    fn("fromPolar", 1, a -> {
+      ElmTuple p = (ElmTuple) a[0];
+      double r = Operators.toDouble(p.get(0));
+      double t = Operators.toDouble(p.get(1));
+      return new ElmTuple(new Object[] {r * Math.cos(t), r * Math.sin(t)});
+    });
     fn("Math.Vector3.vec3", 3,
         a -> vec3(Operators.toDouble(a[0]), Operators.toDouble(a[1]), Operators.toDouble(a[2])));
     BUILTINS.put("Math.Vector3.i", vec3(1, 0, 0));
