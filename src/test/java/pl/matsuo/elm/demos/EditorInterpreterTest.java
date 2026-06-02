@@ -225,6 +225,13 @@ class EditorInterpreterTest {
     assertEquals("True", eval("Dict.member \"a\" Dict.empty == False"));
     assertEquals("[1, 2]", eval("Dict.values (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])"));
     assertEquals("6", eval("Dict.foldl (\\k v acc -> acc + v) 0 (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ), ( \"c\", 3 ) ])"));
+    // union (left-biased), diff, intersect, update
+    assertEquals("Just 1", eval("Dict.get \"a\" (Dict.union (Dict.singleton \"a\" 1) (Dict.singleton \"a\" 99))"));
+    assertEquals("2", eval("Dict.size (Dict.union (Dict.singleton \"a\" 1) (Dict.singleton \"b\" 2))"));
+    assertEquals("[\"a\"]", eval("Dict.keys (Dict.diff (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ]) (Dict.singleton \"b\" 0))"));
+    assertEquals("[\"b\"]", eval("Dict.keys (Dict.intersect (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ]) (Dict.singleton \"b\" 0))"));
+    assertEquals("Just 6", eval("Dict.get \"a\" (Dict.update \"a\" (Maybe.map (\\n -> n + 1)) (Dict.singleton \"a\" 5))"));
+    assertEquals("0", eval("Dict.size (Dict.update \"a\" (\\_ -> Nothing) (Dict.singleton \"a\" 5))"));
   }
 
   @Test

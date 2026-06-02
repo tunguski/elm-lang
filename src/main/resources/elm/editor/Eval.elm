@@ -32,7 +32,7 @@ builtins =
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
         ++ [ "Debug.toString", "Debug.log", "Debug.todo" ]
-        ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl" ]
+        ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl", "Dict.union", "Dict.diff", "Dict.intersect", "Dict.update" ]
         ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
         ++ [ "Array.empty", "Array.initialize", "Array.repeat", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.get", "Array.set", "Array.push", "Array.append", "Array.length", "Array.isEmpty", "Array.slice", "Array.map", "Array.indexedMap", "Array.foldl", "Array.foldr", "Array.filter" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
@@ -136,7 +136,7 @@ arity name =
     else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip", "Set.fromList", "Set.toList", "Set.size", "Set.isEmpty", "Set.singleton", "Array.fromList", "Array.toList", "Array.toIndexedList", "Array.length", "Array.isEmpty" ] then
         1
 
-    else if List.member name [ "Dict.insert", "Dict.foldl", "Set.foldl", "Set.foldr", "Array.foldl", "Array.foldr", "Array.set", "Array.slice", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
+    else if List.member name [ "Dict.insert", "Dict.foldl", "Dict.update", "Set.foldl", "Set.foldr", "Array.foldl", "Array.foldr", "Array.set", "Array.slice", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
         3
 
     else if name == "List.map3" then
@@ -1438,6 +1438,41 @@ runBuiltin globals name args =
 
             ( "Dict.foldl", [ f, acc, d ] ) ->
                 foldlDict globals f acc (dictPairs d)
+
+            ( "Dict.union", [ a, b ] ) ->
+                -- Left-biased: a's entries win on a key collision.
+                let
+                    aKeys =
+                        List.filterMap pairKey (dictPairs a)
+                in
+                Ok (mkDict (dictPairs a ++ List.filter (\p -> not (List.any (\k -> pairKeyEq k p) aKeys)) (dictPairs b)))
+
+            ( "Dict.diff", [ a, b ] ) ->
+                let
+                    bKeys =
+                        List.filterMap pairKey (dictPairs b)
+                in
+                Ok (mkDict (List.filter (\p -> not (List.any (\k -> pairKeyEq k p) bKeys)) (dictPairs a)))
+
+            ( "Dict.intersect", [ a, b ] ) ->
+                let
+                    bKeys =
+                        List.filterMap pairKey (dictPairs b)
+                in
+                Ok (mkDict (List.filter (\p -> List.any (\k -> pairKeyEq k p) bKeys) (dictPairs a)))
+
+            ( "Dict.update", [ k, f, d ] ) ->
+                -- f : Maybe v -> Maybe v; Just replaces/inserts, Nothing removes the key.
+                applyValue globals f (maybeValue (dictGet k (dictPairs d)))
+                    |> Result.map
+                        (\res ->
+                            case res of
+                                VCtor "Just" [ v ] ->
+                                    mkDict (dictSet k v (dictPairs d))
+
+                                _ ->
+                                    mkDict (List.filter (\p -> not (pairKeyEq k p)) (dictPairs d))
+                        )
 
             -- Set: a Set is `VCtor "Set" [ VList elems ]` with unique elements (insertion order).
             ( "Set.empty", [] ) ->
