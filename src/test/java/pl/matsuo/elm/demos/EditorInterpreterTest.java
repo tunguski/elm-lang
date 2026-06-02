@@ -235,6 +235,17 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsCompareSortWithAndMapN() {
+    assertEquals("LT", eval("compare 1 2"));
+    assertEquals("GT", eval("compare \"b\" \"a\""));
+    assertEquals("EQ", eval("compare 3 3"));
+    // sortWith a custom descending comparator (flip compare).
+    assertEquals("[3, 2, 1]", eval("List.sortWith (\\a b -> compare b a) [ 1, 3, 2 ]"));
+    assertEquals("[6, 15]", eval("List.map4 (\\a b c d -> a + b + c + d) [ 1, 4 ] [ 2, 5 ] [ 3, 6 ] [ 0, 0 ]"));
+    assertEquals("[15]", eval("List.map5 (\\a b c d e -> a + b + c + d + e) [ 1 ] [ 2 ] [ 3 ] [ 4 ] [ 5 ]"));
+  }
+
+  @Test
   void interpretsBasicsMath() {
     assertEquals("True", eval("atan2 1 1 > 0.78 && atan2 1 1 < 0.79")); // pi/4 ≈ 0.785
     assertEquals("2", eval("round (logBase 2 4)")); // log2(4) = 2

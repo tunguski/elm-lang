@@ -28,7 +28,7 @@ builtins =
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
         ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ]
-        ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3" ]
+        ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3", "List.map4", "List.map5", "List.sortWith", "compare" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
         ++ [ "Debug.toString", "Debug.log", "Debug.todo" ]
@@ -142,6 +142,12 @@ arity name =
 
     else if name == "List.map3" then
         4
+
+    else if name == "List.map4" then
+        5
+
+    else if name == "List.map5" then
+        6
 
     else if name == "Maybe.map3" then
         4
@@ -696,6 +702,56 @@ setInsert x xs =
 
     else
         xs ++ [ x ]
+
+
+{-| Applies the curried function `f` to each argument in turn (left to right). -}
+applyAllValues : Globals -> Value -> List Value -> Result String Value
+applyAllValues globals f args =
+    List.foldl (\a acc -> acc |> Result.andThen (\g -> applyValue globals g a)) (Ok f) args
+
+
+{-| `List.mapN`: zips several lists, applying `f` to one element from each, stopping at the shortest.
+(Generalises `List.map3` to any arity, avoiding 4-/5-tuple patterns that Elm forbids.) -}
+mapNValues : Globals -> Value -> List (List Value) -> Result String (List Value)
+mapNValues globals f lists =
+    if List.isEmpty lists || List.any List.isEmpty lists then
+        Ok []
+
+    else
+        applyAllValues globals f (List.filterMap List.head lists)
+            |> Result.andThen
+                (\v ->
+                    mapNValues globals f (List.map (List.drop 1) lists)
+                        |> Result.map (\vs -> v :: vs)
+                )
+
+
+{-| The `Order` custom-type value for a Java/host `Order`. -}
+orderValue : Order -> Value
+orderValue o =
+    case o of
+        LT ->
+            VCtor "LT" []
+
+        EQ ->
+            VCtor "EQ" []
+
+        GT ->
+            VCtor "GT" []
+
+
+{-| Runs a user comparator `f a b` and reads its `Order` result (defaulting to `EQ` on error). -}
+orderFromCompare : Globals -> Value -> Value -> Value -> Order
+orderFromCompare globals f a b =
+    case applyValue globals f a |> Result.andThen (\g -> applyValue globals g b) of
+        Ok (VCtor "LT" _) ->
+            LT
+
+        Ok (VCtor "GT" _) ->
+            GT
+
+        _ ->
+            EQ
 
 
 {-| `Maybe.mapN`: if every argument is `Just`, apply `f` to the unwrapped values; otherwise
@@ -1514,6 +1570,18 @@ runBuiltin globals name args =
 
             ( "List.map3", [ f, VList xs, VList ys, VList zs ] ) ->
                 map3Values globals f xs ys zs |> Result.map VList
+
+            ( "List.map4", [ f, VList a, VList b, VList c, VList d ] ) ->
+                mapNValues globals f [ a, b, c, d ] |> Result.map VList
+
+            ( "List.map5", [ f, VList a, VList b, VList c, VList d, VList e ] ) ->
+                mapNValues globals f [ a, b, c, d, e ] |> Result.map VList
+
+            ( "List.sortWith", [ f, VList xs ] ) ->
+                Ok (VList (List.sortWith (orderFromCompare globals f) xs))
+
+            ( "compare", [ a, b ] ) ->
+                Ok (orderValue (valueCompare a b))
 
             -- Dict: a Dict is `VCtor "Dict" [ VList pairs ]` where each pair is `VTup [ key, value ]`
             -- and keys are unique (an association list; lookups scan it).
