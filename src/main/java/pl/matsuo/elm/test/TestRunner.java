@@ -158,7 +158,7 @@ public final class TestRunner {
 
   private static boolean isTest(ElmData d) {
     return switch (d.ctor()) {
-      case "UnitTest", "Labeled", "FuzzTest", "Only", "Skip", "Todo" -> true;
+      case "UnitTest", "Labeled", "FuzzTest", "FuzzWith", "Only", "Skip", "Todo" -> true;
       default -> false;
     };
   }
@@ -236,50 +236,63 @@ public final class TestRunner {
           cases.add(new Case(prefix + desc, Outcome.SKIP, null, null));
           return;
         }
-        Object body = Thunk.resolve(t.arg(1)); // Int -> Expectation
-        // Deterministic seed sequence from the master seed (independent of evaluation order).
-        long[] seeds = new long[opts.fuzzRuns()];
-        java.util.Random rng = new java.util.Random(opts.seed());
-        for (int i = 0; i < seeds.length; i++) {
-          seeds[i] = rng.nextInt(); // a 32-bit Elm Int the Fuzzer scrambles
+        runFuzz(prefix + desc, Thunk.resolve(t.arg(1)), opts.fuzzRuns(), opts, cases);
+      }
+      case "FuzzWith" -> {
+        // Test.fuzzWith { runs } …: a per-test run count overriding the default.
+        String desc = String.valueOf(Thunk.resolve(t.arg(0)));
+        if (!active || filteredOut(prefix + desc, opts)) {
+          cases.add(new Case(prefix + desc, Outcome.SKIP, null, null));
+          return;
         }
-
-        // Evaluate the property over every seed and report the LOWEST-index failure — the same input
-        // a sequential "stop at the first failure" run would report. Coverage tracking mutates shared
-        // state, so it forces sequential evaluation; otherwise large runs go in parallel.
-        boolean parallel = !opts.coverage() && seeds.length >= PARALLEL_THRESHOLD;
-        Failure failure;
-        if (parallel) {
-          java.util.concurrent.ConcurrentSkipListMap<Integer, Failure> fails =
-              new java.util.concurrent.ConcurrentSkipListMap<>();
-          java.util.stream.IntStream.range(0, seeds.length)
-              .parallel()
-              .forEach(
-                  i -> {
-                    Failure f = fuzzOutcome(body, seeds[i]);
-                    if (f != null) {
-                      fails.put(i, f);
-                    }
-                  });
-          failure = fails.isEmpty() ? null : fails.firstEntry().getValue();
-        } else {
-          failure = null;
-          for (int i = 0; i < seeds.length && failure == null; i++) {
-            failure = fuzzOutcome(body, seeds[i]);
-          }
-        }
-
-        if (failure == null) {
-          cases.add(new Case(prefix + desc, Outcome.PASS, null, opts.fuzzRuns() + " passed"));
-        } else if (failure.error) {
-          cases.add(new Case(prefix + desc, Outcome.FAIL, "error: " + failure.reason, null));
-        } else {
-          // The whole run is deterministic from the master seed, so re-running with it reproduces it.
-          String reason = failure.reason + " (reproduce with --seed " + opts.seed() + ")";
-          cases.add(new Case(prefix + desc + " (fuzz)", Outcome.FAIL, reason, null));
-        }
+        int runs = ((Number) Thunk.resolve(t.arg(1))).intValue();
+        runFuzz(prefix + desc, Thunk.resolve(t.arg(2)), runs, opts, cases);
       }
       default -> {}
+    }
+  }
+
+  /** Runs a fuzz property over {@code runCount} deterministic seeds and records the result, reporting
+   *  the lowest-index failure (matching a sequential stop-at-first-failure run). */
+  private static void runFuzz(
+      String name, Object body, int runCount, Options opts, List<Case> cases) {
+    long[] seeds = new long[Math.max(0, runCount)];
+    java.util.Random rng = new java.util.Random(opts.seed());
+    for (int i = 0; i < seeds.length; i++) {
+      seeds[i] = rng.nextInt(); // a 32-bit Elm Int the Fuzzer scrambles
+    }
+    // Coverage tracking mutates shared state, so it forces sequential evaluation; otherwise large
+    // runs go in parallel.
+    boolean parallel = !opts.coverage() && seeds.length >= PARALLEL_THRESHOLD;
+    Failure failure;
+    if (parallel) {
+      java.util.concurrent.ConcurrentSkipListMap<Integer, Failure> fails =
+          new java.util.concurrent.ConcurrentSkipListMap<>();
+      java.util.stream.IntStream.range(0, seeds.length)
+          .parallel()
+          .forEach(
+              i -> {
+                Failure f = fuzzOutcome(body, seeds[i]);
+                if (f != null) {
+                  fails.put(i, f);
+                }
+              });
+      failure = fails.isEmpty() ? null : fails.firstEntry().getValue();
+    } else {
+      failure = null;
+      for (int i = 0; i < seeds.length && failure == null; i++) {
+        failure = fuzzOutcome(body, seeds[i]);
+      }
+    }
+
+    if (failure == null) {
+      cases.add(new Case(name, Outcome.PASS, null, runCount + " passed"));
+    } else if (failure.error) {
+      cases.add(new Case(name, Outcome.FAIL, "error: " + failure.reason, null));
+    } else {
+      // The whole run is deterministic from the master seed, so re-running with it reproduces it.
+      String reason = failure.reason + " (reproduce with --seed " + opts.seed() + ")";
+      cases.add(new Case(name + " (fuzz)", Outcome.FAIL, reason, null));
     }
   }
 
@@ -302,7 +315,7 @@ public final class TestRunner {
           markSkipped(prefix, child, cases);
         }
       }
-      case "UnitTest", "FuzzTest", "Todo" ->
+      case "UnitTest", "FuzzTest", "FuzzWith", "Todo" ->
           cases.add(new Case(prefix + String.valueOf(Thunk.resolve(t.arg(0))), Outcome.SKIP, null, null));
       default -> {}
     }

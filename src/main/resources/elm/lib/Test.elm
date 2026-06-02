@@ -1,4 +1,4 @@
-module Test exposing (Test, test, describe, concat, fuzz, fuzz2, fuzz3, only, skip, todo)
+module Test exposing (Test, test, describe, concat, fuzz, fuzzWith, fuzz2, fuzz3, only, skip, todo)
 
 {-| A tiny test framework (a subset of elm-explorations/test). Build tests with `test` and group
 them with `describe`/`concat`, then expose them as a top-level `Test` value; the `elm test` runner
@@ -23,6 +23,7 @@ type Test
     = UnitTest String (() -> Expectation)
     | Labeled String (List Test)
     | FuzzTest String (Int -> Expectation)
+    | FuzzWith String Int (Int -> Expectation)
     | Only Test
     | Skip Test
     | Todo String
@@ -72,23 +73,33 @@ fuzzer's `shrink` candidates are followed greedily for as long as they keep fail
 minimal value is what gets reported — far more useful than a random 9-digit integer. -}
 fuzz : Fuzzer a -> String -> (a -> Expectation) -> Test
 fuzz fuzzer description body =
-    FuzzTest description
-        (\seed ->
-            let
-                value =
-                    fuzzer.gen seed
-            in
-            case Expect.toFailure (body value) of
-                Nothing ->
-                    Expect.pass
+    FuzzTest description (runProperty fuzzer body)
 
-                Just _ ->
-                    let
-                        minimal =
-                            shrink fuzzer.shrink body value
-                    in
-                    Expect.onFail ("Given " ++ Debug.toString minimal ++ "\n\n") (body minimal)
-        )
+
+{-| Like {@link fuzz} but with options — currently the number of random inputs (`runs`) to draw for
+this test, overriding the runner's default. -}
+fuzzWith : { runs : Int } -> Fuzzer a -> String -> (a -> Expectation) -> Test
+fuzzWith options fuzzer description body =
+    FuzzWith description options.runs (runProperty fuzzer body)
+
+
+{-| The seed-driven property the runner replays: pass, or shrink the first failing input. -}
+runProperty : Fuzzer a -> (a -> Expectation) -> Int -> Expectation
+runProperty fuzzer body seed =
+    let
+        value =
+            fuzzer.gen seed
+    in
+    case Expect.toFailure (body value) of
+        Nothing ->
+            Expect.pass
+
+        Just _ ->
+            let
+                minimal =
+                    shrink fuzzer.shrink body value
+            in
+            Expect.onFail ("Given " ++ Debug.toString minimal ++ "\n\n") (body minimal)
 
 
 {-| A property test over two independent fuzzed inputs (shrunk together as a pair). -}

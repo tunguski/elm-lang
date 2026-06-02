@@ -389,4 +389,46 @@ class TestRunnerTest {
     assertEquals(0, r.passed());
     assertEquals(0, r.exitCode());
   }
+
+  @Test
+  void fuzzWithRunsTheRequestedNumberOfInputs() {
+    // fuzzWith { runs = 7 } overrides the runner default; a passing property reports "7 passed".
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (fuzzWith)
+        suite = fuzzWith { runs = 7 } Fuzz.int "ints negate-invert" (\\n -> Expect.equal n (negate (negate n)))
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(100, 1L, null));
+    assertEquals(1, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
+    assertTrue(r.report().contains("7 passed"), r.report());
+  }
+
+  @Test
+  void newFuzzCombinatorsGenerateValues() {
+    // andThen (dependent), triple and array all produce usable values for a property.
+    String src =
+        """
+        module T exposing (suite)
+        import Array
+        import Expect
+        import Fuzz
+        import Test exposing (describe, fuzz)
+        suite =
+            describe "combinators"
+                [ fuzz (Fuzz.andThen (\\n -> Fuzz.intRange n (n + 5)) (Fuzz.intRange 0 10)) "andThen in range"
+                    (\\n -> Expect.atLeast 0 n)
+                , fuzz (Fuzz.triple Fuzz.int Fuzz.int Fuzz.int) "triple sums"
+                    (\\( a, b, c ) -> Expect.equal (a + b + c) (c + b + a))
+                , fuzz (Fuzz.array Fuzz.int) "array length is non-negative"
+                    (\\arr -> Expect.atLeast 0 (Array.length arr))
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(50, 7L, null));
+    assertEquals(3, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
+  }
 }

@@ -11,8 +11,11 @@ module Fuzz exposing
     , map
     , map2
     , map3
+    , andThen
     , pair
+    , triple
     , list
+    , array
     , maybe
     , result
     , oneOf
@@ -30,6 +33,9 @@ it. Compose with `map`, `pair` and `list`.
         \n -> Expect.equal n (negate (negate n))
 
 -}
+
+
+import Array exposing (Array)
 
 
 {-| A source of pseudo-random values of type `a`. `gen` turns a seed into a value; `shrink` returns
@@ -192,6 +198,15 @@ map3 f fa fb fc =
     }
 
 
+{-| Generates a value, then chooses the next fuzzer from it (a dependent fuzzer). The result does not
+shrink (the continuation may pick unrelated fuzzers), so prefer `map`/`pair` when you can. -}
+andThen : (a -> Fuzzer b) -> Fuzzer a -> Fuzzer b
+andThen f fuzzer =
+    { gen = \seed -> (f (fuzzer.gen seed)).gen (hash (seed + 7919))
+    , shrink = \_ -> []
+    }
+
+
 {-| `Nothing` about a quarter of the time, otherwise `Just` a value from the inner fuzzer; shrinks a
 `Just` toward `Nothing` and toward the inner shrinks. -}
 maybe : Fuzzer a -> Fuzzer (Maybe a)
@@ -319,6 +334,18 @@ pair fa fb =
     }
 
 
+{-| A triple drawn from three fuzzers (each fed a decorrelated seed); shrinks one component at a time. -}
+triple : Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer ( a, b, c )
+triple fa fb fc =
+    { gen = \seed -> ( fa.gen seed, fb.gen (hash (seed + 7919)), fc.gen (hash (seed + 104729)) )
+    , shrink =
+        \( a, b, c ) ->
+            List.map (\a2 -> ( a2, b, c )) (fa.shrink a)
+                ++ List.map (\b2 -> ( a, b2, c )) (fb.shrink b)
+                ++ List.map (\c2 -> ( a, b, c2 )) (fc.shrink c)
+    }
+
+
 {-| A list of 0..9 values from the element fuzzer; shrinks by dropping elements and by shrinking
 each element. -}
 list : Fuzzer a -> Fuzzer (List a)
@@ -335,6 +362,18 @@ list fuzzer =
 
                 _ ->
                     ([] :: removeEach xs) ++ shrinkEach fuzzer.shrink xs
+    }
+
+
+{-| An `Array` of 0..9 values from the element fuzzer (shrinks like the underlying list). -}
+array : Fuzzer a -> Fuzzer (Array a)
+array fuzzer =
+    let
+        elems =
+            list fuzzer
+    in
+    { gen = \seed -> Array.fromList (elems.gen seed)
+    , shrink = \arr -> List.map Array.fromList (elems.shrink (Array.toList arr))
     }
 
 
