@@ -47,9 +47,10 @@ class ScriptGalleryTest {
   }
 
   @Test
-  void awkSumScriptSumsAColumn() throws Exception {
-    Path f = tempFile("sales.txt", "widget 10\ngadget 20\ngizmo 30\n");
-    assertEquals("60", run("awk-sum.elm", List.of("2", f.toString())).trim());
+  void awkSumScriptEmitsTheAwkCommand() throws Exception {
+    // The Awk builder composes the awk program text; the demo prints the command to run.
+    String out = run("awk-sum.elm", List.of("2", "sales.csv")).trim();
+    assertEquals("awk '{ s += $2 } END { print s }' sales.csv", out);
   }
 
   @Test

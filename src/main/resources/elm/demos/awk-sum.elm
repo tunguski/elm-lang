@@ -1,9 +1,11 @@
 module Main exposing (main)
 
-{-| `elm script awk-sum.elm <column> <file>` — sum a numeric column of a file, the way
-`awk '{ s += $N } END { print s }'` does, using the bundled `Awk` library.
+{-| `elm script awk-sum.elm <column> <file>` — emit the `awk` command that sums a numeric column of
+a file, built with the `Awk` library. The point is to *compose* the awk program (so you can drop it
+into a shell script), not to run awk here:
 
-    $ elm script awk-sum.elm 2 sales.txt
+    $ elm script awk-sum.elm 2 sales.csv
+    awk '{ s += $2 } END { print s }' sales.csv
 -}
 
 import Awk
@@ -15,20 +17,20 @@ main =
     getArgs
         (\args ->
             case args of
-                col :: path :: _ ->
-                    readFile path
-                        (\result ->
-                            case result of
-                                Ok text ->
-                                    print (String.fromFloat (Awk.sumColumn (toInt col) text)) done
-
-                                Err message ->
-                                    print ("error: " ++ message) (exit 1)
-                        )
+                col :: file :: _ ->
+                    print ("awk " ++ Awk.oneLiner (sumColumn (toInt col)) ++ " " ++ file) done
 
                 _ ->
                     print "usage: awk-sum <column> <file>" (exit 1)
         )
+
+
+{-| The awk program `{ s += $col } END { print s }`. -}
+sumColumn : Int -> List Awk.Rule
+sumColumn col =
+    [ Awk.eachLine [ Awk.addTo "s" (Awk.field col) ]
+    , Awk.end [ Awk.print [ Awk.var "s" ] ]
+    ]
 
 
 toInt : String -> Int

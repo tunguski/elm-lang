@@ -1,304 +1,204 @@
 module Awk exposing
-    ( Record
-    , run
-    , runWith
-    , Program
+    ( Rule
+    , begin
+    , end
+    , on
+    , matchLine
+    , eachLine
+    , program
+    , oneLiner
+    , invocation
+    , print
+    , printf
+    , assign
+    , addTo
     , field
     , nf
     , nr
-    , fields
-    , toRecord
-    , column
-    , columns
-    , matching
-    , sumColumn
-    , length
-    , substr
-    , substrFrom
-    , index
-    , split
-    , toupper
-    , tolower
-    , matchingRegex
-    , sub
-    , gsub
-    , splitRegex
+    , var
+    , str
+    , num
+    , call
+    , matches
     )
 
-{-| A tiny **awk** in Elm: process text a line (record) at a time, split each into fields, and run an
-action that prints output lines — the awk model from <https://www.grymoire.com/Unix/Awk.html>.
+{-| Build **awk** program text in Elm, to embed in a generated shell script or pass to `awk` as a
+command argument — this does **not** run awk, it composes the source you hand to it.
 
-awk's core nouns map directly: a `Record` is the current line with its split `fields`, `nr` is the
-record number (awk's `NR`), `nf` the field count (`NF`), `field 0` is the whole line (`$0`) and
-`field n` the nth field (`$n`, 1-based). An action returns the lines it "prints"; `run` joins them.
+An awk program is a list of `pattern { action }` rules; `program` renders them, `oneLiner` wraps the
+result in single quotes for a shell command line, and `invocation` builds the `awk` argument list.
+The helpers produce awk expression/statement text: `field 1` is `$1`, `nf`/`nr` are `NF`/`NR`,
+`print`/`printf`/`assign` are statements, `call` is a function call (`length`, `substr`, `toupper`,
+`gsub`, …).
 
     import Awk exposing (..)
+    import Bash
 
-    -- like `awk '{ print $1 }'`
-    firstColumn : String -> String
-    firstColumn =
-        run (\r -> [ field 1 r ])
+    -- awk 'BEGIN { FS="," } { sum += $2 } END { print sum }' data.csv
+    total : List String
+    total =
+        invocation
+            [ begin [ assign "FS" (str ",") ]
+            , eachLine [ addTo "sum" (field 2) ]
+            , end [ print [ var "sum" ] ]
+            ]
+            [ "data.csv" ]
 
-    -- like `awk 'NR % 2 == 1'` (print odd-numbered lines)
-    oddLines : String -> String
-    oddLines =
-        run (\r -> if modBy 2 (nr r) == 1 then [ field 0 r ] else [])
-
-The default field separator is whitespace (runs of spaces/tabs, like awk); `runWith` takes an
-explicit separator plus `BEGIN`/`END` blocks.
+    runIt : Bash.Io
+    runIt =
+        Bash.exec "awk" total (\_ -> Bash.done)
 
 -}
 
-import Regex exposing (Regex)
+
+{-| One awk rule: a pattern (empty = every line; `"BEGIN"`/`"END"`; a condition; or `/re/`) and the
+statements of its action block. -}
+type alias Rule =
+    { pattern : String, action : List String }
 
 
-{-| One input line: its raw text, its split fields, and its 1-based record number (awk's `NR`). -}
-type alias Record =
-    { line : String
-    , fields : List String
-    , nr : Int
-    }
+{-| `BEGIN { … }`. -}
+begin : List String -> Rule
+begin action =
+    { pattern = "BEGIN", action = action }
 
 
-{-| A full awk program: the field separator (`" "` means awk's default whitespace splitting), a
-`begin` block (lines printed before any input), the per-record `action`, and an `end` block. -}
-type alias Program =
-    { fs : String
-    , begin : List String
-    , action : Record -> List String
-    , end : List String
-    }
+{-| `END { … }`. -}
+end : List String -> Rule
+end action =
+    { pattern = "END", action = action }
 
 
-{-| Splits a line into fields the way awk does: on `fs`, or — when `fs` is `" "` — on runs of
-whitespace, ignoring leading/trailing whitespace. -}
-splitFields : String -> String -> List String
-splitFields fs line =
-    if fs == " " then
-        String.words line
-
-    else
-        String.split fs line
+{-| `cond { … }` — run the action on lines where the awk condition holds. -}
+on : String -> List String -> Rule
+on cond action =
+    { pattern = cond, action = action }
 
 
-{-| Builds the `Record` for `line` (the nth input line) under field separator `fs`. -}
-toRecord : String -> Int -> String -> Record
-toRecord fs n line =
-    { line = line, fields = splitFields fs line, nr = n }
+{-| `/re/ { … }` — run the action on lines matching the regular expression. -}
+matchLine : String -> List String -> Rule
+matchLine re action =
+    { pattern = "/" ++ re ++ "/", action = action }
 
 
-{-| The field at `n`: `field 0` is the whole line (`$0`), `field n` the nth field (1-based, `$n`),
-and `""` when `n` is out of range — just like an unset awk field. -}
-field : Int -> Record -> String
-field n record =
-    if n == 0 then
-        record.line
-
-    else
-        nth (n - 1) record.fields |> Maybe.withDefault ""
+{-| `{ … }` — run the action on every line. -}
+eachLine : List String -> Rule
+eachLine action =
+    { pattern = "", action = action }
 
 
-{-| The number of fields in the record (awk's `NF`). -}
-nf : Record -> Int
-nf record =
-    List.length record.fields
+{-| Renders the rules to awk program text (one rule per line). -}
+program : List Rule -> String
+program rules =
+    String.join "\n" (List.map renderRule rules)
 
 
-{-| The record's number (awk's `NR`, 1-based). -}
-nr : Record -> Int
-nr record =
-    record.nr
-
-
-{-| The record's fields (`$1 … $NF`). -}
-fields : Record -> List String
-fields record =
-    record.fields
-
-
-{-| Runs `action` over every line of the input (whitespace field separator), concatenating the lines
-each action prints — `awk '{ … }' input`. -}
-run : (Record -> List String) -> String -> String
-run action input =
-    runWith { fs = " ", begin = [], action = action, end = [] } input
-
-
-{-| Runs a full program: `begin` lines, then each record's action output, then `end` lines, all
-joined by newlines. `end` runs with no record in scope (awk's `END`), so it sees only what the action
-accumulated via its own closure. -}
-runWith : Program -> String -> String
-runWith program input =
+renderRule : Rule -> String
+renderRule rule =
     let
-        records =
-            List.indexedMap (\i line -> toRecord program.fs (i + 1) line) (inputLines input)
-
-        body =
-            List.concatMap program.action records
+        block =
+            "{ " ++ String.join "; " rule.action ++ " }"
     in
-    String.join "\n" (program.begin ++ body ++ program.end)
-
-
-{-| Splits the input into lines, dropping the trailing empty line a final newline produces (so
-`"a\nb\n"` is two records, not three). -}
-inputLines : String -> List String
-inputLines input =
-    let
-        parts =
-            String.split "\n" input
-    in
-    if String.endsWith "\n" input then
-        List.take (List.length parts - 1) parts
+    if rule.pattern == "" then
+        block
 
     else
-        parts
+        rule.pattern ++ " " ++ block
 
 
-{-| `awk '{ print $n }'`: print the nth field of every line. -}
-column : Int -> String -> String
-column n input =
-    run (\r -> [ field n r ]) input
+{-| The program as a single shell-quoted argument: `'…'` (newlines flattened to `; `). Embed it in a
+generated bash script or hand it to `awk`. -}
+oneLiner : List Rule -> String
+oneLiner rules =
+    "'" ++ String.replace "\n" " " (program rules) ++ "'"
 
 
-{-| Print several columns of every line, space-joined — `awk '{ print $a, $b, … }'`. -}
-columns : List Int -> String -> String
-columns ns input =
-    run (\r -> [ String.join " " (List.map (\n -> field n r) ns) ]) input
-
-
-{-| `awk '/needle/'`: print only the lines containing `needle`. -}
-matching : String -> String -> String
-matching needle input =
-    run
-        (\r ->
-            if String.contains needle r.line then
-                [ r.line ]
-
-            else
-                []
-        )
-        input
-
-
-{-| `awk '{ s += $n } END { print s }'`: the sum of the nth column as a Float. -}
-sumColumn : Int -> String -> Float
-sumColumn n input =
-    inputLines input
-        |> List.indexedMap (\i line -> toRecord " " (i + 1) line)
-        |> List.filterMap (\r -> String.toFloat (field n r))
-        |> List.sum
+{-| The `awk` argument list: the program followed by the file arguments — `Bash.exec "awk" …`. -}
+invocation : List Rule -> List String -> List String
+invocation rules files =
+    program rules :: files
 
 
 
-
--- AWK STRING FUNCTIONS ----------------------------------------------------
--- awk's built-in string functions (1-based, like awk). These operate on plain strings, so they work
--- on `field n record` or any text.
+-- STATEMENTS --------------------------------------------------------------
 
 
-{-| `length(s)` — the number of characters in `s`. -}
-length : String -> Int
-length =
-    String.length
+{-| `print a, b, …`. -}
+print : List String -> String
+print exprs =
+    "print " ++ String.join ", " exprs
 
 
-{-| `substr(s, m, n)` — the `n`-character substring of `s` starting at position `m` (1-based). -}
-substr : Int -> Int -> String -> String
-substr m n s =
-    String.slice (m - 1) (m - 1 + n) s
-
-
-{-| `substr(s, m)` — the substring of `s` from position `m` (1-based) to the end. -}
-substrFrom : Int -> String -> String
-substrFrom m s =
-    String.dropLeft (m - 1) s
-
-
-{-| `index(s, t)` — the 1-based position of the first occurrence of `t` in `s`, or `0` if absent. -}
-index : String -> String -> Int
-index s t =
-    case String.indexes t s of
-        i :: _ ->
-            i + 1
-
+{-| `printf fmt, a, b, …`. -}
+printf : String -> List String -> String
+printf fmt exprs =
+    case exprs of
         [] ->
-            0
+            "printf " ++ str fmt
+
+        _ ->
+            "printf " ++ str fmt ++ ", " ++ String.join ", " exprs
 
 
-{-| `split(s, fs)` — splits `s` into fields on `fs` (whitespace when `fs` is `" "`). -}
-split : String -> String -> List String
-split fs s =
-    splitFields fs s
+{-| `name = expr`. -}
+assign : String -> String -> String
+assign name expr =
+    name ++ " = " ++ expr
 
 
-{-| `toupper(s)` — `s` upper-cased. -}
-toupper : String -> String
-toupper =
-    String.toUpper
-
-
-{-| `tolower(s)` — `s` lower-cased. -}
-tolower : String -> String
-tolower =
-    String.toLower
+{-| `name += expr`. -}
+addTo : String -> String -> String
+addTo name expr =
+    name ++ " += " ++ expr
 
 
 
-
--- AWK REGEX FUNCTIONS -----------------------------------------------------
--- awk's regex-driven matching and substitution, backed by the Regex module. In the replacement of
--- sub/gsub, `&` stands for the matched text (awk's convention).
+-- EXPRESSIONS -------------------------------------------------------------
 
 
-{-| Compiles a regex string, falling back to a never-matching regex on a syntax error. -}
-regex : String -> Regex
-regex re =
-    Maybe.withDefault Regex.never (Regex.fromString re)
+{-| A field reference: `field 0` is `$0` (the whole line), `field n` is `$n`. -}
+field : Int -> String
+field n =
+    "$" ++ String.fromInt n
 
 
-{-| `awk '/re/'`: keep only the input lines that match the regular expression `re`. -}
-matchingRegex : String -> String -> String
-matchingRegex re input =
-    let
-        r =
-            regex re
-    in
-    run
-        (\record ->
-            if Regex.contains r record.line then
-                [ record.line ]
-
-            else
-                []
-        )
-        input
+{-| `NF` — the field count. -}
+nf : String
+nf =
+    "NF"
 
 
-{-| `gsub(re, repl, s)` — replace every match of `re` in `s` with `repl` (where `&` is the match). -}
-gsub : String -> String -> String -> String
-gsub re repl s =
-    Regex.replace (regex re) (\m -> String.replace "&" m.match repl) s
+{-| `NR` — the record number. -}
+nr : String
+nr =
+    "NR"
 
 
-{-| `sub(re, repl, s)` — replace the first match of `re` in `s` with `repl` (where `&` is the match). -}
-sub : String -> String -> String -> String
-sub re repl s =
-    Regex.replace (regex re)
-        (\m ->
-            if m.number == 1 then
-                String.replace "&" m.match repl
-
-            else
-                m.match
-        )
-        s
+{-| A bare variable/identifier reference. -}
+var : String -> String
+var name =
+    name
 
 
-{-| Splits `s` on the regular expression `re` — a regex field separator (awk's `FS` as a regex). -}
-splitRegex : String -> String -> List String
-splitRegex re s =
-    Regex.split (regex re) s
+{-| An awk string literal: `"…"` (embedded quotes/backslashes escaped). -}
+str : String -> String
+str s =
+    "\"" ++ String.replace "\"" "\\\"" (String.replace "\\" "\\\\" s) ++ "\""
 
 
-nth : Int -> List a -> Maybe a
-nth i xs =
-    List.head (List.drop i xs)
+{-| A numeric literal. -}
+num : Float -> String
+num n =
+    String.fromFloat n
+
+
+{-| A function call: `call "substr" [ field 1, "1", "3" ]` is `substr($1, 1, 3)`. -}
+call : String -> List String -> String
+call fn args =
+    fn ++ "(" ++ String.join ", " args ++ ")"
+
+
+{-| A regex match test: `matches (field 1) "^[0-9]+$"` is `$1 ~ /^[0-9]+$/`. -}
+matches : String -> String -> String
+matches expr re =
+    expr ++ " ~ /" ++ re ++ "/"

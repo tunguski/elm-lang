@@ -5,71 +5,44 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 import pl.matsuo.elm.util.Resources;
 
-/** Exercises the bundled {@code Awk} text-processing library through the interpreter. */
+/** Exercises the bundled {@code Awk} builder — which composes awk *program text* to embed in a shell
+ *  script or pass to awk (it does not run awk). */
 class AwkLibraryTest {
 
   private static final String LIB = Resources.read("/elm/lib/Awk.elm");
 
   private static final String SRC =
       """
-      module Main exposing (col1, cols, grepC, total, counted, withEnds, lengths, sub2, caseFns, splitCols, g1, s1, gAmp, mre, splen)
+      module Main exposing (col, sum, grep, fields, oneline, argv)
 
       import Awk exposing (..)
 
-      input : String
-      input = "alice 30 nyc\\nbob 25 sf\\ncarol 41 la\\n"
+      -- awk '{ print $1 }'
+      col : String
+      col = program [ eachLine [ print [ field 1 ] ] ]
 
-      col1 : String
-      col1 = column 1 input
+      -- BEGIN { FS="," } { s += $2 } END { print s }
+      sum : String
+      sum =
+          program
+              [ begin [ assign "FS" (str ",") ]
+              , eachLine [ addTo "s" (field 2) ]
+              , end [ print [ var "s" ] ]
+              ]
 
-      cols : String
-      cols = columns [ 2, 1 ] input
+      -- /error/ { print NR, $0 }
+      grep : String
+      grep = program [ matchLine "error" [ print [ nr, field 0 ] ] ]
 
-      grepC : String
-      grepC = matching "carol" input
+      -- { print toupper(substr($1, 1, 3)) }
+      fields : String
+      fields = program [ eachLine [ print [ call "toupper" [ call "substr" [ field 1, "1", "3" ] ] ] ] ]
 
-      total : Float
-      total = sumColumn 2 input
+      oneline : String
+      oneline = oneLiner [ eachLine [ print [ field 2 ] ] ]
 
-      counted : String
-      counted = run (\\r -> [ String.fromInt (nr r) ++ ": " ++ String.fromInt (nf r) ]) input
-
-      withEnds : String
-      withEnds =
-          runWith
-              { fs = " "
-              , begin = [ "== names ==" ]
-              , action = \\r -> [ field 1 r ]
-              , end = [ "== done ==" ]
-              }
-              input
-
-      lengths : List Int
-      lengths = [ length "hello", index "hello" "ll", String.length (substr 2 3 "abcdef"), String.length (substrFrom 4 "abcdef") ]
-
-      sub2 : String
-      sub2 = substr 2 3 "abcdef"
-
-      caseFns : String
-      caseFns = toupper "aB" ++ "/" ++ tolower "aB"
-
-      splitCols : Int
-      splitCols = List.length (split "," "a,b,c,d")
-
-      g1 : String
-      g1 = gsub "[0-9]+" "#" "a1b22c333"
-
-      s1 : String
-      s1 = sub "[0-9]+" "#" "a1b22c333"
-
-      gAmp : String
-      gAmp = gsub "[0-9]+" "[&]" "a12b"
-
-      mre : String
-      mre = matchingRegex "^[0-9]" "1a\\nb2\\n3c"
-
-      splen : Int
-      splen = List.length (splitRegex "[,;]" "a,b;c")
+      argv : List String
+      argv = invocation [ eachLine [ print [ field 1 ] ] ] [ "a.txt", "b.txt" ]
       """;
 
   private static String value(String name) {
@@ -77,37 +50,21 @@ class AwkLibraryTest {
   }
 
   @Test
-  void columnsFieldsAndPatterns() {
-    assertEquals("alice\nbob\ncarol", value("col1"));
-    assertEquals("30 alice\n25 bob\n41 carol", value("cols"));
-    assertEquals("carol 41 la", value("grepC"));
+  void buildsRuleProgramText() {
+    assertEquals("{ print $1 }", value("col"));
+    assertEquals("BEGIN { FS = \",\" }\n{ s += $2 }\nEND { print s }", value("sum"));
+    assertEquals("/error/ { print NR, $0 }", value("grep"));
   }
 
   @Test
-  void nrNfAndSum() {
-    assertEquals("96", value("total")); // 30 + 25 + 41
-    assertEquals("1: 3\n2: 3\n3: 3", value("counted"));
+  void expressionHelpers() {
+    assertEquals("{ print toupper(substr($1, 1, 3)) }", value("fields"));
   }
 
   @Test
-  void beginAndEndBlocks() {
-    assertEquals("== names ==\nalice\nbob\ncarol\n== done ==", value("withEnds"));
-  }
-
-  @Test
-  void stringFunctions() {
-    assertEquals("[5,3,3,3]", value("lengths")); // length, index "ll"->3, substr len, substrFrom len
-    assertEquals("bcd", value("sub2"));
-    assertEquals("AB/ab", value("caseFns"));
-    assertEquals("4", value("splitCols"));
-  }
-
-  @Test
-  void regexFunctions() {
-    assertEquals("a#b#c#", value("g1"));
-    assertEquals("a#b22c333", value("s1")); // sub replaces only the first run
-    assertEquals("a[12]b", value("gAmp")); // & is the matched text
-    assertEquals("1a\n3c", value("mre"));
-    assertEquals("3", value("splen"));
+  void oneLinerAndInvocation() {
+    assertEquals("'{ print $2 }'", value("oneline")); // shell-quoted, single line
+    // The awk argv: program text then the file arguments.
+    assertEquals("[\"{ print $1 }\",\"a.txt\",\"b.txt\"]", value("argv"));
   }
 }

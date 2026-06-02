@@ -103,13 +103,13 @@ program urls =
         }
 
 
-{-| The bundled scripting libraries, fetched into `model.libs` at startup and merged into every
-file's evaluation scope (hidden from the file list) so a program can `import Awk`. (Awk runs on the
-in-browser interpreter's string subset; M4/Sed/Csv use `List Char`, which the small interpreter does
-not model, so they ship for `elm script` rather than the playground.) -}
+{-| Library modules fetched into `model.libs` at startup and merged into every file's evaluation
+scope (hidden from the file list). Empty by default: the scripting libraries (Awk/M4/Csv) target
+`elm script` text generation and use full-stdlib features the small in-browser interpreter doesn't
+model, so they aren't bundled into the Html playground. The plumbing remains for embedding helpers. -}
 scriptingLibs : List String
 scriptingLibs =
-    [ "examples/Awk.elm" ]
+    []
 
 
 fetchLibs : List String -> Cmd Msg

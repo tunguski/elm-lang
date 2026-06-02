@@ -139,28 +139,34 @@ are easy to test, and they're available to `elm script` without an install.
 
 ### Awk
 
-[`Awk`](../src/main/resources/elm/lib/Awk.elm) processes text a record (line) at a time with split
-fields, mirroring awk: `field 0` is `$0` (the whole line) and `field n` is `$n` (1-based), with `nf`
-(`NF`) and `nr` (`NR`). `run` maps an action over each line and joins what it prints; `runWith` adds
-a field separator and `BEGIN`/`END` blocks. There are convenience helpers (`column`, `columns`,
-`matching`, `sumColumn`), awk's string functions (`length`, `substr`, `index`, `split`, `toupper`,
-`tolower`) and regex ones (`matchingRegex`, `sub`, `gsub`, `splitRegex`).
+[`Awk`](../src/main/resources/elm/lib/Awk.elm) **builds awk program text** to embed in a generated
+shell script or pass to `awk` — it doesn't run awk. An awk program is a list of `pattern { action }`
+rules: `begin`/`end`/`on cond`/`matchLine re`/`eachLine`. `program` renders them, `oneLiner`
+single-quotes the result for a command line, and `invocation` builds the `awk` argument list. The
+expression helpers produce awk text: `field 1` is `$1`, `nf`/`nr`, `print`/`printf`/`assign`/`addTo`,
+`call` for functions (`substr`, `toupper`, `gsub`, …) and `matches` for `~ /re/`.
 
 ```elm
-import Awk
+import Awk exposing (..)
+import Bash
 
--- like `awk '{ print $1 }'`
-names : String -> String
-names =
-    Awk.column 1
+-- awk 'BEGIN { FS="," } { s += $2 } END { print s }' data.csv
+sumCommand : List String
+sumCommand =
+    invocation
+        [ begin [ assign "FS" (str ",") ]
+        , eachLine [ addTo "s" (field 2) ]
+        , end [ print [ var "s" ] ]
+        ]
+        [ "data.csv" ]
 
--- like `awk '{ s += $2 } END { print s }'`
-total : String -> Float
-total =
-    Awk.sumColumn 2
+run : Bash.Io
+run =
+    Bash.exec "awk" sumCommand (\_ -> Bash.done)
 ```
 
-The bundled `awk-sum.elm` demo sums a column of a file: `elm script awk-sum.elm 2 sales.txt`.
+The bundled `awk-sum.elm` demo prints the awk command to sum a column:
+`elm script awk-sum.elm 2 sales.csv`.
 
 ### M4
 
