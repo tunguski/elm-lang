@@ -1022,7 +1022,11 @@ public final class Main implements Runnable {
         Path reg = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
         sources = pl.matsuo.elm.project.ProjectLoader.loadSources(project, reg);
       }
-      pl.matsuo.elm.repl.Repl.loop(new InputStreamReader(System.in), System.out, sources);
+      pl.matsuo.elm.repl.Repl.loop(
+          new InputStreamReader(System.in),
+          System.out,
+          sources,
+          pl.matsuo.elm.repl.Repl.defaultHistoryFile());
       return 0;
     }
   }

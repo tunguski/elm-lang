@@ -152,4 +152,38 @@ class ReplTest {
     org.junit.jupiter.api.Assertions.assertFalse(Repl.complete("if x then"));
     org.junit.jupiter.api.Assertions.assertFalse(Repl.complete("x ="));
   }
+
+  @Test
+  void historyPersistsAcrossSessions(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+      throws Exception {
+    java.nio.file.Path hist = dir.resolve("history");
+    // First session enters two expressions, then quits.
+    ByteArrayOutputStream out1 = new ByteArrayOutputStream();
+    Repl.loop(
+        new StringReader("1 + 1\n\"hi\"\n:quit\n"),
+        new PrintStream(out1, true, StandardCharsets.UTF_8),
+        java.util.List.of(),
+        hist);
+    // The history file now holds both entries.
+    assertTrue(java.nio.file.Files.readString(hist).contains("1 + 1"), "history saved");
+
+    // A fresh session over the same file sees the prior entries via :history.
+    ByteArrayOutputStream out2 = new ByteArrayOutputStream();
+    Repl.loop(
+        new StringReader(":history\n:quit\n"),
+        new PrintStream(out2, true, StandardCharsets.UTF_8),
+        java.util.List.of(),
+        hist);
+    String shown = out2.toString(StandardCharsets.UTF_8);
+    assertTrue(shown.contains("1 + 1") && shown.contains("\"hi\""), shown);
+  }
+
+  @Test
+  void multiLineHistoryEntriesRoundTrip(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+    java.nio.file.Path hist = dir.resolve("history");
+    Repl.appendHistory(hist, "let\n    x = 1\nin\nx");
+    java.util.List<String> loaded = Repl.loadHistory(hist);
+    org.junit.jupiter.api.Assertions.assertEquals(1, loaded.size());
+    org.junit.jupiter.api.Assertions.assertEquals("let\n    x = 1\nin\nx", loaded.get(0));
+  }
 }

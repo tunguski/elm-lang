@@ -38,12 +38,20 @@ public final class Repl {
   /** As {@link #loop(Reader, PrintStream)}, but pre-loading the top-level definitions of the given
    * module sources (a whole project's local modules + installed dependencies) into scope. */
   public static void loop(Reader in, PrintStream out, List<String> moduleSources) throws IOException {
+    loop(in, out, moduleSources, null);
+  }
+
+  /** As {@link #loop(Reader, PrintStream, List)}, but persisting command history to {@code
+   * historyFile} (loaded at startup, appended as entries are made) so it survives across sessions.
+   * Pass {@code null} to keep the session hermetic (e.g. in tests). */
+  public static void loop(Reader in, PrintStream out, List<String> moduleSources, Path historyFile)
+      throws IOException {
     BufferedReader reader = in instanceof BufferedReader b ? b : new BufferedReader(in);
     List<String> defs = new ArrayList<>(); // accumulated `name … = …` definitions
     for (String src : moduleSources) {
       defs.addAll(topLevelDefs(src));
     }
-    List<String> history = new ArrayList<>(); // entries entered this session
+    List<String> history = loadHistory(historyFile); // prior sessions' entries (most recent last)
     if (!defs.isEmpty()) {
       out.println("(loaded " + defs.size() + " definitions from the project)");
     }
@@ -67,6 +75,7 @@ public final class Repl {
       String trimmed = entry.trim();
       if (!trimmed.isEmpty() && !trimmed.equals(":history")) {
         history.add(trimmed);
+        appendHistory(historyFile, trimmed);
       }
       if (trimmed.equals(":quit") || trimmed.equals(":q")) {
         break;
@@ -127,6 +136,52 @@ public final class Repl {
       return Show.pretty(v); // multi-line layout for large records/lists; compact for small values
     } catch (RuntimeException e) {
       return "Error: " + e.getMessage();
+    }
+  }
+
+  /** The default persistent-history file: {@code $ELM_REPL_HISTORY} or {@code ~/.elm_repl_history}. */
+  public static Path defaultHistoryFile() {
+    String env = System.getenv("ELM_REPL_HISTORY");
+    if (env != null && !env.isEmpty()) {
+      return Path.of(env);
+    }
+    return Path.of(System.getProperty("user.home", "."), ".elm_repl_history");
+  }
+
+  /** Loads prior-session history (one entry per line, internal newlines stored as {@code \n}); an
+   *  absent file or read error yields an empty list. {@code null} disables persistence. */
+  static List<String> loadHistory(Path file) {
+    List<String> history = new ArrayList<>();
+    if (file == null || !Files.exists(file)) {
+      return history;
+    }
+    try {
+      for (String line : Files.readAllLines(file)) {
+        if (!line.isEmpty()) {
+          history.add(line.replace("\\n", "\n"));
+        }
+      }
+    } catch (IOException ignored) {
+      // an unreadable history file is non-fatal
+    }
+    return history;
+  }
+
+  /** Appends one entry to the history file (newlines escaped to keep it one line). No-op for {@code
+   *  null} or on error — history persistence never breaks the REPL. */
+  static void appendHistory(Path file, String entry) {
+    if (file == null) {
+      return;
+    }
+    try {
+      Files.writeString(
+          file,
+          entry.replace("\n", "\\n") + "\n",
+          java.nio.charset.StandardCharsets.UTF_8,
+          java.nio.file.StandardOpenOption.CREATE,
+          java.nio.file.StandardOpenOption.APPEND);
+    } catch (IOException ignored) {
+      // a non-writable history file is non-fatal
     }
   }
 
