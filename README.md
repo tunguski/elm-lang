@@ -28,6 +28,8 @@ An implementation of the [Elm](https://elm-lang.org) language in Java 25, built 
    lambdas via `ref.func`/`call_ref` — higher-order `map`/`filter` over GC lists). Capturing
    lambdas and currying still need the linear-memory path.
 
+See **[docs/backends.md](docs/backends.md)** for how the backends compare and when to use each.
+
 All four share one value model and are **differential-tested** against each other (including
 property-based testing over randomly generated expressions — extended to a fifth path, the **WasmGC**
 backend, over the fragment it supports — and a non-trivial records/lists/closures "task summary" core
