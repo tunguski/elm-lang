@@ -407,6 +407,31 @@ class TestRunnerTest {
   }
 
   @Test
+  void newFuzzGeneratorsProduceValidValues() {
+    String src =
+        """
+        module T exposing (suite)
+        import Expect
+        import Fuzz
+        import Test exposing (describe, fuzz)
+        suite =
+            describe "gens"
+                [ fuzz (Fuzz.floatRange 1.0 2.0) "floatRange stays in range"
+                    (\\x -> Expect.equal True (x >= 1.0 && x <= 2.0))
+                , fuzz (Fuzz.listOfLength 4 Fuzz.int) "listOfLength has the requested length"
+                    (\\xs -> Expect.equal 4 (List.length xs))
+                , fuzz (Fuzz.sequence [ Fuzz.constant 1, Fuzz.constant 2 ]) "sequence collects in order"
+                    (\\xs -> Expect.equal [ 1, 2 ] xs)
+                , fuzz (Fuzz.weightedBool 1.0) "weightedBool 1.0 is always True"
+                    (\\b -> Expect.equal True b)
+                ]
+        """;
+    TestRunner.Result r = TestRunner.run(List.of(src), new TestRunner.Options(50, 3L, null));
+    assertEquals(4, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
+  }
+
+  @Test
   void noTestsIsACleanPass() {
     TestRunner.Result r = TestRunner.run(List.of("module M exposing (..)\nanswer = 42\n"));
     assertEquals(0, r.passed());

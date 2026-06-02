@@ -3,7 +3,9 @@ module Fuzz exposing
     , int
     , intRange
     , bool
+    , weightedBool
     , float
+    , floatRange
     , percentage
     , char
     , string
@@ -15,6 +17,8 @@ module Fuzz exposing
     , pair
     , triple
     , list
+    , listOfLength
+    , sequence
     , array
     , maybe
     , result
@@ -117,6 +121,34 @@ float : Fuzzer Float
 float =
     { gen = \seed -> toFloat (modBy 2000000001 (hash seed) - 1000000000) / 1000.0
     , shrink = \n -> List.filter (\c -> abs c < abs n) [ 0.0, toFloat (truncate n) ]
+    }
+
+
+{-| A Float in the inclusive range `lo..hi`; shrinks toward `lo`. -}
+floatRange : Float -> Float -> Fuzzer Float
+floatRange lo hi =
+    { gen =
+        \seed ->
+            if hi <= lo then
+                lo
+
+            else
+                lo + (toFloat (modBy 1000001 (hash seed)) / 1000000.0) * (hi - lo)
+    , shrink = \n -> List.filter (\c -> c >= lo && c < n) [ lo, (lo + n) / 2 ]
+    }
+
+
+{-| True with probability `p` (clamped to `0..1`); shrinks `True` toward `False`. -}
+weightedBool : Float -> Fuzzer Bool
+weightedBool p =
+    { gen = \seed -> toFloat (modBy 1000001 (hash seed)) / 1000000.0 < p
+    , shrink =
+        \b ->
+            if b then
+                [ False ]
+
+            else
+                []
     }
 
 
@@ -362,6 +394,23 @@ list fuzzer =
 
                 _ ->
                     ([] :: removeEach xs) ++ shrinkEach fuzzer.shrink xs
+    }
+
+
+{-| A list of exactly `n` values from the element fuzzer; shrinks each element (length is fixed). -}
+listOfLength : Int -> Fuzzer a -> Fuzzer (List a)
+listOfLength n fuzzer =
+    { gen = \seed -> List.map (\i -> fuzzer.gen (hash (seed + i * 31))) (List.range 1 (max 0 n))
+    , shrink = \xs -> shrinkEach fuzzer.shrink xs
+    }
+
+
+{-| Runs each fuzzer in the list (each fed a decorrelated seed) and collects the results in order.
+Does not shrink. -}
+sequence : List (Fuzzer a) -> Fuzzer (List a)
+sequence fuzzers =
+    { gen = \seed -> List.indexedMap (\i f -> f.gen (hash (seed + i * 7919))) fuzzers
+    , shrink = \_ -> []
     }
 
 
