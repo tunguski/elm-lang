@@ -26,18 +26,7 @@ public final class BytecodeInterpreter {
   private BytecodeInterpreter(Module module) {
     Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
     Map<String, List<String>> recordCtors = new HashMap<>();
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Union union) {
-        for (Decl.Union.Variant v : union.variants()) {
-          ctorArity.put(v.name(), v.args().size());
-        }
-      }
-      if (d instanceof Decl.TypeAlias ta
-          && ta.type() instanceof pl.matsuo.elm.ast.Type.Record rec
-          && rec.base().isEmpty()) {
-        recordCtors.put(ta.name(), rec.fields().stream().map(f -> f.name()).toList());
-      }
-    }
+    pl.matsuo.elm.interp.TypeDecls.scanModule(module, ctorArity, recordCtors);
     Map<String, String> unqualified = Prelude.defaultUnqualified();
     Map<String, String> aliases = new HashMap<>();
     for (Module.Import imp : module.imports()) {
@@ -98,7 +87,9 @@ public final class BytecodeInterpreter {
   }
 
   public Object evalExpr(String expression) {
-    Chunk chunk = compiler.compileChunk(List.of(), Parser.parseExpression(expression), "<expr>");
+    pl.matsuo.elm.ast.Expr expr = Parser.parseExpression(expression);
+    env.registerLetTypes(expr); // a let-local `type` in the expression must be known at runtime
+    Chunk chunk = compiler.compileChunk(List.of(), expr, "<expr>");
     return VM.run(chunk, rootScope.child(), env);
   }
 }

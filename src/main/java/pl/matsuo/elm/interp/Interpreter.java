@@ -30,18 +30,7 @@ public final class Interpreter {
     this.coverage = coverage;
     Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
     Map<String, java.util.List<String>> recordCtors = new HashMap<>();
-    for (Decl d : module.decls()) {
-      if (d instanceof Decl.Union union) {
-        for (Decl.Union.Variant v : union.variants()) {
-          ctorArity.put(v.name(), v.args().size());
-        }
-      }
-      if (d instanceof Decl.TypeAlias ta
-          && ta.type() instanceof pl.matsuo.elm.ast.Type.Record rec
-          && rec.base().isEmpty()) {
-        recordCtors.put(ta.name(), rec.fields().stream().map(f -> f.name()).toList());
-      }
-    }
+    TypeDecls.scanModule(module, ctorArity, recordCtors);
 
     Map<String, String> unqualified = Prelude.defaultUnqualified();
     Map<String, String> aliases = new HashMap<>();
@@ -227,6 +216,7 @@ public final class Interpreter {
 
   /** Compiles and evaluates an already-parsed expression against this module's environment. */
   public Object evalExpr(Expr expr) {
+    env.registerLetTypes(expr); // a let-local `type` in the expression must be known at runtime
     return compiler.compile(expr).execute(rootScope);
   }
 }

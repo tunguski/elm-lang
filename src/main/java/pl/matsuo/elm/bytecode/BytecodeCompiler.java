@@ -56,6 +56,8 @@ public final class BytecodeCompiler {
               c.add(Instr.of(Op.BIND_PAT, de.pattern()));
               shadows |= binds(de.pattern(), name);
             }
+            case Decl.Union ignored -> {} // type-level only; constructors are resolved by name
+            case Decl.TypeAlias ignored -> {} // type-level only (record-alias ctors resolved by name)
             default -> throw new ElmRuntimeError("Unsupported declaration in let: " + d);
           }
         }
@@ -268,6 +270,8 @@ public final class BytecodeCompiler {
           compile(c, de.body());
           c.add(Instr.of(Op.BIND_PAT, de.pattern()));
         }
+        case Decl.Union ignored -> {} // type-level only; constructors are resolved by name
+        case Decl.TypeAlias ignored -> {} // type-level only (record-alias ctors resolved by name)
         default -> throw new ElmRuntimeError("Unsupported declaration in let: " + d);
       }
     }

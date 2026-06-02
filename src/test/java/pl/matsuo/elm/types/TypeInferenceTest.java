@@ -51,6 +51,28 @@ class TypeInferenceTest {
     assertEquals("Int", t("let n = 5 in String.length (String.fromInt n)"));
     // let-generalization: id is polymorphic and used at two types.
     assertEquals("(number, String)", t("let id = \\x -> x in (id 1, id \"a\")"));
+    // A `type` declared in a let: its constructors are in scope for the rest of the let.
+    assertEquals(
+        "Int",
+        t(
+            """
+            let
+                type Box = Box Int
+                unbox b = case b of
+                    Box n -> n
+            in
+            unbox (Box 7)
+            """));
+    // A record `type alias` in a let introduces its constructor function.
+    assertEquals(
+        "Int",
+        t(
+            """
+            let
+                type alias P = { x : Int, y : Int }
+            in
+            (P 3 4).x
+            """));
   }
 
   @Test

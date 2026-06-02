@@ -43,6 +43,12 @@ public final class RuntimeEnv {
     topLevel.put(name, value);
   }
 
+  /** Registers the constructors/record-aliases of any {@code type} declared inside a {@code let} of
+   *  {@code expr}, so a standalone expression that introduces a local type resolves at runtime. */
+  public void registerLetTypes(pl.matsuo.elm.ast.Expr expr) {
+    TypeDecls.scanExpr(expr, ctorArity, recordConstructors);
+  }
+
   public Map<String, Object> topLevel() {
     return topLevel;
   }

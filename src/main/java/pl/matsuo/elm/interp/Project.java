@@ -48,18 +48,7 @@ public final class Project {
     Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
     Map<String, List<String>> recordCtors = new HashMap<>();
     for (Module m : modules.values()) {
-      for (Decl d : m.decls()) {
-        if (d instanceof Decl.Union u) {
-          for (Decl.Union.Variant v : u.variants()) {
-            ctorArity.put(v.name(), v.args().size());
-          }
-        }
-        if (d instanceof Decl.TypeAlias ta
-            && ta.type() instanceof Type.Record rec
-            && rec.base().isEmpty()) {
-          recordCtors.put(ta.name(), rec.fields().stream().map(Type.Record.Field::name).toList());
-        }
-      }
+      TypeDecls.scanModule(m, ctorArity, recordCtors);
     }
 
     globals = new HashMap<>(Prelude.builtins());

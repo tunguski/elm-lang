@@ -96,6 +96,31 @@ class BytecodeBackendTest {
   }
 
   @Test
+  void letLocalTypeDeclarations() {
+    // A `type` / `type alias` declared inside a `let`, in expression and module position.
+    same(
+        """
+        let
+            type Color = Red | Green | Blue
+            rank c = case c of
+                Red -> 1
+                Green -> 2
+                Blue -> 3
+        in
+        rank Blue
+        """);
+    sameModule(
+        """
+        main =
+            let
+                type alias P = { x : Int, y : Int }
+                step p = { p | x = p.x + 1 }
+            in
+            (step (P 4 9)).x
+        """);
+  }
+
+  @Test
   void deepSelfTailRecursionDoesNotOverflow() {
     // Self-tail-calls become a TAIL_CALL loop, so this runs in constant Java stack. Before TCO the
     // bytecode VM kept every call on the stack and overflowed well before a million.

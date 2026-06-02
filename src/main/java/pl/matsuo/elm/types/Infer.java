@@ -734,6 +734,18 @@ public final class Infer {
     record Binding(String name, Ty placeholder) {}
     List<Binding> bindings = new ArrayList<>();
     TypeEnv rec = env;
+    // Let-local `type` / `type alias` declarations: register their constructors and alias
+    // definitions (into the shared globals/alias registries) so the rest of the let can use them.
+    for (Decl d : let.defs()) {
+      if (d instanceof Decl.Union u) {
+        registerUnion(u, env.globals());
+      } else if (d instanceof Decl.TypeAlias ta) {
+        aliases.put(ta.name(), new AliasDef(ta.params(), ta.type()));
+        if (ta.type() instanceof Type.Record) {
+          registerRecordAliasConstructor(ta, env.globals());
+        }
+      }
+    }
     for (Decl d : let.defs()) {
       if (d instanceof Decl.Value v) {
         Ty ph = fresh();
@@ -757,6 +769,8 @@ public final class Infer {
             bindings.add(new Binding(e.getKey(), e.getValue()));
           }
         }
+        case Decl.Union ignored -> {} // already registered above (type-level only)
+        case Decl.TypeAlias ignored -> {} // already registered above (type-level only)
         default -> throw new ElmTypeError("Unsupported declaration in let");
       }
     }

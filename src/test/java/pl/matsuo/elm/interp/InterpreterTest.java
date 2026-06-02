@@ -45,6 +45,57 @@ class InterpreterTest {
     assertEquals("CBA", eval("String.toUpper (String.reverse \"abc\")"));
   }
 
+  // --- let-local type declarations --------------------------------------
+
+  @Test
+  void letLocalUnionType() {
+    assertEquals(
+        2L,
+        eval(
+            """
+            let
+                type Color = Red | Green | Blue
+                toInt c =
+                    case c of
+                        Red -> 1
+                        Green -> 2
+                        Blue -> 3
+            in
+            toInt Green
+            """));
+  }
+
+  @Test
+  void letLocalUnionWithArguments() {
+    assertEquals(
+        42L,
+        eval(
+            """
+            let
+                type Box = Box Int
+                unbox b =
+                    case b of
+                        Box n -> n
+            in
+            unbox (Box 42)
+            """));
+  }
+
+  @Test
+  void letLocalRecordAlias() {
+    // A record type alias declared in a let introduces a constructor function (P x y).
+    assertEquals(
+        7L,
+        eval(
+            """
+            let
+                type alias P = { x : Int, y : Int }
+                mk = P 3 4
+            in
+            mk.x + mk.y
+            """));
+  }
+
   // --- collections -------------------------------------------------------
 
   @Test

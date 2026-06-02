@@ -190,6 +190,8 @@ public final class Compiler {
           targets.add(de.pattern());
           rhs.add(compile(de.body()));
         }
+        case Decl.Union ignored -> {} // type-level only; constructors are resolved by name
+        case Decl.TypeAlias ignored -> {} // type-level only (record-alias ctors resolved by name)
         default -> throw new ElmRuntimeError("Unsupported declaration in let: " + d);
       }
     }
