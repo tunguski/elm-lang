@@ -136,6 +136,20 @@ class ReactorServerTest {
   }
 
   @Test
+  void indexShowsProjectTypeStatusAndPerModuleParseErrors(@TempDir Path dir) throws Exception {
+    Files.writeString(dir.resolve("Ok.elm"),
+        "module Ok exposing (x)\nx = 1 + 2\n", StandardCharsets.UTF_8);
+    server = ReactorServer.start(dir, 0);
+    assertTrue(get("/").contains("project type-checks"), "clean project shows a green banner");
+
+    server.stop(0);
+    Files.writeString(dir.resolve("Bad.elm"),
+        "module Bad exposing (x)\nx = \"a\" + 1\n", StandardCharsets.UTF_8); // type error
+    server = ReactorServer.start(dir, 0);
+    assertTrue(get("/").contains("✗"), "a type error shows a red banner: " + get("/"));
+  }
+
+  @Test
   void compilesOnceThenServesAnUnchangedProjectFromCache(@TempDir Path dir) throws Exception {
     Files.writeString(
         dir.resolve("Main.elm"),
