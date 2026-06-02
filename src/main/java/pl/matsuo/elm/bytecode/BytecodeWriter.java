@@ -20,7 +20,7 @@ import pl.matsuo.elm.runtime.ElmUnit;
 public final class BytecodeWriter {
 
   static final byte[] MAGIC = {'E', 'L', 'M', 'B', 'C'};
-  static final int VERSION = 1;
+  static final int VERSION = 2; // v2 adds a CRC32 of the body after the version byte
 
   // Operand type tags.
   static final int OP_NULL = 0,
@@ -51,18 +51,36 @@ public final class BytecodeWriter {
 
   private BytecodeWriter() {}
 
-  /** Serializes {@code program} to a fresh byte array. */
+  /** Serializes {@code program} to a fresh byte array: {@code MAGIC, version, crc32(body), body}. */
   public static byte[] toBytes(BytecodeProgram program) {
+    byte[] body = bodyBytes(program);
+    java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+    crc.update(body);
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    write(program, bytes);
+    try (DataOutputStream d = new DataOutputStream(bytes)) {
+      d.write(MAGIC);
+      d.writeByte(VERSION);
+      d.writeInt((int) crc.getValue()); // integrity check over the body
+      d.write(body);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
     return bytes.toByteArray();
   }
 
   /** Serializes {@code program} to {@code out}. */
   public static void write(BytecodeProgram program, OutputStream out) {
-    try (DataOutputStream d = new DataOutputStream(out)) {
-      d.write(MAGIC);
-      d.writeByte(VERSION);
+    try {
+      out.write(toBytes(program));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  /** The serialized body (everything the CRC covers): module name, the resolution tables, and defs. */
+  private static byte[] bodyBytes(BytecodeProgram program) {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    try (DataOutputStream d = new DataOutputStream(bytes)) {
       d.writeUTF(program.moduleName());
       writeIntMap(d, program.ctorArity());
       writeStringsMap(d, program.recordCtors());
@@ -76,6 +94,7 @@ public final class BytecodeWriter {
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
+    return bytes.toByteArray();
   }
 
   private static void writeIntMap(DataOutputStream d, Map<String, Integer> m) throws IOException {

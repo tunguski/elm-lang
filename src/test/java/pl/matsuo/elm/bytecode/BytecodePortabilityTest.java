@@ -61,6 +61,19 @@ class BytecodePortabilityTest {
   }
 
   @Test
+  void detectsACorruptedArtifactViaItsChecksum() {
+    byte[] bytes = BytecodeWriter.toBytes(BytecodeInterpreter.load("main = 1 + 2\n").toProgram());
+    // Flip a byte deep in the body (past the magic/version/crc header) -> CRC mismatch on load.
+    byte[] corrupt = bytes.clone();
+    corrupt[corrupt.length - 1] ^= 0x7F;
+    IllegalArgumentException e =
+        assertThrows(IllegalArgumentException.class, () -> BytecodeReader.fromBytes(corrupt));
+    assertTrue(e.getMessage().contains("integrity"), e.getMessage());
+    // The pristine artifact still loads and runs.
+    assertEquals("3", Show.plain(BytecodeInterpreter.fromProgram(BytecodeReader.fromBytes(bytes)).value("main")));
+  }
+
+  @Test
   void rejectsBytesThatAreNotElmbc() {
     assertThrows(
         IllegalArgumentException.class,

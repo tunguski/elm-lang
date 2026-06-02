@@ -29,17 +29,25 @@ public final class BytecodeReader {
 
   /** Deserializes a program from {@code in}. */
   public static BytecodeProgram read(InputStream in) {
-    try (DataInputStream d = new DataInputStream(in)) {
+    try (DataInputStream head = new DataInputStream(in)) {
       byte[] magic = new byte[BytecodeWriter.MAGIC.length];
-      d.readFully(magic);
+      head.readFully(magic);
       if (!java.util.Arrays.equals(magic, BytecodeWriter.MAGIC)) {
         throw new IllegalArgumentException("not an .elmbc bytecode file (bad magic)");
       }
-      int version = d.readUnsignedByte();
+      int version = head.readUnsignedByte();
       if (version != BytecodeWriter.VERSION) {
         throw new IllegalArgumentException(
             "unsupported .elmbc version " + version + " (expected " + BytecodeWriter.VERSION + ")");
       }
+      int expectedCrc = head.readInt();
+      byte[] body = head.readAllBytes();
+      java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+      crc.update(body);
+      if ((int) crc.getValue() != expectedCrc) {
+        throw new IllegalArgumentException(".elmbc integrity check failed (corrupt or truncated body)");
+      }
+      DataInputStream d = new DataInputStream(new ByteArrayInputStream(body));
       String moduleName = d.readUTF();
       Map<String, Integer> ctorArity = readIntMap(d);
       Map<String, List<String>> recordCtors = readStringsMap(d);
