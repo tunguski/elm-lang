@@ -13,6 +13,7 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
+import pl.matsuo.elm.bytecode.BytecodeDisassembler;
 import pl.matsuo.elm.bytecode.BytecodeInterpreter;
 import pl.matsuo.elm.bytecode.BytecodeProgram;
 import pl.matsuo.elm.bytecode.BytecodeReader;
@@ -400,16 +401,27 @@ public final class Main implements Runnable {
     @Option(names = "--value", description = "Top-level name to evaluate and print (default: main).")
     String value = "main";
 
+    @Option(
+        names = "--disassemble",
+        description = "Print a human-readable instruction listing instead of running.")
+    boolean disassemble;
+
     @Override
     public Integer call() throws IOException {
       if (file.toString().endsWith(".elmbc")) {
-        // Run a value straight from a portable artifact — no source, no recompilation.
+        // A portable artifact — no source, no recompilation.
         BytecodeProgram program = BytecodeReader.fromBytes(Files.readAllBytes(file));
-        System.out.println(Show.plain(BytecodeInterpreter.fromProgram(program).value(value)));
+        if (disassemble) {
+          System.out.println(BytecodeDisassembler.disassemble(program));
+        } else {
+          System.out.println(Show.plain(BytecodeInterpreter.fromProgram(program).value(value)));
+        }
         return 0;
       }
       BytecodeInterpreter compiled = BytecodeInterpreter.load(Files.readString(file));
-      if (output != null) {
+      if (disassemble) {
+        System.out.println(BytecodeDisassembler.disassemble(compiled.toProgram()));
+      } else if (output != null) {
         Files.write(output, BytecodeWriter.toBytes(compiled.toProgram()));
         System.out.println("Wrote " + output);
       } else {

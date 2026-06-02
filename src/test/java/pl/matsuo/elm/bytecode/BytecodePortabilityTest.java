@@ -68,6 +68,20 @@ class BytecodePortabilityTest {
   }
 
   @Test
+  void disassemblesToAReadableListing() {
+    BytecodeInterpreter compiled =
+        BytecodeInterpreter.load("sq x = x * x\nmain = sq 7\n");
+    String listing = BytecodeDisassembler.disassemble(compiled.toProgram());
+    assertTrue(listing.contains("== sq (x) =="), listing); // function with its parameter
+    assertTrue(listing.contains("== main =="), listing);
+    assertTrue(listing.contains("BINOP"), listing); // x * x compiles to a BINOP
+    assertTrue(listing.contains("RETURN"), listing);
+    // A round-tripped artifact disassembles identically (the listing is a pure view of the program).
+    byte[] bytes = BytecodeWriter.toBytes(compiled.toProgram());
+    assertEquals(listing, BytecodeDisassembler.disassemble(BytecodeReader.fromBytes(bytes)));
+  }
+
+  @Test
   void artifactCarriesTheMagicHeader() {
     byte[] bytes = BytecodeWriter.toBytes(BytecodeInterpreter.load("main = 1\n").toProgram());
     assertTrue(
