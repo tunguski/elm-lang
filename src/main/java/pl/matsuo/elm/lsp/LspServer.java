@@ -1659,6 +1659,143 @@ public final class LspServer {
     return Character.isLetterOrDigit(c) || c == '_' || c == '.';
   }
 
+  /** The [line, startChar, endChar] of the (possibly qualified) identifier at the cursor, or null if
+   *  the cursor is not on one — used by prepareRename. */
+  static int[] identifierSpan(String source, int line0, int char0) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return null;
+    }
+    String line = lines[line0];
+    int n = line.length();
+    if (char0 < 0 || char0 > n) {
+      return null;
+    }
+    int start = Math.min(char0, n);
+    while (start > 0 && isIdentChar(line.charAt(start - 1))) {
+      start--;
+    }
+    int end = Math.min(char0, n);
+    while (end < n && isIdentChar(line.charAt(end))) {
+      end++;
+    }
+    return end > start ? new int[] {line0, start, end} : null;
+  }
+
+  /** Folding ranges: each top-level block (a column-0 line followed by indented/blank lines) and each
+   *  run of consecutive {@code import} lines, when it spans more than one line. */
+  static List<int[]> foldingRanges(String source) {
+    String[] lines = source.split("\n", -1);
+    List<int[]> folds = new ArrayList<>();
+    int i = 0;
+    while (i < lines.length) {
+      String line = lines[i];
+      if (line.isBlank() || Character.isWhitespace(line.charAt(0))) {
+        i++;
+        continue;
+      }
+      if (line.startsWith("import ")) {
+        int start = i;
+        while (i + 1 < lines.length && lines[i + 1].startsWith("import ")) {
+          i++;
+        }
+        if (i > start) {
+          folds.add(new int[] {start, i});
+        }
+        i++;
+        continue;
+      }
+      // A top-level declaration: extends over following indented/blank lines.
+      int start = i;
+      int lastContent = i;
+      int j = i + 1;
+      while (j < lines.length && (lines[j].isBlank() || Character.isWhitespace(lines[j].charAt(0)))) {
+        if (!lines[j].isBlank()) {
+          lastContent = j;
+        }
+        j++;
+      }
+      if (lastContent > start) {
+        folds.add(new int[] {start, lastContent});
+      }
+      i = j;
+    }
+    return folds;
+  }
+
+  /** A nested LSP SelectionRange at (line, char): identifier (if any) inside the line inside the file. */
+  private Map<String, Object> selectionRangeAt(String[] lines, int line0, int char0) {
+    int lastLine = Math.max(0, lines.length - 1);
+    int lastLen = lines.length == 0 ? 0 : lines[lastLine].length();
+    Map<String, Object> file = new LinkedHashMap<>();
+    file.put("range", range(0, 0, lastLine, lastLen));
+    if (line0 >= 0 && line0 < lines.length) {
+      Map<String, Object> lineRange = new LinkedHashMap<>();
+      lineRange.put("range", range(line0, 0, line0, lines[line0].length()));
+      lineRange.put("parent", file);
+      int[] span =
+          identifierSpan(String.join("\n", java.util.Arrays.asList(lines)), line0, char0);
+      if (span != null) {
+        Map<String, Object> word = new LinkedHashMap<>();
+        word.put("range", range(span[0], span[1], span[2]));
+        word.put("parent", lineRange);
+        return word;
+      }
+      return lineRange;
+    }
+    return file;
+  }
+
+  /** Locates the declaration of the head type constructor of the cursor value's inferred type. */
+  private Optional<Location> typeDefinitionAt(Map<String, String> open, String uri, int line0) {
+    Optional<String> type = hoverType(open.getOrDefault(uri, ""), line0);
+    if (type.isEmpty()) {
+      return Optional.empty();
+    }
+    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)").matcher(type.get());
+    if (!m.find()) {
+      return Optional.empty();
+    }
+    String typeName = m.group(1);
+    java.util.regex.Pattern decl =
+        java.util.regex.Pattern.compile("(?m)^type(?:\\s+alias)?\\s+" + typeName + "\\b");
+    for (Map.Entry<String, String> e : open.entrySet()) {
+      String[] ls = e.getValue().split("\n", -1);
+      for (int i = 0; i < ls.length; i++) {
+        if (decl.matcher(ls[i]).find()) {
+          return Optional.of(new Location(e.getKey(), i, ls[i].indexOf(typeName)));
+        }
+      }
+    }
+    return Optional.empty();
+  }
+
+  /** Each `import <Module>` line's module-name span (`[line, start, end]`) and the module name. */
+  static List<Object[]> importLinks(String source) {
+    String[] lines = source.split("\n", -1);
+    List<Object[]> out = new ArrayList<>();
+    java.util.regex.Pattern p = java.util.regex.Pattern.compile("^import\\s+([A-Z][A-Za-z0-9_.]*)");
+    for (int i = 0; i < lines.length; i++) {
+      java.util.regex.Matcher m = p.matcher(lines[i]);
+      if (m.find()) {
+        out.add(new Object[] {new int[] {i, m.start(1), m.end(1)}, m.group(1)});
+      }
+    }
+    return out;
+  }
+
+  /** The URI of an open document declaring {@code module <name>}, or null if none is loaded. */
+  private static String moduleUri(Map<String, String> open, String name) {
+    java.util.regex.Pattern p =
+        java.util.regex.Pattern.compile("(?m)^(?:port\\s+)?module\\s+" + java.util.regex.Pattern.quote(name) + "\\b");
+    for (Map.Entry<String, String> e : open.entrySet()) {
+      if (p.matcher(e.getValue()).find()) {
+        return e.getKey();
+      }
+    }
+    return null;
+  }
+
   private static Diagnostic at(pl.matsuo.elm.error.Position p, String message) {
     int line = Math.max(0, p.line() - 1);
     int col = Math.max(0, p.col() - 1);
@@ -1864,6 +2001,71 @@ public final class LspServer {
         workspaceEdit.put("changes", changes);
         reply(out, id, workspaceEdit);
       }
+      case "textDocument/prepareRename" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        int line = ((Number) pos.get("line")).intValue();
+        int ch = ((Number) pos.get("character")).intValue();
+        int[] span = identifierSpan(docs.getOrDefault((String) td.get("uri"), ""), line, ch);
+        if (span == null) {
+          reply(out, id, JsonEncode.NULL); // not over a renameable identifier
+        } else {
+          reply(out, id, range(span[0], span[1], span[2]));
+        }
+      }
+      case "textDocument/typeDefinition" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        Map<String, Object> pos = (Map<String, Object>) params.get("position");
+        String uri = (String) td.get("uri");
+        Optional<Location> loc = typeDefinitionAt(docs, uri, ((Number) pos.get("line")).intValue());
+        if (loc.isPresent()) {
+          Map<String, Object> location = new LinkedHashMap<>();
+          location.put("uri", loc.get().uri());
+          location.put("range", range(loc.get().line(), loc.get().character(), loc.get().character()));
+          reply(out, id, location);
+        } else {
+          reply(out, id, JsonEncode.NULL);
+        }
+      }
+      case "textDocument/foldingRange" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        List<Object> folds = new ArrayList<>();
+        for (int[] f : foldingRanges(docs.getOrDefault((String) td.get("uri"), ""))) {
+          Map<String, Object> fr = new LinkedHashMap<>();
+          fr.put("startLine", (long) f[0]);
+          fr.put("endLine", (long) f[1]);
+          folds.add(fr);
+        }
+        reply(out, id, folds);
+      }
+      case "textDocument/selectionRange" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String[] lines = docs.getOrDefault((String) td.get("uri"), "").split("\n", -1);
+        List<Object> result = new ArrayList<>();
+        for (Object po : (List<Object>) params.get("positions")) {
+          Map<String, Object> p = (Map<String, Object>) po;
+          result.add(
+              selectionRangeAt(
+                  lines, ((Number) p.get("line")).intValue(), ((Number) p.get("character")).intValue()));
+        }
+        reply(out, id, result);
+      }
+      case "textDocument/documentLink" -> {
+        Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
+        String src = docs.getOrDefault((String) td.get("uri"), "");
+        List<Object> links = new ArrayList<>();
+        for (Object[] lk : importLinks(src)) {
+          int[] r = (int[]) lk[0];
+          String target = moduleUri(docs, (String) lk[1]);
+          if (target != null) {
+            Map<String, Object> link = new LinkedHashMap<>();
+            link.put("range", range(r[0], r[1], r[2]));
+            link.put("target", target);
+            links.add(link);
+          }
+        }
+        reply(out, id, links);
+      }
       case "textDocument/formatting", "textDocument/rangeFormatting" -> {
         // Range formatting reformats the whole module too (the formatter works on a complete module,
         // not a fragment), so "Format Selection" cleanly formats the file.
@@ -2051,8 +2253,14 @@ public final class LspServer {
     caps.put("documentHighlightProvider", true);
     caps.put("documentSymbolProvider", true);
     caps.put("codeLensProvider", new LinkedHashMap<>());
-    caps.put("renameProvider", true);
+    Map<String, Object> rename = new LinkedHashMap<>();
+    rename.put("prepareProvider", true); // we answer textDocument/prepareRename
+    caps.put("renameProvider", rename);
     caps.put("codeActionProvider", true);
+    caps.put("foldingRangeProvider", true);
+    caps.put("selectionRangeProvider", true);
+    caps.put("typeDefinitionProvider", true);
+    caps.put("documentLinkProvider", new LinkedHashMap<>());
     caps.put("workspaceSymbolProvider", true);
     caps.put("callHierarchyProvider", true);
     caps.put("documentFormattingProvider", true);
@@ -2241,11 +2449,15 @@ public final class LspServer {
   }
 
   private static Map<String, Object> range(int line, int startChar, int endChar) {
+    return range(line, startChar, line, endChar);
+  }
+
+  private static Map<String, Object> range(int startLine, int startChar, int endLine, int endChar) {
     Map<String, Object> start = new LinkedHashMap<>();
-    start.put("line", (long) line);
+    start.put("line", (long) startLine);
     start.put("character", (long) startChar);
     Map<String, Object> end = new LinkedHashMap<>();
-    end.put("line", (long) line);
+    end.put("line", (long) endLine);
     end.put("character", (long) endChar);
     Map<String, Object> range = new LinkedHashMap<>();
     range.put("start", start);

@@ -534,6 +534,35 @@ class LspServerTest {
   }
 
   @Test
+  void foldingRangesCoverMultiLineDeclarationsAndImports() {
+    String src =
+        "module M exposing (..)\nimport A\nimport B\nf x =\n    x\n        + 1\ng = 2\n";
+    var folds = LspServer.foldingRanges(src);
+    // The import block (lines 1-2) and f's body (lines 3-5) fold; single-line g does not.
+    assertTrue(folds.stream().anyMatch(r -> r[0] == 1 && r[1] == 2), folds.toString());
+    assertTrue(folds.stream().anyMatch(r -> r[0] == 3 && r[1] == 5), folds.toString());
+  }
+
+  @Test
+  void prepareRenameReturnsTheIdentifierSpan() {
+    int[] span = LspServer.identifierSpan("answer = 42\n", 0, 3); // cursor inside "answer"
+    assertEquals(0, span[0]);
+    assertEquals(0, span[1]);
+    assertEquals(6, span[2]); // "answer" is 6 chars
+    org.junit.jupiter.api.Assertions.assertNull(LspServer.identifierSpan("x = 1\n", 0, 2)); // on space
+  }
+
+  @Test
+  void documentLinkImportSpansAreExtracted() {
+    var links = LspServer.importLinks("module Main exposing (..)\nimport Helper\nimport A.B as C\nmain = 1\n");
+    assertEquals(2, links.size());
+    assertEquals("Helper", links.get(0)[1]); // the linked module name
+    int[] r = (int[]) links.get(0)[0];
+    assertEquals(1, r[0]); // on line 1
+    assertEquals("A.B", links.get(1)[1]); // dotted module name
+  }
+
+  @Test
   void incrementalSyncAppliesRangedEdits() {
     // Replace "world" (line 0, chars 6..11) with "elm".
     String doc = "hello world\nsecond line\n";
