@@ -203,6 +203,9 @@ falls through to evaluation).
 
 ## Language coverage
 
+The table below is the summary; **[docs/language-coverage.md](docs/language-coverage.md)** is the
+detailed per-construct and per-module reference.
+
 | Feature | Status | Notes |
 |---|---|---|
 | Modules, imports (`as`, `exposing (..)`), qualified names | ✅ | |
