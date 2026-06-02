@@ -51,14 +51,16 @@ final class Pretty {
       case Expr.ListLit l ->
           l.items().isEmpty()
               ? "[]"
-              : "[ " + l.items().stream().map(x -> expr(x, 0, ind)).collect(Collectors.joining(", ")) + " ]";
+              : bracketed("[", "]", l.items().stream().map(x -> expr(x, 0, ind + 2)).toList(), ind);
       case Expr.Tuple t ->
           "( " + t.items().stream().map(x -> expr(x, 0, ind)).collect(Collectors.joining(", ")) + " )";
       case Expr.Record r ->
           r.fields().isEmpty()
               ? "{}"
-              : "{ " + r.fields().stream().map(f -> f.name() + " = " + expr(f.value(), 0, ind))
-                  .collect(Collectors.joining(", ")) + " }";
+              : bracketed(
+                  "{", "}",
+                  r.fields().stream().map(f -> f.name() + " = " + expr(f.value(), 0, ind + 2)).toList(),
+                  ind);
       case Expr.RecordUpdate u ->
           "{ " + u.base() + " | " + u.fields().stream()
               .map(f -> f.name() + " = " + expr(f.value(), 0, ind))
@@ -70,6 +72,28 @@ final class Pretty {
       case Expr.Let let -> paren(ctx > 0, letExpr(let, ind));
       case Expr.Case c -> paren(ctx > 0, caseExpr(c, ind));
     };
+  }
+
+  /** elm-format's line width: lists/records longer than this (from their indent) wrap one item per
+   *  line, with the brackets and commas aligned at {@code ind}. */
+  private static final int MAX_WIDTH = 100;
+
+  /**
+   * Renders a comma-separated bracketed construct (a list {@code [ … ]} or record {@code { … }}) on
+   * one line when it fits, or one item per line otherwise (elm-format style). The wrap decision is a
+   * pure function of {@code ind} and the rendered items, so it is stable under reformatting.
+   */
+  private static String bracketed(String open, String close, List<String> items, int ind) {
+    String flat = open + " " + String.join(", ", items) + " " + close;
+    if (!flat.contains("\n") && ind + flat.length() <= MAX_WIDTH) {
+      return flat;
+    }
+    String in = " ".repeat(ind);
+    StringBuilder sb = new StringBuilder(open).append(" ").append(items.get(0));
+    for (int i = 1; i < items.size(); i++) {
+      sb.append("\n").append(in).append(", ").append(items.get(i));
+    }
+    return sb.append("\n").append(in).append(close).toString();
   }
 
   private static String binOp(Expr.BinOp b, int ctx, int ind) {

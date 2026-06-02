@@ -118,6 +118,29 @@ class FormatterTest {
   }
 
   @Test
+  void wrapsLongListAndRecordLiterals() {
+    // A list literal too wide for one line breaks one element per line, brackets/commas aligned.
+    String list =
+        "values = [ \"alpha\", \"bravo\", \"charlie\", \"delta\", \"echo\", \"foxtrot\", \"golf\", \"hotel\","
+            + " \"india\", \"juliet\", \"kilo\", \"lima\", \"mike\", \"november\", \"oscar\" ]\n";
+    String out = Formatter.format(list);
+    assertTrue(out.contains("values =\n    [ \"alpha\"\n    , \"bravo\""), out);
+    assertTrue(out.contains("\n    ]\n"), out);
+    assertEquals(out, Formatter.format(out), "wrapped list is stable"); // idempotent
+
+    // A short list stays on one line.
+    assertTrue(Formatter.format("x = [1, 2, 3]\n").contains("[ 1, 2, 3 ]"), "short list stays inline");
+
+    // A long record breaks one field per line.
+    String rec =
+        "config =\n    { name = \"the quick brown fox\", count = 1000000, enabled = True, description = \"a fairly long description here\" }\n";
+    String recOut = Formatter.format(rec);
+    assertTrue(recOut.contains("{ name = "), recOut);
+    assertTrue(recOut.contains("\n    , count = "), recOut);
+    assertEquals(recOut, Formatter.format(recOut), "wrapped record is stable");
+  }
+
+  @Test
   void wrapsLongImportExposingLists() {
     String src =
         "module M exposing (..)\n"
