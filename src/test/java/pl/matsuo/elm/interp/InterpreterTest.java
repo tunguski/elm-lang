@@ -45,6 +45,18 @@ class InterpreterTest {
     assertEquals("CBA", eval("String.toUpper (String.reverse \"abc\")"));
   }
 
+  @Test
+  void charPredicates() {
+    assertEquals(true, eval("Char.isSpace ' '"));
+    assertEquals(true, eval("Char.isSpace '\\t'"));
+    assertEquals(false, eval("Char.isSpace 'a'"));
+    assertEquals(true, eval("Char.isPunctuation '!'"));
+    assertEquals(true, eval("Char.isPunctuation ';'"));
+    assertEquals(false, eval("Char.isPunctuation 'a'"));
+    assertEquals(true, eval("Char.isControl (Char.fromCode 0)"));
+    assertEquals(false, eval("Char.isControl 'a'"));
+  }
+
   // --- let-local type declarations --------------------------------------
 
   @Test

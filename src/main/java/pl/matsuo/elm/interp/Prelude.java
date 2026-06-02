@@ -1909,6 +1909,19 @@ public final class Prelude {
       int c = ((ElmChar) a[0]).codePoint();
       return c >= '0' && c <= '7';
     });
+    // isSpace/isPunctuation/isControl: codepoint-based so the interpreter and JS backend agree.
+    fn("Char.isSpace", 1, a -> {
+      int c = ((ElmChar) a[0]).codePoint();
+      return c == ' ' || (c >= '\t' && c <= '\r'); // space, tab, LF, VT, FF, CR
+    });
+    fn("Char.isPunctuation", 1, a -> {
+      int c = ((ElmChar) a[0]).codePoint();
+      return (c >= 33 && c <= 47) || (c >= 58 && c <= 64) || (c >= 91 && c <= 96) || (c >= 123 && c <= 126);
+    });
+    fn("Char.isControl", 1, a -> {
+      int c = ((ElmChar) a[0]).codePoint();
+      return c < 32 || c == 127;
+    });
   }
 
   // --- Bitwise (32-bit, matching elm/core and JavaScript's bitwise operators) ----------------------

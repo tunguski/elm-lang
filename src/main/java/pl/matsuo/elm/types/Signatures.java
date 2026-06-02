@@ -261,6 +261,9 @@ public final class Signatures {
     g("Char.isUpper", "Char -> Bool");
     g("Char.isLower", "Char -> Bool");
     g("Char.isAlphaNum", "Char -> Bool");
+    g("Char.isSpace", "Char -> Bool");
+    g("Char.isPunctuation", "Char -> Bool");
+    g("Char.isControl", "Char -> Bool");
 
     // Debug.
     g("Debug.toString", "a -> String");
