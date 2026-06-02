@@ -248,6 +248,18 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void lexesHexAndScientificNumbers() {
+    assertEquals("255", eval("0xFF"));
+    assertEquals("16", eval("0x10"));
+    assertEquals("True", eval("0xff == 255")); // lowercase hex digits
+    assertEquals("1500", eval("1.5e3"));
+    assertEquals("True", eval("2e9 == 2000000000"));
+    assertEquals("True", eval("1.5e-3 == 0.0015"));
+    assertEquals("510", eval("0xFF + 0xFF")); // hex in arithmetic
+    assertEquals("-16", eval("List.sum [ -0x10 ]")); // negative hex literal
+  }
+
+  @Test
   void lexesStringAndCharEscapes() {
     assertEquals("3", eval("String.length \"a\\nb\"")); // \n is one (newline) character
     assertEquals("2", eval("List.length (String.lines \"a\\nb\")")); // the \n really splits lines

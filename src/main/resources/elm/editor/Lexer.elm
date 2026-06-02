@@ -169,16 +169,8 @@ negNumber chars =
     case chars of
         '-' :: d :: _ ->
             if Char.isDigit d then
-                let
-                    taken =
-                        takeWhile isNumChar (List.drop 1 chars) ""
-                in
-                case String.toFloat (Tuple.first taken) of
-                    Just n ->
-                        Just ( TNum (negate n), Tuple.second taken )
-
-                    Nothing ->
-                        Nothing
+                readNumber (List.drop 1 chars)
+                    |> Maybe.map (\( n, after ) -> ( TNum (negate n), after ))
 
             else
                 Nothing
@@ -289,16 +281,12 @@ tokenizeHelp chars acc =
                         Err e
 
             else if Char.isDigit c then
-                let
-                    taken =
-                        takeWhile isNumChar chars ""
-                in
-                case String.toFloat (Tuple.first taken) of
-                    Just n ->
-                        tokenizeHelp (Tuple.second taken) (TNum n :: acc)
+                case readNumber chars of
+                    Just ( n, after ) ->
+                        tokenizeHelp after (TNum n :: acc)
 
                     Nothing ->
-                        Err ("bad number: " ++ Tuple.first taken)
+                        Err ("bad number near: " ++ String.fromList (List.take 8 chars))
 
             else if Char.isAlpha c || c == '_' then
                 let
@@ -329,6 +317,80 @@ isOpChar c =
 isNumChar : Char -> Bool
 isNumChar c =
     Char.isDigit c || c == '.'
+
+
+isHexChar : Char -> Bool
+isHexChar c =
+    Char.isDigit c || (Char.toLower c >= 'a' && Char.toLower c <= 'f')
+
+
+{-| Reads a numeric literal: hexadecimal `0x…`, or a decimal with an optional fraction and an
+optional `eE[+-]?digits` exponent (`42`, `1.5`, `2e9`, `1.5e-3`). Returns the value and the rest. -}
+readNumber : List Char -> Maybe ( Float, List Char )
+readNumber chars =
+    case chars of
+        '0' :: x :: hd :: rest ->
+            if (x == 'x' || x == 'X') && isHexChar hd then
+                let
+                    ( hex, after ) =
+                        takeWhile isHexChar (hd :: rest) ""
+                in
+                Just ( toFloat (hexToInt hex), after )
+
+            else
+                readDecimal chars
+
+        _ ->
+            readDecimal chars
+
+
+readDecimal : List Char -> Maybe ( Float, List Char )
+readDecimal chars =
+    let
+        ( mant, rest1 ) =
+            takeWhile isNumChar chars ""
+
+        ( expPart, rest2 ) =
+            readExponent rest1
+    in
+    String.toFloat (mant ++ expPart) |> Maybe.map (\n -> ( n, rest2 ))
+
+
+{-| An optional `eE[+-]?digits` exponent suffix; "" (and the unchanged input) when there is none. -}
+readExponent : List Char -> ( String, List Char )
+readExponent chars =
+    case chars of
+        e :: sign :: d :: rest ->
+            if (e == 'e' || e == 'E') && (sign == '+' || sign == '-') && Char.isDigit d then
+                let
+                    ( ds, after ) =
+                        takeWhile Char.isDigit (d :: rest) ""
+                in
+                ( String.fromChar e ++ String.fromChar sign ++ ds, after )
+
+            else
+                readExponentNoSign chars
+
+        _ ->
+            readExponentNoSign chars
+
+
+readExponentNoSign : List Char -> ( String, List Char )
+readExponentNoSign chars =
+    case chars of
+        e :: d :: rest ->
+            if (e == 'e' || e == 'E') && Char.isDigit d then
+                let
+                    ( ds, after ) =
+                        takeWhile Char.isDigit (d :: rest) ""
+                in
+                ( String.fromChar e ++ ds, after )
+
+            else
+                ( "", chars )
+
+        _ ->
+            ( "", chars )
 
 
 isIdChar : Char -> Bool
