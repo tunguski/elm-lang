@@ -23,7 +23,7 @@ builtins =
         ++ [ "List.range", "List.map", "List.length", "List.sum", "String.join", "Maybe.withDefault" ]
         ++ [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product" ]
         ++ [ "List.filter", "List.append", "List.member", "List.filterMap", "List.take", "List.drop", "List.any", "List.all", "List.indexedMap", "List.repeat", "List.sortBy", "List.foldl", "List.foldr", "List.map2", "List.concatMap" ]
-        ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.map2", "Result.map3", "Result.andThen", "Result.toMaybe", "Result.mapError", "Result.fromMaybe" ]
+        ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.map2", "Result.map3", "Result.map4", "Result.map5", "Result.andThen", "Result.toMaybe", "Result.mapError", "Result.fromMaybe" ]
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "Tuple.mapFirst", "Tuple.mapSecond", "Tuple.mapBoth", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
@@ -164,6 +164,12 @@ arity name =
 
     else if name == "Result.map3" then
         4
+
+    else if name == "Result.map4" then
+        5
+
+    else if name == "Result.map5" then
+        6
 
     else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2", "Tuple.mapBoth" ] then
         3
@@ -800,6 +806,35 @@ maybeMapN globals f margs =
             Ok (VCtor "Nothing" [])
 
 
+{-| `Result.mapN`: if every argument is `Ok`, apply `f` to the unwrapped values; otherwise the first
+`Err`. (Avoids 4-/5-tuple patterns, which Elm forbids.) -}
+resultMapN : Globals -> Value -> List Value -> Result String Value
+resultMapN globals f rs =
+    case allOk rs of
+        Ok xs ->
+            applyAllValues globals f xs |> Result.map (\y -> VCtor "Ok" [ y ])
+
+        Err e ->
+            Ok (VCtor "Err" [ e ])
+
+
+{-| The unwrapped values if every element is `Ok _`, else the first wrapped `Err` value. -}
+allOk : List Value -> Result Value (List Value)
+allOk rs =
+    case rs of
+        [] ->
+            Ok []
+
+        (VCtor "Ok" [ x ]) :: rest ->
+            allOk rest |> Result.map (\xs -> x :: xs)
+
+        (VCtor "Err" [ e ]) :: _ ->
+            Err e
+
+        _ :: rest ->
+            allOk rest
+
+
 {-| The unwrapped values if every element is `Just _`, else `Nothing`. -}
 allJust : List Value -> Maybe (List Value)
 allJust margs =
@@ -1410,6 +1445,12 @@ runBuiltin globals name args =
 
                     ( _, err ) ->
                         Ok err
+
+            ( "Result.map4", [ f, a, b, c, d ] ) ->
+                resultMapN globals f [ a, b, c, d ]
+
+            ( "Result.map5", [ f, a, b, c, d, e ] ) ->
+                resultMapN globals f [ a, b, c, d, e ]
 
             ( "Result.map3", [ f, va, vb, vc ] ) ->
                 case ( va, vb, vc ) of

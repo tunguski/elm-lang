@@ -359,6 +359,8 @@ class EditorInterpreterTest {
     assertEquals("Ok 3", eval("Result.map2 (+) (Ok 1) (Ok 2)"));
     assertEquals("Err \"e\"", eval("Result.map2 (+) (Ok 1) (Err \"e\")"));
     assertEquals("Ok 6", eval("Result.map3 (\\a b c -> a + b + c) (Ok 1) (Ok 2) (Ok 3)"));
+    assertEquals("Ok 10", eval("Result.map4 (\\a b c d -> a + b + c + d) (Ok 1) (Ok 2) (Ok 3) (Ok 4)"));
+    assertEquals("Err \"e\"", eval("Result.map5 (\\a b c d e -> a) (Ok 1) (Ok 2) (Err \"e\") (Ok 4) (Ok 5)"));
   }
 
   @Test
