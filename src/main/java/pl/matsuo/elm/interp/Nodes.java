@@ -248,6 +248,7 @@ public final class Nodes {
         case "+" -> pl.matsuo.elm.interp.num.AddNodeGen.create();
         case "-" -> pl.matsuo.elm.interp.num.SubNodeGen.create();
         case "*" -> pl.matsuo.elm.interp.num.MulNodeGen.create();
+        case "//" -> pl.matsuo.elm.interp.num.IntDivNodeGen.create();
         case "<", ">", "<=", ">=" -> pl.matsuo.elm.interp.num.LessNodeGen.create();
         case "==", "/=" -> pl.matsuo.elm.interp.num.EqualsNodeGen.create();
         default -> null;
