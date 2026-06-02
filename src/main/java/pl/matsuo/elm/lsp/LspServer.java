@@ -686,7 +686,58 @@ public final class LspServer {
     createMissingDefinitionAction(source, line0, out);
     addMissingImportAction(source, module, line0, out);
     organizeImportsAction(source, module, line0, out);
+    extractTypeAliasAction(source, module, line0, out);
     return out;
+  }
+
+  /**
+   * "Extract record to type alias" when the cursor is on a top-level annotation whose type contains
+   * an inline record (e.g. {@code point : { x : Int, y : Int }}): lifts the record into a new {@code
+   * type alias} named after the value (capitalised) and rewrites the annotation to use it.
+   */
+  private void extractTypeAliasAction(String source, Module module, int line0, List<CodeAction> out) {
+    String[] lines = source.split("\n", -1);
+    if (line0 < 0 || line0 >= lines.length) {
+      return;
+    }
+    String line = lines[line0];
+    java.util.regex.Matcher m =
+        java.util.regex.Pattern.compile("^([a-z][A-Za-z0-9_]*)\\s*:").matcher(line);
+    if (!m.find()) {
+      return;
+    }
+    int open = line.indexOf('{');
+    int close = open < 0 ? -1 : matchingBrace(line, open);
+    if (close < 0) {
+      return;
+    }
+    String aliasName =
+        Character.toUpperCase(m.group(1).charAt(0)) + m.group(1).substring(1);
+    for (Decl d : module.decls()) {
+      if ((d instanceof Decl.Union u && u.name().equals(aliasName))
+          || (d instanceof Decl.TypeAlias ta && ta.name().equals(aliasName))) {
+        return; // a type of that name already exists
+      }
+    }
+    String record = line.substring(open, close + 1);
+    String newAnnotation = line.substring(0, open) + aliasName + line.substring(close + 1);
+    String newText =
+        "type alias " + aliasName + " =\n    " + record + "\n\n\n" + newAnnotation + "\n";
+    out.add(new CodeAction(
+        "Extract record to type alias `" + aliasName + "`", line0, 0, line0 + 1, 0, newText));
+  }
+
+  /** The index of the {@code }} matching the {@code {} at {@code open}, or -1 if unbalanced on the line. */
+  private static int matchingBrace(String s, int open) {
+    int depth = 0;
+    for (int i = open; i < s.length(); i++) {
+      if (s.charAt(i) == '{') {
+        depth++;
+      } else if (s.charAt(i) == '}' && --depth == 0) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   /**
@@ -1652,8 +1703,14 @@ public final class LspServer {
         Map<String, Object> td = (Map<String, Object>) params.get("textDocument");
         String uri = (String) td.get("uri");
         List<Object> changes = (List<Object>) params.get("contentChanges");
-        if (changes != null && !changes.isEmpty()) {
-          putDoc(uri, (String) ((Map<String, Object>) changes.get(changes.size() - 1)).get("text"));
+        if (changes != null) {
+          // Incremental sync: apply each change in order. A change with a `range` edits that span;
+          // one without (a whole-document change) replaces the buffer.
+          String doc = docs.getOrDefault(uri, "");
+          for (Object o : changes) {
+            doc = applyChange(doc, (Map<String, Object>) o);
+          }
+          putDoc(uri, doc);
         }
         publishDiagnostics(out, uri);
       }
@@ -1980,7 +2037,11 @@ public final class LspServer {
 
   private static Map<String, Object> capabilities() {
     Map<String, Object> caps = new LinkedHashMap<>();
-    caps.put("textDocumentSync", 1L); // full document sync
+    // Incremental document sync: the client sends ranged edits, applied by applyChange().
+    Map<String, Object> sync = new LinkedHashMap<>();
+    sync.put("openClose", true);
+    sync.put("change", 2L); // TextDocumentSyncKind.Incremental
+    caps.put("textDocumentSync", sync);
     caps.put("hoverProvider", true);
     caps.put("definitionProvider", true);
     Map<String, Object> completion = new LinkedHashMap<>();
@@ -2059,6 +2120,40 @@ public final class LspServer {
         // skip roots we can't walk
       }
     }
+  }
+
+  /** Applies one LSP content change to {@code doc}: a change carrying a {@code range} edits that span
+   *  (incremental sync); one without replaces the whole document. */
+  @SuppressWarnings("unchecked")
+  static String applyChange(String doc, Map<String, Object> change) {
+    Object range = change.get("range");
+    String text = (String) change.get("text");
+    if (range == null) {
+      return text; // a whole-document change
+    }
+    Map<String, Object> r = (Map<String, Object>) range;
+    Map<String, Object> start = (Map<String, Object>) r.get("start");
+    Map<String, Object> end = (Map<String, Object>) r.get("end");
+    int s = offsetOf(doc, intval(start.get("line")), intval(start.get("character")));
+    int e = offsetOf(doc, intval(end.get("line")), intval(end.get("character")));
+    return doc.substring(0, s) + text + doc.substring(Math.max(s, e));
+  }
+
+  private static int intval(Object o) {
+    return ((Number) o).intValue();
+  }
+
+  /** The character offset of 0-based ({@code line}, {@code character}) in {@code doc}. */
+  private static int offsetOf(String doc, int line, int character) {
+    int off = 0;
+    for (int l = 0; l < line; l++) {
+      int nl = doc.indexOf('\n', off);
+      if (nl < 0) {
+        return doc.length();
+      }
+      off = nl + 1;
+    }
+    return Math.min(doc.length(), off + character);
   }
 
   /** Stores a document, dropping any stale entry that points at the same file under a different URI. */

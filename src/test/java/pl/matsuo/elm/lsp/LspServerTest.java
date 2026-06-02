@@ -532,4 +532,38 @@ class LspServerTest {
     assertEquals(0, data[0]);
     assertEquals(0, data[1]);
   }
+
+  @Test
+  void incrementalSyncAppliesRangedEdits() {
+    // Replace "world" (line 0, chars 6..11) with "elm".
+    String doc = "hello world\nsecond line\n";
+    var range = java.util.Map.<String, Object>of(
+        "start", java.util.Map.of("line", 0, "character", 6),
+        "end", java.util.Map.of("line", 0, "character", 11));
+    var change = java.util.Map.<String, Object>of("range", range, "text", "elm");
+    assertEquals("hello elm\nsecond line\n", LspServer.applyChange(doc, change));
+
+    // An insertion across a line boundary (zero-width range at end of line 0).
+    var ins = java.util.Map.<String, Object>of(
+        "range", java.util.Map.of(
+            "start", java.util.Map.of("line", 0, "character", 11),
+            "end", java.util.Map.of("line", 0, "character", 11)),
+        "text", "!");
+    assertEquals("hello world!\nsecond line\n", LspServer.applyChange(doc, ins));
+
+    // A change with no range replaces the whole document.
+    assertEquals("brand new", LspServer.applyChange(doc, java.util.Map.of("text", "brand new")));
+  }
+
+  @Test
+  void codeActionExtractsARecordTypeAlias() {
+    String src = "point : { x : Int, y : Int }\npoint = { x = 1, y = 2 }\n";
+    var actions = server.codeActions(src, 0); // cursor on the annotation
+    var extract =
+        actions.stream().filter(a -> a.title().startsWith("Extract record")).findFirst();
+    assertTrue(extract.isPresent(), actions.toString());
+    String text = extract.get().newText();
+    assertTrue(text.contains("type alias Point =") && text.contains("{ x : Int, y : Int }"), text);
+    assertTrue(text.contains("point : Point"), text); // annotation rewritten to use the alias
+  }
 }
