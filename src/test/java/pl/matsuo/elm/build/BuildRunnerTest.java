@@ -493,6 +493,96 @@ class BuildRunnerTest {
   }
 
   @Test
+  void buildToolGeneratesAMultiPageSiteFromAManifest() throws Exception {
+    // The SiteGenerator pattern, driven entirely by build.elm: compile several demos to live pages,
+    // render a guide, write a manifest, and run a gallery script that lays out an index from it.
+    Path dir = Files.createTempDirectory("elm-build-multisite-");
+    Files.createDirectories(dir.resolve("src"));
+    Files.createDirectories(dir.resolve("guides"));
+    Files.writeString(
+        dir.resolve("src/Hello.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"hello\"\n");
+    Files.writeString(
+        dir.resolve("src/Bye.elm"),
+        "module Main exposing (main)\nimport Html exposing (text)\nmain = text \"bye\"\n");
+    Files.writeString(dir.resolve("guides/intro.md"), "# Intro\n\nA **demo** site.\n");
+    // A gallery generator: reads the manifest (title<TAB>path per line) and lays out an index.
+    Files.writeString(
+        dir.resolve("gallery.elm"),
+        """
+        module Main exposing (main)
+
+        import Bash exposing (..)
+        import Site exposing (..)
+
+        main : Io
+        main =
+            getArgs
+                (\\args ->
+                    case args of
+                        out :: _ ->
+                            cat (out ++ "/manifest.tsv")
+                                (\\res ->
+                                    case res of
+                                        Ok tsv ->
+                                            writeFile (out ++ "/index.html")
+                                                (render (page "index.html" "Demos" (List.map row (List.filter (\\l -> l /= "") (String.lines tsv)))))
+                                                (print "wrote index" done)
+
+                                        Err e ->
+                                            print e (exit 1)
+                                )
+
+                        [] ->
+                            print "usage: gallery <dir>" (exit 1)
+                )
+
+        row : String -> Block
+        row line =
+            case String.split "\\t" line of
+                title :: path :: _ -> link path title
+                _ -> text line
+        """);
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "showcase" "1.0.0"
+                [ module_ "site" "."
+                    |> withGoals
+                        [ goal Package "site"
+                            (\\m ->
+                                [ makeDir "out/demos"
+                                , compile JS "src/Hello.elm" "out/demos/Hello.html"
+                                , compile JS "src/Bye.elm" "out/demos/Bye.html"
+                                , markdown "guides/intro.md" "out/intro.html"
+                                , writeFile "out/manifest.tsv" "Hello\\tdemos/Hello.html\\nBye\\tdemos/Bye.html\\n"
+                                , script "gallery.elm" [ "out" ]
+                                ]
+                            )
+                        ]
+                ]
+        """);
+    Result r = build(dir, "package");
+    assertEquals(0, r.code(), r.out());
+    assertTrue(
+        Files.readString(dir.resolve("out/demos/Hello.html"), StandardCharsets.UTF_8).contains("$start")
+            && Files.readString(dir.resolve("out/demos/Bye.html"), StandardCharsets.UTF_8).contains("$start"),
+        "both demos compiled to live pages");
+    assertTrue(
+        Files.readString(dir.resolve("out/intro.html"), StandardCharsets.UTF_8).contains("<strong>demo</strong>"),
+        "the guide rendered");
+    String index = Files.readString(dir.resolve("out/index.html"), StandardCharsets.UTF_8);
+    assertTrue(index.contains("href=\"demos/Hello.html\">Hello</a>"), "index links Hello: " + index);
+    assertTrue(index.contains("href=\"demos/Bye.html\">Bye</a>"), "index links Bye");
+  }
+
+  @Test
   void unknownPhaseFails() throws Exception {
     Path dir = Files.createTempDirectory("elm-build-bad-");
     Files.writeString(
