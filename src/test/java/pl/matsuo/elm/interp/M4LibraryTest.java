@@ -5,52 +5,41 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 import pl.matsuo.elm.util.Resources;
 
-/** Exercises the bundled {@code M4} macro-processor library through the interpreter. */
+/** Exercises the bundled {@code M4} library, which *builds* m4 macro source (it does not run m4). */
 class M4LibraryTest {
 
   private static final String LIB = Resources.read("/elm/lib/M4.elm");
 
   private static final String SRC =
       """
-      module Main exposing (greet, quoted, ifYes, ifNo, counts, recursive, dnlComment, pre, arith, strs, undef, defp)
+      module Main exposing (greet, prog, ifText, ifdefText, withArgs, builtins)
 
       import M4 exposing (..)
 
+      -- define(`greet', `Hello $1!')
       greet : String
-      greet = expand "define(greet, Hello $1!)greet(world)"
+      greet = define "greet" ("Hello " ++ arg 1 ++ "!")
 
-      quoted : String
-      quoted = expand "define(a,X)`a' a"
+      -- a two-line m4 document: define then call
+      prog : String
+      prog =
+          program
+              [ define "greet" ("Hello " ++ arg 1 ++ "!") ++ dnl
+              , call "greet" [ quote "world" ]
+              ]
 
-      ifYes : String
-      ifYes = expand "ifelse(x, x, yes, no)"
+      ifText : String
+      ifText = ifelse (quote "x") (quote "x") (quote "yes") (quote "no")
 
-      ifNo : String
-      ifNo = expand "ifelse(x, y, yes, no)"
+      ifdefText : String
+      ifdefText = ifdef "foo" (quote "yes") (quote "no")
 
-      counts : String
-      counts = expand "define(f, $# args: $*)f(a, b, c)"
+      -- a macro body using $#, $* and $0
+      withArgs : String
+      withArgs = define "f" (argCount ++ " args of " ++ macroName ++ ": " ++ args)
 
-      recursive : String
-      recursive = expand "define(a, b)define(b, done)a"
-
-      dnlComment : String
-      dnlComment = expand "foo dnl this is a comment\\nbar"
-
-      pre : String
-      pre = expandWith [ define "name" "Bob" ] "Hi name"
-
-      arith : String
-      arith = expand "incr(5) decr(5) eval(2 + 3 * 4) eval((2 + 3) * 4)"
-
-      strs : String
-      strs = expand "len(hello) index(hello, ll) index(hello, z) substr(hello, 1, 3) translit(hello, el, ip)"
-
-      undef : String
-      undef = expand "define(a, X)undefine(a)a"
-
-      defp : String
-      defp = expand "define(a, X)ifdef(a, yes, no) ifdef(b, yes, no)"
+      builtins : String
+      builtins = eval "2 + 3 * 4" ++ " " ++ include "header.m4"
       """;
 
   private static String value(String name) {
@@ -58,44 +47,28 @@ class M4LibraryTest {
   }
 
   @Test
-  void definesAndExpandsWithArguments() {
-    assertEquals("Hello world!", value("greet"));
-    assertEquals("3 args: a,b,c", value("counts"));
-    assertEquals("Hi Bob", value("pre"));
+  void defineQuotesNameAndBody() {
+    assertEquals("define(`greet', `Hello $1!')", value("greet"));
   }
 
   @Test
-  void quotingSuppressesExpansion() {
-    // The quoted `a' stays literal; the unquoted a expands to X.
-    assertEquals("a X", value("quoted"));
+  void programJoinsStatementsPerLine() {
+    assertEquals("define(`greet', `Hello $1!')dnl\ngreet(`world')", value("prog"));
   }
 
   @Test
-  void ifelseAndRecursiveRescan() {
-    assertEquals("yes", value("ifYes"));
-    assertEquals("no", value("ifNo"));
-    assertEquals("done", value("recursive")); // a -> b -> done (re-scanned)
+  void conditionalsBuildIfelseAndIfdef() {
+    assertEquals("ifelse(`x', `x', `yes', `no')", value("ifText"));
+    assertEquals("ifdef(`foo', `yes', `no')", value("ifdefText"));
   }
 
   @Test
-  void dnlDeletesToNewline() {
-    assertEquals("foo bar", value("dnlComment"));
+  void bodyPlaceholders() {
+    assertEquals("define(`f', `$# args of $0: $*')", value("withArgs"));
   }
 
   @Test
-  void arithmeticBuiltins() {
-    assertEquals("6 4 14 20", value("arith")); // incr, decr, eval (precedence), eval (parens)
-  }
-
-  @Test
-  void stringBuiltins() {
-    // len, index (0-based), index absent (-1), substr (0-based start,len), translit (tr)
-    assertEquals("5 2 -1 ell hippo", value("strs"));
-  }
-
-  @Test
-  void undefineAndIfdef() {
-    assertEquals("a", value("undef")); // a undefined -> emitted literally
-    assertEquals("yes no", value("defp"));
+  void evalAndIncludeAreQuoted() {
+    assertEquals("eval(`2 + 3 * 4') include(`header.m4')", value("builtins"));
   }
 }

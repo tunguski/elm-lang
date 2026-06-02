@@ -171,22 +171,27 @@ The bundled `awk-sum.elm` demo prints the awk command to sum a column:
 
 ### M4
 
-[`M4`](../src/main/resources/elm/lib/M4.elm) is a small macro processor: `expand` scans text,
-replacing macro calls with their bodies (`$0` is the name, `$1…$9` the arguments, `$#` the count,
-`$*` the joined arguments) and re-scanning the result. Backtick/apostrophe quotes suppress expansion,
-and the `define`, `undefine`, `ifdef`, `ifelse`, `incr`, `decr`, `eval`, `len`, `index`, `substr` and
-`translit` builtins are recognised.
+[`M4`](../src/main/resources/elm/lib/M4.elm) **builds m4 macro source** to save as a `.m4` file or
+pipe to `m4` — it doesn't run m4. `define`/`undefine` write quoted definitions, `call` writes an
+invocation, and `program` joins statements into a document. Inside a body, `arg 1` is `$1`, `args` is
+`$*`, `argCount` is `$#` and `macroName` is `$0`; `ifelse`/`ifdef`/`eval`/`include` write those
+builtins, `quote` adds `` `…' `` quoting and `dnl` swallows a trailing newline.
 
 ```elm
 import M4
 
--- "Hello world!"
+-- define(`greet', `Hello $1!')dnl
+-- greet(`world')
 out : String
 out =
-    M4.expand "define(greet, Hello $1!)greet(world)"
+    M4.program
+        [ M4.define "greet" ("Hello " ++ M4.arg 1 ++ "!") ++ M4.dnl
+        , M4.call "greet" [ M4.quote "world" ]
+        ]
 ```
 
-`m4-expand.elm` expands a file's macros: `elm script m4-expand.elm config.m4`.
+The bundled `m4-expand.elm` demo emits such a program: `elm script m4-expand.elm world` (pipe it to
+`m4` to get `Hello world!`).
 
 ### Csv
 

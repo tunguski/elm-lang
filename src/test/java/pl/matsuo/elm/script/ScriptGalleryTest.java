@@ -54,9 +54,9 @@ class ScriptGalleryTest {
   }
 
   @Test
-  void m4ExpandScriptExpandsMacros() throws Exception {
-    Path f = tempFile("config.m4", "define(greet, Hello $1!)greet(world)");
-    assertEquals("Hello world!", run("m4-expand.elm", List.of(f.toString())).trim());
+  void m4ExpandScriptEmitsAnM4Program() throws Exception {
+    String out = run("m4-expand.elm", List.of("world")).trim();
+    assertEquals("define(`greet', `Hello $1!')dnl\ngreet(`world')", out);
   }
 
   @Test
