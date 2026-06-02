@@ -12,10 +12,16 @@ module Parser exposing
     , oneOf
     , symbol
     , keyword
+    , token
     , int
+    , float
     , spaces
     , chompWhile
+    , chompIf
     , getChompedString
+    , backtrackable
+    , Step(..)
+    , loop
     , end
     )
 
@@ -189,6 +195,37 @@ keyword =
     symbol
 
 
+{-| Matches an exact string (elm/parser's general `token`); here a synonym for `symbol`. -}
+token : String -> Parser ()
+token =
+    symbol
+
+
+{-| Consumes one character if it satisfies the predicate, failing otherwise. -}
+chompIf : (Char -> Bool) -> Parser ()
+chompIf pred =
+    Parser
+        (\s ->
+            case String.uncons (String.dropLeft s.offset s.src) of
+                Just ( c, _ ) ->
+                    if pred c then
+                        Ok ( (), { s | offset = s.offset + 1 } )
+
+                    else
+                        Err "chompIf: unexpected character"
+
+                Nothing ->
+                    Err "chompIf: end of input"
+        )
+
+
+{-| In this simple library every failure already backtracks (there is no committed state), so this
+is the identity — provided for `elm/parser` API compatibility. -}
+backtrackable : Parser a -> Parser a
+backtrackable p =
+    p
+
+
 {-| Consumes zero or more characters while the predicate holds. -}
 chompWhile : (Char -> Bool) -> Parser ()
 chompWhile pred =
@@ -243,6 +280,49 @@ int =
                     Nothing ->
                         problem "expected an integer"
             )
+
+
+{-| A number with an optional fractional part, e.g. `3`, `3.14`. -}
+float : Parser Float
+float =
+    getChompedString (chompWhile (\c -> Char.isDigit c || c == '.'))
+        |> andThen
+            (\str ->
+                case String.toFloat str of
+                    Just n ->
+                        succeed n
+
+                    Nothing ->
+                        problem "expected a float"
+            )
+
+
+{-| One step of a {@link loop}: keep going with new state, or finish with a result. -}
+type Step state a
+    = Loop state
+    | Done a
+
+
+{-| Repeats a parser, threading state, until it returns `Done` — for parsing sequences without
+manual recursion. The callback must make progress (consume input) on each `Loop` to terminate. -}
+loop : state -> (state -> Parser (Step state a)) -> Parser a
+loop initial callback =
+    Parser (\s -> loopHelp initial callback s)
+
+
+loopHelp : state -> (state -> Parser (Step state a)) -> State -> Result String ( a, State )
+loopHelp state callback s =
+    case callback state of
+        Parser p ->
+            case p s of
+                Ok ( Loop newState, s2 ) ->
+                    loopHelp newState callback s2
+
+                Ok ( Done result, s2 ) ->
+                    Ok ( result, s2 )
+
+                Err e ->
+                    Err e
 
 
 {-| Consumes any run of spaces, tabs and newlines. -}

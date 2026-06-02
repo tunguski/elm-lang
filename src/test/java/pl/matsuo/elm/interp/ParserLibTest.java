@@ -32,7 +32,16 @@ class ParserLibTest {
           + "pointOk = run point \"( 3 , 4 )\"\n"
           + "intOk = run int \"42\"\n"
           + "intBad = run int \"xyz\"\n"
-          + "word = run (getChompedString (chompWhile (\\c -> c /= ' '))) \"hello world\"\n";
+          + "word = run (getChompedString (chompWhile (\\c -> c /= ' '))) \"hello world\"\n"
+          + "floatOk = run float \"3.14\"\n"
+          + "chompIfOk = run (getChompedString (chompIf Char.isDigit)) \"7x\"\n"
+          + "chompIfBad = run (chompIf Char.isDigit) \"x\"\n"
+          + "tokenOk = run (token \"let\") \"let\"\n"
+          + "digits =\n"
+          + "    loop [] (\\acc -> oneOf\n"
+          + "        [ succeed (\\d -> Loop (d :: acc)) |= (getChompedString (chompIf Char.isDigit) |> andThen (\\s -> succeed s))\n"
+          + "        , succeed (Done (List.reverse acc)) ])\n"
+          + "loopOk = run digits \"123\"\n";
 
   @Test
   void parsesAnIntegerAndReportsFailure() {
@@ -51,5 +60,14 @@ class ParserLibTest {
   @Test
   void getChompedStringReturnsTheConsumedText() {
     assertEquals("Ok \"hello\"", value(PROGRAM, "word"));
+  }
+
+  @Test
+  void newCombinators() {
+    assertEquals("Ok 3.14", value(PROGRAM, "floatOk"));
+    assertEquals("Ok \"7\"", value(PROGRAM, "chompIfOk"));
+    assertTrue(value(PROGRAM, "chompIfBad").startsWith("Err"), value(PROGRAM, "chompIfBad"));
+    assertEquals("Ok ()", value(PROGRAM, "tokenOk"));
+    assertEquals("Ok [\"1\",\"2\",\"3\"]", value(PROGRAM, "loopOk")); // loop collects each digit
   }
 }
