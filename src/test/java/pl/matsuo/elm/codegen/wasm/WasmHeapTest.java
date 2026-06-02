@@ -428,6 +428,17 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringConcatJoinRepeatProduceTheRightBytes() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("ababab", runMainString("main = String.repeat 3 \"ab\"\n"));
+    assertEquals("", runMainString("main = String.repeat 0 \"ab\"\n"));
+    assertEquals("abc", runMainString("main = String.concat [ \"a\", \"b\", \"c\" ]\n"));
+    assertEquals("", runMainString("main = String.concat []\n"));
+    assertEquals("a, b, c", runMainString("main = String.join \", \" [ \"a\", \"b\", \"c\" ]\n"));
+    assertEquals("solo", runMainString("main = String.join \"-\" [ \"solo\" ]\n"));
+  }
+
+  @Test
   void sumsAListLiteralRecursively() throws Exception {
     agrees(
         """

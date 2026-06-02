@@ -173,6 +173,13 @@ public final class WasmCompiler {
                   [] -> []
                   hz :: tz -> f hx hy hz :: listMap3 f tx ty tz
       stringIsEmpty s = String.length s == 0
+      stringRepeat n s = if n <= 0 then "" else String.append s (stringRepeat (n - 1) s)
+      stringConcat xs = listFoldr (\\x acc -> String.append x acc) "" xs
+      stringJoin sep xs = case xs of
+          [] -> ""
+          h :: t -> case t of
+              [] -> h
+              _ -> String.append h (String.append sep (stringJoin sep t))
       fromIntDigit d = if d == 1 then "1" else if d == 2 then "2" else if d == 3 then "3" else if d == 4 then "4" else if d == 5 then "5" else if d == 6 then "6" else if d == 7 then "7" else if d == 8 then "8" else if d == 9 then "9" else "0"
       stringFromInt n = if n < 0 then "-" ++ stringFromInt (0 - n) else if n < 10 then fromIntDigit n else stringFromInt (n // 10) ++ fromIntDigit (modBy 10 n)
       maybeWithDefault d m = case m of
@@ -228,6 +235,9 @@ public final class WasmCompiler {
           Map.entry("List.map3", "listMap3"),
           Map.entry("String.isEmpty", "stringIsEmpty"),
           Map.entry("String.fromInt", "stringFromInt"),
+          Map.entry("String.repeat", "stringRepeat"),
+          Map.entry("String.concat", "stringConcat"),
+          Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
           Map.entry("Maybe.map", "maybeMap"),
           Map.entry("Maybe.andThen", "maybeAndThen"),
