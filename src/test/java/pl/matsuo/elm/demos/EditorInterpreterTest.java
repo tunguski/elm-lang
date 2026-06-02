@@ -228,6 +228,19 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsSet() {
+    assertEquals("3", eval("Set.size (Set.fromList [ 3, 1, 2, 1, 3 ])")); // duplicates collapse
+    assertEquals("True", eval("Set.member 2 (Set.fromList [ 1, 2, 3 ])"));
+    assertEquals("[1, 2, 3]", eval("Set.toList (Set.insert 1 (Set.fromList [ 2, 3 ]))"));
+    assertEquals("[1, 2, 3]", eval("Set.toList (Set.union (Set.fromList [ 1, 2 ]) (Set.fromList [ 2, 3 ]))"));
+    assertEquals("[2]", eval("Set.toList (Set.intersect (Set.fromList [ 1, 2 ]) (Set.fromList [ 2, 3 ]))"));
+    assertEquals("[1]", eval("Set.toList (Set.diff (Set.fromList [ 1, 2 ]) (Set.fromList [ 2, 3 ]))"));
+    assertEquals("6", eval("Set.foldl (+) 0 (Set.fromList [ 1, 2, 3 ])"));
+    assertEquals("[2, 4]", eval("Set.toList (Set.filter (\\n -> modBy 2 n == 0) (Set.fromList [ 1, 2, 3, 4 ]))"));
+    assertEquals("Set.fromList [1,2]", eval("Set.fromList [ 2, 1, 2 ]"));
+  }
+
+  @Test
   void interpretsAsPatterns() {
     // `as` binds the whole matched value alongside the inner pattern.
     assertEquals("10", eval("case 5 of\n    n as m -> n + m\n    _ -> 0"));

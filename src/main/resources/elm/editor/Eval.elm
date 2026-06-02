@@ -32,6 +32,7 @@ builtins =
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
         ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace" ]
         ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl" ]
+        ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
         ++ [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
@@ -127,13 +128,13 @@ arity name =
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size" ] then
         1
 
-    else if name == "Dict.empty" then
+    else if List.member name [ "Dict.empty", "Set.empty" ] then
         0
 
-    else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip" ] then
+    else if List.member name [ "Dict.fromList", "Dict.toList", "Dict.keys", "Dict.values", "Dict.size", "Dict.isEmpty", "String.lines", "List.unzip", "Set.fromList", "Set.toList", "Set.size", "Set.isEmpty", "Set.singleton" ] then
         1
 
-    else if List.member name [ "Dict.insert", "Dict.foldl", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
+    else if List.member name [ "Dict.insert", "Dict.foldl", "Set.foldl", "Set.foldr", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ] then
         3
 
     else if name == "List.map3" then
@@ -647,6 +648,36 @@ foldlDict globals f acc pairs =
 
         _ :: rest ->
             foldlDict globals f acc rest
+
+
+-- SET (a list of unique values, wrapped as `VCtor "Set" [ VList elems ]`) ------------------------
+
+
+{-| A Set keeps its elements sorted (like elm/core's tree-backed Set), so `toList`/`foldl` visit
+them in ascending order regardless of insertion order. -}
+mkSet : List Value -> Value
+mkSet elems =
+    VCtor "Set" [ VList (List.sortWith valueCompare elems) ]
+
+
+setElems : Value -> List Value
+setElems v =
+    case v of
+        VCtor "Set" [ VList xs ] ->
+            xs
+
+        _ ->
+            []
+
+
+{-| Append `x` only if no equal element is already present (sets keep unique values, insertion order). -}
+setInsert : Value -> List Value -> List Value
+setInsert x xs =
+    if List.any (valueEq x) xs then
+        xs
+
+    else
+        xs ++ [ x ]
 
 
 {-| Runs a fully-applied builtin. Html element/attribute builtins produce a structured `Value` tree
@@ -1364,6 +1395,65 @@ runBuiltin globals name args =
             ( "Dict.foldl", [ f, acc, d ] ) ->
                 foldlDict globals f acc (dictPairs d)
 
+            -- Set: a Set is `VCtor "Set" [ VList elems ]` with unique elements (insertion order).
+            ( "Set.empty", [] ) ->
+                Ok (mkSet [])
+
+            ( "Set.singleton", [ x ] ) ->
+                Ok (mkSet [ x ])
+
+            ( "Set.fromList", [ VList xs ] ) ->
+                Ok (mkSet (List.foldl setInsert [] xs))
+
+            ( "Set.toList", [ s ] ) ->
+                Ok (VList (setElems s))
+
+            ( "Set.size", [ s ] ) ->
+                Ok (VNum (toFloat (List.length (setElems s))))
+
+            ( "Set.isEmpty", [ s ] ) ->
+                Ok (VBool (List.isEmpty (setElems s)))
+
+            ( "Set.member", [ x, s ] ) ->
+                Ok (VBool (List.any (valueEq x) (setElems s)))
+
+            ( "Set.insert", [ x, s ] ) ->
+                Ok (mkSet (setInsert x (setElems s)))
+
+            ( "Set.remove", [ x, s ] ) ->
+                Ok (mkSet (List.filter (\y -> not (valueEq x y)) (setElems s)))
+
+            ( "Set.union", [ a, b ] ) ->
+                Ok (mkSet (List.foldl setInsert (setElems a) (setElems b)))
+
+            ( "Set.intersect", [ a, b ] ) ->
+                Ok (mkSet (List.filter (\x -> List.any (valueEq x) (setElems b)) (setElems a)))
+
+            ( "Set.diff", [ a, b ] ) ->
+                Ok (mkSet (List.filter (\x -> not (List.any (valueEq x) (setElems b))) (setElems a)))
+
+            ( "Set.foldl", [ f, acc, s ] ) ->
+                foldlValues globals f acc (setElems s)
+
+            ( "Set.foldr", [ f, acc, s ] ) ->
+                foldlValues globals f acc (List.reverse (setElems s))
+
+            ( "Set.map", [ f, s ] ) ->
+                mapValues globals f (setElems s) |> Result.map (\ys -> mkSet (List.foldl setInsert [] ys))
+
+            ( "Set.filter", [ f, s ] ) ->
+                filterValues globals f (setElems s) |> Result.map mkSet
+
+            ( "Set.partition", [ f, s ] ) ->
+                filterValues globals f (setElems s)
+                    |> Result.map
+                        (\yes ->
+                            VTup
+                                [ mkSet yes
+                                , mkSet (List.filter (\x -> not (List.any (valueEq x) yes)) (setElems s))
+                                ]
+                        )
+
             _ ->
                 Err ("bad arguments to " ++ name)
 
@@ -2005,6 +2095,9 @@ renderValue v =
 
         VCtor "Dict" [ VList pairs ] ->
             "Dict.fromList [" ++ String.join "," (List.map renderValue pairs) ++ "]"
+
+        VCtor "Set" [ VList elems ] ->
+            "Set.fromList [" ++ String.join "," (List.map renderValue elems) ++ "]"
 
         VCtor name args ->
             if List.isEmpty args then
