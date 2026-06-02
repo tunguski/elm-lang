@@ -105,6 +105,24 @@ class FormatterTest {
     assertTrue(out.contains("f : Int -> Int"), out);
   }
 
+  @Test
+  void wrapsLongTypeAnnotationsOneArrowPerLine() {
+    String src =
+        "process : List String -> Maybe Int -> Result String (List Int) -> Float -> String -> List String\n"
+            + "process a b c d e = []\n";
+    String out = Formatter.format(src);
+    // The name and colon stand alone; each segment is indented with a leading -> after the first.
+    assertTrue(out.contains("process :\n    List String\n    -> Maybe Int"), out);
+    assertTrue(out.contains("\n    -> String\n"), out); // a later argument
+    assertEquals(out, Formatter.format(out), "wrapped annotation is stable"); // idempotent
+  }
+
+  @Test
+  void shortAnnotationsStayOnOneLine() {
+    String out = Formatter.format("add : Int -> Int -> Int\nadd a b = a + b\n");
+    assertTrue(out.contains("add : Int -> Int -> Int"), out);
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"hello", "groceries", "buttons", "forms", "text-fields", "numbers", "cards"})
   void formattingIsIdempotent(String slug) {

@@ -93,6 +93,8 @@ public final class Formatter {
         // Reflowing would drop or misplace the comments inside this declaration, so keep its body
         // verbatim (the type annotation is still normalised). Comments are never lost.
         if (d instanceof Decl.Value v) {
+          // Verbatim decls (those with inner comments) keep the annotation on one line — reflowing
+          // it would desync the line-based region tracking the verbatim body relies on.
           v.annotation()
               .ifPresent(t -> sb.append(Pretty.declName(v.name())).append(" : ").append(type(t, false)).append("\n"));
         }
@@ -134,16 +136,38 @@ public final class Formatter {
    * is the boundary where the previous declaration's body ends. */
   private static int regionStart(Decl d, String[] srcLines, List<int[]> commentSpans) {
     int line = d.pos().line();
-    if (d instanceof Decl.Value v
-        && line - 1 >= 1
-        && isAnnotationLine(srcLines[line - 2], v.name())) {
-      line--; // skip the annotation line directly above the body
+    if (d instanceof Decl.Value v && line - 1 >= 1) {
+      if (isAnnotationLine(srcLines[line - 2], v.name())) {
+        line--; // a single-line annotation directly above the body
+      } else if (isAnnotationContinuation(srcLines[line - 2])) {
+        // A wrapped (multi-line) annotation: skip its continuation lines up to the `name :` line.
+        int probe = line - 1;
+        while (probe - 1 >= 1 && isAnnotationContinuation(srcLines[probe - 2])) {
+          probe--;
+        }
+        if (probe - 1 >= 1 && isAnnotationLine(srcLines[probe - 2], v.name())) {
+          line = probe - 1; // include the `name :` line that starts the annotation
+        }
+      }
     }
     while (line - 1 >= 1
         && (srcLines[line - 2].isBlank() || isCommentLine(commentSpans, line - 1))) {
       line--; // skip the doc/section comment block (and blank lines) above
     }
     return line;
+  }
+
+  /** Whether a line is a continuation of a wrapped type annotation: an indented segment, optionally
+   *  led by {@code ->} (as {@link #annotation} emits). */
+  private static boolean isAnnotationContinuation(String text) {
+    if (text.isEmpty() || !Character.isWhitespace(text.charAt(0))) {
+      return false;
+    }
+    String s = text.strip();
+    return !s.isEmpty()
+        && (s.startsWith("->")
+            || s.startsWith("(")
+            || Character.isLetter(s.charAt(0)));
   }
 
   /** Whether {@code text} is the type annotation of {@code name} (e.g. {@code "name : Int -> Int"}). */
@@ -264,7 +288,7 @@ public final class Formatter {
     return switch (d) {
       case Decl.Value v -> {
         StringBuilder sb = new StringBuilder();
-        v.annotation().ifPresent(t -> sb.append(Pretty.declName(v.name())).append(" : ").append(type(t, false)).append("\n"));
+        v.annotation().ifPresent(t -> sb.append(annotation(Pretty.declName(v.name()), t)).append("\n"));
         sb.append(Pretty.decl(v, 0));
         yield sb.toString();
       }
@@ -292,6 +316,33 @@ public final class Formatter {
   }
 
   /** Prints a type; {@code atom} parenthesizes arrows/applications so it can be a constructor arg. */
+  /** The width past which a type annotation is wrapped across multiple lines. */
+  private static final int MAX_WIDTH = 100;
+
+  /** Renders a value's type annotation, wrapping a long function type one arrow-segment per line
+   *  (elm-format style): the name and {@code :} alone, then each argument/return indented, with
+   *  {@code ->} leading every segment after the first. */
+  static String annotation(String name, Type t) {
+    String oneLine = name + " : " + type(t, false);
+    if (oneLine.length() <= MAX_WIDTH || !(t instanceof Type.Arrow)) {
+      return oneLine;
+    }
+    List<Type> segments = new ArrayList<>();
+    Type cur = t;
+    while (cur instanceof Type.Arrow a) {
+      segments.add(a.from());
+      cur = a.to();
+    }
+    segments.add(cur); // the return type
+    StringBuilder sb = new StringBuilder(name).append(" :");
+    for (int i = 0; i < segments.size(); i++) {
+      Type seg = segments.get(i);
+      // A function-typed argument is itself an Arrow and must keep its parentheses.
+      sb.append("\n    ").append(i == 0 ? "" : "-> ").append(type(seg, seg instanceof Type.Arrow));
+    }
+    return sb.toString();
+  }
+
   static String type(Type t, boolean atom) {
     return switch (t) {
       case Type.Var v -> v.name();
