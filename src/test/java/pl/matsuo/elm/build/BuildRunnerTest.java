@@ -75,6 +75,38 @@ class BuildRunnerTest {
   }
 
   @Test
+  void lifecycleHooksRunBeforeAndAfterAPhase() throws Exception {
+    Path dir = Files.createTempDirectory("elm-build-hooks-");
+    Files.writeString(
+        dir.resolve("build.elm"),
+        """
+        module Main exposing (project)
+
+        import Build exposing (..)
+
+        project : Project
+        project =
+            Build.project "demo" "1.0.0"
+                [ module_ "app" "."
+                    |> withOutput "out"
+                    |> withGoals [ goal Compile "g" (\\m -> [ log "compiling app" ]) ]
+                ]
+                |> withHooks
+                    [ beforePhase Compile [ log "== before compile ==" ]
+                    , afterPhase Compile [ log "== after compile ==" ]
+                    ]
+        """);
+    Result r = build(dir, "compile");
+    assertEquals(0, r.code(), r.out());
+    // The project-wide hooks bracket the per-module goal, in order.
+    int before = r.out().indexOf("== before compile ==");
+    int goal = r.out().indexOf("compiling app");
+    int after = r.out().indexOf("== after compile ==");
+    assertTrue(before >= 0 && goal > before && after > goal, r.out());
+    assertTrue(r.out().contains("[compile] (project) :: before compile"), r.out());
+  }
+
+  @Test
   void replaceInFilePostProcessesAWrittenFile() throws Exception {
     // The native task SiteGenerator needs: post-process a freshly written file the way the generator
     // injects a <script>/<link> with html.replace("</body>", …).

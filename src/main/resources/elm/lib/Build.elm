@@ -3,11 +3,16 @@ module Build exposing
     , Module
     , Dependency
     , Goal
+    , Hook
+    , Timing(..)
     , Phase(..)
     , Task(..)
     , Backend(..)
     , Step
     , project
+    , beforePhase
+    , afterPhase
+    , withHooks
     , module_
     , dependency
     , goal
@@ -82,12 +87,29 @@ of steps (a pure computation — fully testable without running anything), then 
 -- DATA --------------------------------------------------------------------
 
 
-{-| A whole build: a name, a version, and the modules it contains (Maven's reactor). -}
+{-| A whole build: a name, a version, the modules it contains (Maven's reactor), and any lifecycle
+hooks — project-wide tasks run once before/after a phase (around all modules' goals). -}
 type alias Project =
     { name : String
     , version : String
     , modules : List Module
+    , hooks : List Hook
     }
+
+
+{-| A project-wide lifecycle hook: tasks run once, before or after a given phase's per-module goals
+(e.g. clean a shared output dir before `compile`, or run a linter after it). -}
+type alias Hook =
+    { phase : Phase
+    , timing : Timing
+    , tasks : List Task
+    }
+
+
+{-| When a hook fires relative to a phase's goals. -}
+type Timing
+    = Before
+    | After
 
 
 {-| One buildable unit (a Maven module): where its source lives, what to build, and the goals bound
@@ -174,7 +196,25 @@ type alias Step =
 {-| A project from a name, a version and its modules. -}
 project : String -> String -> List Module -> Project
 project name version modules =
-    { name = name, version = version, modules = modules }
+    { name = name, version = version, modules = modules, hooks = [] }
+
+
+{-| A hook running tasks once before a phase's per-module goals. -}
+beforePhase : Phase -> List Task -> Hook
+beforePhase phase tasks =
+    { phase = phase, timing = Before, tasks = tasks }
+
+
+{-| A hook running tasks once after a phase's per-module goals. -}
+afterPhase : Phase -> List Task -> Hook
+afterPhase phase tasks =
+    { phase = phase, timing = After, tasks = tasks }
+
+
+{-| Attaches lifecycle hooks to a project. -}
+withHooks : List Hook -> Project -> Project
+withHooks hooks proj =
+    { proj | hooks = hooks }
 
 
 {-| A module with sensible defaults: `entry = <path>/src/Main.elm`, `output = <path>/build`, no
@@ -535,7 +575,28 @@ plan target proj =
             List.map (withDependencySources proj) (buildOrder proj)
     in
     phasesUpTo target
-        |> List.concatMap (\phase -> stepsForPhase phase ordered)
+        |> List.concatMap
+            (\phase ->
+                hookSteps proj Before phase
+                    ++ stepsForPhase phase ordered
+                    ++ hookSteps proj After phase
+            )
+
+
+{-| The steps for a project's `Before`/`After` hooks on a phase (each non-empty hook becomes one
+project-wide step, run around that phase's per-module goals). -}
+hookSteps : Project -> Timing -> Phase -> List Step
+hookSteps proj timing phase =
+    proj.hooks
+        |> List.filter (\h -> h.phase == phase && h.timing == timing && not (List.isEmpty h.tasks))
+        |> List.map
+            (\h ->
+                { phase = phaseName phase
+                , moduleName = "(project)"
+                , goal = (if timing == Before then "before " else "after ") ++ phaseName phase
+                , tasks = h.tasks
+                }
+            )
 
 
 stepsForPhase : Phase -> List Module -> List Step
