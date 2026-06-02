@@ -368,6 +368,16 @@ public final class Signatures {
     g("Browser.element", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg, view : model -> Html msg } -> Program flags model msg");
     g("Platform.worker", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg } -> Program flags model msg");
     g("Browser.document", "{ init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg, view : model -> { title : String, body : List (Html msg) } } -> Program flags model msg");
+    String urlRec =
+        "{ protocol : Protocol, host : String, port_ : Maybe Int, path : String, query : Maybe String, fragment : Maybe String }";
+    g("Browser.application",
+        "{ init : flags -> " + urlRec + " -> Key -> ( model, Cmd msg )"
+            + ", update : msg -> model -> ( model, Cmd msg )"
+            + ", subscriptions : model -> Sub msg"
+            + ", view : model -> { title : String, body : List (Html msg) }"
+            + ", onUrlRequest : UrlRequest -> msg"
+            + ", onUrlChange : " + urlRec + " -> msg"
+            + " } -> Program flags model msg");
     g("Cmd.none", "Cmd msg");
     g("Cmd.batch", "List (Cmd msg) -> Cmd msg");
     g("Cmd.map", "(a -> b) -> Cmd a -> Cmd b");
@@ -436,6 +446,11 @@ public final class Signatures {
         "{ scene : { width : Float, height : Float },"
             + " viewport : { x : Float, y : Float, width : Float, height : Float } }";
     g("Browser.Dom.getViewport", "Task x " + viewport);
+    String elementBox =
+        "{ scene : { width : Float, height : Float },"
+            + " viewport : { x : Float, y : Float, width : Float, height : Float },"
+            + " element : { x : Float, y : Float, width : Float, height : Float } }";
+    g("Browser.Dom.getElement", "String -> Task Error " + elementBox);
     g("Browser.Dom.setViewport", "Float -> Float -> Task x ()");
     g("Browser.Dom.focus", "String -> Task Error ()");
     g("Browser.Dom.blur", "String -> Task Error ()");

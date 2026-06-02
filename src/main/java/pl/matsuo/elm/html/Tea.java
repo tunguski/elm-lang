@@ -63,6 +63,13 @@ public final class Tea {
     Object pendingCmd = null;
     if (d.ctor().equals("$Sandbox")) {
       tea = new Tea("sandbox", def, def.get("init"));
+    } else if (d.ctor().equals("$Application")) {
+      // init : flags -> Url -> Key -> ( model, Cmd msg ); view returns a Document, so render like one.
+      Object init1 = Apply.apply(def.get("init"), ElmUnit.INSTANCE);
+      Object init2 = Apply.apply(init1, defaultUrl());
+      ElmTuple t = (ElmTuple) Apply.apply(init2, ElmUnit.INSTANCE); // Key is opaque
+      tea = new Tea("document", def, t.get(0));
+      pendingCmd = t.get(1);
     } else {
       ElmTuple t = (ElmTuple) Apply.apply(def.get("init"), ElmUnit.INSTANCE);
       tea = new Tea(d.ctor().equals("$Document") ? "document" : "element", def, t.get(0));
@@ -245,6 +252,19 @@ public final class Tea {
 
   private static ElmData ok(Object v) {
     return new ElmData("Ok", new Object[] {v});
+  }
+
+  /** The initial Url handed to a {@code Browser.application}'s init in a headless run
+   *  ({@code https://localhost/}). */
+  private static ElmRecord defaultUrl() {
+    Map<String, Object> url = new java.util.LinkedHashMap<>();
+    url.put("protocol", new ElmData("Https", new Object[] {}));
+    url.put("host", "localhost");
+    url.put("port_", new ElmData("Nothing", new Object[] {}));
+    url.put("path", "/");
+    url.put("query", new ElmData("Nothing", new Object[] {}));
+    url.put("fragment", new ElmData("Nothing", new Object[] {}));
+    return new ElmRecord(url);
   }
 
   private static ElmData err(Object e) {

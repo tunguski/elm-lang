@@ -134,6 +134,17 @@ public final class Infer {
                 List.of(
                     new Type.Record.Field("scene", scene),
                     new Type.Record.Field("viewport", vp)))));
+    // Browser.Dom.Element record alias (matches Browser.Dom.getElement's result type).
+    aliases.put(
+        "Element",
+        new AliasDef(
+            List.of(),
+            new Type.Record(
+                java.util.Optional.empty(),
+                List.of(
+                    new Type.Record.Field("scene", scene),
+                    new Type.Record.Field("viewport", vp),
+                    new Type.Record.Field("element", vp)))));
     aliases.putAll(importedAliases); // record aliases from other modules in a project check
     declaredCtors.clear();
     declaredAliases.clear();

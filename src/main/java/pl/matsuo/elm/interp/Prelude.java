@@ -550,6 +550,8 @@ public final class Prelude {
     fn("Browser.Events.onMouseMove", 1, a -> d("$Sub_MouseMove", a[0]));
     // Browser.Dom.getViewport: a Task yielding a fixed 600x600 viewport (headless stub).
     BUILTINS.put("Browser.Dom.getViewport", d("$Task_Const", viewport()));
+    // Browser.Dom.getElement id: a Task yielding a fixed element box (headless stub).
+    fn("Browser.Dom.getElement", 1, a -> d("$Task_Const", element()));
 
     registerHttp();
     registerJson();
@@ -1100,6 +1102,28 @@ public final class Prelude {
     return new ElmRecord(root);
   }
 
+  /** A fixed Browser.Dom Element (a 600x600 scene, a 100x40 box at the origin) for headless runs. */
+  private static ElmRecord element() {
+    Map<String, Object> size = new java.util.LinkedHashMap<>();
+    size.put("width", 600.0);
+    size.put("height", 600.0);
+    Map<String, Object> vp = new java.util.LinkedHashMap<>();
+    vp.put("x", 0.0);
+    vp.put("y", 0.0);
+    vp.put("width", 600.0);
+    vp.put("height", 600.0);
+    Map<String, Object> box = new java.util.LinkedHashMap<>();
+    box.put("x", 0.0);
+    box.put("y", 0.0);
+    box.put("width", 100.0);
+    box.put("height", 40.0);
+    Map<String, Object> root = new java.util.LinkedHashMap<>();
+    root.put("scene", new ElmRecord(size));
+    root.put("viewport", new ElmRecord(vp));
+    root.put("element", new ElmRecord(box));
+    return new ElmRecord(root);
+  }
+
   private static long timePart(Object zone, Object posix, long unit, int mod) {
     long offsetMinutes = Operators.asLong(((ElmData) zone).arg(0));
     long millis = Operators.asLong(((ElmData) posix).arg(0)) + offsetMinutes * 60000L;
@@ -1286,6 +1310,7 @@ public final class Prelude {
     fn("Browser.sandbox", 1, a -> new ElmData("$Sandbox", new Object[] {a[0]}));
     fn("Browser.element", 1, a -> new ElmData("$Element", new Object[] {a[0]}));
     fn("Browser.document", 1, a -> new ElmData("$Document", new Object[] {a[0]}));
+    fn("Browser.application", 1, a -> new ElmData("$Application", new Object[] {a[0]}));
     fn("Platform.worker", 1, a -> new ElmData("$Worker", new Object[] {a[0]}));
   }
 

@@ -246,6 +246,7 @@
   $rt['Browser.Events.onAnimationFrameDelta']=function(toMsg){ return $sub('rafd', function(d){ var id, last=Date.now(); function tick(){ var now=Date.now(); d(toMsg(now-last)); last=now; id=requestAnimationFrame(tick); } id=requestAnimationFrame(tick); return function(){ cancelAnimationFrame(id); }; }); };
   function viewportRecord(){ var w=window.innerWidth||800, h=window.innerHeight||600; return {scene:{width:w,height:h}, viewport:{x:0,y:0,width:w,height:h}}; }
   $rt['Browser.Dom.getViewport']=$task(function(ok,err){ ok(viewportRecord()); });
+  $rt['Browser.Dom.getElement']=function(id){ return $task(function(ok,err){ var el=(typeof document!=='undefined')&&document.getElementById(id); if(!el){ err($data('NotFound',[id])); return; } var r=el.getBoundingClientRect(), vp=viewportRecord(); ok({scene:vp.scene, viewport:vp.viewport, element:{x:r.left+(window.pageXOffset||0), y:r.top+(window.pageYOffset||0), width:r.width, height:r.height}}); }); };
   $rt['Browser.Dom.setViewport']=function(x){ return function(y){ return $task(function(ok,err){ window.scrollTo(x,y); ok($unit); }); }; };
   $rt['Browser.Dom.focus']=function(id){ return $task(function(ok,err){ var el=document.getElementById(id); if(el){el.focus(); ok($unit);} else err($data('NotFound',[id])); }); };
   // File: real <input type=file> selection and FileReader-based reads.
