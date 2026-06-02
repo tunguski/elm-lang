@@ -82,6 +82,42 @@ class SolverTest {
   }
 
   @Test
+  void prefersNonYankedVersionsButFallsBackToAPinnedYankedOne() {
+    Registry base =
+        registry(
+            Map.of(
+                "lib/c@1.0.0", Map.of(),
+                "lib/c@1.4.0", Map.of(),
+                "lib/c@1.5.0", Map.of()));
+    // 1.5.0 is yanked: the solver should pick the highest *non*-yanked allowed version, 1.4.0.
+    Registry yanking =
+        new Registry() {
+          @Override
+          public List<Version> versions(String pkg) {
+            return base.versions(pkg);
+          }
+
+          @Override
+          public Map<String, Constraint> dependencies(String pkg, Version version) {
+            return base.dependencies(pkg, version);
+          }
+
+          @Override
+          public boolean isYanked(String pkg, Version version) {
+            return pkg.equals("lib/c") && version.equals(Version.parse("1.5.0"));
+          }
+        };
+    Map<String, Version> solution =
+        new Solver(yanking).solve(Map.of("lib/c", Constraint.parse("1.0.0 <= v < 2.0.0")));
+    assertEquals(Version.parse("1.4.0"), solution.get("lib/c"), "skips the yanked 1.5.0");
+
+    // But an exact pin to the yanked version still resolves (it's the only candidate).
+    Map<String, Version> pinned =
+        new Solver(yanking).solve(Map.of("lib/c", Constraint.parse("1.5.0")));
+    assertEquals(Version.parse("1.5.0"), pinned.get("lib/c"), "a pinned yanked version still resolves");
+  }
+
+  @Test
   void backtracksAwayFromAVersionWhoseDepsConflict() {
     // x@2.0.0 needs shared 2.x, but the app pins shared 1.x — the solver must fall back to x@1.0.0.
     Registry reg =

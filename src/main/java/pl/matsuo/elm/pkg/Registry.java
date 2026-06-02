@@ -15,4 +15,14 @@ public interface Registry {
 
   /** The dependency constraints declared by {@code pkg} at {@code version} (its {@code elm.json}). */
   Map<String, Constraint> dependencies(String pkg, Version version);
+
+  /**
+   * Whether {@code version} of {@code pkg} has been yanked (withdrawn — e.g. broken or insecure).
+   * The solver deprioritises yanked versions, choosing one only when no acceptable non-yanked
+   * version exists (so an exact pin to a yanked version still resolves). Defaults to {@code false}
+   * for registries that don't track this.
+   */
+  default boolean isYanked(String pkg, Version version) {
+    return false;
+  }
 }

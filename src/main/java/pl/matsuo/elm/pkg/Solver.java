@@ -55,11 +55,19 @@ public final class Solver {
     }
     Constraint want = constraints.get(pkg);
     List<Version> versions = registry.versions(pkg);
+    // Candidates highest-first, but with yanked versions moved after the non-yanked ones — so a
+    // yanked version is chosen only as a last resort (including an exact pin where it's the only one).
+    List<Version> candidates = new java.util.ArrayList<>();
+    List<Version> yanked = new java.util.ArrayList<>();
     for (int i = versions.size() - 1; i >= 0; i--) { // highest version first
       Version v = versions.get(i);
       if (!want.allows(v)) {
         continue;
       }
+      (registry.isYanked(pkg, v) ? yanked : candidates).add(v);
+    }
+    candidates.addAll(yanked);
+    for (Version v : candidates) {
       TreeMap<String, Constraint> next = new TreeMap<>(constraints);
       if (!merge(next, registry.dependencies(pkg, v), assigned)) {
         continue; // this version's dependencies conflict with what's already decided
