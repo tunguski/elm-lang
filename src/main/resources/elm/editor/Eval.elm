@@ -24,7 +24,7 @@ builtins =
         ++ [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product" ]
         ++ [ "List.filter", "List.append", "List.member", "List.filterMap", "List.take", "List.drop", "List.any", "List.all", "List.indexedMap", "List.repeat", "List.sortBy", "List.foldl", "List.foldr", "List.map2", "List.concatMap" ]
         ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.map2", "Result.map3", "Result.andThen", "Result.toMaybe", "Result.mapError", "Result.fromMaybe" ]
-        ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
+        ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "Tuple.mapFirst", "Tuple.mapSecond", "Tuple.mapBoth", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
         ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
         ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.replace" ]
@@ -164,7 +164,7 @@ arity name =
     else if name == "Result.map3" then
         4
 
-    else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2" ] then
+    else if List.member name [ "List.foldl", "List.foldr", "List.map2", "clamp", "String.slice", "Maybe.map2", "Tuple.mapBoth" ] then
         3
 
     else if List.member name [ "WebGL.triangles", "WebGL.lines", "WebGL.lineStrip", "WebGL.lineLoop", "WebGL.points", "WebGL.triangleStrip", "WebGL.triangleFan", "WebGL.depth", "WebGL.alpha", "WebGL.Texture.load", "WebGL.Texture.size", "Mat4.makeTranslate", "Mat4.makeScale", "Mat4.inverse", "Mat4.transpose" ] then
@@ -1404,6 +1404,16 @@ runBuiltin globals name args =
 
             ( "Tuple.pair", [ a, b ] ) ->
                 Ok (VTup [ a, b ])
+
+            ( "Tuple.mapFirst", [ f, VTup [ a, b ] ] ) ->
+                applyValue globals f a |> Result.map (\x -> VTup [ x, b ])
+
+            ( "Tuple.mapSecond", [ f, VTup [ a, b ] ] ) ->
+                applyValue globals f b |> Result.map (\y -> VTup [ a, y ])
+
+            ( "Tuple.mapBoth", [ f, g, VTup [ a, b ] ] ) ->
+                applyValue globals f a
+                    |> Result.andThen (\x -> applyValue globals g b |> Result.map (\y -> VTup [ x, y ]))
 
             ( "identity", [ v ] ) ->
                 Ok v

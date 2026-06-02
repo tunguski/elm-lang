@@ -235,6 +235,13 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsTupleMappers() {
+    assertEquals("(2, \"a\")", eval("Tuple.mapFirst (\\n -> n + 1) ( 1, \"a\" )"));
+    assertEquals("(1, \"A\")", eval("Tuple.mapSecond String.toUpper ( 1, \"a\" )"));
+    assertEquals("(2, \"A\")", eval("Tuple.mapBoth (\\n -> n + 1) String.toUpper ( 1, \"a\" )"));
+  }
+
+  @Test
   void interpretsCompareSortWithAndMapN() {
     assertEquals("LT", eval("compare 1 2"));
     assertEquals("GT", eval("compare \"b\" \"a\""));
