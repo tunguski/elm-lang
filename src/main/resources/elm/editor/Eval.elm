@@ -518,8 +518,11 @@ runBuiltin globals name args =
     else if name == "onResize" then
         Ok (VCtor "Sub.resize" args)
 
+    else if name == "onMouseMove" then
+        Ok (VCtor "Sub.mouseMove" args)
+
     else if List.member name browserEventSubs then
-        -- Other Browser.Events subscriptions (onMouseMove, …): opaque no-op subs so the program runs.
+        -- Other Browser.Events subscriptions: opaque no-op subs so the program runs.
         Ok (VCtor "Sub" [])
 
     else if name == "WebGL.toHtml" then

@@ -70,6 +70,7 @@ type Msg
     | AnimFrame Float
     | AppKey Bool String
     | AppResize Int Int
+    | AppMouse Float Float
     | HttpResult Value (Result Http.Error String)
     | Loaded String (Result Http.Error String)
     | FilePicked Value Bool String String
@@ -153,6 +154,18 @@ subscriptions model =
                                 Nothing ->
                                     Sub.none
 
+                        mouseSub =
+                            case appSubHandler files m "Sub.mouseMove" of
+                                Just _ ->
+                                    Browser.Events.onMouseMove
+                                        (Decode.map2 AppMouse
+                                            (Decode.field "pageX" Decode.float)
+                                            (Decode.field "pageY" Decode.float)
+                                        )
+
+                                Nothing ->
+                                    Sub.none
+
                         timeSub =
                             case appSubscription files m of
                                 Just ( interval, _ ) ->
@@ -161,7 +174,7 @@ subscriptions model =
                                 Nothing ->
                                     Sub.none
                     in
-                    Sub.batch [ animSub, keyDownSub, keyUpSub, resizeSub, timeSub ]
+                    Sub.batch [ animSub, keyDownSub, keyUpSub, resizeSub, mouseSub, timeSub ]
 
                 Err _ ->
                     Sub.none
@@ -171,6 +184,21 @@ subscriptions model =
 keyEventJson : String -> String
 keyEventJson key =
     "{\"key\":\"" ++ String.replace "\"" "" key ++ "\"}"
+
+
+{-| A minimal `mousemove` event as JSON; `movementX`/`movementY` are 0 (the editor can't pointer-lock)
+so a decoder reading them still succeeds. -}
+mouseEventJson : Float -> Float -> String
+mouseEventJson x y =
+    "{\"pageX\":"
+        ++ String.fromFloat x
+        ++ ",\"pageY\":"
+        ++ String.fromFloat y
+        ++ ",\"movementX\":0,\"movementY\":0,\"offsetX\":"
+        ++ String.fromFloat x
+        ++ ",\"offsetY\":"
+        ++ String.fromFloat y
+        ++ "}"
 
 
 fetchAll : List String -> Cmd Msg
@@ -546,6 +574,25 @@ update msg model =
                     case appSubHandler (selectedFile model) m (if isDown then "Sub.keyDown" else "Sub.keyUp") of
                         Just decoder ->
                             case runEventDecoder (selectedFile model) decoder (keyEventJson key) of
+                                Ok interpMsg ->
+                                    stepApp 100 model interpMsg
+
+                                Err _ ->
+                                    ( model, Cmd.none )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        AppMouse x y ->
+            -- A mouse move for a Browser.element app: run the sub's decoder against the event.
+            case shownModel model of
+                Ok m ->
+                    case appSubHandler (selectedFile model) m "Sub.mouseMove" of
+                        Just decoder ->
+                            case runEventDecoder (selectedFile model) decoder (mouseEventJson x y) of
                                 Ok interpMsg ->
                                     stepApp 100 model interpMsg
 

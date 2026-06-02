@@ -156,6 +156,7 @@ class EditorInterpreterTest {
           "Time.here",
           "E.onAnimationFrameDelta",
           "E.onResize",
+          "E.onMouseMove",
           // Json.Decode under an import alias (image-previews uses `import Json.Decode as D`).
           "D.succeed 1",
           "D.map (\\x -> x) (D.field \"a\" D.int)",
