@@ -525,6 +525,21 @@ class WasmHeapTest {
   }
 
   @Test
+  void destructuringParameters() throws Exception {
+    // A tuple-destructuring function parameter.
+    agrees("fst ( a, b ) = a\nmain = fst ( 3, 4 )\n"); // 3
+    // A tuple-destructuring lambda parameter.
+    agrees("main = (\\( a, b ) -> a + b) ( 5, 6 )\n"); // 11
+    // A constructor-destructuring parameter.
+    agrees(
+        """
+        type Box = Box Int
+        unbox (Box n) = n
+        main = unbox (Box 7)
+        """); // 7
+  }
+
+  @Test
   void nestedAndStringCasePatterns() throws Exception {
     // A constructor argument that is itself a constructor pattern (nested, refutable).
     agrees(

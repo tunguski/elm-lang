@@ -104,6 +104,33 @@ public final class WasmGc {
     }
   }
 
+  /** Parameters reduced to plain variable names, with the body wrapped in a {@code case} per
+   *  destructuring parameter (handled by {@link #caseExpr}). */
+  private record DesugaredParams(List<String> names, Expr body) {}
+
+  private static DesugaredParams desugarParams(
+      List<Pattern> params, Expr body, Ty funcType, Map<Expr, Ty> nodeTypes) {
+    List<String> names = new ArrayList<>();
+    Expr wrapped = body;
+    Ty resultTy = resultType(funcType, params.size()); // the body's (and each wrapping case's) type
+    Position pos = new Position(1, 1, 0);
+    for (int i = 0; i < params.size(); i++) {
+      Pattern p = params.get(i);
+      if (p instanceof Pattern.Var pv) {
+        names.add(pv.name());
+      } else {
+        String fresh = "$arg" + i;
+        names.add(fresh);
+        Expr scrut = new Expr.Var(null, fresh, pos);
+        Expr.Case cas = new Expr.Case(scrut, List.of(new Expr.Case.Branch(p, wrapped)), pos);
+        nodeTypes.put(scrut, arrowParam(funcType, i)); // the destructured parameter's type
+        nodeTypes.put(cas, resultTy);
+        wrapped = cas;
+      }
+    }
+    return new DesugaredParams(names, wrapped);
+  }
+
   /** How a lambda is realised as a closure value: the lifted function's index, the closure-struct
    * variant to {@code struct.new}, and the captured local names (pushed as the variant's fields). */
   private record ClosurePlan(int funcIndex, int variantIndex, List<String> captures) {}
@@ -212,17 +239,16 @@ public final class WasmGc {
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && schemes.containsKey(v.name())) {
         Ty t = Types.prune(schemes.get(v.name()).body());
+        // Destructuring parameters become fresh names with the body wrapped in a `case`; the
+        // synthetic scrutinee/case nodes get recorded types so type-directed codegen still works.
+        DesugaredParams dp = desugarParams(v.params(), v.body(), t, nodeTypes);
+        List<String> params = dp.names();
         List<W> paramTypes = new ArrayList<>();
-        List<String> params = new ArrayList<>();
-        for (Pattern p : v.params()) {
-          if (!(p instanceof Pattern.Var pv)) {
-            throw unsupported("non-variable parameter");
-          }
-          params.add(pv.name());
-          paramTypes.add(wOf(arrowParam(t, paramTypes.size()), tuples));
+        for (int i = 0; i < params.size(); i++) {
+          paramTypes.add(wOf(arrowParam(t, i), tuples));
         }
         funcs.add(
-            new Func(v.name(), params, paramTypes, wOf(resultType(t, params.size()), tuples), v.body()));
+            new Func(v.name(), params, paramTypes, wOf(resultType(t, params.size()), tuples), dp.body()));
       }
     }
     java.util.Set<String> topLevel = new java.util.HashSet<>();

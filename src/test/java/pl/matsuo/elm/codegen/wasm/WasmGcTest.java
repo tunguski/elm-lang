@@ -320,6 +320,19 @@ class WasmGcTest {
   }
 
   @Test
+  void destructuringParameters() throws Exception {
+    // A tuple-destructuring function parameter (the body is wrapped in a tuple case).
+    agrees("addPair ( a, b ) = a + b\nmain = addPair ( 3, 4 )\n"); // 7
+    // A constructor-destructuring parameter.
+    agrees(
+        """
+        type Box = Box Int
+        unbox (Box n) = n
+        main = unbox (Box 9)
+        """); // 9
+  }
+
+  @Test
   void matchesOnIntegerLiterals() throws Exception {
     String classify =
         """

@@ -338,15 +338,8 @@ public final class WasmCompiler {
     Set<String> defined = new HashSet<>();
     for (Decl d : decls) {
       if (d instanceof Decl.Value v && defined.add(v.name())) {
-        List<String> params = new ArrayList<>();
-        for (Pattern p : v.params()) {
-          if (p instanceof Pattern.Var pv) {
-            params.add(pv.name());
-          } else {
-            throw unsupported("non-variable parameter pattern");
-          }
-        }
-        funcs.add(new Func(v.name(), params, v.body()));
+        DesugaredParams dp = desugarParams(v.params(), v.body());
+        funcs.add(new Func(v.name(), dp.names(), dp.body()));
       }
     }
     // Constructor wrappers: for each constructor of arity n ≥ 1, a function
@@ -399,6 +392,34 @@ public final class WasmCompiler {
    *  params) and the captured local names, in the order they lead the lifted parameter list. */
   record Lifted(String name, int arity, List<String> captures) {}
 
+  /** A function's parameters reduced to plain variable names, with the body wrapped in a {@code case}
+   *  for each destructuring parameter. */
+  record DesugaredParams(List<String> names, Expr body) {}
+
+  /** Turns destructuring parameters ({@code f (a, b) = …}, {@code \(Just x) -> …}) into fresh
+   *  variable parameters whose body is wrapped in {@code case <fresh> of <pattern> -> …} — the
+   *  decision-tree matcher then binds the pattern. Plain variable parameters pass through unchanged. */
+  private static DesugaredParams desugarParams(List<Pattern> params, Expr body) {
+    List<String> names = new ArrayList<>();
+    Expr wrapped = body;
+    pl.matsuo.elm.error.Position pos = new pl.matsuo.elm.error.Position(1, 1, 0);
+    for (int i = 0; i < params.size(); i++) {
+      Pattern p = params.get(i);
+      if (p instanceof Pattern.Var pv) {
+        names.add(pv.name());
+      } else {
+        String fresh = "$arg" + i;
+        names.add(fresh);
+        wrapped =
+            new Expr.Case(
+                new Expr.Var(null, fresh, pos),
+                List.of(new Expr.Case.Branch(p, wrapped)),
+                pos);
+      }
+    }
+    return new DesugaredParams(names, wrapped);
+  }
+
   /**
    * Replaces lambdas with lifted top-level functions. Each lambda gets a fresh {@code $lamN}
    * function whose parameters are its captured free variables followed by its own parameters; the
@@ -415,22 +436,18 @@ public final class WasmCompiler {
       List<Expr.Lambda> lambdas = new ArrayList<>();
       collectTopLambdas(f.body(), lambdas);
       for (Expr.Lambda lam : lambdas) {
-        List<String> params = new ArrayList<>();
-        for (Pattern p : lam.params()) {
-          if (p instanceof Pattern.Var pv) {
-            params.add(pv.name());
-          } else {
-            throw unsupported("non-variable lambda parameter");
-          }
-        }
+        // Destructuring lambda parameters become fresh names with the body wrapped in a `case`.
+        DesugaredParams dp = desugarParams(lam.params(), lam.body());
+        List<String> params = dp.names();
+        Expr lamBody = dp.body();
         Set<String> free = new java.util.LinkedHashSet<>();
-        addFree(lam.body(), new HashSet<>(params), free);
+        addFree(lamBody, new HashSet<>(params), free);
         free.removeAll(globalNames);
         List<String> captures = new ArrayList<>(free);
         String name = "$lam" + (counter++);
         List<String> liftedParams = new ArrayList<>(captures);
         liftedParams.addAll(params);
-        Func lifted = new Func(name, liftedParams, lam.body());
+        Func lifted = new Func(name, liftedParams, lamBody);
         all.add(lifted);
         work.add(lifted);
         out.put(lam, new Lifted(name, captures.size() + params.size(), captures));
