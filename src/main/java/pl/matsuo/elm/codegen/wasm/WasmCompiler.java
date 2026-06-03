@@ -1601,6 +1601,17 @@ public final class WasmCompiler {
         leb(code, funcs.get("$strReverse")[0]);
         return;
       }
+      // `String.toUpper s` / `String.toLower s` -> the case-folding natives (arg passed twice).
+      if (head instanceof Expr.Var sc
+          && "String".equals(sc.module())
+          && ("toUpper".equals(sc.name()) || "toLower".equals(sc.name()))
+          && args.size() == 1) {
+        intExpr(args.get(0));
+        intExpr(args.get(0));
+        code.write(0x10);
+        leb(code, funcs.get(sc.name().equals("toUpper") ? "$strUpper" : "$strLower")[0]);
+        return;
+      }
       // A call to a known top-level function (or a qualified stdlib name mapped to a prelude
       // function) that is NOT shadowed by a local.
       if (head instanceof Expr.Var v
@@ -1802,7 +1813,117 @@ public final class WasmCompiler {
         new Native("$strConcat", 2, strConcatEntry()),
         new Native("$strLeft", 2, strLeftEntry()),
         new Native("$strDropLeft", 2, strDropLeftEntry()),
-        new Native("$strReverse", 2, strReverseEntry()));
+        new Native("$strReverse", 2, strReverseEntry()),
+        new Native("$strUpper", 2, strCaseEntry(97, 122, false)),
+        new Native("$strLower", 2, strCaseEntry(65, 90, true)));
+  }
+
+  /** {@code $strUpper/$strLower(str, _) -> i64}: a fresh string with each ASCII letter case-folded.
+   *  A byte in {@code [lo, hi]} is shifted by 32 ({@code add} = toward lowercase); others are copied.
+   *  Byte-based (ASCII only), matching this backend's string model; second arg ignored. */
+  private static byte[] strCaseEntry(int lo, int hi, boolean add) {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // param str=0; i64 lenStr=2; i32 result=3, total=4, delta=5, i=6, byte=7
+    lget(b, 0);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0);
+    lset(b, 2);
+    b.write(0x23);
+    leb(b, 0);
+    lset(b, 3); // result = $hp
+    i32c(b, 8);
+    lget(b, 2);
+    b.write(0xA7);
+    b.write(0x6A);
+    lset(b, 4);
+    lget(b, 3);
+    lget(b, 4);
+    b.write(0x6A);
+    b.write(0x24);
+    leb(b, 0); // $hp = result + total
+    b.write(0x23);
+    leb(b, 0);
+    i32c(b, 65535);
+    b.write(0x6A);
+    i32c(b, 16);
+    b.write(0x76);
+    b.write(0x3F);
+    b.write(0x00);
+    b.write(0x6B);
+    lset(b, 5);
+    lget(b, 5);
+    i32c(b, 0);
+    b.write(0x4A);
+    b.write(0x04);
+    b.write(0x40);
+    lget(b, 5);
+    b.write(0x40);
+    b.write(0x00);
+    b.write(0x1A);
+    b.write(0x0B);
+    lget(b, 3);
+    lget(b, 2);
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 0); // result.length = lenStr
+    // loop: result[8+i] = caseFold(str[8+i])
+    i32c(b, 0);
+    lset(b, 6);
+    b.write(0x02);
+    b.write(0x40);
+    b.write(0x03);
+    b.write(0x40);
+    lget(b, 6);
+    lget(b, 2);
+    b.write(0xA7);
+    b.write(0x4F);
+    b.write(0x0D);
+    leb(b, 1);
+    // byte = load8(str + 8 + i)
+    lget(b, 0);
+    b.write(0xA7);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 6);
+    b.write(0x6A);
+    b.write(0x2D);
+    leb(b, 0);
+    leb(b, 0);
+    lset(b, 7);
+    // addr = result + 8 + i
+    lget(b, 3);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 6);
+    b.write(0x6A);
+    // value = byte +/- ((byte >= lo & byte <= hi) * 32)
+    lget(b, 7);
+    lget(b, 7);
+    i32c(b, lo);
+    b.write(0x4F); // i32.ge_u
+    lget(b, 7);
+    i32c(b, hi);
+    b.write(0x4D); // i32.le_u
+    b.write(0x71); // i32.and
+    i32c(b, 32);
+    b.write(0x6C); // i32.mul -> delta
+    b.write(add ? 0x6A : 0x6B); // i32.add / i32.sub
+    b.write(0x3A);
+    leb(b, 0);
+    leb(b, 0); // store8(addr, value)
+    lget(b, 6);
+    i32c(b, 1);
+    b.write(0x6A);
+    lset(b, 6);
+    b.write(0x0C);
+    leb(b, 0);
+    b.write(0x0B);
+    b.write(0x0B);
+    lget(b, 3);
+    b.write(0xAD);
+    return entry(b, new int[][] {{1, I64}, {5, I32}});
   }
 
   /** {@code $strReverse(str, _) -> i64}: a fresh heap string with {@code str}'s bytes reversed (the

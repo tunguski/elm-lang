@@ -506,6 +506,15 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringToUpperToLowerCaseFoldAscii() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("HELLO", runMainString("main = String.toUpper \"Hello\"\n"));
+    assertEquals("hello", runMainString("main = String.toLower \"Hello\"\n"));
+    assertEquals("ABC123", runMainString("main = String.toUpper \"abc123\"\n")); // digits unchanged
+    assertEquals("a-b-c", runMainString("main = String.toLower \"A-B-C\"\n")); // punctuation unchanged
+  }
+
+  @Test
   void stringReverseProducesReversedBytes() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("olleh", runMainString("main = String.reverse \"hello\"\n"));
