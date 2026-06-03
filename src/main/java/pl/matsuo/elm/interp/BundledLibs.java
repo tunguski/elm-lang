@@ -47,6 +47,12 @@ public final class BundledLibs {
     return KNOWN.containsKey(module);
   }
 
+  /** The {@code module} name declared in {@code source}, or {@code "Main"} if none is found. */
+  public static String moduleNameOf(String source) {
+    String name = firstMatch(MODULE, source);
+    return name == null ? "Main" : name;
+  }
+
   /**
    * Returns the source of every auto-resolvable bundled library that {@code sources} import
    * (transitively) and don't already define, followed by {@code sources} unchanged. Resolved

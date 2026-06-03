@@ -172,10 +172,20 @@ public final class Main implements Runnable {
           System.out.println(pl.matsuo.elm.util.Ansi.error("Type error:", msg));
           return 1;
         }
-        Object v =
-            backend.equals("bytecode")
-                ? BytecodeInterpreter.load(source).value(value)
-                : Interpreter.load(source).value(value);
+        Object v;
+        if (backend.equals("bytecode")) {
+          v = BytecodeInterpreter.load(source).value(value);
+        } else {
+          // If the program imports pure bundled libraries (List.Extra, …), run it as a project so
+          // those imports resolve; otherwise keep the fast single-module path.
+          java.util.List<String> resolved =
+              pl.matsuo.elm.interp.BundledLibs.resolve(java.util.List.of(source));
+          v =
+              resolved.size() > 1
+                  ? pl.matsuo.elm.interp.Project.load(resolved.toArray(new String[0]))
+                      .value(pl.matsuo.elm.interp.BundledLibs.moduleNameOf(source), value)
+                  : Interpreter.load(source).value(value);
+        }
         System.out.println(render(v, true)); // live: a Browser program's init effects actually run
         return 0;
       } catch (IOException e) {

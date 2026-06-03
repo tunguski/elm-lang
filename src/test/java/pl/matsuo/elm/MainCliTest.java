@@ -51,6 +51,16 @@ class MainCliTest {
   }
 
   @Test
+  void runAndCheckResolveBundledLibraryImports() throws Exception {
+    Path f = tempElm("module Main exposing (main)\n\nimport List.Extra as LE\n\nmain = LE.last [ 1, 2, 3 ]\n");
+    Result checked = invoke("check", f.toString());
+    assertEquals(0, checked.code(), "check should resolve List.Extra: " + checked.err());
+    Result ran = invoke("run", f.toString());
+    assertEquals(0, ran.code(), "run should resolve List.Extra: " + ran.err());
+    assertTrue(ran.out().contains("Just 3"), ran.out());
+  }
+
+  @Test
   void doctestRunsDocCommentExamples() throws Exception {
     Path good = tempElm(
         "module M exposing (double)\n\n{-| Doubles.\n\n    double 21\n    --> 42\n-}\ndouble n =\n    n * 2\n");
