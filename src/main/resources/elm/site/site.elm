@@ -119,7 +119,19 @@ copyAsset name =
     copy ("assets/" ++ name) ("out/" ++ name)
 
 
-{-| A minimal shared sidebar; the gallery embeds it on every sub-page. -}
+{-| The shared sidebar the gallery embeds on every sub-page: the wordmark, a Gallery group and a
+Guides group listing the rendered guide pages (only pages this build actually produces are linked). -}
 nav : String
 nav =
-    "<nav class=\"sidebar\"><a class=\"brand\" href=\"index.html\">elm-lang</a></nav>"
+    "<nav class=\"sidebar\">"
+        ++ "<a class=\"brand\" href=\"index.html\">elm-lang</a>"
+        ++ "<div class=\"group\"><span class=\"label\">Gallery</span><a href=\"index.html\">Examples</a></div>"
+        ++ "<div class=\"group\"><span class=\"label\">Guides</span>"
+        ++ String.concat (List.map navGuide guides)
+        ++ "</div>"
+        ++ "</nav>"
+
+
+navGuide : String -> String
+navGuide slug =
+    "<a href=\"" ++ slug ++ ".html\">" ++ slug ++ "</a>"

@@ -51,5 +51,10 @@ class GalleryBuildTest {
     assertTrue(Files.exists(out.resolve("demos/book.html")), "HTTP example demo written");
     assertTrue(Files.exists(out.resolve("demos/image-previews.html")), "Files example demo written");
     assertTrue(Files.exists(out.resolve(".nojekyll")), ".nojekyll written");
+
+    // The shared sidebar lists the Guides group (embedded on every sub-page by Gallery.elm).
+    assertTrue(Files.exists(out.resolve("nav.html")), "nav written");
+    String nav = Files.readString(out.resolve("nav.html"), StandardCharsets.UTF_8);
+    assertTrue(nav.contains("Guides") && nav.contains("href=\"scripting.html\""), "nav lists guides");
   }
 }
