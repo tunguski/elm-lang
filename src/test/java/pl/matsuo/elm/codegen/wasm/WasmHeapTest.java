@@ -571,6 +571,16 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringTrimCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("hi", runMainString("main = String.trim \"  hi  \"\n"));
+    assertEquals("hi  ", runMainString("main = String.trimLeft \"  hi  \"\n"));
+    assertEquals("  hi", runMainString("main = String.trimRight \"  hi  \"\n"));
+    assertEquals("", runMainString("main = String.trim \"   \"\n"));
+    assertEquals("a b", runMainString("main = String.trim \" a b \"\n")); // inner spaces kept
+  }
+
+  @Test
   void stringContainsCompiles() throws Exception {
     agrees("main = if String.contains \"ll\" \"hello\" then 1 else 0\n"); // 1
     agrees("main = if String.contains \"x\" \"hello\" then 1 else 0\n"); // 0

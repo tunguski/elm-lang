@@ -245,6 +245,10 @@ public final class WasmCompiler {
       stringEndsWith suf s = String.right (String.length suf) s == suf
       stringContains sub s = containsFrom sub s 0
       containsFrom sub s i = if i + String.length sub > String.length s then False else if String.left (String.length sub) (String.dropLeft i s) == sub then True else containsFrom sub s (i + 1)
+      isWsHead h = h == " " || h == "\\t" || h == "\\n" || h == "\\u{000D}"
+      stringTrimLeft s = if isWsHead (String.left 1 s) then stringTrimLeft (String.dropLeft 1 s) else s
+      stringTrimRight s = if isWsHead (String.right 1 s) then stringTrimRight (String.dropRight 1 s) else s
+      stringTrim s = stringTrimRight (stringTrimLeft s)
       stringCons c s = String.append (String.fromChar c) s
       charIsDigit c = c >= 48 && c <= 57
       charIsUpper c = c >= 65 && c <= 90
@@ -337,6 +341,9 @@ public final class WasmCompiler {
           Map.entry("String.startsWith", "stringStartsWith"),
           Map.entry("String.endsWith", "stringEndsWith"),
           Map.entry("String.contains", "stringContains"),
+          Map.entry("String.trim", "stringTrim"),
+          Map.entry("String.trimLeft", "stringTrimLeft"),
+          Map.entry("String.trimRight", "stringTrimRight"),
           Map.entry("String.cons", "stringCons"),
           Map.entry("Char.toCode", "identity"),
           Map.entry("Char.fromCode", "identity"),
