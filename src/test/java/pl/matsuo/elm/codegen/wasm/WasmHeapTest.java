@@ -506,6 +506,15 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringSliceHandlesNegativeIndices() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("el", runMainString("main = String.slice 1 3 \"hello\"\n"));
+    assertEquals("hell", runMainString("main = String.slice 0 (0 - 1) \"hello\"\n")); // end = -1
+    assertEquals("lo", runMainString("main = String.slice (0 - 2) 5 \"hello\"\n")); // start = -2
+    assertEquals("", runMainString("main = String.slice 3 1 \"hello\"\n")); // end before start
+  }
+
+  @Test
   void stringConcatJoinRepeatProduceTheRightBytes() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("ababab", runMainString("main = String.repeat 3 \"ab\"\n"));

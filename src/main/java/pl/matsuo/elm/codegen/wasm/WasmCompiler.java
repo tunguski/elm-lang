@@ -230,6 +230,8 @@ public final class WasmCompiler {
           h :: t -> sep :: h :: prependEach sep t
       stringRight n s = String.dropLeft (String.length s - n) s
       stringDropRight n s = String.left (String.length s - n) s
+      clampIdx s i = if i < 0 then maxOf 0 (String.length s + i) else minOf i (String.length s)
+      stringSlice start end s = String.left (clampIdx s end - clampIdx s start) (String.dropLeft (clampIdx s start) s)
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -294,6 +296,7 @@ public final class WasmCompiler {
           Map.entry("String.repeat", "stringRepeat"),
           Map.entry("String.right", "stringRight"),
           Map.entry("String.dropRight", "stringDropRight"),
+          Map.entry("String.slice", "stringSlice"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
