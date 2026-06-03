@@ -12,7 +12,7 @@ class ListExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap, pre, suf, strip, grpW, fmap, z3, ifold, unf, scan)
+      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap, pre, suf, strip, grpW, fmap, z3, ifold, unf, scan, splitW, mapAcc, updIf, setIfV, lift2V, minW, maxW, takeR, dropR, gathEq)
 
       import List.Extra as LE
 
@@ -43,6 +43,16 @@ class ListExtraLibraryTest {
       iterV = LE.iterate (\\n -> if n > 1 then Just (n // 2) else Nothing) 8
       removeVal = LE.remove 2 [ 1, 2, 3, 2 ]
       swap = LE.swapAt 0 2 [ 1, 2, 3 ]
+      splitW = LE.splitWhen (\\n -> n > 2) [ 1, 2, 3, 4 ]
+      mapAcc = LE.mapAccuml (\\s x -> ( s + x, s )) 0 [ 1, 2, 3 ]
+      updIf = LE.updateIf (\\n -> modBy 2 n == 0) (\\n -> n * 10) [ 1, 2, 3, 4 ]
+      setIfV = LE.setIf (\\n -> modBy 2 n == 0) 0 [ 1, 2, 3, 4 ]
+      lift2V = LE.lift2 (+) [ 1, 2 ] [ 10, 20 ]
+      minW = LE.minimumWith compare [ 3, 1, 2 ]
+      maxW = LE.maximumWith compare [ 3, 1, 2 ]
+      takeR = LE.takeWhileRight (\\n -> n > 2) [ 1, 4, 5 ]
+      dropR = LE.dropWhileRight (\\n -> n > 2) [ 1, 4, 5 ]
+      gathEq = LE.gatherEquals [ 1, 2, 1, 3, 2 ]
       pre = LE.isPrefixOf [ 1, 2 ] [ 1, 2, 3 ]
       suf = LE.isSuffixOf [ 2, 3 ] [ 1, 2, 3 ]
       strip = LE.stripPrefix [ 1, 2 ] [ 1, 2, 3, 4 ]
@@ -112,5 +122,19 @@ class ListExtraLibraryTest {
     assertEquals("80", value("ifold")); // 0*10 + 1*20 + 2*30
     assertEquals("[3,2,1]", value("unf"));
     assertEquals("[0,1,3,6]", value("scan"));
+  }
+
+  @Test
+  void splitMapAccumUpdateLiftExtremaGather() {
+    assertEquals("Just ([1,2],[3,4])", value("splitW"));
+    assertEquals("(6,[0,1,3])", value("mapAcc"));
+    assertEquals("[1,20,3,40]", value("updIf"));
+    assertEquals("[1,0,3,0]", value("setIfV"));
+    assertEquals("[11,21,12,22]", value("lift2V"));
+    assertEquals("Just 1", value("minW"));
+    assertEquals("Just 3", value("maxW"));
+    assertEquals("[4,5]", value("takeR"));
+    assertEquals("[1]", value("dropR"));
+    assertEquals("[(1,[1]),(2,[2]),(3,[])]", value("gathEq"));
   }
 }

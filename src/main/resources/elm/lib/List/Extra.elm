@@ -42,6 +42,17 @@ module List.Extra exposing
     , indexedFoldl
     , unfoldr
     , scanl
+    , splitWhen
+    , mapAccuml
+    , updateIf
+    , setIf
+    , lift2
+    , minimumWith
+    , maximumWith
+    , takeWhileRight
+    , dropWhileRight
+    , gatherEquals
+    , gatherWith
     )
 
 {-| A subset of the popular `elm-community/list-extra` helpers — the ones reached for most often —
@@ -553,3 +564,117 @@ scanl f acc list =
                 x :: rest ->
                     scanl f (f x acc) rest
            )
+
+
+{-| Splits at the first element satisfying `pred` (that element starts the second part); `Nothing`
+if none match. -}
+splitWhen : (a -> Bool) -> List a -> Maybe ( List a, List a )
+splitWhen pred list =
+    case findIndex pred list of
+        Just i ->
+            Just (splitAt i list)
+
+        Nothing ->
+            Nothing
+
+
+{-| A stateful map: threads an accumulator left to right, returning the final state and mapped list. -}
+mapAccuml : (s -> a -> ( s, b )) -> s -> List a -> ( s, List b )
+mapAccuml f acc list =
+    case list of
+        [] ->
+            ( acc, [] )
+
+        x :: rest ->
+            let
+                step =
+                    f acc x
+
+                recur =
+                    mapAccuml f (Tuple.first step) rest
+            in
+            ( Tuple.first recur, Tuple.second step :: Tuple.second recur )
+
+
+{-| Applies `f` to every element satisfying `pred`. -}
+updateIf : (a -> Bool) -> (a -> a) -> List a -> List a
+updateIf pred f list =
+    List.map
+        (\x ->
+            if pred x then
+                f x
+
+            else
+                x
+        )
+        list
+
+
+{-| Replaces every element satisfying `pred` with `value`. -}
+setIf : (a -> Bool) -> a -> List a -> List a
+setIf pred value list =
+    updateIf pred (\_ -> value) list
+
+
+{-| Applies `f` to every pair from the two lists (the cartesian combination). -}
+lift2 : (a -> b -> c) -> List a -> List b -> List c
+lift2 f xs ys =
+    List.concatMap (\x -> List.map (\y -> f x y) ys) xs
+
+
+{-| The element that is smallest by the given comparator, or `Nothing`. -}
+minimumWith : (a -> a -> Order) -> List a -> Maybe a
+minimumWith cmp list =
+    foldl1
+        (\x best ->
+            if cmp x best == LT then
+                x
+
+            else
+                best
+        )
+        list
+
+
+{-| The element that is largest by the given comparator, or `Nothing`. -}
+maximumWith : (a -> a -> Order) -> List a -> Maybe a
+maximumWith cmp list =
+    foldl1
+        (\x best ->
+            if cmp x best == GT then
+                x
+
+            else
+                best
+        )
+        list
+
+
+{-| The longest suffix of elements satisfying `pred`. -}
+takeWhileRight : (a -> Bool) -> List a -> List a
+takeWhileRight pred list =
+    List.reverse (takeWhile pred (List.reverse list))
+
+
+{-| The list with the longest suffix satisfying `pred` removed. -}
+dropWhileRight : (a -> Bool) -> List a -> List a
+dropWhileRight pred list =
+    List.reverse (dropWhile pred (List.reverse list))
+
+
+{-| Groups equal elements: each distinct element paired with the (later) elements equal to it. -}
+gatherEquals : List a -> List ( a, List a )
+gatherEquals list =
+    gatherWith (\a b -> a == b) list
+
+
+{-| Like {@link gatherEquals} but with a custom equality test. -}
+gatherWith : (a -> a -> Bool) -> List a -> List ( a, List a )
+gatherWith test list =
+    case list of
+        [] ->
+            []
+
+        x :: rest ->
+            ( x, List.filter (test x) rest )
+                :: gatherWith test (List.filter (\y -> not (test x y)) rest)
