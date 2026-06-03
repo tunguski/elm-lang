@@ -1,5 +1,6 @@
 package pl.matsuo.elm.site;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -45,5 +46,48 @@ class MarkdownTest {
   @Test
   void escapesHtmlInText() {
     assertTrue(Markdown.toHtml("a < b && c\n").contains("a &lt; b &amp;&amp; c"));
+  }
+
+  @Test
+  void rendersOrderedLists() {
+    String html = Markdown.toHtml("1. first\n2. second\n3. third\n");
+    assertTrue(html.contains("<ol>") && html.contains("</ol>"), html);
+    assertTrue(html.contains("<li>first</li>"), html);
+    assertTrue(html.contains("<li>third</li>"), html);
+    assertTrue(!html.contains("<p>1. first"), "not rendered as a paragraph: " + html);
+  }
+
+  @Test
+  void coalescesConsecutiveBlockquoteLinesIntoOneBox() {
+    // A multi-line "> Note:" must render as a single <blockquote>, not one box per line.
+    String html = Markdown.toHtml("> **Note:** line one\n> line two\n> line three\n");
+    assertEquals(1, countOccurrences(html, "<blockquote>"), html);
+    assertTrue(html.contains("line one line two line three"), html);
+  }
+
+  @Test
+  void listItemHoldsContinuationAndNestedCode() {
+    // A multi-line item with a blank line and an indented fenced code block: the code must render
+    // inside the <li> (not leak as literal ``` text), and the continuation stays in the same item.
+    String md =
+        "- `index` — a page linking every page by\n"
+            + "  title. Add it to your `site`:\n\n"
+            + "  ```elm\n"
+            + "  site = Site.index articles\n"
+            + "  ```\n";
+    String html = Markdown.toHtml(md);
+    assertTrue(html.contains("<li>"), html);
+    assertTrue(html.contains("<pre><code class=\"language-elm\">site = Site.index articles\n"), html);
+    assertTrue(!html.contains("```"), "no literal fence leaked: " + html);
+    // The code block lives inside the list item, not after the closing </ul>.
+    assertTrue(html.indexOf("<pre>") < html.indexOf("</ul>"), "code is inside the list: " + html);
+  }
+
+  private static int countOccurrences(String haystack, String needle) {
+    int n = 0;
+    for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length())) {
+      n++;
+    }
+    return n;
   }
 }
