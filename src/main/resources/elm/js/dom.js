@@ -501,9 +501,9 @@
       var domEvent = ev==='check'?'change':ev;
       var fn = function(e){
         var msg;
-        if (ev==='input') msg = h(e.target.value);
-        else if (ev==='check') msg = h(e.target.checked);
-        else if (h && h.$==='$Dec'){ var r=h._[0](e); if(!r.ok) return; msg=r.v; } // on "ev" decoder
+        if (h && h.$==='$Dec'){ var r=h._[0](e); if(!r.ok) return; msg=r.v; } // on "ev" decoder (runs against the event)
+        else if (ev==='input') msg = h(e.target.value); // onInput tagger (String -> msg)
+        else if (ev==='check') msg = h(e.target.checked); // onCheck tagger (Bool -> msg)
         else msg = h;
         if (msg!==undefined){ window.$dispatch(msg); }
         e.stopPropagation();

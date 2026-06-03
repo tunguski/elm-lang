@@ -310,6 +310,35 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void textareaInputDecodingTargetSelectionStartUpdatesModel() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The editor's code textarea decodes BOTH target.value and target.selectionStart in one
+    // Decode.map2 (so autocomplete knows the caret). If selectionStart doesn't decode as an Int,
+    // the whole input message is dropped and typing does nothing. Drive a real input event.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (div, text, textarea)\n"
+            + "import Html.Attributes exposing (value)\n"
+            + "import Html.Events exposing (on)\n"
+            + "import Json.Decode as Decode\n"
+            + "type Msg = EditAt String Int\n"
+            + "main = Browser.sandbox { init = \"\", update = update, view = view }\n"
+            + "update msg _ = case msg of\n  EditAt s _ -> s\n"
+            + "view model =\n"
+            + "    div []\n"
+            + "        [ textarea [ on \"input\" (Decode.map2 EditAt (Decode.at [ \"target\", \"value\" ] Decode.string) (Decode.at [ \"target\", \"selectionStart\" ] Decode.int)), value model ] []\n"
+            + "        , div [] [ text (\"got=\" ++ model) ]\n"
+            + "        ]\n";
+    String driver =
+        "var ta=document.querySelector('textarea'); ta.focus();"
+            + "ta.value='hi'; ta.setSelectionRange(2,2);"
+            + "ta.dispatchEvent(new Event('input',{bubbles:true}));";
+    String dom = renderInBrowser(app, driver);
+    assertTrue(dom.contains("got=hi"), "input with a selectionStart decoder updated the model: " + dom);
+  }
+
+  @Test
   void textFieldsReactsToInput() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String driver = "window.$app.dispatch($data('Change',['hello']));";
