@@ -297,6 +297,21 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void bundledLibraryResolvesInTheBrowserBundle() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The app imports List.Extra without supplying it; appBundle pulls the bundled lib in.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Html exposing (text)\n"
+            + "import List.Extra as LE\n"
+            + "main = Browser.sandbox { init = 0, update = \\_ m -> m, view = view }\n"
+            + "view _ = text (String.fromInt (List.length (LE.unique [ 1, 1, 2, 3, 2 ])))\n";
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains(">3<"), "List.Extra.unique resolved and ran in the bundle: " + dom);
+  }
+
+  @Test
   void buttonsInitialAndAfterClicks() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     assertTrue(renderInBrowser(example("buttons"), null).contains("<div>0</div>"));

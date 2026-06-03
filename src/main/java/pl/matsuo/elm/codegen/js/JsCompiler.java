@@ -209,6 +209,11 @@ public final class JsCompiler {
 
   /** A browser app bundle: kernel + DOM/TEA runtime + module + a mount call. */
   public static String appBundle(String source) {
+    // If the program imports pure bundled libraries (List.Extra, …), compile them in as a project.
+    List<String> resolved = pl.matsuo.elm.interp.BundledLibs.resolve(List.of(source));
+    if (resolved.size() > 1) {
+      return appBundleProject(resolved.toArray(new String[0]));
+    }
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
     return JsRuntime.SOURCE
         + "\n"
@@ -225,7 +230,7 @@ public final class JsCompiler {
    */
   public static String appBundleProject(String... sources) {
     List<Module> modules = new ArrayList<>();
-    for (String s : sources) {
+    for (String s : pl.matsuo.elm.interp.BundledLibs.resolve(List.of(sources))) {
       modules.add(Parser.parseModule(s));
     }
     Map<String, ModuleInfo> scope = buildScope(modules);
