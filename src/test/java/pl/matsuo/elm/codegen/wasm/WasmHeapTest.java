@@ -506,6 +506,15 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringReverseProducesReversedBytes() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("olleh", runMainString("main = String.reverse \"hello\"\n"));
+    assertEquals("", runMainString("main = String.reverse \"\"\n"));
+    assertEquals("a", runMainString("main = String.reverse \"a\"\n"));
+    assertEquals("hello", runMainString("main = String.reverse (String.reverse \"hello\")\n"));
+  }
+
+  @Test
   void stringStartsWithEndsWithCompile() throws Exception {
     agrees("main = if String.startsWith \"he\" \"hello\" then 1 else 0\n"); // 1
     agrees("main = if String.startsWith \"x\" \"hello\" then 1 else 0\n"); // 0

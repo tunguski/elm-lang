@@ -1590,6 +1590,17 @@ public final class WasmCompiler {
         leb(code, funcs.get("$strDropLeft")[0]);
         return;
       }
+      // `String.reverse s` -> the $strReverse native (the arg is passed twice; the 2nd is ignored).
+      if (head instanceof Expr.Var sr
+          && "String".equals(sr.module())
+          && "reverse".equals(sr.name())
+          && args.size() == 1) {
+        intExpr(args.get(0));
+        intExpr(args.get(0));
+        code.write(0x10);
+        leb(code, funcs.get("$strReverse")[0]);
+        return;
+      }
       // A call to a known top-level function (or a qualified stdlib name mapped to a prelude
       // function) that is NOT shadowed by a local.
       if (head instanceof Expr.Var v
@@ -1790,7 +1801,108 @@ public final class WasmCompiler {
         new Native("$strEq", 2, strEqEntry()),
         new Native("$strConcat", 2, strConcatEntry()),
         new Native("$strLeft", 2, strLeftEntry()),
-        new Native("$strDropLeft", 2, strDropLeftEntry()));
+        new Native("$strDropLeft", 2, strDropLeftEntry()),
+        new Native("$strReverse", 2, strReverseEntry()));
+  }
+
+  /** {@code $strReverse(str, _) -> i64}: a fresh heap string with {@code str}'s bytes reversed (the
+   *  second argument is ignored — natives share the two-i64 calling convention). Byte-based. */
+  private static byte[] strReverseEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // param str=0 (1 ignored); i64 lenStr=2; i32 result=3, total=4, delta=5, i=6
+    lget(b, 0);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0);
+    lset(b, 2); // lenStr
+    b.write(0x23);
+    leb(b, 0);
+    lset(b, 3); // result = $hp
+    i32c(b, 8);
+    lget(b, 2);
+    b.write(0xA7);
+    b.write(0x6A);
+    lset(b, 4); // total = 8 + len
+    lget(b, 3);
+    lget(b, 4);
+    b.write(0x6A);
+    b.write(0x24);
+    leb(b, 0); // $hp = result + total
+    b.write(0x23);
+    leb(b, 0);
+    i32c(b, 65535);
+    b.write(0x6A);
+    i32c(b, 16);
+    b.write(0x76);
+    b.write(0x3F);
+    b.write(0x00);
+    b.write(0x6B);
+    lset(b, 5);
+    lget(b, 5);
+    i32c(b, 0);
+    b.write(0x4A);
+    b.write(0x04);
+    b.write(0x40);
+    lget(b, 5);
+    b.write(0x40);
+    b.write(0x00);
+    b.write(0x1A);
+    b.write(0x0B);
+    // result.length = lenStr
+    lget(b, 3);
+    lget(b, 2);
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 0);
+    // copy loop: result[8 + i] = str[8 + (len - 1 - i)]
+    i32c(b, 0);
+    lset(b, 6);
+    b.write(0x02);
+    b.write(0x40);
+    b.write(0x03);
+    b.write(0x40);
+    lget(b, 6);
+    lget(b, 2);
+    b.write(0xA7);
+    b.write(0x4F);
+    b.write(0x0D);
+    leb(b, 1);
+    // dest = result + 8 + i
+    lget(b, 3);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 6);
+    b.write(0x6A);
+    // src = str + 8 + (len - 1 - i)
+    lget(b, 0);
+    b.write(0xA7);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 2);
+    b.write(0xA7);
+    i32c(b, 1);
+    b.write(0x6B);
+    lget(b, 6);
+    b.write(0x6B);
+    b.write(0x6A);
+    b.write(0x2D);
+    leb(b, 0);
+    leb(b, 0);
+    b.write(0x3A);
+    leb(b, 0);
+    leb(b, 0);
+    lget(b, 6);
+    i32c(b, 1);
+    b.write(0x6A);
+    lset(b, 6);
+    b.write(0x0C);
+    leb(b, 0);
+    b.write(0x0B);
+    b.write(0x0B);
+    lget(b, 3);
+    b.write(0xAD);
+    return entry(b, new int[][] {{1, I64}, {4, I32}});
   }
 
   /** {@code $strDropLeft(n, str) -> i64}: a fresh heap string holding {@code str} with its first
