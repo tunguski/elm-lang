@@ -218,6 +218,12 @@ final class WasmPrelude {
           ( a, b ) -> a
       tupleSecond t = case t of
           ( a, b ) -> b
+      tupleMapFirst f t = case t of
+          ( a, b ) -> ( f a, b )
+      tupleMapSecond g t = case t of
+          ( a, b ) -> ( a, g b )
+      tupleMapBoth f g t = case t of
+          ( a, b ) -> ( f a, g b )
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -276,6 +282,9 @@ final class WasmPrelude {
           Map.entry("List.singleton", "listSingleton"),
           Map.entry("Tuple.first", "tupleFirst"),
           Map.entry("Tuple.second", "tupleSecond"),
+          Map.entry("Tuple.mapFirst", "tupleMapFirst"),
+          Map.entry("Tuple.mapSecond", "tupleMapSecond"),
+          Map.entry("Tuple.mapBoth", "tupleMapBoth"),
           Map.entry("List.unzip", "listUnzip"),
           Map.entry("Maybe.map2", "maybeMap2"),
           Map.entry("Maybe.map3", "maybeMap3"),

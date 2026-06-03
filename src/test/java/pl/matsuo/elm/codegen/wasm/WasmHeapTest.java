@@ -463,6 +463,11 @@ class WasmHeapTest {
     agrees("main = Tuple.first ( 7, 9 )\n"); // 7
     agrees("main = Tuple.second ( 7, 9 )\n"); // 9
     agrees("main = Tuple.first ( 7, 9 ) + Tuple.second ( 7, 9 )\n"); // 16
+    // Tuple.mapFirst / mapSecond / mapBoth.
+    agrees("main = Tuple.first (Tuple.mapFirst (\\x -> x + 1) ( 7, 9 ))\n"); // 8
+    agrees("main = Tuple.second (Tuple.mapSecond (\\y -> y * 2) ( 7, 9 ))\n"); // 18
+    agrees("main = Tuple.first (Tuple.mapBoth (\\x -> x + 1) (\\y -> y * 2) ( 7, 9 ))\n"); // 8
+    agrees("main = Tuple.second (Tuple.mapBoth (\\x -> x + 1) (\\y -> y * 2) ( 7, 9 ))\n"); // 18
   }
 
   @Test
