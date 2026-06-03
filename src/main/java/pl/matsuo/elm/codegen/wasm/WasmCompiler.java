@@ -267,6 +267,8 @@ public final class WasmCompiler {
               ( xs, ys ) -> ( a :: xs, b :: ys )
       maybeMap2 f ma mb = maybeAndThen (\\a -> maybeMap (f a) mb) ma
       maybeMap3 f ma mb mc = maybeAndThen (\\a -> maybeMap2 (f a) mb mc) ma
+      maybeMap4 f ma mb mc md = maybeAndThen (\\a -> maybeMap3 (f a) mb mc md) ma
+      maybeMap5 f ma mb mc md me = maybeAndThen (\\a -> maybeMap4 (f a) mb mc md me) ma
       resultAndThen f r = case r of
           Ok x -> f x
           Err e -> Err e
@@ -316,6 +318,8 @@ public final class WasmCompiler {
           Map.entry("List.unzip", "listUnzip"),
           Map.entry("Maybe.map2", "maybeMap2"),
           Map.entry("Maybe.map3", "maybeMap3"),
+          Map.entry("Maybe.map4", "maybeMap4"),
+          Map.entry("Maybe.map5", "maybeMap5"),
           Map.entry("Result.andThen", "resultAndThen"),
           Map.entry("Result.map2", "resultMap2"),
           Map.entry("Result.map3", "resultMap3"),

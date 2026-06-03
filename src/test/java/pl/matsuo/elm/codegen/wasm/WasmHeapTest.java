@@ -441,6 +441,8 @@ class WasmHeapTest {
     agrees("main = Maybe.withDefault 0 (Maybe.map2 (\\a b -> a + b) (Just 3) (Just 4))\n"); // 7
     agrees("main = Maybe.withDefault 0 (Maybe.map2 (\\a b -> a + b) (Just 3) Nothing)\n"); // 0
     agrees("main = Maybe.withDefault 0 (Maybe.map3 (\\a b c -> a + b + c) (Just 1) (Just 2) (Just 3))\n"); // 6
+    agrees("main = Maybe.withDefault 0 (Maybe.map4 (\\a b c d -> a + b + c + d) (Just 1) (Just 2) (Just 3) (Just 4))\n"); // 10
+    agrees("main = Maybe.withDefault 0 (Maybe.map5 (\\a b c d e -> a) (Just 1) (Just 2) (Just 3) (Just 4) Nothing)\n"); // 0
     agrees("main = Result.withDefault 0 (Result.andThen (\\x -> Ok (x + 1)) (Ok 41))\n"); // 42
     agrees("main = Result.withDefault 0 (Result.map2 (\\a b -> a * b) (Ok 6) (Ok 7))\n"); // 42
   }
