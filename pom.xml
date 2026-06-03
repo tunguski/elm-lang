@@ -15,6 +15,9 @@
         <junit.version>5.10.2</junit.version>
         <!-- Truffle / GraalVM version; must match the running GraalVM JDK (25.0.2). -->
         <graalvm.version>25.0.2</graalvm.version>
+        <!-- Empty by default; the `coverage` profile's JaCoCo agent fills it in (see propertyName).
+             Surefire's argLine references it so the agent and our -Xss flag coexist. -->
+        <jacocoArgLine/>
     </properties>
 
     <dependencies>
@@ -72,6 +75,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <!-- The editor's Elm-in-Elm evaluator (Eval.elm) is a tree-walker run *by* the
+                         main interpreter, so deeply recursive examples (e.g. Conway's Life) nest a
+                         lot of Java frames. Give the test JVM a large thread stack so it doesn't
+                         overflow on CI's smaller default Linux stack. @{jacocoArgLine} is empty
+                         unless the coverage profile is active (late-bound so JaCoCo's
+                         prepare-agent, which runs after POM interpolation, can fill it in). -->
+                    <argLine>@{jacocoArgLine} -Xss64m</argLine>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -142,6 +154,12 @@
                                 <goals>
                                     <goal>prepare-agent</goal>
                                 </goals>
+                                <configuration>
+                                    <!-- Write the agent JVM arg into our own property, which
+                                         Surefire's argLine references (so it composes with -Xss
+                                         instead of overwriting it). -->
+                                    <propertyName>jacocoArgLine</propertyName>
+                                </configuration>
                             </execution>
                             <execution>
                                 <id>report</id>
