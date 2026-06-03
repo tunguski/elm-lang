@@ -257,6 +257,7 @@ public final class WasmCompiler {
           Nothing -> [ s ]
           Just i -> String.left i s :: stringSplit sep (String.dropLeft (i + String.length sep) s)
       stringLines s = stringSplit "\\n" s
+      stringReplace old new s = stringJoin new (stringSplit old s)
       stringCons c s = String.append (String.fromChar c) s
       charIsDigit c = c >= 48 && c <= 57
       charIsUpper c = c >= 65 && c <= 90
@@ -353,6 +354,7 @@ public final class WasmCompiler {
           Map.entry("String.indices", "stringIndexes"),
           Map.entry("String.split", "stringSplit"),
           Map.entry("String.lines", "stringLines"),
+          Map.entry("String.replace", "stringReplace"),
           Map.entry("String.trim", "stringTrim"),
           Map.entry("String.trimLeft", "stringTrimLeft"),
           Map.entry("String.trimRight", "stringTrimRight"),

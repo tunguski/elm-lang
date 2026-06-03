@@ -589,6 +589,14 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringReplaceCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("a_b_c", runMainString("main = String.replace \",\" \"_\" \"a,b,c\"\n"));
+    assertEquals("hello", runMainString("main = String.replace \"x\" \"y\" \"hello\"\n")); // no match
+    assertEquals("heLLo", runMainString("main = String.replace \"l\" \"L\" \"hello\"\n")); // all occurrences
+  }
+
+  @Test
   void stringLinesCompiles() throws Exception {
     assumeTrue(NODE, "node not available");
     agrees("main = List.length (String.lines \"a\\nb\\nc\")\n"); // 3
