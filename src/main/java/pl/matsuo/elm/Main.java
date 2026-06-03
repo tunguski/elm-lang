@@ -202,7 +202,7 @@ public final class Main implements Runnable {
         System.out.println(JsCompiler.moduleProgramWithSourceMap(source, file.toString()).code());
       } else {
         String js = JsCompiler.moduleProgram(source);
-        System.out.println(min ? JsCompiler.minify(js) : js);
+        System.out.println(min ? pl.matsuo.elm.codegen.js.JsOptimizer.minify(js) : js);
       }
       return 0;
     }
@@ -291,7 +291,7 @@ public final class Main implements Runnable {
             cache != null
                 ? JsCompiler.appBundleProjectCached(cache, arr)
                 : JsCompiler.appBundleProject(arr);
-        String js = optimize ? JsCompiler.optimize(bundle) : bundle;
+        String js = optimize ? pl.matsuo.elm.codegen.js.JsOptimizer.optimize(bundle) : bundle;
         String artifact =
             output.endsWith(".js")
                 ? js

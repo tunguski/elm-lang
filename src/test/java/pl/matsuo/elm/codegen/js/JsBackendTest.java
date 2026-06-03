@@ -198,7 +198,7 @@ class JsBackendTest {
     String src = "module Main exposing (main)\nimport Html exposing (text)\n"
         + "main = text (String.fromInt (List.sum (List.map (\\x -> x * x) [ 1, 2, 3 ])))\n";
     String bundle = JsCompiler.appBundle(src);
-    String optimized = JsCompiler.optimize(bundle);
+    String optimized = JsOptimizer.optimize(bundle);
     assertTrue(bundle.contains("Dict.insert"), "kernel defines Dict.insert");
     assertTrue(!optimized.contains("Dict.insert"), "unused Dict entry pruned: ");
     assertTrue(!optimized.contains("Bitwise.and"), "unused Bitwise entry pruned");
@@ -412,7 +412,7 @@ class JsBackendTest {
   void optimizeDropsUnusedDefinitionsButKeepsResult() {
     String src = "used n = n + 1\nunusedHelper n = n * 999\nmain = used 41\n";
     String bundle = JsCompiler.moduleProgram(src);
-    String optimized = JsCompiler.optimize(bundle);
+    String optimized = JsOptimizer.optimize(bundle);
     // The unreachable `unusedHelper` declaration is gone; `used` (reachable from main) stays.
     org.junit.jupiter.api.Assertions.assertTrue(bundle.contains("_$unusedHelper"), "present before");
     org.junit.jupiter.api.Assertions.assertFalse(optimized.contains("_$unusedHelper"), "dropped");
@@ -423,7 +423,7 @@ class JsBackendTest {
   @Test
   void minifiedProgramIsSmallerAndStillRuns() {
     String full = JsCompiler.moduleProgram("main = List.sum (List.range 1 10)\n");
-    String min = JsCompiler.minify(full);
+    String min = JsOptimizer.minify(full);
     org.junit.jupiter.api.Assertions.assertTrue(min.length() < full.length(), "minified is smaller");
     assertEquals("55", runNode(min)); // still evaluates correctly
     assertEquals(runNode(full), runNode(min)); // identical result to the unminified program
