@@ -78,6 +78,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Main.GenSite.class,
       Main.BuildCmd.class,
       Main.Gallery.class,
+      Main.GalleryElm.class,
       Main.Init.class,
       Main.Install.class,
       Main.Upgrade.class,
@@ -1483,6 +1484,28 @@ public final class Main implements Runnable {
     @Override
     public Integer call() throws IOException {
       return pl.matsuo.elm.site.SiteGen.generateGallery(examplesDir, playground, outDir, docsDir);
+    }
+  }
+
+  @Command(
+      name = "gallery-elm",
+      description =
+          "Generate the example gallery entirely through `elm build`: the bundled site.elm "
+              + "Build.Project + Gallery.elm layout, run via the build lifecycle (Java only stages "
+              + "inputs and executes the Elm-defined tasks). Transitional alongside `gallery`.")
+  static final class GalleryElm implements Callable<Integer> {
+    @Parameters(index = "0", description = "Examples directory (source .elm files).")
+    Path examplesDir;
+
+    @Parameters(index = "1", description = "Markdown docs directory (the guides).")
+    Path docsDir;
+
+    @Parameters(index = "2", description = "Output directory.")
+    Path outDir;
+
+    @Override
+    public Integer call() throws IOException {
+      return pl.matsuo.elm.site.GalleryBuild.generate(examplesDir, docsDir, outDir, System.out);
     }
   }
 
