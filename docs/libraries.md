@@ -14,6 +14,9 @@ This page is the index and quick reference; several have a deeper guide of their
 | [`Csv`](#csv) | Parse/encode RFC-4180 CSV | [scripting.md](scripting.md) |
 | [`Bytes`](#bytes) | Binary data: encode/decode fixed-width ints | — |
 | [`List.Extra`](#listextra) | Common list helpers | — |
+| [`Maybe.Extra`](#maybeextra) | Common `Maybe` helpers | — |
+| [`Result.Extra`](#resultextra) | Common `Result` helpers | — |
+| [`String.Extra`](#stringextra) | Common string helpers | — |
 | [`Parser`](#parser) | A small parser-combinator library | — |
 | [`Url.Parser`](#urlparser) | Typed URL routing | — |
 | [`Site`](#site) | Static-site pages as data | [site.md](site.md) |
@@ -83,13 +86,49 @@ D.decode (D.unsignedInt16 BE) (E.encode (E.unsignedInt16 BE 258))  --> Just 258
 ## List.Extra
 
 The most-reached-for elm-community/list-extra helpers, in plain Elm: `last`/`init`, `getAt`/`setAt`/
-`updateAt`/`removeAt`, `find`/`findIndex`/`elemIndex`/`count`, `splitAt`/`takeWhile`/`dropWhile`/
-`span`/`groupsOf`, `unique`/`uniqueBy`, `foldl1`/`scanl1`, `maximumBy`/`minimumBy`, `zip`/`unzip3`,
-`interweave`, `notMember`.
+`updateAt`/`removeAt`, `find`/`findMap`/`findIndex`/`elemIndex`/`count`, `splitAt`/`takeWhile`/
+`dropWhile`/`span`/`groupsOf`, `group`/`groupWhile`, `unique`/`uniqueBy`, `foldl1`/`foldr1`/`scanl1`/
+`scanl`/`indexedFoldl`, `maximumBy`/`minimumBy`, `zip`/`zip3`/`unzip3`, `interweave`/`intercalate`/
+`transpose`/`cartesianProduct`, `isPrefixOf`/`isSuffixOf`/`stripPrefix`, `andMap`/`iterate`/`unfoldr`,
+`remove`/`swapAt`, `notMember`.
 
 ```elm
 import List.Extra as LE
 LE.groupsOf 2 [ 1, 2, 3, 4, 5 ]  --> [ [ 1, 2 ], [ 3, 4 ], [ 5 ] ]
+```
+
+## Maybe.Extra
+
+The most-reached-for elm-community/maybe-extra helpers, in plain Elm: `isJust`/`isNothing`, `join`,
+`or`/`orElse`/`oneOf`, `values`/`combine`/`traverse`, `filter`, `unwrap`, `toList`.
+
+```elm
+import Maybe.Extra as ME
+ME.values [ Just 1, Nothing, Just 3 ]   --> [ 1, 3 ]
+ME.combine [ Just 1, Just 2 ]           --> Just [ 1, 2 ]
+```
+
+## Result.Extra
+
+The most-reached-for elm-community/result-extra helpers, in plain Elm: `isOk`/`isErr`, `combine`,
+`partition`, `mapBoth`, `merge`, `or`/`orElse`, `unwrap`, `extract`.
+
+```elm
+import Result.Extra as RE
+RE.combine [ Ok 1, Ok 2 ]   --> Ok [ 1, 2 ]
+RE.merge (Ok 3)             --> 3
+```
+
+## String.Extra
+
+The most-reached-for elm-community/string-extra helpers, in plain Elm: `toSentenceCase`/
+`decapitalize`/`toTitleCase`, `isBlank`/`nonEmpty`/`nonBlank`, `clean`, `countOccurrences`,
+`surround`/`unsurround`, `ellipsis`, `insertAt`.
+
+```elm
+import String.Extra as SE
+SE.clean "  a   b  c "        --> "a b c"
+SE.ellipsis 8 "a long string" --> "a lon..."
 ```
 
 ## Parser
