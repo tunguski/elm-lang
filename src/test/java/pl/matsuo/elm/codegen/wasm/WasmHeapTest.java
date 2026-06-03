@@ -571,6 +571,14 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringPadCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("007", runMainString("main = String.padLeft 3 '0' \"7\"\n"));
+    assertEquals("7  ", runMainString("main = String.padRight 3 ' ' \"7\"\n"));
+    assertEquals("hello", runMainString("main = String.padLeft 3 '0' \"hello\"\n")); // already long enough
+  }
+
+  @Test
   void stringTrimCompiles() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("hi", runMainString("main = String.trim \"  hi  \"\n"));
