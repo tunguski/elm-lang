@@ -374,16 +374,29 @@ parseLet tokens =
                     TSemi :: afterSemi ->
                         parseLet afterSemi
                             |> Result.map
-                                (\rr -> ( Let (Tuple.first binding) (Tuple.second binding) (Tuple.first rr), Tuple.second rr ))
+                                (\rr -> ( buildLet binding (Tuple.first rr), Tuple.second rr ))
 
                     (TId "in") :: afterIn ->
                         parseExpr afterIn
                             |> Result.map
-                                (\rbody -> ( Let (Tuple.first binding) (Tuple.second binding) (Tuple.first rbody), Tuple.second rbody ))
+                                (\rbody -> ( buildLet binding (Tuple.first rbody), Tuple.second rbody ))
 
                     _ ->
                         Err "expected 'in'"
             )
+
+
+{-| Builds a `Let` for one binding around its continuation. A plain binding binds the name directly;
+a destructuring binding (`( a, b ) = …` / `{ x } = …`) binds a fresh name to the value and unpacks the
+pattern over the continuation (via `wrapDestructures`). -}
+buildLet : ( String, Expr, Maybe Pattern ) -> Expr -> Expr
+buildLet ( name, value, maybePat ) cont =
+    case maybePat of
+        Nothing ->
+            Let name value cont
+
+        Just pat ->
+            Let name value (wrapDestructures [ ( name, pat ) ] cont)
 
 
 {-| Drops tokens up to and including the next `TSemi` (a let-binding separator) — used to skip a
@@ -401,9 +414,15 @@ dropThroughSemi tokens =
             dropThroughSemi rest
 
 
-parseLetBinding : List Token -> Result String ( ( String, Expr ), List Token )
+parseLetBinding : List Token -> Result String ( ( String, Expr, Maybe Pattern ), List Token )
 parseLetBinding tokens =
     case tokens of
+        TLParen :: _ ->
+            parseLetDestructure tokens
+
+        TLBrace :: _ ->
+            parseLetDestructure tokens
+
         (TId name) :: rest ->
             collectParams rest [] []
                 |> Result.andThen
@@ -424,7 +443,7 @@ parseLetBinding tokens =
                                                     else
                                                         Lam params wrapped
                                             in
-                                            ( ( name, value ), Tuple.second rv )
+                                            ( ( name, value, Nothing ), Tuple.second rv )
                                         )
 
                             (TOp ":") :: _ ->
@@ -438,6 +457,23 @@ parseLetBinding tokens =
 
         _ ->
             Err "expected 'NAME =' after let"
+
+
+{-| A destructuring let binding `( a, b ) = expr` / `{ x } = expr`: binds the value to a fresh name
+and records the pattern so `buildLet` unpacks it over the continuation. -}
+parseLetDestructure : List Token -> Result String ( ( String, Expr, Maybe Pattern ), List Token )
+parseLetDestructure tokens =
+    parsePatternAtom tokens
+        |> Result.andThen
+            (\( pat, afterPat ) ->
+                case afterPat of
+                    TEquals :: afterEq ->
+                        parseExpr afterEq
+                            |> Result.map (\rv -> ( ( "$letd", Tuple.first rv, Just pat ), Tuple.second rv ))
+
+                    _ ->
+                        Err "expected '=' in let destructuring binding"
+            )
 
 
 {-| Collects a let/lambda binding's parameters: simple names plus tuple-pattern destructures (each

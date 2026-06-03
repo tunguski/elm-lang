@@ -251,6 +251,14 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void letMayDestructureTuplesAndRecords() {
+    assertEquals("3", eval("let\n    ( a, b ) = ( 1, 2 )\nin\na + b"));
+    assertEquals("5", eval("let\n    { x } = { x = 5, y = 9 }\nin\nx"));
+    // a destructure binding alongside a normal one, with later use
+    assertEquals("30", eval("let\n    ( a, b ) = ( 10, 20 )\n    c = a + b\nin\nc"));
+  }
+
+  @Test
   void letBindingsMayCarryTypeAnnotations() {
     // A type annotation on a let binding is parsed and skipped (the binding still evaluates).
     assertEquals("6", eval("let\n    x : Int\n    x = 5\nin\nx + 1"));
