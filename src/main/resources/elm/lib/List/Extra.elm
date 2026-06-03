@@ -53,6 +53,9 @@ module List.Extra exposing
     , dropWhileRight
     , gatherEquals
     , gatherWith
+    , tails
+    , inits
+    , isInfixOf
     )
 
 {-| A subset of the popular `elm-community/list-extra` helpers — the ones reached for most often —
@@ -678,3 +681,32 @@ gatherWith test list =
         x :: rest ->
             ( x, List.filter (test x) rest )
                 :: gatherWith test (List.filter (\y -> not (test x y)) rest)
+
+
+{-| Every suffix of the list, longest first, ending with `[]`. -}
+tails : List a -> List (List a)
+tails list =
+    case list of
+        [] ->
+            [ [] ]
+
+        _ :: rest ->
+            list :: tails rest
+
+
+{-| Every prefix of the list, shortest first, starting with `[]`. -}
+inits : List a -> List (List a)
+inits list =
+    [] :: (case list of
+            [] ->
+                []
+
+            x :: rest ->
+                List.map (\p -> x :: p) (inits rest)
+          )
+
+
+{-| Whether `infixList` appears as a contiguous run within the list. -}
+isInfixOf : List a -> List a -> Bool
+isInfixOf infixList list =
+    List.any (\suffix -> isPrefixOf infixList suffix) (tails list)

@@ -12,7 +12,7 @@ class ListExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap, pre, suf, strip, grpW, fmap, z3, ifold, unf, scan, splitW, mapAcc, updIf, setIfV, lift2V, minW, maxW, takeR, dropR, gathEq)
+      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap, pre, suf, strip, grpW, fmap, z3, ifold, unf, scan, splitW, mapAcc, updIf, setIfV, lift2V, minW, maxW, takeR, dropR, gathEq, tailsV, initsV, infixT, infixF)
 
       import List.Extra as LE
 
@@ -53,6 +53,10 @@ class ListExtraLibraryTest {
       takeR = LE.takeWhileRight (\\n -> n > 2) [ 1, 4, 5 ]
       dropR = LE.dropWhileRight (\\n -> n > 2) [ 1, 4, 5 ]
       gathEq = LE.gatherEquals [ 1, 2, 1, 3, 2 ]
+      tailsV = LE.tails [ 1, 2, 3 ]
+      initsV = LE.inits [ 1, 2, 3 ]
+      infixT = LE.isInfixOf [ 2, 3 ] [ 1, 2, 3, 4 ]
+      infixF = LE.isInfixOf [ 3, 2 ] [ 1, 2, 3, 4 ]
       pre = LE.isPrefixOf [ 1, 2 ] [ 1, 2, 3 ]
       suf = LE.isSuffixOf [ 2, 3 ] [ 1, 2, 3 ]
       strip = LE.stripPrefix [ 1, 2 ] [ 1, 2, 3, 4 ]
@@ -136,5 +140,13 @@ class ListExtraLibraryTest {
     assertEquals("[4,5]", value("takeR"));
     assertEquals("[1]", value("dropR"));
     assertEquals("[(1,[1]),(2,[2]),(3,[])]", value("gathEq"));
+  }
+
+  @Test
+  void tailsInitsIsInfixOf() {
+    assertEquals("[[1,2,3],[2,3],[3],[]]", value("tailsV"));
+    assertEquals("[[],[1],[1,2],[1,2,3]]", value("initsV"));
+    assertEquals("True", value("infixT"));
+    assertEquals("False", value("infixF"));
   }
 }
