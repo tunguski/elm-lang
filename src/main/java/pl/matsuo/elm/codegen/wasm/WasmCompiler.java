@@ -217,6 +217,15 @@ public final class WasmCompiler {
       resultMap f r = case r of
           Ok x -> Ok (f x)
           Err e -> Err e
+      resultMapError f r = case r of
+          Ok x -> Ok x
+          Err e -> Err (f e)
+      resultToMaybe r = case r of
+          Ok x -> Just x
+          Err e -> Nothing
+      resultFromMaybe err m = case m of
+          Just x -> Ok x
+          Nothing -> Err err
       identity x = x
       always a b = a
       max a b = maxOf a b
@@ -310,6 +319,9 @@ public final class WasmCompiler {
           Map.entry("Result.andThen", "resultAndThen"),
           Map.entry("Result.map2", "resultMap2"),
           Map.entry("Result.map3", "resultMap3"),
+          Map.entry("Result.mapError", "resultMapError"),
+          Map.entry("Result.toMaybe", "resultToMaybe"),
+          Map.entry("Result.fromMaybe", "resultFromMaybe"),
           Map.entry("String.isEmpty", "stringIsEmpty"),
           Map.entry("String.fromInt", "stringFromInt"),
           Map.entry("String.repeat", "stringRepeat"),

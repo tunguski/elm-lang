@@ -428,6 +428,15 @@ class WasmHeapTest {
   }
 
   @Test
+  void resultToMaybeMapErrorFromMaybeCompile() throws Exception {
+    agrees("main = Maybe.withDefault 0 (Result.toMaybe (Ok 5))\n"); // 5
+    agrees("main = Maybe.withDefault 0 (Result.toMaybe (Err 9))\n"); // 0 (Err -> Nothing)
+    agrees("main = Result.withDefault 0 (Result.mapError (\\e -> e + 1) (Ok 5))\n"); // 5
+    agrees("main = Result.withDefault 0 (Result.fromMaybe 7 (Just 3))\n"); // 3
+    agrees("main = Result.withDefault 7 (Result.fromMaybe 7 Nothing)\n"); // 7
+  }
+
+  @Test
   void maybeAndResultCombinatorsCompile() throws Exception {
     agrees("main = Maybe.withDefault 0 (Maybe.map2 (\\a b -> a + b) (Just 3) (Just 4))\n"); // 7
     agrees("main = Maybe.withDefault 0 (Maybe.map2 (\\a b -> a + b) (Just 3) Nothing)\n"); // 0
