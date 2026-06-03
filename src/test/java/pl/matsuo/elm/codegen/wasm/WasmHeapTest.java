@@ -468,6 +468,20 @@ class WasmHeapTest {
     agrees("main = Tuple.second (Tuple.mapSecond (\\y -> y * 2) ( 7, 9 ))\n"); // 18
     agrees("main = Tuple.first (Tuple.mapBoth (\\x -> x + 1) (\\y -> y * 2) ( 7, 9 ))\n"); // 8
     agrees("main = Tuple.second (Tuple.mapBoth (\\x -> x + 1) (\\y -> y * 2) ( 7, 9 ))\n"); // 18
+    agrees("main = Tuple.first (Tuple.pair 7 9)\n"); // 7
+    agrees("main = if Char.isControl (Char.fromCode 9) then 1 else 0\n"); // 1 (tab)
+    agrees("main = if Char.isControl (Char.fromCode 65) then 1 else 0\n"); // 0 ('A')
+  }
+
+  @Test
+  void stringUnconsCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals(
+        "h", runMainString("main = String.fromChar (Tuple.first (Maybe.withDefault ( ' ', \"\" ) (String.uncons \"hi\")))\n"));
+    assertEquals(
+        "i", runMainString("main = Tuple.second (Maybe.withDefault ( ' ', \"\" ) (String.uncons \"hi\"))\n"));
+    assertEquals(
+        " ", runMainString("main = String.fromChar (Tuple.first (Maybe.withDefault ( ' ', \"\" ) (String.uncons \"\")))\n")); // empty -> default
   }
 
   @Test

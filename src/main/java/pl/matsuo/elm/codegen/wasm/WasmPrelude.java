@@ -213,6 +213,11 @@ final class WasmPrelude {
       charIsSpace c = c == 32 || c == 9 || c == 10 || c == 13
       charIsOctDigit c = c >= 48 && c <= 55
       charIsHexDigit c = charIsDigit c || (c >= 65 && c <= 70) || (c >= 97 && c <= 102)
+      charIsControl c = c < 32 || (c >= 127 && c <= 159)
+      stringUncons s = case String.toList s of
+          [] -> Nothing
+          c :: rest -> Just ( c, String.dropLeft 1 s )
+      tuplePair a b = ( a, b )
       listSingleton x = [ x ]
       tupleFirst t = case t of
           ( a, b ) -> a
@@ -336,6 +341,9 @@ final class WasmPrelude {
           Map.entry("Char.isSpace", "charIsSpace"),
           Map.entry("Char.isOctDigit", "charIsOctDigit"),
           Map.entry("Char.isHexDigit", "charIsHexDigit"),
+          Map.entry("Char.isControl", "charIsControl"),
+          Map.entry("String.uncons", "stringUncons"),
+          Map.entry("Tuple.pair", "tuplePair"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
