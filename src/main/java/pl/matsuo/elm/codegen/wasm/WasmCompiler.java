@@ -235,6 +235,11 @@ public final class WasmCompiler {
       stringStartsWith pre s = String.left (String.length pre) s == pre
       stringEndsWith suf s = String.right (String.length suf) s == suf
       stringCons c s = String.append (String.fromChar c) s
+      charIsDigit c = c >= 48 && c <= 57
+      charIsUpper c = c >= 65 && c <= 90
+      charIsLower c = c >= 97 && c <= 122
+      charIsAlpha c = charIsUpper c || charIsLower c
+      charIsAlphaNum c = charIsAlpha c || charIsDigit c
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -303,6 +308,13 @@ public final class WasmCompiler {
           Map.entry("String.startsWith", "stringStartsWith"),
           Map.entry("String.endsWith", "stringEndsWith"),
           Map.entry("String.cons", "stringCons"),
+          Map.entry("Char.toCode", "identity"),
+          Map.entry("Char.fromCode", "identity"),
+          Map.entry("Char.isDigit", "charIsDigit"),
+          Map.entry("Char.isUpper", "charIsUpper"),
+          Map.entry("Char.isLower", "charIsLower"),
+          Map.entry("Char.isAlpha", "charIsAlpha"),
+          Map.entry("Char.isAlphaNum", "charIsAlphaNum"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
@@ -379,7 +391,7 @@ public final class WasmCompiler {
    *  {@code ++} — which may be a list append, lowered to the prelude's {@code listAppend}. */
   private static boolean wantsPrelude(String source) {
     return source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
-        || source.contains("Basics.") || source.contains("String.") || source.contains("++")
+        || source.contains("Basics.") || source.contains("String.") || source.contains("Char.") || source.contains("++")
         // Bare Basics helpers defined in the prelude (max/min/clamp). Over-including the prelude is
         // harmless: a user definition of the same name wins, and unused helpers just aren't called.
         || source.contains("max") || source.contains("min") || source.contains("clamp");

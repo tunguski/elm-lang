@@ -506,6 +506,17 @@ class WasmHeapTest {
   }
 
   @Test
+  void charOperationsCompile() throws Exception {
+    agrees("main = Char.toCode 'A'\n"); // 65
+    agrees("main = if Char.isDigit '7' then 1 else 0\n"); // 1
+    agrees("main = if Char.isDigit 'a' then 1 else 0\n"); // 0
+    agrees("main = if Char.isUpper 'A' then 1 else 0\n"); // 1
+    agrees("main = if Char.isAlpha 'z' then 1 else 0\n"); // 1
+    agrees("main = if Char.isAlphaNum '5' then 1 else 0\n"); // 1
+    agrees("main = Char.toCode (Char.fromCode 97)\n"); // 97
+  }
+
+  @Test
   void stringFromCharAndConsCompile() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("a", runMainString("main = String.fromChar 'a'\n"));
