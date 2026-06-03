@@ -495,6 +495,17 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringDropLeftRightDropRightProduceTheRightBytes() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("lo", runMainString("main = String.dropLeft 3 \"hello\"\n"));
+    assertEquals("", runMainString("main = String.dropLeft 9 \"hello\"\n")); // drop > length
+    assertEquals("llo", runMainString("main = String.right 3 \"hello\"\n"));
+    assertEquals("hello", runMainString("main = String.right 9 \"hello\"\n")); // right > length
+    assertEquals("he", runMainString("main = String.dropRight 3 \"hello\"\n"));
+    assertEquals("", runMainString("main = String.dropRight 9 \"hello\"\n"));
+  }
+
+  @Test
   void stringConcatJoinRepeatProduceTheRightBytes() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("ababab", runMainString("main = String.repeat 3 \"ab\"\n"));

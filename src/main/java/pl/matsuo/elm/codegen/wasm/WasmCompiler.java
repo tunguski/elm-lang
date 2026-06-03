@@ -228,6 +228,8 @@ public final class WasmCompiler {
       prependEach sep xs = case xs of
           [] -> []
           h :: t -> sep :: h :: prependEach sep t
+      stringRight n s = String.dropLeft (String.length s - n) s
+      stringDropRight n s = String.left (String.length s - n) s
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -290,6 +292,8 @@ public final class WasmCompiler {
           Map.entry("String.isEmpty", "stringIsEmpty"),
           Map.entry("String.fromInt", "stringFromInt"),
           Map.entry("String.repeat", "stringRepeat"),
+          Map.entry("String.right", "stringRight"),
+          Map.entry("String.dropRight", "stringDropRight"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
@@ -1568,6 +1572,17 @@ public final class WasmCompiler {
         leb(code, funcs.get("$strLeft")[0]);
         return;
       }
+      // `String.dropLeft n s` -> the $strDropLeft native.
+      if (head instanceof Expr.Var sd
+          && "String".equals(sd.module())
+          && "dropLeft".equals(sd.name())
+          && args.size() == 2) {
+        intExpr(args.get(0)); // n
+        intExpr(args.get(1)); // str
+        code.write(0x10);
+        leb(code, funcs.get("$strDropLeft")[0]);
+        return;
+      }
       // A call to a known top-level function (or a qualified stdlib name mapped to a prelude
       // function) that is NOT shadowed by a local.
       if (head instanceof Expr.Var v
@@ -1767,7 +1782,130 @@ public final class WasmCompiler {
     return List.of(
         new Native("$strEq", 2, strEqEntry()),
         new Native("$strConcat", 2, strConcatEntry()),
-        new Native("$strLeft", 2, strLeftEntry()));
+        new Native("$strLeft", 2, strLeftEntry()),
+        new Native("$strDropLeft", 2, strDropLeftEntry()));
+  }
+
+  /** {@code $strDropLeft(n, str) -> i64}: a fresh heap string holding {@code str} with its first
+   *  {@code clamp(0, len, n)} bytes removed (byte-based). */
+  private static byte[] strDropLeftEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // params n=0, str=1; i64 locals lenStr=2, start=3, count=4; i32 locals result=5, i=6, total=7, delta=8
+    lget(b, 1);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0);
+    lset(b, 2); // lenStr
+    // start = min(n, lenStr)
+    lget(b, 0);
+    lget(b, 2);
+    lget(b, 0);
+    lget(b, 2);
+    b.write(0x53);
+    b.write(0x1B);
+    lset(b, 3);
+    // start = max(0, start)
+    lget(b, 3);
+    b.write(0x42);
+    sleb(b, 0);
+    lget(b, 3);
+    b.write(0x42);
+    sleb(b, 0);
+    b.write(0x55);
+    b.write(0x1B);
+    lset(b, 3);
+    // count = lenStr - start
+    lget(b, 2);
+    lget(b, 3);
+    b.write(0x7D); // i64.sub
+    lset(b, 4);
+    b.write(0x23);
+    leb(b, 0);
+    lset(b, 5); // result = $hp
+    i32c(b, 8);
+    lget(b, 4);
+    b.write(0xA7);
+    b.write(0x6A);
+    lset(b, 7); // total = 8 + count
+    lget(b, 5);
+    lget(b, 7);
+    b.write(0x6A);
+    b.write(0x24);
+    leb(b, 0); // $hp = result + total
+    // grow
+    b.write(0x23);
+    leb(b, 0);
+    i32c(b, 65535);
+    b.write(0x6A);
+    i32c(b, 16);
+    b.write(0x76);
+    b.write(0x3F);
+    b.write(0x00);
+    b.write(0x6B);
+    lset(b, 8);
+    lget(b, 8);
+    i32c(b, 0);
+    b.write(0x4A);
+    b.write(0x04);
+    b.write(0x40);
+    lget(b, 8);
+    b.write(0x40);
+    b.write(0x00);
+    b.write(0x1A);
+    b.write(0x0B);
+    // result.length = count
+    lget(b, 5);
+    lget(b, 4);
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 0);
+    // copy loop: result[8 + i] = str[8 + start + i] for i in 0..count
+    i32c(b, 0);
+    lset(b, 6);
+    b.write(0x02);
+    b.write(0x40);
+    b.write(0x03);
+    b.write(0x40);
+    lget(b, 6);
+    lget(b, 4);
+    b.write(0xA7);
+    b.write(0x4F); // i >= count ?
+    b.write(0x0D);
+    leb(b, 1);
+    // dest = result + 8 + i
+    lget(b, 5);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 6);
+    b.write(0x6A);
+    // src byte = load8(str + 8 + start + i)
+    lget(b, 1);
+    b.write(0xA7);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 3);
+    b.write(0xA7);
+    b.write(0x6A);
+    lget(b, 6);
+    b.write(0x6A);
+    b.write(0x2D);
+    leb(b, 0);
+    leb(b, 0);
+    b.write(0x3A);
+    leb(b, 0);
+    leb(b, 0);
+    lget(b, 6);
+    i32c(b, 1);
+    b.write(0x6A);
+    lset(b, 6);
+    b.write(0x0C);
+    leb(b, 0);
+    b.write(0x0B);
+    b.write(0x0B);
+    lget(b, 5);
+    b.write(0xAD);
+    return entry(b, new int[][] {{3, I64}, {4, I32}});
   }
 
   /** {@code $strLeft(n, str) -> i64}: a fresh heap string holding the first {@code clamp(0, len, n)}
