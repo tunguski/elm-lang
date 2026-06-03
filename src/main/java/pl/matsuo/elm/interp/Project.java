@@ -32,8 +32,11 @@ public final class Project {
     this(sources, null);
   }
 
-  private Project(List<String> sources, java.util.Set<String> tracked) {
+  private Project(List<String> rawSources, java.util.Set<String> tracked) {
     this.tracked = tracked;
+    // Pull in any imported pure bundled libraries (List.Extra, Maybe.Extra, Hex, …) the caller
+    // didn't supply, so they can be imported without special wiring.
+    List<String> sources = BundledLibs.resolve(rawSources);
     // Gather every module's `infix` operator declarations first, so a custom operator defined in one
     // module parses with its declared precedence wherever it's used across the project.
     Map<String, int[]> projectFixities = new HashMap<>();

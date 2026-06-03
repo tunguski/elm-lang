@@ -31,6 +31,12 @@ public final class TypeChecker {
    * Throws {@link ElmTypeError} (with a source excerpt, caret and hint) on a type error.
    */
   public static Map<String, String> checkModule(String source) {
+    // If the module imports pure bundled libraries (List.Extra, Maybe.Extra, …), type-check them
+    // together as a project so the imported names resolve. The user module stays the entry (last).
+    List<String> withLibs = pl.matsuo.elm.interp.BundledLibs.resolve(List.of(source));
+    if (withLibs.size() > 1) {
+      return checkProject(withLibs.toArray(new String[0]));
+    }
     Module module = Parser.parseModule(source);
     try {
       Map<String, Scheme> schemes = new Infer().inferModule(module, Signatures.globals());
@@ -50,8 +56,9 @@ public final class TypeChecker {
    * module's inferred top-level types.
    */
   public static Map<String, String> checkProject(String... sources) {
+    List<String> resolved = pl.matsuo.elm.interp.BundledLibs.resolve(List.of(sources));
     List<Module> modules = new ArrayList<>();
-    for (String s : sources) {
+    for (String s : resolved) {
       modules.add(Parser.parseModule(s));
     }
     try {
