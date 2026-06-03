@@ -56,6 +56,11 @@ module List.Extra exposing
     , tails
     , inits
     , isInfixOf
+    , initialize
+    , allDifferent
+    , lift3
+    , cycle
+    , indexedFoldr
     )
 
 {-| A subset of the popular `elm-community/list-extra` helpers — the ones reached for most often —
@@ -710,3 +715,46 @@ inits list =
 isInfixOf : List a -> List a -> Bool
 isInfixOf infixList list =
     List.any (\suffix -> isPrefixOf infixList suffix) (tails list)
+
+
+{-| A list of length `n` whose element at index `i` is `f i` (empty when `n <= 0`). -}
+initialize : Int -> (Int -> a) -> List a
+initialize n f =
+    if n <= 0 then
+        []
+
+    else
+        List.map f (List.range 0 (n - 1))
+
+
+{-| Whether all elements are distinct. -}
+allDifferent : List comparable -> Bool
+allDifferent list =
+    List.length (unique list) == List.length list
+
+
+{-| Applies `f` to every triple drawn from the three lists (the cartesian combination). -}
+lift3 : (a -> b -> c -> d) -> List a -> List b -> List c -> List d
+lift3 f xs ys zs =
+    List.concatMap (\x -> List.concatMap (\y -> List.map (\z -> f x y z) zs) ys) xs
+
+
+{-| Repeats the list (in order) until it has `len` elements (empty when `len <= 0` or the list is). -}
+cycle : Int -> List a -> List a
+cycle len list =
+    if len <= 0 || List.isEmpty list then
+        []
+
+    else
+        List.take len (List.concat (List.repeat (len // List.length list + 1) list))
+
+
+{-| `List.foldr` with the element index passed to the step function. -}
+indexedFoldr : (Int -> a -> b -> b) -> b -> List a -> b
+indexedFoldr f acc list =
+    Tuple.second
+        (List.foldr
+            (\x pair -> ( Tuple.first pair - 1, f (Tuple.first pair) x (Tuple.second pair) ))
+            ( List.length list - 1, acc )
+            list
+        )

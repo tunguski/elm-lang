@@ -12,7 +12,7 @@ class ListExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap, pre, suf, strip, grpW, fmap, z3, ifold, unf, scan, splitW, mapAcc, updIf, setIfV, lift2V, minW, maxW, takeR, dropR, gathEq, tailsV, initsV, infixT, infixF)
+      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap, pre, suf, strip, grpW, fmap, z3, ifold, unf, scan, splitW, mapAcc, updIf, setIfV, lift2V, minW, maxW, takeR, dropR, gathEq, tailsV, initsV, infixT, infixF, initzV, allDiffT, allDiffF, lift3V, cycleV, ifoldr)
 
       import List.Extra as LE
 
@@ -57,6 +57,12 @@ class ListExtraLibraryTest {
       initsV = LE.inits [ 1, 2, 3 ]
       infixT = LE.isInfixOf [ 2, 3 ] [ 1, 2, 3, 4 ]
       infixF = LE.isInfixOf [ 3, 2 ] [ 1, 2, 3, 4 ]
+      initzV = LE.initialize 4 (\\i -> i * i)
+      allDiffT = LE.allDifferent [ 1, 2, 3 ]
+      allDiffF = LE.allDifferent [ 1, 2, 2 ]
+      lift3V = LE.lift3 (\\a b c -> a + b + c) [ 1 ] [ 10 ] [ 100, 200 ]
+      cycleV = LE.cycle 5 [ 1, 2 ]
+      ifoldr = LE.indexedFoldr (\\i x acc -> acc ++ [ ( i, x ) ]) [] [ "a", "b", "c" ]
       pre = LE.isPrefixOf [ 1, 2 ] [ 1, 2, 3 ]
       suf = LE.isSuffixOf [ 2, 3 ] [ 1, 2, 3 ]
       strip = LE.stripPrefix [ 1, 2 ] [ 1, 2, 3, 4 ]
@@ -148,5 +154,15 @@ class ListExtraLibraryTest {
     assertEquals("[[],[1],[1,2],[1,2,3]]", value("initsV"));
     assertEquals("True", value("infixT"));
     assertEquals("False", value("infixF"));
+  }
+
+  @Test
+  void initializeAllDifferentLiftCycleIndexedFoldr() {
+    assertEquals("[0,1,4,9]", value("initzV"));
+    assertEquals("True", value("allDiffT"));
+    assertEquals("False", value("allDiffF"));
+    assertEquals("[111,211]", value("lift3V"));
+    assertEquals("[1,2,1,2,1]", value("cycleV"));
+    assertEquals("[(2,\"c\"),(1,\"b\"),(0,\"a\")]", value("ifoldr"));
   }
 }
