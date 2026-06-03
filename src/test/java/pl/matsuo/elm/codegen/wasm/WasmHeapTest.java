@@ -589,6 +589,14 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringFromListCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("hi", runMainString("main = String.fromList [ 'h', 'i' ]\n"));
+    assertEquals("", runMainString("main = String.fromList []\n"));
+    assertEquals("abc", runMainString("main = String.fromList [ 'a', 'b', 'c' ]\n"));
+  }
+
+  @Test
   void stringReplaceCompiles() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("a_b_c", runMainString("main = String.replace \",\" \"_\" \"a,b,c\"\n"));
