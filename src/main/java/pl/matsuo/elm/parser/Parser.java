@@ -24,55 +24,6 @@ import pl.matsuo.elm.lexer.TokenType;
  */
 public final class Parser {
 
-  // --- operator fixities (elm/core defaults) -----------------------------
-
-  private enum Assoc {
-    LEFT,
-    RIGHT,
-    NON
-  }
-
-  private record Fixity(int prec, Assoc assoc) {}
-
-  /** Built-in (elm/core) and a few widely-used package fixities; a module's own {@code infix}
-   * declarations are layered on top per-parser (see {@link #fixities}). */
-  private static final Map<String, Fixity> FIXITY =
-      Map.ofEntries(
-          Map.entry("<|", new Fixity(0, Assoc.RIGHT)),
-          Map.entry("|>", new Fixity(0, Assoc.LEFT)),
-          Map.entry("||", new Fixity(2, Assoc.RIGHT)),
-          Map.entry("&&", new Fixity(3, Assoc.RIGHT)),
-          Map.entry("==", new Fixity(4, Assoc.NON)),
-          Map.entry("/=", new Fixity(4, Assoc.NON)),
-          Map.entry("<", new Fixity(4, Assoc.NON)),
-          Map.entry(">", new Fixity(4, Assoc.NON)),
-          Map.entry("<=", new Fixity(4, Assoc.NON)),
-          Map.entry(">=", new Fixity(4, Assoc.NON)),
-          Map.entry("++", new Fixity(5, Assoc.RIGHT)),
-          Map.entry("::", new Fixity(5, Assoc.RIGHT)),
-          Map.entry("+", new Fixity(6, Assoc.LEFT)),
-          Map.entry("-", new Fixity(6, Assoc.LEFT)),
-          Map.entry("*", new Fixity(7, Assoc.LEFT)),
-          Map.entry("/", new Fixity(7, Assoc.LEFT)),
-          Map.entry("//", new Fixity(7, Assoc.LEFT)),
-          Map.entry("^", new Fixity(8, Assoc.RIGHT)),
-          Map.entry("<<", new Fixity(9, Assoc.RIGHT)),
-          Map.entry(">>", new Fixity(9, Assoc.LEFT)),
-          // Widely-used published-package operators, with their declared fixities, so programs
-          // using them parse without bundling the package (elm/parser, elm/url).
-          Map.entry("|=", new Fixity(5, Assoc.LEFT)), // elm/parser keeper
-          Map.entry("|.", new Fixity(6, Assoc.LEFT)), // elm/parser ignorer
-          Map.entry("</>", new Fixity(7, Assoc.RIGHT)), // elm/url slash
-          Map.entry("<?>", new Fixity(8, Assoc.LEFT))); // elm/url questionMark
-
-  /**
-   * Fixity for an operator not in {@link #FIXITY}. Elm operators are package-declared, so we can't
-   * know an undeclared one's precedence; we default to left-associative at the same precedence as
-   * {@code <|}/{@code |>} (the lowest), which gives sensible chaining for pipeline-style operators
-   * rather than failing to parse.
-   */
-  private static final Fixity DEFAULT_FIXITY = new Fixity(0, Assoc.LEFT);
-
   // --- token stream ------------------------------------------------------
 
   private final List<Token> tokens;
@@ -82,8 +33,9 @@ public final class Parser {
   private int indent = 0;
 
   /** Operator fixities in effect for this parse: the built-in defaults plus any the module declares
-   * with {@code infix} (pre-scanned up front so a use before its declaration still parses right). */
-  private final Map<String, Fixity> fixities;
+   * with {@code infix} (pre-scanned up front so a use before its declaration still parses right).
+   * The fixity table and the project pre-scan live in {@link OperatorFixities}. */
+  private final Map<String, OperatorFixities.Fixity> fixities;
 
   private Parser(List<Token> tokens) {
     this(tokens, Map.of());
@@ -94,61 +46,21 @@ public final class Parser {
    * declared precedence. The module's own {@code infix} declarations are layered on top. */
   private Parser(List<Token> tokens, Map<String, int[]> seed) {
     this.tokens = tokens;
-    this.fixities = new java.util.HashMap<>(FIXITY);
-    seed.forEach(
-        (op, pa) ->
-            fixities.put(
-                op, new Fixity(pa[0], pa[1] == 1 ? Assoc.RIGHT : pa[1] == 2 ? Assoc.NON : Assoc.LEFT)));
+    this.fixities = OperatorFixities.initial(seed);
     scanInfixDeclarations();
   }
 
-  /** Scans a source for its {@code infix} declarations, returning op -> {precedence, assoc} (assoc
-   * 0=left, 1=right, 2=non). Used to gather a project's operator fixities before parsing each module. */
+  /** Scans a source for its {@code infix} declarations (delegates to {@link OperatorFixities}). */
   public static Map<String, int[]> scanFixities(String source) {
-    List<Token> toks = Lexer.tokenize(source);
-    Map<String, int[]> out = new java.util.HashMap<>();
-    for (int i = 0; i + 5 < toks.size(); i++) {
-      if (toks.get(i).type() == TokenType.LOWER
-          && toks.get(i).text().equals("infix")
-          && toks.get(i + 1).type() == TokenType.LOWER
-          && toks.get(i + 2).type() == TokenType.INT
-          && toks.get(i + 3).type() == TokenType.LPAREN
-          && toks.get(i + 4).type() == TokenType.OPERATOR
-          && toks.get(i + 5).type() == TokenType.RPAREN) {
-        int assoc =
-            switch (toks.get(i + 1).text()) {
-              case "right" -> 1;
-              case "non" -> 2;
-              default -> 0;
-            };
-        out.put(toks.get(i + 4).text(), new int[] {((Long) toks.get(i + 2).value()).intValue(), assoc});
-      }
-    }
-    return out;
+    return OperatorFixities.scanFixities(source);
   }
 
-  /** Pre-scans the token stream for {@code infix <assoc> <prec> (<op>)} declarations and records
-   * their fixities, so operator-precedence parsing of expressions uses the declared precedence even
-   * when the {@code infix} line comes after (or is interleaved with) the expressions that use it. */
+  /** Pre-scans this parser's token stream for {@code infix <assoc> <prec> (<op>)} declarations and
+   * records their fixities, so operator-precedence parsing of expressions uses the declared
+   * precedence even when the {@code infix} line comes after the expressions that use it. */
   private void scanInfixDeclarations() {
-    for (int i = 0; i + 5 < tokens.size(); i++) {
-      if (tokens.get(i).type() == TokenType.LOWER
-          && tokens.get(i).text().equals("infix")
-          && tokens.get(i + 1).type() == TokenType.LOWER
-          && tokens.get(i + 2).type() == TokenType.INT
-          && tokens.get(i + 3).type() == TokenType.LPAREN
-          && tokens.get(i + 4).type() == TokenType.OPERATOR
-          && tokens.get(i + 5).type() == TokenType.RPAREN) {
-        Assoc assoc =
-            switch (tokens.get(i + 1).text()) {
-              case "right" -> Assoc.RIGHT;
-              case "non" -> Assoc.NON;
-              default -> Assoc.LEFT;
-            };
-        int prec = ((Long) tokens.get(i + 2).value()).intValue();
-        fixities.put(tokens.get(i + 4).text(), new Fixity(prec, assoc));
-      }
-    }
+    OperatorFixities.scanTokens(tokens)
+        .forEach((op, pa) -> fixities.put(op, OperatorFixities.fromCodes(pa[0], pa[1])));
   }
 
   // --- public entry points ----------------------------------------------
@@ -572,12 +484,12 @@ public final class Parser {
     Expr left = parseOperand();
     while (continues() && check(TokenType.OPERATOR)) {
       String op = peek().text();
-      Fixity fx = fixities.getOrDefault(op, DEFAULT_FIXITY);
+      OperatorFixities.Fixity fx = fixities.getOrDefault(op, OperatorFixities.DEFAULT);
       if (fx.prec() < minPrec) {
         break;
       }
       advance();
-      int nextMin = fx.assoc() == Assoc.RIGHT ? fx.prec() : fx.prec() + 1;
+      int nextMin = fx.assoc() == OperatorFixities.Assoc.RIGHT ? fx.prec() : fx.prec() + 1;
       Expr right = parseBinary(nextMin);
       left = new Expr.BinOp(op, left, right, left.pos());
     }
