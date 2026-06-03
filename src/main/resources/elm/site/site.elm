@@ -36,6 +36,11 @@ examples =
     , { slug = "cards", title = "Cards", category = "Random" }
     , { slug = "time", title = "Time", category = "Time" }
     , { slug = "clock", title = "Clock", category = "Time" }
+    , { slug = "book", title = "Book", category = "HTTP" }
+    , { slug = "quotes", title = "Quotes", category = "HTTP" }
+    , { slug = "upload", title = "Upload", category = "Files" }
+    , { slug = "drag-and-drop", title = "Drag and Drop", category = "Files" }
+    , { slug = "image-previews", title = "Image Previews", category = "Files" }
     ]
 
 
@@ -63,6 +68,7 @@ buildTasks =
         ++ [ writeFile "out/manifest.tsv" manifest ]
         ++ List.map copyAsset assets
         ++ [ writeFile "out/nav.html" nav
+           , writeFile "out/.nojekyll" ""
            , script "Gallery.elm" [ "out" ]
            ]
 

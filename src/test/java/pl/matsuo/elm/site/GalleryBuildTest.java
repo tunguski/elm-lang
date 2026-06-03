@@ -46,5 +46,10 @@ class GalleryBuildTest {
 
     // The gallery stylesheet (gallery.css copied as styles.css) is present.
     assertTrue(Files.exists(out.resolve("styles.css")), "gallery stylesheet copied");
+
+    // HTTP/Files examples compile to live pages too, and .nojekyll is emitted for Pages.
+    assertTrue(Files.exists(out.resolve("demos/book.html")), "HTTP example demo written");
+    assertTrue(Files.exists(out.resolve("demos/image-previews.html")), "Files example demo written");
+    assertTrue(Files.exists(out.resolve(".nojekyll")), ".nojekyll written");
   }
 }

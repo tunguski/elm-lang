@@ -35,7 +35,8 @@ public final class GalleryBuild {
   /** The examples {@code site.elm} compiles to live JS pages (must match its {@code examples} list). */
   static final String[] EXAMPLES = {
     "hello", "groceries", "shapes", "buttons", "text-fields",
-    "forms", "numbers", "cards", "time", "clock"
+    "forms", "numbers", "cards", "time", "clock",
+    "book", "quotes", "upload", "drag-and-drop", "image-previews"
   };
 
   /** The Markdown guides {@code site.elm} renders (must match its {@code guides} list). */
