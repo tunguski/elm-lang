@@ -442,6 +442,12 @@ class WasmHeapTest {
   }
 
   @Test
+  void listSingletonCompiles() throws Exception {
+    assertEquals("[5]", decodeList("main = List.singleton 5\n"));
+    assertEquals("[1,5]", decodeList("main = 1 :: List.singleton 5\n"));
+  }
+
+  @Test
   void listMap5Compiles() throws Exception {
     agrees("main = List.sum (List.map5 (\\a b c d e -> a + b + c + d + e) [ 1 ] [ 2 ] [ 3 ] [ 4 ] [ 5 ])\n"); // 15
   }

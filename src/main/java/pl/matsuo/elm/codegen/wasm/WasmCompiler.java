@@ -243,6 +243,7 @@ public final class WasmCompiler {
       charToUpper c = if c >= 97 && c <= 122 then c - 32 else c
       charToLower c = if c >= 65 && c <= 90 then c + 32 else c
       charIsSpace c = c == 32 || c == 9 || c == 10 || c == 13
+      listSingleton x = [ x ]
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -296,6 +297,7 @@ public final class WasmCompiler {
           Map.entry("List.map5", "listMap5"),
           Map.entry("List.intersperse", "listIntersperse"),
           Map.entry("List.partition", "listPartition"),
+          Map.entry("List.singleton", "listSingleton"),
           Map.entry("List.unzip", "listUnzip"),
           Map.entry("Maybe.map2", "maybeMap2"),
           Map.entry("Maybe.map3", "maybeMap3"),
