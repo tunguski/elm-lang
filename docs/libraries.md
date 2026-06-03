@@ -18,6 +18,7 @@ This page is the index and quick reference; several have a deeper guide of their
 | [`Result.Extra`](#resultextra) | Common `Result` helpers | — |
 | [`String.Extra`](#stringextra) | Common string helpers | — |
 | [`Dict.Extra`](#dictextra) | Common `Dict` helpers | — |
+| [`Set.Extra`](#setextra) | Common `Set` helpers | — |
 | [`Parser`](#parser) | A small parser-combinator library | — |
 | [`Url.Parser`](#urlparser) | Typed URL routing | — |
 | [`Site`](#site) | Static-site pages as data | [site.md](site.md) |
@@ -140,6 +141,16 @@ The most-reached-for elm-community/dict-extra helpers, in plain Elm: `groupBy`, 
 ```elm
 import Dict.Extra as DE
 DE.frequencies [ "a", "b", "a" ] |> Dict.toList   --> [ ( "a", 2 ), ( "b", 1 ) ]
+```
+
+## Set.Extra
+
+The most-reached-for elm-community/set-extra helpers, in plain Elm: `toggle`, `concatMap`,
+`filterMap`, `areDisjoint`, `symmetricDifference`.
+
+```elm
+import Set.Extra as SE
+SE.toggle 2 (Set.fromList [ 1, 2, 3 ]) |> Set.toList   --> [ 1, 3 ]
 ```
 
 ## Parser
