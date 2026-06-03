@@ -207,6 +207,7 @@ public final class SiteGenerator {
     b.append(navLink("index.html", "Gallery"));
     b.append(navLink("backends.html", "JS vs WASM"));
     b.append(navLink("playground.html", "Playground"));
+    b.append(navLink("life.html", "Game of Life"));
     b.append(navLink("editor.html", "Editor"));
     b.append(navLink("todomvc.html", "TodoMVC"));
     if (rts) {

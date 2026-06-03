@@ -1,8 +1,10 @@
-# Target examples (elm-lang.org/examples)
+# Examples
 
-The goal: every example on <https://elm-lang.org/examples> works across the applicable
-backends. Slugs are the path under `/examples/<slug>`. The "Needs" column tracks the
-runtime capability each example requires, which drives implementation order.
+This page tracks the examples this implementation targets. The compatibility goal is that every
+example on <https://elm-lang.org/examples> works across the applicable backends; beyond that
+catalogue, the project ships its own larger apps and command-line/server demos (listed at the
+bottom). Slugs are the path under `/examples/<slug>`. The "Needs" column tracks the runtime
+capability each example requires, which drives implementation order.
 
 Status: ✅ = working & tested headlessly (interpreter/bytecode), ⏳ = not yet.
 
@@ -88,6 +90,11 @@ guides:
 | Demo | Run with | Demonstrates | Guide |
 |------|----------|--------------|-------|
 | `wordcount` | `elm script wordcount <files…>` | A `wc`-style CLI script (stdin/files/args/exit code). | [scripting.md](scripting.md) |
+| `folderreport` | `elm script folderreport <dir>` | Recursively walks a directory and summarises it (counts, total size, largest files, by extension) using the structured `Bash`/`Posix` `find`. | [scripting.md](scripting.md) |
+| `big-files` | `elm script big-files [threshold] [dir]` | Lists files over a line threshold (default 1000), largest first — `find` + `wc` over a directory. | [scripting.md](scripting.md) |
+| `awk-sum` | `elm script awk-sum <col> <file>` | Composes an `awk` program with the `Awk` builder (sum a column). | [scripting.md](scripting.md) |
+| `csv-report` | `elm script csv-report <file.csv>` | Parses CSV with the `Csv` library and renders it to an HTML table via `Site`. | [scripting.md](scripting.md) |
+| `m4-expand` | `elm script m4-expand <name>` | Generates an `m4` macro program with the `M4` builder. | [scripting.md](scripting.md) |
 | `simple-server-showcase` | `elm server simple-server-showcase` | A stateless HTTP app: routing on path/query, `text`/`html`/`json`. | [server.md](server.md) |
 | `live-dashboard` | `elm server live-dashboard` | A stateful server: in-memory time series, a timer-driven random walk, and a self-updating SVG chart polled by the client. | [server.md](server.md) |
 | editor | open `editor.html` in the gallery | An in-browser, multi-file Elm playground with a from-scratch Elm interpreter and a time-travel debugger. | — |

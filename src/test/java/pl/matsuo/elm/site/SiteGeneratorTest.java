@@ -99,6 +99,9 @@ class SiteGeneratorTest {
     assertTrue(Files.exists(out.resolve("docs.css")), "docs.css written by the Elm generator");
     assertTrue(Files.exists(out.resolve("nav.css")) && Files.exists(out.resolve("nav.html")),
         "the shared sidebar assets are written");
+    String nav = Files.readString(out.resolve("nav.html"), StandardCharsets.UTF_8);
+    assertTrue(nav.contains("href=\"life.html\">Game of Life</a>"), "Demos sidebar links Game of Life");
+    assertTrue(Files.exists(out.resolve("life.html")), "the Game of Life wrapper page exists");
     assertTrue(Files.exists(out.resolve("scripting.bodyhtml")), "Markdown body artifact written by Java");
   }
 
