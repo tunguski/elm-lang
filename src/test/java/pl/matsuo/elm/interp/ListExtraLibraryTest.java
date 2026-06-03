@@ -12,7 +12,7 @@ class ListExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap)
+      module Main exposing (lastV, initV, getV, setV, removeV, findIdx, cnt, splitV, takeW, uniq, uniqByV, groups, fold1, scan1, maxByV, zipV, weave, notMem, foldr1V, interc, transp, grp, cart, andMapV, iterV, removeVal, swap, pre, suf, strip, grpW, fmap, z3, ifold, unf, scan)
 
       import List.Extra as LE
 
@@ -43,6 +43,15 @@ class ListExtraLibraryTest {
       iterV = LE.iterate (\\n -> if n > 1 then Just (n // 2) else Nothing) 8
       removeVal = LE.remove 2 [ 1, 2, 3, 2 ]
       swap = LE.swapAt 0 2 [ 1, 2, 3 ]
+      pre = LE.isPrefixOf [ 1, 2 ] [ 1, 2, 3 ]
+      suf = LE.isSuffixOf [ 2, 3 ] [ 1, 2, 3 ]
+      strip = LE.stripPrefix [ 1, 2 ] [ 1, 2, 3, 4 ]
+      grpW = LE.groupWhile (\\a b -> a == b) [ 1, 1, 2, 1 ]
+      fmap = LE.findMap (\\n -> if n > 2 then Just (n * 10) else Nothing) [ 1, 2, 3, 4 ]
+      z3 = LE.zip3 [ 1, 2 ] [ "a", "b" ] [ True, False ]
+      ifold = LE.indexedFoldl (\\i x acc -> acc + i * x) 0 [ 10, 20, 30 ]
+      unf = LE.unfoldr (\\n -> if n <= 0 then Nothing else Just ( n, n - 1 )) 3
+      scan = LE.scanl (+) 0 [ 1, 2, 3 ]
       """;
 
   private static String value(String name) {
@@ -90,5 +99,18 @@ class ListExtraLibraryTest {
     assertEquals("[8,4,2,1]", value("iterV"));
     assertEquals("[1,3,2]", value("removeVal")); // removes the first 2
     assertEquals("[3,2,1]", value("swap"));
+  }
+
+  @Test
+  void prefixGroupFindZipFoldUnfoldScan() {
+    assertEquals("True", value("pre"));
+    assertEquals("True", value("suf"));
+    assertEquals("Just [3,4]", value("strip"));
+    assertEquals("[[1,1],[2],[1]]", value("grpW"));
+    assertEquals("Just 30", value("fmap"));
+    assertEquals("[(1,\"a\",True),(2,\"b\",False)]", value("z3"));
+    assertEquals("80", value("ifold")); // 0*10 + 1*20 + 2*30
+    assertEquals("[3,2,1]", value("unf"));
+    assertEquals("[0,1,3,6]", value("scan"));
   }
 }

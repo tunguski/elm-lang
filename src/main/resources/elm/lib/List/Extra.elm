@@ -33,6 +33,15 @@ module List.Extra exposing
     , iterate
     , remove
     , swapAt
+    , isPrefixOf
+    , isSuffixOf
+    , stripPrefix
+    , groupWhile
+    , findMap
+    , zip3
+    , indexedFoldl
+    , unfoldr
+    , scanl
     )
 
 {-| A subset of the popular `elm-community/list-extra` helpers — the ones reached for most often —
@@ -435,3 +444,112 @@ swapAt i j list =
 
         _ ->
             list
+
+
+{-| Whether the list starts with `prefix`. -}
+isPrefixOf : List a -> List a -> Bool
+isPrefixOf prefix list =
+    List.take (List.length prefix) list == prefix
+
+
+{-| Whether the list ends with `suffix`. -}
+isSuffixOf : List a -> List a -> Bool
+isSuffixOf suffix list =
+    isPrefixOf (List.reverse suffix) (List.reverse list)
+
+
+{-| Drops `prefix` from the front, or `Nothing` if the list doesn't start with it. -}
+stripPrefix : List a -> List a -> Maybe (List a)
+stripPrefix prefix list =
+    if isPrefixOf prefix list then
+        Just (List.drop (List.length prefix) list)
+
+    else
+        Nothing
+
+
+{-| Groups runs of adjacent elements for which `test prev next` holds. -}
+groupWhile : (a -> a -> Bool) -> List a -> List (List a)
+groupWhile test list =
+    case list of
+        [] ->
+            []
+
+        x :: rest ->
+            groupWhileHelp test x [ x ] rest
+
+
+groupWhileHelp : (a -> a -> Bool) -> a -> List a -> List a -> List (List a)
+groupWhileHelp test prev current list =
+    case list of
+        [] ->
+            [ List.reverse current ]
+
+        y :: rest ->
+            if test prev y then
+                groupWhileHelp test y (y :: current) rest
+
+            else
+                List.reverse current :: groupWhileHelp test y [ y ] rest
+
+
+{-| The first non-`Nothing` result of `f`, or `Nothing`. -}
+findMap : (a -> Maybe b) -> List a -> Maybe b
+findMap f list =
+    case list of
+        [] ->
+            Nothing
+
+        x :: rest ->
+            case f x of
+                Just y ->
+                    Just y
+
+                Nothing ->
+                    findMap f rest
+
+
+{-| Zips three lists into triples, stopping at the shortest. -}
+zip3 : List a -> List b -> List c -> List ( a, b, c )
+zip3 xs ys zs =
+    List.map3 (\a b c -> ( a, b, c )) xs ys zs
+
+
+{-| `List.foldl` with the element index passed to the step function. -}
+indexedFoldl : (Int -> a -> b -> b) -> b -> List a -> b
+indexedFoldl f acc list =
+    indexedFoldlHelp f 0 acc list
+
+
+indexedFoldlHelp : (Int -> a -> b -> b) -> Int -> b -> List a -> b
+indexedFoldlHelp f i acc list =
+    case list of
+        [] ->
+            acc
+
+        x :: rest ->
+            indexedFoldlHelp f (i + 1) (f i x acc) rest
+
+
+{-| Builds a list from a seed: `f` returns `Just (element, nextSeed)` or `Nothing` to stop. -}
+unfoldr : (b -> Maybe ( a, b )) -> b -> List a
+unfoldr f seed =
+    case f seed of
+        Just ( a, next ) ->
+            a :: unfoldr f next
+
+        Nothing ->
+            []
+
+
+{-| A left scan: every intermediate accumulator, starting with the seed. -}
+scanl : (a -> b -> b) -> b -> List a -> List b
+scanl f acc list =
+    acc
+        :: (case list of
+                [] ->
+                    []
+
+                x :: rest ->
+                    scanl f (f x acc) rest
+           )
