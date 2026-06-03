@@ -27,12 +27,12 @@ builtins =
         ++ [ "Maybe.map", "Maybe.andThen", "Maybe.map2", "Maybe.map3", "Maybe.map4", "Maybe.map5", "Result.withDefault", "Result.map", "Result.map2", "Result.map3", "Result.map4", "Result.map5", "Result.andThen", "Result.toMaybe", "Result.mapError", "Result.fromMaybe" ]
         ++ [ "Tuple.first", "Tuple.second", "Tuple.pair", "Tuple.mapFirst", "Tuple.mapSecond", "Tuple.mapBoth", "identity", "always", "min", "max", "modBy", "remainderBy", "clamp", "xor" ]
         ++ [ "String.contains", "String.startsWith", "String.endsWith", "String.append", "String.left", "String.right", "String.dropLeft", "String.dropRight", "String.repeat", "String.split", "String.slice", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar" ]
-        ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes" ]
+        ++ [ "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.words", "String.indexes", "String.indices" ]
         ++ [ "String.concat", "String.trimLeft", "String.trimRight", "String.any", "String.all" ]
         ++ [ "String.lines", "String.map", "String.filter", "String.foldl", "String.foldr", "String.padLeft", "String.padRight", "String.pad", "String.replace" ]
-        ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3", "List.map4", "List.map5", "List.sortWith", "compare" ]
+        ++ [ "List.partition", "List.intersperse", "List.unzip", "List.map3", "List.map4", "List.map5", "List.sortWith", "compare", "List.singleton" ]
         ++ [ "String.toList", "String.fromList", "String.cons", "String.uncons" ]
-        ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit" ]
+        ++ [ "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit", "Char.isControl", "Char.isPunctuation" ]
         ++ [ "Debug.toString", "Debug.log", "Debug.todo" ]
         ++ [ "Dict.empty", "Dict.singleton", "Dict.fromList", "Dict.toList", "Dict.get", "Dict.insert", "Dict.remove", "Dict.member", "Dict.size", "Dict.isEmpty", "Dict.keys", "Dict.values", "Dict.map", "Dict.filter", "Dict.foldl", "Dict.foldr", "Dict.partition", "Dict.union", "Dict.diff", "Dict.intersect", "Dict.update" ]
         ++ [ "Set.empty", "Set.singleton", "Set.fromList", "Set.toList", "Set.insert", "Set.remove", "Set.member", "Set.size", "Set.isEmpty", "Set.union", "Set.diff", "Set.intersect", "Set.foldl", "Set.foldr", "Set.map", "Set.filter", "Set.partition" ]
@@ -125,10 +125,10 @@ arity name =
     if List.member name [ "text", "onClick", "onInput", "toString", "negate", "not", "String.fromInt", "String.fromFloat", "String.reverse", "String.length", "String.toUpper", "String.toLower", "String.trim", "String.trimLeft", "String.trimRight", "String.concat", "String.words", "Browser.sandbox", "Browser.element", "List.length", "List.sum" ] then
         1
 
-    else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
+    else if List.member name [ "List.reverse", "List.head", "List.tail", "List.isEmpty", "List.maximum", "List.minimum", "List.sort", "List.concat", "List.product", "List.singleton", "Tuple.first", "Tuple.second", "identity", "String.isEmpty", "String.toInt", "String.toFloat", "String.fromChar", "Result.toMaybe" ] then
         1
 
-    else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit", "Debug.toString", "Debug.todo" ] then
+    else if List.member name [ "String.toList", "String.fromList", "String.uncons", "Char.toCode", "Char.fromCode", "Char.toUpper", "Char.toLower", "Char.isDigit", "Char.isUpper", "Char.isLower", "Char.isAlpha", "Char.isAlphaNum", "Char.isSpace", "Char.isHexDigit", "Char.isOctDigit", "Char.isControl", "Char.isPunctuation", "Debug.toString", "Debug.todo" ] then
         1
 
     else if List.member name [ "File.toString", "File.toUrl", "File.name", "File.mime", "File.size", "Bitwise.complement" ] then
@@ -1370,6 +1370,9 @@ runBuiltin globals name args =
             ( "List.repeat", [ VNum n, x ] ) ->
                 Ok (VList (List.repeat (round n) x))
 
+            ( "List.singleton", [ x ] ) ->
+                Ok (VList [ x ])
+
             ( "List.any", [ f, VList xs ] ) ->
                 anyValues globals f xs |> Result.map VBool
 
@@ -1596,6 +1599,9 @@ runBuiltin globals name args =
             ( "String.indexes", [ VStr sub, VStr s ] ) ->
                 Ok (VList (List.map (\i -> VNum (toFloat i)) (String.indexes sub s)))
 
+            ( "String.indices", [ VStr sub, VStr s ] ) ->
+                Ok (VList (List.map (\i -> VNum (toFloat i)) (String.indexes sub s)))
+
             ( "String.isEmpty", [ VStr s ] ) ->
                 Ok (VBool (String.isEmpty s))
 
@@ -1649,6 +1655,12 @@ runBuiltin globals name args =
 
             ( "Char.isOctDigit", [ VChar c ] ) ->
                 Ok (VBool (c >= '0' && c <= '7'))
+
+            ( "Char.isControl", [ VChar c ] ) ->
+                Ok (VBool (Char.isControl c))
+
+            ( "Char.isPunctuation", [ VChar c ] ) ->
+                Ok (VBool (Char.isPunctuation c))
 
             ( "String.toInt", [ VStr s ] ) ->
                 Ok (maybeValue (Maybe.map (\n -> VNum (toFloat n)) (String.toInt (String.trim s))))

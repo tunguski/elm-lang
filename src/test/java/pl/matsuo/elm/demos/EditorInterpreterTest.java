@@ -97,6 +97,17 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsAdditionalStdlibBuiltins() {
+    // elm/core parity additions to the editor interpreter.
+    assertEquals("[5]", eval("List.singleton 5"));
+    assertEquals("[0, 2]", eval("String.indices \"a\" \"aba\"")); // alias of String.indexes
+    assertEquals("True", eval("Char.isControl '\\t'"));
+    assertEquals("False", eval("Char.isControl 'a'"));
+    assertEquals("True", eval("Char.isPunctuation '!'"));
+    assertEquals("False", eval("Char.isPunctuation 'a'"));
+  }
+
+  @Test
   void interpretsMoreStringAndListBuiltins() {
     // (the editor's string lexer doesn't process \\n escapes, so build the newline from a char)
     assertEquals("[\"a\", \"b\"]", eval("String.lines (String.fromList [ 'a', '\\n', 'b' ])"));
