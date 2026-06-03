@@ -571,6 +571,15 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringContainsCompiles() throws Exception {
+    agrees("main = if String.contains \"ll\" \"hello\" then 1 else 0\n"); // 1
+    agrees("main = if String.contains \"x\" \"hello\" then 1 else 0\n"); // 0
+    agrees("main = if String.contains \"hello\" \"hello\" then 1 else 0\n"); // 1 (whole)
+    agrees("main = if String.contains \"\" \"hello\" then 1 else 0\n"); // 1 (empty)
+    agrees("main = if String.contains \"lo\" \"hello\" then 1 else 0\n"); // 1 (suffix)
+  }
+
+  @Test
   void stringStartsWithEndsWithCompile() throws Exception {
     agrees("main = if String.startsWith \"he\" \"hello\" then 1 else 0\n"); // 1
     agrees("main = if String.startsWith \"x\" \"hello\" then 1 else 0\n"); // 0

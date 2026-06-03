@@ -243,6 +243,8 @@ public final class WasmCompiler {
       stringSlice start end s = String.left (clampIdx s end - clampIdx s start) (String.dropLeft (clampIdx s start) s)
       stringStartsWith pre s = String.left (String.length pre) s == pre
       stringEndsWith suf s = String.right (String.length suf) s == suf
+      stringContains sub s = containsFrom sub s 0
+      containsFrom sub s i = if i + String.length sub > String.length s then False else if String.left (String.length sub) (String.dropLeft i s) == sub then True else containsFrom sub s (i + 1)
       stringCons c s = String.append (String.fromChar c) s
       charIsDigit c = c >= 48 && c <= 57
       charIsUpper c = c >= 65 && c <= 90
@@ -334,6 +336,7 @@ public final class WasmCompiler {
           Map.entry("String.slice", "stringSlice"),
           Map.entry("String.startsWith", "stringStartsWith"),
           Map.entry("String.endsWith", "stringEndsWith"),
+          Map.entry("String.contains", "stringContains"),
           Map.entry("String.cons", "stringCons"),
           Map.entry("Char.toCode", "identity"),
           Map.entry("Char.fromCode", "identity"),
