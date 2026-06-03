@@ -266,6 +266,16 @@ public final class WasmCompiler {
       stringFilter pred s = stringFromList (listFilter pred (String.toList s))
       stringAny pred s = listAny pred (String.toList s)
       stringAll pred s = listAll pred (String.toList s)
+      stringToInt s = case String.toList s of
+          [] -> Nothing
+          c :: rest -> if Char.toCode c == 45 then stringNegateMaybe (stringDigits rest) else stringDigits (c :: rest)
+      stringDigits chars = stringDigitsAcc chars 0 False
+      stringDigitsAcc chars acc seen = case chars of
+          [] -> if seen then Just acc else Nothing
+          c :: rest -> if Char.toCode c >= 48 && Char.toCode c <= 57 then stringDigitsAcc rest (acc * 10 + (Char.toCode c - 48)) True else Nothing
+      stringNegateMaybe m = case m of
+          Just n -> Just (0 - n)
+          Nothing -> Nothing
       charIsDigit c = c >= 48 && c <= 57
       charIsUpper c = c >= 65 && c <= 90
       charIsLower c = c >= 97 && c <= 122
@@ -375,6 +385,7 @@ public final class WasmCompiler {
           Map.entry("String.filter", "stringFilter"),
           Map.entry("String.any", "stringAny"),
           Map.entry("String.all", "stringAll"),
+          Map.entry("String.toInt", "stringToInt"),
           Map.entry("Char.toCode", "identity"),
           Map.entry("Char.fromCode", "identity"),
           Map.entry("Char.isDigit", "charIsDigit"),

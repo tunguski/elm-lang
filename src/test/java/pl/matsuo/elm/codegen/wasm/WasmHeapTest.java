@@ -628,6 +628,18 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringToIntCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    String wrap = "main = String.fromInt (Maybe.withDefault -1 (String.toInt ";
+    assertEquals("123", runMainString(wrap + "\"123\"))\n"));
+    assertEquals("-42", runMainString(wrap + "\"-42\"))\n"));
+    assertEquals("0", runMainString(wrap + "\"0\"))\n"));
+    assertEquals("-1", runMainString(wrap + "\"abc\"))\n")); // not a number -> Nothing
+    assertEquals("-1", runMainString(wrap + "\"\"))\n")); // empty -> Nothing
+    assertEquals("-1", runMainString(wrap + "\"12x\"))\n")); // trailing junk -> Nothing
+  }
+
+  @Test
   void stringReplaceCompiles() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("a_b_c", runMainString("main = String.replace \",\" \"_\" \"a,b,c\"\n"));
