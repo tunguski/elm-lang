@@ -589,6 +589,13 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringLinesCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    agrees("main = List.length (String.lines \"a\\nb\\nc\")\n"); // 3
+    assertEquals("a|b|c", runMainString("main = String.join \"|\" (String.lines \"a\\nb\\nc\")\n"));
+  }
+
+  @Test
   void stringSplitCompiles() throws Exception {
     assumeTrue(NODE, "node not available");
     agrees("main = List.length (String.split \",\" \"a,b,c\")\n"); // 3
