@@ -240,6 +240,9 @@ public final class WasmCompiler {
       charIsLower c = c >= 97 && c <= 122
       charIsAlpha c = charIsUpper c || charIsLower c
       charIsAlphaNum c = charIsAlpha c || charIsDigit c
+      charToUpper c = if c >= 97 && c <= 122 then c - 32 else c
+      charToLower c = if c >= 65 && c <= 90 then c + 32 else c
+      charIsSpace c = c == 32 || c == 9 || c == 10 || c == 13
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -315,6 +318,9 @@ public final class WasmCompiler {
           Map.entry("Char.isLower", "charIsLower"),
           Map.entry("Char.isAlpha", "charIsAlpha"),
           Map.entry("Char.isAlphaNum", "charIsAlphaNum"),
+          Map.entry("Char.toUpper", "charToUpper"),
+          Map.entry("Char.toLower", "charToLower"),
+          Map.entry("Char.isSpace", "charIsSpace"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
