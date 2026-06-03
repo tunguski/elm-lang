@@ -9,7 +9,7 @@ class SetExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (tog, togIn, cmap, fmap, disjT, disjF, symm)
+      module Main exposing (tog, togIn, cmap, fmap, disjT, disjF, symm, subT, subF, uni)
 
       import Set
       import Set.Extra as SE
@@ -21,6 +21,9 @@ class SetExtraLibraryTest {
       disjT = SE.areDisjoint (Set.fromList [ 1, 2 ]) (Set.fromList [ 3, 4 ])
       disjF = SE.areDisjoint (Set.fromList [ 1, 2 ]) (Set.fromList [ 2, 3 ])
       symm = Set.toList (SE.symmetricDifference (Set.fromList [ 1, 2, 3 ]) (Set.fromList [ 2, 3, 4 ]))
+      subT = SE.isSubsetOf (Set.fromList [ 1, 2, 3 ]) (Set.fromList [ 1, 2 ])
+      subF = SE.isSubsetOf (Set.fromList [ 1, 2 ]) (Set.fromList [ 1, 3 ])
+      uni = Set.toList (SE.unions [ Set.fromList [ 1, 2 ], Set.fromList [ 2, 3 ] ])
       """;
 
   private static String value(String name) {
@@ -40,5 +43,12 @@ class SetExtraLibraryTest {
     assertEquals("True", value("disjT"));
     assertEquals("False", value("disjF"));
     assertEquals("[1,4]", value("symm"));
+  }
+
+  @Test
+  void subsetAndUnions() {
+    assertEquals("True", value("subT"));
+    assertEquals("False", value("subF"));
+    assertEquals("[1,2,3]", value("uni"));
   }
 }

@@ -4,6 +4,8 @@ module Set.Extra exposing
     , filterMap
     , areDisjoint
     , symmetricDifference
+    , isSubsetOf
+    , unions
     )
 
 {-| A subset of the popular `elm-community/set-extra` helpers — the ones reached for most often —
@@ -60,3 +62,15 @@ areDisjoint a b =
 symmetricDifference : Set comparable -> Set comparable -> Set comparable
 symmetricDifference a b =
     Set.union (Set.diff a b) (Set.diff b a)
+
+
+{-| Whether every element of `sub` is also in `super`. -}
+isSubsetOf : Set comparable -> Set comparable -> Bool
+isSubsetOf super sub =
+    Set.foldl (\x acc -> acc && Set.member x super) True sub
+
+
+{-| The union of a list of sets. -}
+unions : List (Set comparable) -> Set comparable
+unions sets =
+    List.foldl Set.union Set.empty sets

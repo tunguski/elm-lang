@@ -35,6 +35,7 @@ public final class BundledLibs {
           Map.entry("String.Extra", "/elm/lib/String/Extra.elm"),
           Map.entry("Dict.Extra", "/elm/lib/Dict/Extra.elm"),
           Map.entry("Set.Extra", "/elm/lib/Set/Extra.elm"),
+          Map.entry("Tuple.Extra", "/elm/lib/Tuple/Extra.elm"),
           Map.entry("Hex", "/elm/lib/Hex.elm"),
           Map.entry("Base64", "/elm/lib/Base64.elm"),
           Map.entry("Url.Builder", "/elm/lib/Url/Builder.elm"));

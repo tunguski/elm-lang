@@ -19,6 +19,7 @@ This page is the index and quick reference; several have a deeper guide of their
 | [`String.Extra`](#stringextra) | Common string helpers | — |
 | [`Dict.Extra`](#dictextra) | Common `Dict` helpers | — |
 | [`Set.Extra`](#setextra) | Common `Set` helpers | — |
+| [`Tuple.Extra`](#tupleextra) | Common tuple helpers | — |
 | [`Parser`](#parser) | A small parser-combinator library | — |
 | [`Url.Parser`](#urlparser) | Typed URL routing | — |
 | [`Site`](#site) | Static-site pages as data | [site.md](site.md) |
@@ -151,6 +152,17 @@ The most-reached-for elm-community/set-extra helpers, in plain Elm: `toggle`, `c
 ```elm
 import Set.Extra as SE
 SE.toggle 2 (Set.fromList [ 1, 2, 3 ]) |> Set.toList   --> [ 1, 3 ]
+```
+
+## Tuple.Extra
+
+The most-reached-for elm-community/tuple-extra helpers, in plain Elm: `apply`, `swap`,
+`sequenceMaybe`, `sequenceFirstMaybe`, `sequenceSecondMaybe`.
+
+```elm
+import Tuple.Extra as TE
+TE.apply (+) ( 3, 4 )                 --> 7
+TE.sequenceMaybe ( Just 1, Just 2 )   --> Just ( 1, 2 )
 ```
 
 ## Parser

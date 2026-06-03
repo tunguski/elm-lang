@@ -7,6 +7,10 @@ module Dict.Extra exposing
     , removeWhen
     , any
     , find
+    , invert
+    , unionWith
+    , removeMany
+    , keepOnly
     )
 
 {-| A subset of the popular `elm-community/dict-extra` helpers — the ones reached for most often —
@@ -19,6 +23,7 @@ implemented in plain Elm so they work on every backend.
 -}
 
 import Dict exposing (Dict)
+import Set exposing (Set)
 
 
 {-| Groups a list into a `Dict` keyed by `toKey`, each value the list of elements with that key
@@ -95,3 +100,43 @@ find pred dict =
         )
         Nothing
         dict
+
+
+{-| Swaps keys and values (later collisions on a value win). -}
+invert : Dict comparable1 comparable2 -> Dict comparable2 comparable1
+invert dict =
+    Dict.foldl (\k v acc -> Dict.insert v k acc) Dict.empty dict
+
+
+{-| Unions two dicts, combining the values of keys present in both with `combine left right`. -}
+unionWith : (v -> v -> v) -> Dict comparable v -> Dict comparable v -> Dict comparable v
+unionWith combine left right =
+    Dict.foldl
+        (\k lv acc ->
+            Dict.update k
+                (\m ->
+                    Just
+                        (case m of
+                            Just rv ->
+                                combine lv rv
+
+                            Nothing ->
+                                lv
+                        )
+                )
+                acc
+        )
+        right
+        left
+
+
+{-| Removes every key in the set. -}
+removeMany : Set comparable -> Dict comparable v -> Dict comparable v
+removeMany keys dict =
+    Set.foldl (\k acc -> Dict.remove k acc) dict keys
+
+
+{-| Keeps only the entries whose key is in the set. -}
+keepOnly : Set comparable -> Dict comparable v -> Dict comparable v
+keepOnly keys dict =
+    Dict.filter (\k _ -> Set.member k keys) dict

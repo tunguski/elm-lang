@@ -9,9 +9,10 @@ class DictExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (grp, fromBy, freq, mk, fmap, rw, anyV, findV)
+      module Main exposing (grp, fromBy, freq, mk, fmap, rw, anyV, findV, inv, uw, rm, ko)
 
       import Dict
+      import Set
       import Dict.Extra as DE
 
       grp = Dict.toList (DE.groupBy (\\n -> modBy 2 n) [ 1, 2, 3, 4 ])
@@ -22,6 +23,10 @@ class DictExtraLibraryTest {
       rw = Dict.toList (DE.removeWhen (\\k v -> v > 1) (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ]))
       anyV = DE.any (\\k v -> v > 1) (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ])
       findV = DE.find (\\k v -> v == 2) (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ])
+      inv = Dict.toList (DE.invert (Dict.fromList [ ( 1, "a" ), ( 2, "b" ) ]))
+      uw = Dict.toList (DE.unionWith (+) (Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]) (Dict.fromList [ ( 2, 2 ), ( 3, 3 ) ]))
+      rm = Dict.toList (DE.removeMany (Set.fromList [ 1, 3 ]) (Dict.fromList [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ) ]))
+      ko = Dict.toList (DE.keepOnly (Set.fromList [ 1, 3 ]) (Dict.fromList [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ) ]))
       """;
 
   private static String value(String name) {
@@ -43,5 +48,13 @@ class DictExtraLibraryTest {
     assertEquals("[(1,1)]", value("rw"));
     assertEquals("True", value("anyV"));
     assertEquals("Just (2,2)", value("findV"));
+  }
+
+  @Test
+  void invertUnionWithRemoveManyKeepOnly() {
+    assertEquals("[(\"a\",1),(\"b\",2)]", value("inv"));
+    assertEquals("[(1,10),(2,22),(3,3)]", value("uw")); // shared key 2: 20 + 2
+    assertEquals("[(2,\"b\")]", value("rm"));
+    assertEquals("[(1,\"a\"),(3,\"c\")]", value("ko"));
   }
 }
