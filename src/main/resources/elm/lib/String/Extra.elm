@@ -11,6 +11,13 @@ module String.Extra exposing
     , nonEmpty
     , nonBlank
     , insertAt
+    , leftOf
+    , rightOf
+    , replaceSlice
+    , dasherize
+    , underscored
+    , quote
+    , unquote
     )
 
 {-| A subset of the popular `elm-community/string-extra` helpers — the ones reached for most often —
@@ -125,3 +132,55 @@ nonBlank s =
 insertAt : String -> Int -> String -> String
 insertAt sub i s =
     String.left i s ++ sub ++ String.dropLeft i s
+
+
+{-| The substring before the first occurrence of `pattern` (empty if `pattern` isn't present). -}
+leftOf : String -> String -> String
+leftOf pattern string =
+    case List.head (String.indexes pattern string) of
+        Just i ->
+            String.left i string
+
+        Nothing ->
+            ""
+
+
+{-| The substring after the first occurrence of `pattern` (empty if `pattern` isn't present). -}
+rightOf : String -> String -> String
+rightOf pattern string =
+    case List.head (String.indexes pattern string) of
+        Just i ->
+            String.dropLeft (i + String.length pattern) string
+
+        Nothing ->
+            ""
+
+
+{-| Replaces the characters in the half-open range `[start, end)` with `replacement`. -}
+replaceSlice : String -> Int -> Int -> String -> String
+replaceSlice replacement start end string =
+    String.left start string ++ replacement ++ String.dropLeft end string
+
+
+{-| Lower-cases and joins words (split on spaces, underscores) with dashes: `"Foo Bar" -> "foo-bar"`. -}
+dasherize : String -> String
+dasherize string =
+    String.toLower (String.join "-" (String.words (String.replace "_" " " string)))
+
+
+{-| Lower-cases and joins words (split on spaces, dashes) with underscores: `"Foo-Bar" -> "foo_bar"`. -}
+underscored : String -> String
+underscored string =
+    String.toLower (String.join "_" (String.words (String.replace "-" " " string)))
+
+
+{-| Wraps the string in double quotes. -}
+quote : String -> String
+quote string =
+    "\"" ++ string ++ "\""
+
+
+{-| Removes one layer of surrounding double quotes, if present on both ends. -}
+unquote : String -> String
+unquote string =
+    unsurround "\"" string

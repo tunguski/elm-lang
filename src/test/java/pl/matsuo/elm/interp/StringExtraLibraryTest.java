@@ -12,7 +12,7 @@ class StringExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (sentence, decap, title, blankT, blankF, cleaned, occ, surr, unsurr, ellip, ellipShort, neJust, neNothing, nbNothing, ins)
+      module Main exposing (sentence, decap, title, blankT, blankF, cleaned, occ, surr, unsurr, ellip, ellipShort, neJust, neNothing, nbNothing, ins, lo, ro, rs, dash, under, q, uq)
 
       import String.Extra as SE
 
@@ -31,6 +31,13 @@ class StringExtraLibraryTest {
       neNothing = SE.nonEmpty ""
       nbNothing = SE.nonBlank "  "
       ins = SE.insertAt "X" 2 "abcd"
+      lo = SE.leftOf "=" "a=b=c"
+      ro = SE.rightOf "=" "a=b=c"
+      rs = SE.replaceSlice "X" 1 3 "abcd"
+      dash = SE.dasherize "Foo Bar_baz"
+      under = SE.underscored "Foo-Bar baz"
+      q = SE.quote "hi"
+      uq = SE.unquote "\\"hi\\""
       """;
 
   private static String value(String name) {
@@ -58,5 +65,16 @@ class StringExtraLibraryTest {
     assertEquals("Nothing", value("neNothing"));
     assertEquals("Nothing", value("nbNothing"));
     assertEquals("abXcd", value("ins"));
+  }
+
+  @Test
+  void slicingDasherizeQuote() {
+    assertEquals("a", value("lo")); // before first "="
+    assertEquals("b=c", value("ro")); // after first "="
+    assertEquals("aXd", value("rs"));
+    assertEquals("foo-bar-baz", value("dash"));
+    assertEquals("foo_bar_baz", value("under"));
+    assertEquals("\"hi\"", value("q"));
+    assertEquals("hi", value("uq"));
   }
 }
