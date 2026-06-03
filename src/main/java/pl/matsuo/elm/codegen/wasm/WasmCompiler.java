@@ -253,6 +253,9 @@ public final class WasmCompiler {
       stringPadRight n c s = if String.length s >= n then s else stringPadRight n c (String.append s (String.fromChar c))
       stringIndexes sub s = if String.length sub == 0 then [] else indexesFrom sub s 0
       indexesFrom sub s i = if i + String.length sub > String.length s then [] else if String.left (String.length sub) (String.dropLeft i s) == sub then i :: indexesFrom sub s (i + 1) else indexesFrom sub s (i + 1)
+      stringSplit sep s = case listHead (stringIndexes sep s) of
+          Nothing -> [ s ]
+          Just i -> String.left i s :: stringSplit sep (String.dropLeft (i + String.length sep) s)
       stringCons c s = String.append (String.fromChar c) s
       charIsDigit c = c >= 48 && c <= 57
       charIsUpper c = c >= 65 && c <= 90
@@ -347,6 +350,7 @@ public final class WasmCompiler {
           Map.entry("String.contains", "stringContains"),
           Map.entry("String.indexes", "stringIndexes"),
           Map.entry("String.indices", "stringIndexes"),
+          Map.entry("String.split", "stringSplit"),
           Map.entry("String.trim", "stringTrim"),
           Map.entry("String.trimLeft", "stringTrimLeft"),
           Map.entry("String.trimRight", "stringTrimRight"),

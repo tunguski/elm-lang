@@ -589,6 +589,15 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringSplitCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    agrees("main = List.length (String.split \",\" \"a,b,c\")\n"); // 3
+    assertEquals("a-b-c", runMainString("main = String.join \"-\" (String.split \",\" \"a,b,c\")\n"));
+    assertEquals("hello", runMainString("main = String.join \"-\" (String.split \",\" \"hello\")\n")); // no sep -> single piece
+    assertEquals("a|b", runMainString("main = String.join \"|\" (String.split \"::\" \"a::b\")\n")); // multi-char sep
+  }
+
+  @Test
   void stringIndexesCompiles() throws Exception {
     assertEquals("[2,3]", decodeList("main = String.indexes \"l\" \"hello\"\n"));
     assertEquals("[2]", decodeList("main = String.indexes \"ll\" \"hello\"\n"));
