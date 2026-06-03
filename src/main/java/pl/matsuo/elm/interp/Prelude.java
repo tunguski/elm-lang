@@ -883,6 +883,11 @@ public final class Prelude {
       ElmRecord r = parseUrl((String) Thunk.resolve(a[0]));
       return r == null ? d("Nothing") : d("Just", r);
     });
+    fn("Url.percentEncode", 1, a -> percentEncode((String) Thunk.resolve(a[0])));
+    fn("Url.percentDecode", 1, a -> {
+      String r = percentDecode((String) Thunk.resolve(a[0]));
+      return r == null ? d("Nothing") : d("Just", r);
+    });
     fn("Browser.Navigation.load", 1, a -> d("$CmdNone"));
     fn("Browser.Navigation.pushUrl", 2, a -> d("$CmdNone"));
     fn("Browser.Navigation.replaceUrl", 2, a -> d("$CmdNone"));
@@ -1087,6 +1092,48 @@ public final class Prelude {
     r.put("query", u.getRawQuery() == null ? d("Nothing") : d("Just", u.getRawQuery()));
     r.put("fragment", u.getRawFragment() == null ? d("Nothing") : d("Just", u.getRawFragment()));
     return new ElmRecord(r);
+  }
+
+  /** Percent-encodes a string for use in a URL: unreserved characters (A-Za-z0-9-_.~) pass through,
+   *  everything else becomes %XX over its UTF-8 bytes (RFC 3986, like elm/url's percentEncode). */
+  private static String percentEncode(String s) {
+    StringBuilder b = new StringBuilder();
+    for (byte by : s.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+      int c = by & 0xFF;
+      if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+          || c == '-' || c == '_' || c == '.' || c == '~') {
+        b.append((char) c);
+      } else {
+        b.append('%').append(Character.toUpperCase(Character.forDigit(c >> 4, 16)))
+            .append(Character.toUpperCase(Character.forDigit(c & 0xF, 16)));
+      }
+    }
+    return b.toString();
+  }
+
+  /** Decodes a percent-encoded string, or {@code null} on a malformed escape (-> {@code Nothing}). */
+  private static String percentDecode(String s) {
+    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == '%') {
+        if (i + 2 >= s.length()) {
+          return null;
+        }
+        int hi = Character.digit(s.charAt(i + 1), 16);
+        int lo = Character.digit(s.charAt(i + 2), 16);
+        if (hi < 0 || lo < 0) {
+          return null;
+        }
+        bytes.write((hi << 4) | lo);
+        i += 2;
+      } else {
+        for (byte by : String.valueOf(c).getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+          bytes.write(by & 0xFF);
+        }
+      }
+    }
+    return new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
   }
 
   /** Rebuilds a URL string from an elm/url-shaped record. */

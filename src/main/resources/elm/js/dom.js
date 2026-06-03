@@ -183,6 +183,8 @@
     if(u.query&&u.query.$==='Just') s+='?'+u.query._[0]; if(u.fragment&&u.fragment.$==='Just') s+='#'+u.fragment._[0]; return s; }
   $rt['Url.toString']=function(u){ return (u&&u.path!=null)?$urlToString(u):String(u); };
   $rt['Url.fromString']=function(s){ var u=$url(s); return u?$data('Just',[u]):$data('Nothing',[]); };
+  $rt['Url.percentEncode']=function(s){ return encodeURIComponent(s); };
+  $rt['Url.percentDecode']=function(s){ try{ return $data('Just',[decodeURIComponent(s)]); }catch(e){ return $data('Nothing',[]); } };
   $rt['Browser.Navigation.load']=function(url){ return $cmd(function(d){ try{ location.href=url; }catch(e){} }); };
   // pushUrl/replaceUrl change history and then notify a Browser.application's onUrlChange (if mounted).
   $rt['Browser.Navigation.pushUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.pushState({},'',url); if(window.$onUrlChange) window.$onUrlChange(); }catch(e){} }); }; };

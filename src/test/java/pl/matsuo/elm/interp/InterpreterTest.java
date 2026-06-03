@@ -30,6 +30,14 @@ class InterpreterTest {
   }
 
   @Test
+  void urlPercentEncodeDecode() {
+    assertEquals("a%20b%26c", show("Url.percentEncode \"a b&c\""));
+    assertEquals("hello-world.txt~", show("Url.percentEncode \"hello-world.txt~\"")); // unreserved kept
+    assertEquals("Just \"a b&c\"", show("Url.percentDecode \"a%20b%26c\""));
+    assertEquals("Nothing", show("Url.percentDecode \"%zz\"")); // malformed -> Nothing
+  }
+
+  @Test
   void negativeIntegerPatterns() {
     assertEquals(100L, eval("case -1 of\n  -1 -> 100\n  _ -> 0"));
     assertEquals(0L, eval("case 5 of\n  -1 -> 100\n  _ -> 0"));
