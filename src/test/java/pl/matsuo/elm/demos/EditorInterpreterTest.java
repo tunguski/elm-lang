@@ -328,6 +328,14 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void interpretsCompositionAndOperatorArguments() {
+    assertEquals("12", eval("((\\x -> x + 1) >> (\\x -> x * 2)) 5")); // (5+1)*2
+    assertEquals("12", eval("((\\x -> x * 2) << (\\x -> x + 1)) 5")); // 2*(5+1)
+    assertEquals("[3, 2, 1]", eval("List.foldl (::) [] [ 1, 2, 3 ]")); // cons as a function
+    assertEquals("6", eval("List.foldl (+) 0 [ 1, 2, 3 ]")); // (+) as a function
+  }
+
+  @Test
   void interpretsXor() {
     assertEquals("True", eval("xor True False"));
     assertEquals("False", eval("xor True True"));
