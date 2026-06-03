@@ -542,6 +542,11 @@ class WasmHeapTest {
     agrees("main = Char.toCode (Char.toLower 'A')\n"); // 97
     agrees("main = Char.toCode (Char.toUpper '5')\n"); // 53 (unchanged)
     agrees("main = if Char.isSpace ' ' then 1 else 0\n"); // 1
+    agrees("main = if Char.isOctDigit '7' then 1 else 0\n"); // 1
+    agrees("main = if Char.isOctDigit '8' then 1 else 0\n"); // 0
+    agrees("main = if Char.isHexDigit 'f' then 1 else 0\n"); // 1
+    agrees("main = if Char.isHexDigit 'F' then 1 else 0\n"); // 1
+    agrees("main = if Char.isHexDigit 'g' then 1 else 0\n"); // 0
   }
 
   @Test

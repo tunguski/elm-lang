@@ -284,6 +284,8 @@ public final class WasmCompiler {
       charToUpper c = if c >= 97 && c <= 122 then c - 32 else c
       charToLower c = if c >= 65 && c <= 90 then c + 32 else c
       charIsSpace c = c == 32 || c == 9 || c == 10 || c == 13
+      charIsOctDigit c = c >= 48 && c <= 55
+      charIsHexDigit c = charIsDigit c || (c >= 65 && c <= 70) || (c >= 97 && c <= 102)
       listSingleton x = [ x ]
       tupleFirst t = case t of
           ( a, b ) -> a
@@ -396,6 +398,8 @@ public final class WasmCompiler {
           Map.entry("Char.toUpper", "charToUpper"),
           Map.entry("Char.toLower", "charToLower"),
           Map.entry("Char.isSpace", "charIsSpace"),
+          Map.entry("Char.isOctDigit", "charIsOctDigit"),
+          Map.entry("Char.isHexDigit", "charIsHexDigit"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
