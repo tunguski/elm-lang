@@ -18,12 +18,21 @@ module List.Extra exposing
     , groupsOf
     , scanl1
     , foldl1
+    , foldr1
     , maximumBy
     , minimumBy
     , zip
     , unzip3
     , interweave
     , notMember
+    , intercalate
+    , transpose
+    , group
+    , cartesianProduct
+    , andMap
+    , iterate
+    , remove
+    , swapAt
     )
 
 {-| A subset of the popular `elm-community/list-extra` helpers — the ones reached for most often —
@@ -325,3 +334,104 @@ interweave xs ys =
 notMember : a -> List a -> Bool
 notMember value list =
     not (List.member value list)
+
+
+{-| Like {@link foldl1} but from the right (`f a (f b (… z))`), or `Nothing` if empty. -}
+foldr1 : (a -> a -> a) -> List a -> Maybe a
+foldr1 f list =
+    case List.reverse list of
+        [] ->
+            Nothing
+
+        seed :: rest ->
+            Just (List.foldl f seed rest)
+
+
+{-| Concatenates a list of lists, inserting `sep` between each. -}
+intercalate : List a -> List (List a) -> List a
+intercalate sep lists =
+    List.concat (List.intersperse sep lists)
+
+
+{-| Transposes rows into columns; rows that run out early are dropped. -}
+transpose : List (List a) -> List (List a)
+transpose listOfLists =
+    let
+        heads =
+            List.filterMap List.head listOfLists
+
+        tails =
+            List.map (List.drop 1) listOfLists
+    in
+    if List.isEmpty heads then
+        []
+
+    else
+        heads :: transpose tails
+
+
+{-| Groups consecutive equal elements into sublists. -}
+group : List a -> List (List a)
+group list =
+    case list of
+        [] ->
+            []
+
+        x :: _ ->
+            takeWhile (\y -> y == x) list :: group (dropWhile (\y -> y == x) list)
+
+
+{-| Every way to pick one element from each list, in order. -}
+cartesianProduct : List (List a) -> List (List a)
+cartesianProduct lists =
+    case lists of
+        [] ->
+            [ [] ]
+
+        first :: rest ->
+            List.concatMap (\x -> List.map (\combo -> x :: combo) (cartesianProduct rest)) first
+
+
+{-| Applies a list of functions to a list of arguments pairwise (stops at the shorter). -}
+andMap : List a -> List (a -> b) -> List b
+andMap args functions =
+    List.map2 (\f x -> f x) functions args
+
+
+{-| Repeatedly applies `f`, collecting each value, until it returns `Nothing`. -}
+iterate : (a -> Maybe a) -> a -> List a
+iterate f x =
+    x
+        :: (case f x of
+                Just next ->
+                    iterate f next
+
+                Nothing ->
+                    []
+           )
+
+
+{-| Removes the first element equal to `value`. -}
+remove : a -> List a -> List a
+remove value list =
+    case list of
+        [] ->
+            []
+
+        x :: rest ->
+            if x == value then
+                rest
+
+            else
+                x :: remove value rest
+
+
+{-| Swaps the elements at indices `i` and `j` (no-op if either is out of range). -}
+swapAt : Int -> Int -> List a -> List a
+swapAt i j list =
+    case ( getAt i list, getAt j list ) of
+        ( Just a, Just b ) ->
+            setAt j a (setAt i b list)
+
+        _ ->
+            list
