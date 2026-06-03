@@ -506,6 +506,14 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringFromCharAndConsCompile() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("a", runMainString("main = String.fromChar 'a'\n"));
+    assertEquals("xhi", runMainString("main = String.cons 'x' \"hi\"\n"));
+    agrees("main = String.length (String.cons 'a' \"bc\")\n"); // 3
+  }
+
+  @Test
   void stringToUpperToLowerCaseFoldAscii() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("HELLO", runMainString("main = String.toUpper \"Hello\"\n"));

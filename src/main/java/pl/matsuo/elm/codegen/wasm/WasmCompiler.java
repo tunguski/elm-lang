@@ -234,6 +234,7 @@ public final class WasmCompiler {
       stringSlice start end s = String.left (clampIdx s end - clampIdx s start) (String.dropLeft (clampIdx s start) s)
       stringStartsWith pre s = String.left (String.length pre) s == pre
       stringEndsWith suf s = String.right (String.length suf) s == suf
+      stringCons c s = String.append (String.fromChar c) s
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -301,6 +302,7 @@ public final class WasmCompiler {
           Map.entry("String.slice", "stringSlice"),
           Map.entry("String.startsWith", "stringStartsWith"),
           Map.entry("String.endsWith", "stringEndsWith"),
+          Map.entry("String.cons", "stringCons"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
@@ -746,6 +748,10 @@ public final class WasmCompiler {
           }
         }
         case Expr.FloatLit lit -> emitFloatConst(lit.value());
+        case Expr.CharLit lit -> {
+          code.write(0x42); // i64.const (a Char is its Unicode code point)
+          sleb(code, lit.codePoint());
+        }
         case Expr.Negate n -> {
           if (isFloat(n)) {
             pushF64(n.operand());
@@ -1601,6 +1607,17 @@ public final class WasmCompiler {
         leb(code, funcs.get("$strReverse")[0]);
         return;
       }
+      // `String.fromChar c` -> the $strFromChar native (arg passed twice; 2nd ignored).
+      if (head instanceof Expr.Var sf
+          && "String".equals(sf.module())
+          && "fromChar".equals(sf.name())
+          && args.size() == 1) {
+        intExpr(args.get(0));
+        intExpr(args.get(0));
+        code.write(0x10);
+        leb(code, funcs.get("$strFromChar")[0]);
+        return;
+      }
       // `String.toUpper s` / `String.toLower s` -> the case-folding natives (arg passed twice).
       if (head instanceof Expr.Var sc
           && "String".equals(sc.module())
@@ -1815,7 +1832,64 @@ public final class WasmCompiler {
         new Native("$strDropLeft", 2, strDropLeftEntry()),
         new Native("$strReverse", 2, strReverseEntry()),
         new Native("$strUpper", 2, strCaseEntry(97, 122, false)),
-        new Native("$strLower", 2, strCaseEntry(65, 90, true)));
+        new Native("$strLower", 2, strCaseEntry(65, 90, true)),
+        new Native("$strFromChar", 2, strFromCharEntry()));
+  }
+
+  /** {@code $strFromChar(c, _) -> i64}: a one-byte heap string holding {@code c}'s low byte (ASCII;
+   *  consistent with this backend's byte string model). Second argument ignored. */
+  private static byte[] strFromCharEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // param c=0; i32 result=2, delta=3
+    b.write(0x23);
+    leb(b, 0);
+    lset(b, 2); // result = $hp
+    lget(b, 2);
+    i32c(b, 9);
+    b.write(0x6A);
+    b.write(0x24);
+    leb(b, 0); // $hp = result + 9
+    b.write(0x23);
+    leb(b, 0);
+    i32c(b, 65535);
+    b.write(0x6A);
+    i32c(b, 16);
+    b.write(0x76);
+    b.write(0x3F);
+    b.write(0x00);
+    b.write(0x6B);
+    lset(b, 3);
+    lget(b, 3);
+    i32c(b, 0);
+    b.write(0x4A);
+    b.write(0x04);
+    b.write(0x40);
+    lget(b, 3);
+    b.write(0x40);
+    b.write(0x00);
+    b.write(0x1A);
+    b.write(0x0B);
+    // result.length = 1
+    lget(b, 2);
+    b.write(0x42);
+    sleb(b, 1);
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 0);
+    // store8(result + 8, c & 0xFF)
+    lget(b, 2);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 0);
+    b.write(0xA7);
+    i32c(b, 255);
+    b.write(0x71);
+    b.write(0x3A);
+    leb(b, 0);
+    leb(b, 0);
+    lget(b, 2);
+    b.write(0xAD);
+    return entry(b, new int[][] {{2, I32}});
   }
 
   /** {@code $strUpper/$strLower(str, _) -> i64}: a fresh string with each ASCII letter case-folded.
