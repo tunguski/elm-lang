@@ -233,6 +233,8 @@ class JsBackendTest {
     same("Result.map2 (\\a b -> a + b) (Ok 1) (Ok 2)");
     same("Result.map2 (\\a b -> a + b) (Err \"e\") (Ok 2)"); // short-circuits to the Err
     same("Result.map3 (\\a b c -> a + b + c) (Ok 1) (Ok 2) (Ok 3)");
+    same("Result.fromMaybe \"err\" (Just 5)"); // Ok 5
+    same("Result.fromMaybe \"err\" Nothing"); // Err "err"
     same("Dict.foldr (\\k v acc -> k ++ acc) \"\" (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])");
     same("Set.foldr (\\x acc -> x :: acc) [] (Set.fromList [ 3, 1, 2 ])");
   }
