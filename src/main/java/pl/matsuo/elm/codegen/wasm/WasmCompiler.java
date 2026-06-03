@@ -260,6 +260,12 @@ public final class WasmCompiler {
       stringReplace old new s = stringJoin new (stringSplit old s)
       stringFromList chars = listFoldr stringCons "" chars
       stringCons c s = String.append (String.fromChar c) s
+      stringFoldl f acc s = listFoldl f acc (String.toList s)
+      stringFoldr f acc s = listFoldr f acc (String.toList s)
+      stringMap f s = stringFromList (listMap f (String.toList s))
+      stringFilter pred s = stringFromList (listFilter pred (String.toList s))
+      stringAny pred s = listAny pred (String.toList s)
+      stringAll pred s = listAll pred (String.toList s)
       charIsDigit c = c >= 48 && c <= 57
       charIsUpper c = c >= 65 && c <= 90
       charIsLower c = c >= 97 && c <= 122
@@ -363,6 +369,12 @@ public final class WasmCompiler {
           Map.entry("String.padLeft", "stringPadLeft"),
           Map.entry("String.padRight", "stringPadRight"),
           Map.entry("String.cons", "stringCons"),
+          Map.entry("String.foldl", "stringFoldl"),
+          Map.entry("String.foldr", "stringFoldr"),
+          Map.entry("String.map", "stringMap"),
+          Map.entry("String.filter", "stringFilter"),
+          Map.entry("String.any", "stringAny"),
+          Map.entry("String.all", "stringAll"),
           Map.entry("Char.toCode", "identity"),
           Map.entry("Char.fromCode", "identity"),
           Map.entry("Char.isDigit", "charIsDigit"),

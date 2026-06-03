@@ -609,6 +609,25 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringFoldMapFilterCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // map over chars (uppercase via Char.toUpper)
+    assertEquals("HELLO", runMainString("main = String.map Char.toUpper \"hello\"\n"));
+    // filter chars (keep letters from a mixed string)
+    assertEquals("abc", runMainString("main = String.filter Char.isAlpha \"a1b2c3\"\n"));
+    // foldl building a reversed copy by consing
+    assertEquals("cba", runMainString("main = String.foldl String.cons \"\" \"abc\"\n"));
+    // foldr building a forward copy by consing
+    assertEquals("abc", runMainString("main = String.foldr String.cons \"\" \"abc\"\n"));
+    // any / all over chars, surfaced as strings
+    assertEquals(
+        "yn",
+        runMainString(
+            "yn b = if b then \"y\" else \"n\"\n"
+                + "main = yn (String.any Char.isDigit \"a1b\") ++ yn (String.all Char.isDigit \"a1b\")\n"));
+  }
+
+  @Test
   void stringReplaceCompiles() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("a_b_c", runMainString("main = String.replace \",\" \"_\" \"a,b,c\"\n"));
