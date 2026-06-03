@@ -1557,6 +1557,17 @@ public final class WasmCompiler {
         leb(code, funcs.get("$strConcat")[0]);
         return;
       }
+      // `String.left n s` -> the $strLeft native (byte-based prefix), dispatched like String.append.
+      if (head instanceof Expr.Var sl
+          && "String".equals(sl.module())
+          && "left".equals(sl.name())
+          && args.size() == 2) {
+        intExpr(args.get(0)); // n
+        intExpr(args.get(1)); // str
+        code.write(0x10);
+        leb(code, funcs.get("$strLeft")[0]);
+        return;
+      }
       // A call to a known top-level function (or a qualified stdlib name mapped to a prelude
       // function) that is NOT shadowed by a local.
       if (head instanceof Expr.Var v
@@ -1753,7 +1764,85 @@ public final class WasmCompiler {
   private record Native(String name, int arity, byte[] entry) {}
 
   private static List<Native> stringRuntime() {
-    return List.of(new Native("$strEq", 2, strEqEntry()), new Native("$strConcat", 2, strConcatEntry()));
+    return List.of(
+        new Native("$strEq", 2, strEqEntry()),
+        new Native("$strConcat", 2, strConcatEntry()),
+        new Native("$strLeft", 2, strLeftEntry()));
+  }
+
+  /** {@code $strLeft(n, str) -> i64}: a fresh heap string holding the first {@code clamp(0, len, n)}
+   *  bytes of {@code str} (byte-based, matching this backend's byte-length string model). */
+  private static byte[] strLeftEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // params n=0, str=1 (i64); locals lenStr=2, count=3 (i64); result=4, i=5, total=6, delta=7 (i32)
+    lget(b, 1);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0);
+    lset(b, 2); // lenStr = i64.load(str)
+    // count = min(n, lenStr)
+    lget(b, 0);
+    lget(b, 2);
+    lget(b, 0);
+    lget(b, 2);
+    b.write(0x53); // i64.lt_s (n < lenStr)
+    b.write(0x1B); // select
+    lset(b, 3);
+    // count = max(0, count)
+    lget(b, 3);
+    b.write(0x42);
+    sleb(b, 0);
+    lget(b, 3);
+    b.write(0x42);
+    sleb(b, 0);
+    b.write(0x55); // i64.gt_s (count > 0)
+    b.write(0x1B); // select
+    lset(b, 3);
+    b.write(0x23);
+    leb(b, 0);
+    lset(b, 4); // result = $hp
+    i32c(b, 8);
+    lget(b, 3);
+    b.write(0xA7);
+    b.write(0x6A);
+    lset(b, 6); // total = 8 + (i32)count
+    lget(b, 4);
+    lget(b, 6);
+    b.write(0x6A);
+    b.write(0x24);
+    leb(b, 0); // $hp = result + total
+    // grow by enough pages
+    b.write(0x23);
+    leb(b, 0);
+    i32c(b, 65535);
+    b.write(0x6A);
+    i32c(b, 16);
+    b.write(0x76);
+    b.write(0x3F);
+    b.write(0x00);
+    b.write(0x6B);
+    lset(b, 7);
+    lget(b, 7);
+    i32c(b, 0);
+    b.write(0x4A);
+    b.write(0x04);
+    b.write(0x40);
+    lget(b, 7);
+    b.write(0x40);
+    b.write(0x00);
+    b.write(0x1A);
+    b.write(0x0B);
+    // result.length = count
+    lget(b, 4);
+    lget(b, 3);
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 0);
+    copyLoop(b, 0, 1, 3, -1); // copy `count` bytes from str's data into result's data
+    lget(b, 4);
+    b.write(0xAD); // result as i64 pointer
+    return entry(b, new int[][] {{2, I64}, {4, I32}});
   }
 
   private static void nload64(ByteArrayOutputStream b, int off) {

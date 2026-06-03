@@ -485,6 +485,16 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringLeftProducesThePrefixBytes() throws Exception {
+    assumeTrue(NODE, "node not available");
+    assertEquals("hel", runMainString("main = String.left 3 \"hello\"\n"));
+    assertEquals("hello", runMainString("main = String.left 10 \"hello\"\n")); // n > length clamps
+    assertEquals("", runMainString("main = String.left 0 \"hello\"\n"));
+    assertEquals("", runMainString("main = String.left (0 - 2) \"hello\"\n")); // negative clamps to 0
+    agrees("main = String.length (String.left 3 \"hello\")\n"); // 3, matches the interpreter
+  }
+
+  @Test
   void stringConcatJoinRepeatProduceTheRightBytes() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("ababab", runMainString("main = String.repeat 3 \"ab\"\n"));
