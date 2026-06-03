@@ -589,6 +589,14 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringIndexesCompiles() throws Exception {
+    assertEquals("[2,3]", decodeList("main = String.indexes \"l\" \"hello\"\n"));
+    assertEquals("[2]", decodeList("main = String.indexes \"ll\" \"hello\"\n"));
+    assertEquals("[]", decodeList("main = String.indexes \"x\" \"hello\"\n"));
+    assertEquals("[0,2,4]", decodeList("main = String.indexes \"ab\" \"ababab\"\n"));
+  }
+
+  @Test
   void stringContainsCompiles() throws Exception {
     agrees("main = if String.contains \"ll\" \"hello\" then 1 else 0\n"); // 1
     agrees("main = if String.contains \"x\" \"hello\" then 1 else 0\n"); // 0
