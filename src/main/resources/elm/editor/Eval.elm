@@ -425,6 +425,17 @@ evalExpr globals env expr =
                         -- A Json.Decode combinator under an alias (`D.succeed`, `Decode.at`, …).
                         Ok (VBuiltin field [])
 
+                    else if List.member field builtins then
+                        -- A builtin referenced under its module name (e.g. `Html.text`, `Html.div`,
+                        -- `Svg.circle`) where the file exposes only the type, not the function — as
+                        -- thwomp does with `import Html exposing (Html)` then `Html.text "…"`.
+                        -- Resolve it the same as the bare builtin `field`.
+                        if arity field == 0 then
+                            runBuiltin globals field []
+
+                        else
+                            Ok (VBuiltin field [])
+
                     else
                         Err ("unknown qualified name: " ++ qualified)
 

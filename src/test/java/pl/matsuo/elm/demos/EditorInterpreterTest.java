@@ -550,7 +550,11 @@ class EditorInterpreterTest {
           "preventDefaultOn \"dragover\" (D.succeed ( 1, True ))",
           "on \"drop\" (D.succeed 1)",
           "D.at [ \"dataTransfer\", \"files\" ] (D.oneOrMore (\\f fs -> f) File.decoder)",
-          "Select.files [ \"image/*\" ] (\\f fs -> 1)"
+          "Select.files [ \"image/*\" ] (\\f fs -> 1)",
+          // A builtin referenced under its module name when the file exposes only the type
+          // (thwomp does `import Html exposing (Html)` then `Html.text "Loading textures..."`).
+          "Html.text \"Loading textures...\"",
+          "Html.div [] [ Html.text \"hi\" ]"
         }) {
       assertFalse(eval(expr).startsWith("Error"), expr + " => " + eval(expr));
     }
