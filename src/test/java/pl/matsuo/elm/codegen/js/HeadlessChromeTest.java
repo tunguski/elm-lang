@@ -339,6 +339,43 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void backOrGoesBackWhenSameSiteElseLoadsFallback() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // A back link that uses Browser.Navigation.backOr: history.back() when the visitor came from
+    // this site, else load the fallback url.
+    String app =
+        "module Main exposing (main)\n"
+            + "import Browser\n"
+            + "import Browser.Navigation\n"
+            + "import Html exposing (button, text)\n"
+            + "import Html.Events exposing (onClick)\n"
+            + "type Msg = Back\n"
+            + "main = Browser.element\n"
+            + "    { init = \\_ -> ( 0, Cmd.none )\n"
+            + "    , update = \\msg m -> ( m, Browser.Navigation.backOr \"#fallback\" )\n"
+            + "    , view = \\m -> button [ onClick Back ] [ text \"back\" ]\n"
+            + "    , subscriptions = \\_ -> Sub.none\n"
+            + "    }\n";
+    // No same-site referrer (file:// page) -> falls back to the url (a hash, so we stay on the page).
+    String fallbackDriver =
+        "document.querySelector('button').click();"
+            + "document.body.setAttribute('data-loc', location.hash);";
+    String dom = renderInBrowser(app, fallbackDriver);
+    assertTrue(dom.contains("data-loc=\"#fallback\""), "no same-site referrer -> fallback url: " + dom);
+
+    // Same-site referrer -> history.back() (stubbed to record), and no fallback navigation.
+    String backDriver =
+        "try{Object.defineProperty(document,'referrer',{configurable:true,get:function(){return location.origin+'/prev';}});}catch(e){}"
+            + "var backed=false; history.back=function(){backed=true;};"
+            + "document.querySelector('button').click();"
+            + "document.body.setAttribute('data-backed', String(backed));"
+            + "document.body.setAttribute('data-loc', location.hash);";
+    String dom2 = renderInBrowser(app, backDriver);
+    assertTrue(dom2.contains("data-backed=\"true\""), "same-site referrer -> history.back: " + dom2);
+    assertTrue(!dom2.contains("data-loc=\"#fallback\""), "did not also load the fallback: " + dom2);
+  }
+
+  @Test
   void textFieldsReactsToInput() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String driver = "window.$app.dispatch($data('Change',['hello']));";

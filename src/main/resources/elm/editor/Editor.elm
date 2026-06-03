@@ -21,7 +21,7 @@ import Json.Decode as Decode
 import Set exposing (Set)
 import Html exposing (Html, a, button, div, input, li, node, pre, span, text, textarea, ul)
 import Html.Attributes exposing (class, classList, href, placeholder, style, title, value)
-import Html.Events exposing (onClick, onInput, onMouseDown, on)
+import Html.Events exposing (onClick, onInput, onMouseDown, on, preventDefaultOn)
 import Highlight
 import Assist
 import Share
@@ -82,6 +82,7 @@ type Msg
     | Restore
     | GotHash String
     | LoadedSession (Maybe String)
+    | GoBack
     | NoOp
 
 
@@ -719,6 +720,11 @@ update msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
+        GoBack ->
+            -- Return to the previous page when the visitor came from elsewhere on the site (the side
+            -- menu links here from other pages); otherwise go to the gallery home page.
+            ( model, Browser.Navigation.backOr "index.html" )
+
         NoOp ->
             ( model, Cmd.none )
 
@@ -815,11 +821,18 @@ view model =
         ]
 
 
-{-| A themed "back to the gallery" link in the header — an arrow plus the site wordmark, in the
-gallery's accent colour so it reads as part of the same site. -}
+{-| A themed "back" link in the header — an arrow plus the site wordmark, in the gallery's accent
+colour so it reads as part of the same site. Clicking it goes *back* in history when the visitor
+arrived from another page on the site (e.g. via the shared side menu), and falls back to the gallery
+home page otherwise; the `href` is the no-JS fallback and the middle-click/open-in-new-tab target. -}
 backLink : Html Msg
 backLink =
-    a [ href "index.html", class "ed-back", title "Back to the gallery" ]
+    a
+        [ href "index.html"
+        , class "ed-back"
+        , title "Back"
+        , preventDefaultOn "click" (Decode.succeed ( GoBack, True ))
+        ]
         [ text "← elm-lang" ]
 
 

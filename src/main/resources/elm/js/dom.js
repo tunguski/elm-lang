@@ -191,6 +191,10 @@
   $rt['Browser.Navigation.replaceUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.replaceState({},'',url); if(window.$onUrlChange) window.$onUrlChange(); }catch(e){} }); }; };
   $rt['Browser.Navigation.back']=function(key){ return function(n){ return $cmd(function(d){ try{ history.go(-n); }catch(e){} }); }; };
   $rt['Browser.Navigation.forward']=function(key){ return function(n){ return $cmd(function(d){ try{ history.go(n); }catch(e){} }); }; };
+  // backOr url: go back if we arrived from another page on this same site (e.g. via the shared side
+  // menu), otherwise load `url`. Lets a "back" link return to wherever the user came from, and fall
+  // back to the home page when there's no same-origin history (direct visit, bookmark, new tab).
+  $rt['Browser.Navigation.backOr']=function(url){ return $cmd(function(d){ try{ var ref=document.referrer; var sameSite=ref && ref.indexOf(location.origin)===0; if (sameSite){ history.back(); } else { location.href=url; } }catch(e){ try{ location.href=url; }catch(_e){} } }); };
   // getHash/setHash: a minimal permalink bridge (used by the editor's Share feature). getHash reads
   // the current URL fragment (decoded, without the leading '#') and dispatches it once at startup;
   // setHash writes one (URI-encoded) so a session round-trips through the address bar.

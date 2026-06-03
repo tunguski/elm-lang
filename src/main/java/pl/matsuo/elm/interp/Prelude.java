@@ -893,6 +893,7 @@ public final class Prelude {
     fn("Browser.Navigation.replaceUrl", 2, a -> d("$CmdNone"));
     fn("Browser.Navigation.back", 2, a -> d("$CmdNone"));
     fn("Browser.Navigation.forward", 2, a -> d("$CmdNone"));
+    fn("Browser.Navigation.backOr", 1, a -> d("$CmdNone"));
     // The permalink bridge is browser-only; headlessly there is no URL fragment, so both are no-ops.
     fn("Browser.Navigation.getHash", 1, a -> d("$CmdNone"));
     fn("Browser.Navigation.setHash", 1, a -> d("$CmdNone"));
