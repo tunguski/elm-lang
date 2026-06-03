@@ -17,6 +17,7 @@ This page is the index and quick reference; several have a deeper guide of their
 | [`Maybe.Extra`](#maybeextra) | Common `Maybe` helpers | — |
 | [`Result.Extra`](#resultextra) | Common `Result` helpers | — |
 | [`String.Extra`](#stringextra) | Common string helpers | — |
+| [`Dict.Extra`](#dictextra) | Common `Dict` helpers | — |
 | [`Parser`](#parser) | A small parser-combinator library | — |
 | [`Url.Parser`](#urlparser) | Typed URL routing | — |
 | [`Site`](#site) | Static-site pages as data | [site.md](site.md) |
@@ -129,6 +130,16 @@ The most-reached-for elm-community/string-extra helpers, in plain Elm: `toSenten
 import String.Extra as SE
 SE.clean "  a   b  c "        --> "a b c"
 SE.ellipsis 8 "a long string" --> "a lon..."
+```
+
+## Dict.Extra
+
+The most-reached-for elm-community/dict-extra helpers, in plain Elm: `groupBy`, `fromListBy`,
+`frequencies`, `mapKeys`, `filterMap`, `removeWhen`, `any`, `find`.
+
+```elm
+import Dict.Extra as DE
+DE.frequencies [ "a", "b", "a" ] |> Dict.toList   --> [ ( "a", 2 ), ( "b", 1 ) ]
 ```
 
 ## Parser
