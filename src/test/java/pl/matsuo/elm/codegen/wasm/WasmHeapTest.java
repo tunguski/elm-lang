@@ -597,6 +597,18 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringToListCompiles() throws Exception {
+    assumeTrue(NODE, "node not available");
+    // Round-trip through the char-code list exercises $strToList and String.fromList together.
+    assertEquals("abc", runMainString("main = String.fromList (String.toList \"abc\")\n"));
+    assertEquals("", runMainString("main = String.fromList (String.toList \"\")\n"));
+    // toList feeds List functions: reverse the chars, then rebuild.
+    assertEquals(
+        "olleh", runMainString("main = String.fromList (List.reverse (String.toList \"hello\"))\n"));
+    assertEquals("5", runMainString("main = String.fromInt (List.length (String.toList \"hello\"))\n"));
+  }
+
+  @Test
   void stringReplaceCompiles() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("a_b_c", runMainString("main = String.replace \",\" \"_\" \"a,b,c\"\n"));

@@ -1689,6 +1689,17 @@ public final class WasmCompiler {
         leb(code, funcs.get("$strFromChar")[0]);
         return;
       }
+      // `String.toList s` -> the $strToList native (arg passed twice; 2nd ignored).
+      if (head instanceof Expr.Var st
+          && "String".equals(st.module())
+          && "toList".equals(st.name())
+          && args.size() == 1) {
+        intExpr(args.get(0));
+        intExpr(args.get(0));
+        code.write(0x10);
+        leb(code, funcs.get("$strToList")[0]);
+        return;
+      }
       // `String.toUpper s` / `String.toLower s` -> the case-folding natives (arg passed twice).
       if (head instanceof Expr.Var sc
           && "String".equals(sc.module())
@@ -1904,7 +1915,102 @@ public final class WasmCompiler {
         new Native("$strReverse", 2, strReverseEntry()),
         new Native("$strUpper", 2, strCaseEntry(97, 122, false)),
         new Native("$strLower", 2, strCaseEntry(65, 90, true)),
-        new Native("$strFromChar", 2, strFromCharEntry()));
+        new Native("$strFromChar", 2, strFromCharEntry()),
+        new Native("$strToList", 2, strToListEntry()));
+  }
+
+  /** {@code $strToList(s, _) -> i64}: a cons-list of {@code s}'s bytes as char codes (built back to
+   *  front so the list reads left to right). Byte-based; second argument ignored. */
+  private static byte[] strToListEntry() {
+    ByteArrayOutputStream b = new ByteArrayOutputStream();
+    // s=0, _=1; i64 lenStr=2, result=3; i32 i=4, cell=5, delta=6
+    lget(b, 0);
+    b.write(0xA7);
+    b.write(0x29);
+    leb(b, 3);
+    leb(b, 0);
+    lset(b, 2); // lenStr
+    b.write(0x42);
+    sleb(b, 0);
+    lset(b, 3); // result = 0 (Nil)
+    lget(b, 2);
+    b.write(0xA7);
+    i32c(b, 1);
+    b.write(0x6B);
+    lset(b, 4); // i = (i32)lenStr - 1
+    b.write(0x02);
+    b.write(0x40); // block
+    b.write(0x03);
+    b.write(0x40); // loop
+    lget(b, 4);
+    i32c(b, 0);
+    b.write(0x48); // i32.lt_s (i < 0)
+    b.write(0x0D);
+    leb(b, 1); // br_if 1
+    b.write(0x23);
+    leb(b, 0);
+    lset(b, 5); // cell = $hp
+    lget(b, 5);
+    i32c(b, 16);
+    b.write(0x6A);
+    b.write(0x24);
+    leb(b, 0); // $hp = cell + 16
+    b.write(0x23);
+    leb(b, 0);
+    i32c(b, 65535);
+    b.write(0x6A);
+    i32c(b, 16);
+    b.write(0x76);
+    b.write(0x3F);
+    b.write(0x00);
+    b.write(0x6B);
+    lset(b, 6);
+    lget(b, 6);
+    i32c(b, 0);
+    b.write(0x4A);
+    b.write(0x04);
+    b.write(0x40);
+    lget(b, 6);
+    b.write(0x40);
+    b.write(0x00);
+    b.write(0x1A);
+    b.write(0x0B);
+    // cell.head = (i64) load8(s + 8 + i)
+    lget(b, 5);
+    lget(b, 0);
+    b.write(0xA7);
+    i32c(b, 8);
+    b.write(0x6A);
+    lget(b, 4);
+    b.write(0x6A);
+    b.write(0x2D);
+    leb(b, 0);
+    leb(b, 0);
+    b.write(0xAD); // i64.extend_i32_u
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 0); // i64.store cell+0
+    // cell.tail = result
+    lget(b, 5);
+    lget(b, 3);
+    b.write(0x37);
+    leb(b, 3);
+    leb(b, 8); // i64.store cell+8
+    // result = (i64) cell
+    lget(b, 5);
+    b.write(0xAD);
+    lset(b, 3);
+    // i = i - 1
+    lget(b, 4);
+    i32c(b, 1);
+    b.write(0x6B);
+    lset(b, 4);
+    b.write(0x0C);
+    leb(b, 0); // br 0
+    b.write(0x0B);
+    b.write(0x0B); // end loop, end block
+    lget(b, 3);
+    return entry(b, new int[][] {{2, I64}, {3, I32}});
   }
 
   /** {@code $strFromChar(c, _) -> i64}: a one-byte heap string holding {@code c}'s low byte (ASCII;
