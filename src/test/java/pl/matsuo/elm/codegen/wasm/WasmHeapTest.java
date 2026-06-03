@@ -506,6 +506,14 @@ class WasmHeapTest {
   }
 
   @Test
+  void stringStartsWithEndsWithCompile() throws Exception {
+    agrees("main = if String.startsWith \"he\" \"hello\" then 1 else 0\n"); // 1
+    agrees("main = if String.startsWith \"x\" \"hello\" then 1 else 0\n"); // 0
+    agrees("main = if String.endsWith \"lo\" \"hello\" then 1 else 0\n"); // 1
+    agrees("main = if String.endsWith \"xx\" \"hello\" then 1 else 0\n"); // 0
+  }
+
+  @Test
   void stringSliceHandlesNegativeIndices() throws Exception {
     assumeTrue(NODE, "node not available");
     assertEquals("el", runMainString("main = String.slice 1 3 \"hello\"\n"));

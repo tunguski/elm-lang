@@ -232,6 +232,8 @@ public final class WasmCompiler {
       stringDropRight n s = String.left (String.length s - n) s
       clampIdx s i = if i < 0 then maxOf 0 (String.length s + i) else minOf i (String.length s)
       stringSlice start end s = String.left (clampIdx s end - clampIdx s start) (String.dropLeft (clampIdx s start) s)
+      stringStartsWith pre s = String.left (String.length pre) s == pre
+      stringEndsWith suf s = String.right (String.length suf) s == suf
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -297,6 +299,8 @@ public final class WasmCompiler {
           Map.entry("String.right", "stringRight"),
           Map.entry("String.dropRight", "stringDropRight"),
           Map.entry("String.slice", "stringSlice"),
+          Map.entry("String.startsWith", "stringStartsWith"),
+          Map.entry("String.endsWith", "stringEndsWith"),
           Map.entry("String.concat", "stringConcat"),
           Map.entry("String.join", "stringJoin"),
           Map.entry("Maybe.withDefault", "maybeWithDefault"),
