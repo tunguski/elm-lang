@@ -2416,46 +2416,25 @@ public final class WasmGc {
       funcNames.add(f.name());
       localNames.add(f.params());
     }
-    WasmCompiler.nameSection(out, funcNames, localNames, tuples.typeNames(), tuples.fieldNames());
+    WasmEncoding.nameSection(out, funcNames, localNames, tuples.typeNames(), tuples.fieldNames());
     return out.toByteArray();
   }
 
+  // Binary-format plumbing lives in WasmEncoding (shared with WasmCompiler); these thin wrappers keep
+  // the many unqualified call sites in this file unchanged.
   private static void section(ByteArrayOutputStream out, int id, ByteArrayOutputStream content) {
-    out.write(id);
-    leb(out, content.size());
-    out.writeBytes(content.toByteArray());
+    WasmEncoding.section(out, id, content);
   }
 
   private static void name(ByteArrayOutputStream out, String s) {
-    byte[] bytes = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-    leb(out, bytes.length);
-    out.writeBytes(bytes);
+    WasmEncoding.name(out, s);
   }
 
   private static void leb(ByteArrayOutputStream out, long value) {
-    long v = value;
-    do {
-      int b = (int) (v & 0x7F);
-      v >>>= 7;
-      if (v != 0) {
-        b |= 0x80;
-      }
-      out.write(b);
-    } while (v != 0);
+    WasmEncoding.leb(out, value);
   }
 
   private static void sleb(ByteArrayOutputStream out, long value) {
-    long v = value;
-    boolean more = true;
-    while (more) {
-      int b = (int) (v & 0x7F);
-      v >>= 7;
-      if ((v == 0 && (b & 0x40) == 0) || (v == -1 && (b & 0x40) != 0)) {
-        more = false;
-      } else {
-        b |= 0x80;
-      }
-      out.write(b);
-    }
+    WasmEncoding.sleb(out, value);
   }
 }
