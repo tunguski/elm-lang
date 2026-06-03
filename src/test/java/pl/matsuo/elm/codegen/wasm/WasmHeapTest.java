@@ -448,6 +448,13 @@ class WasmHeapTest {
   }
 
   @Test
+  void tupleFirstSecondCompile() throws Exception {
+    agrees("main = Tuple.first ( 7, 9 )\n"); // 7
+    agrees("main = Tuple.second ( 7, 9 )\n"); // 9
+    agrees("main = Tuple.first ( 7, 9 ) + Tuple.second ( 7, 9 )\n"); // 16
+  }
+
+  @Test
   void listMap5Compiles() throws Exception {
     agrees("main = List.sum (List.map5 (\\a b c d e -> a + b + c + d + e) [ 1 ] [ 2 ] [ 3 ] [ 4 ] [ 5 ])\n"); // 15
   }

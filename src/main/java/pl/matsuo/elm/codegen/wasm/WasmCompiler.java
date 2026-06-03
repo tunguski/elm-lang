@@ -244,6 +244,10 @@ public final class WasmCompiler {
       charToLower c = if c >= 65 && c <= 90 then c + 32 else c
       charIsSpace c = c == 32 || c == 9 || c == 10 || c == 13
       listSingleton x = [ x ]
+      tupleFirst t = case t of
+          ( a, b ) -> a
+      tupleSecond t = case t of
+          ( a, b ) -> b
       listPartition pred xs = ( listFilter pred xs, listReject pred xs )
       listReject pred xs = case xs of
           [] -> []
@@ -298,6 +302,8 @@ public final class WasmCompiler {
           Map.entry("List.intersperse", "listIntersperse"),
           Map.entry("List.partition", "listPartition"),
           Map.entry("List.singleton", "listSingleton"),
+          Map.entry("Tuple.first", "tupleFirst"),
+          Map.entry("Tuple.second", "tupleSecond"),
           Map.entry("List.unzip", "listUnzip"),
           Map.entry("Maybe.map2", "maybeMap2"),
           Map.entry("Maybe.map3", "maybeMap3"),
@@ -399,7 +405,8 @@ public final class WasmCompiler {
    *  {@code ++} — which may be a list append, lowered to the prelude's {@code listAppend}. */
   private static boolean wantsPrelude(String source) {
     return source.contains("List.") || source.contains("Maybe.") || source.contains("Result.")
-        || source.contains("Basics.") || source.contains("String.") || source.contains("Char.") || source.contains("++")
+        || source.contains("Basics.") || source.contains("String.") || source.contains("Char.")
+        || source.contains("Tuple.") || source.contains("++")
         // Bare Basics helpers defined in the prelude (max/min/clamp). Over-including the prelude is
         // harmless: a user definition of the same name wins, and unused helpers just aren't called.
         || source.contains("max") || source.contains("min") || source.contains("clamp");
