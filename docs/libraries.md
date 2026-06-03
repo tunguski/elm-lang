@@ -20,6 +20,7 @@ This page is the index and quick reference; several have a deeper guide of their
 | [`Dict.Extra`](#dictextra) | Common `Dict` helpers | — |
 | [`Set.Extra`](#setextra) | Common `Set` helpers | — |
 | [`Tuple.Extra`](#tupleextra) | Common tuple helpers | — |
+| [`Json.Decode.Extra`](#jsondecodeextra) | `andMap` pipeline + decoder helpers | — |
 | [`Parser`](#parser) | A small parser-combinator library | — |
 | [`Url.Parser`](#urlparser) | Typed URL routing | — |
 | [`Site`](#site) | Static-site pages as data | [site.md](site.md) |
@@ -163,6 +164,21 @@ The most-reached-for elm-community/tuple-extra helpers, in plain Elm: `apply`, `
 import Tuple.Extra as TE
 TE.apply (+) ( 3, 4 )                 --> 7
 TE.sequenceMaybe ( Just 1, Just 2 )   --> Just ( 1, 2 )
+```
+
+## Json.Decode.Extra
+
+The most-reached-for elm-community/json-extra helpers, in plain Elm: `andMap` (the pipeline
+applicative), `withDefault`, `optionalField`, `fromMaybe`, `fromResult`, `parseInt`, `parseFloat`.
+
+```elm
+import Json.Decode as Decode
+import Json.Decode.Extra as Extra
+
+point =
+    Decode.succeed Tuple.pair
+        |> Extra.andMap (Decode.field "x" Decode.int)
+        |> Extra.andMap (Decode.field "y" Decode.int)
 ```
 
 ## Parser
