@@ -12,7 +12,7 @@ class MaybeExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (isJ, isN, joinV, orV, orElseV, valsV, combOk, combNo, travOk, travNo, filtV, unwrapV, toListV, oneOfV)
+      module Main exposing (isJ, isN, joinV, orV, orElseV, valsV, combOk, combNo, travOk, travNo, filtV, unwrapV, toListV, oneOfV, andMapV, andMapNo)
 
       import Maybe.Extra as ME
 
@@ -30,6 +30,8 @@ class MaybeExtraLibraryTest {
       unwrapV = ME.unwrap 0 (\\n -> n + 1) (Just 10)
       toListV = ME.toList (Just 7)
       oneOfV = ME.oneOf [ Nothing, Just 2, Just 3 ]
+      andMapV = Just (\\a b -> a + b) |> ME.andMap (Just 3) |> ME.andMap (Just 4)
+      andMapNo = Just (\\a b -> a + b) |> ME.andMap Nothing |> ME.andMap (Just 4)
       """;
 
   private static String value(String name) {
@@ -60,5 +62,7 @@ class MaybeExtraLibraryTest {
     assertEquals("Just 5", value("filtV"));
     assertEquals("11", value("unwrapV"));
     assertEquals("[7]", value("toListV"));
+    assertEquals("Just 7", value("andMapV")); // 3 + 4
+    assertEquals("Nothing", value("andMapNo"));
   }
 }

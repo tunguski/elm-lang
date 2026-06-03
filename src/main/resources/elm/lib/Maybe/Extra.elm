@@ -11,6 +11,7 @@ module Maybe.Extra exposing
     , unwrap
     , toList
     , oneOf
+    , andMap
     )
 
 {-| A subset of the popular `elm-community/maybe-extra` helpers — the ones reached for most often —
@@ -155,3 +156,10 @@ oneOf list =
 
                 Nothing ->
                     oneOf rest
+
+
+{-| Applicative apply: `Just f |> andMap (Just x)` is `Just (f x)`. Useful for chaining
+`Just f |> andMap arg1 |> andMap arg2`. -}
+andMap : Maybe a -> Maybe (a -> b) -> Maybe b
+andMap arg fn =
+    Maybe.map2 (\f x -> f x) fn arg

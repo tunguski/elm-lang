@@ -9,6 +9,8 @@ module Result.Extra exposing
     , orElse
     , unwrap
     , extract
+    , andMap
+    , combineMap
     )
 
 {-| A subset of the popular `elm-community/result-extra` helpers — the ones reached for most often —
@@ -140,3 +142,15 @@ extract recover r =
 
         Err e ->
             recover e
+
+
+{-| Applicative apply: `Ok f |> andMap (Ok x)` is `Ok (f x)`; the first `Err` short-circuits. -}
+andMap : Result e a -> Result e (a -> b) -> Result e b
+andMap arg fn =
+    Result.map2 (\f x -> f x) fn arg
+
+
+{-| Maps each element to a `Result` and combines: `Ok` the results, or the first `Err`. -}
+combineMap : (a -> Result e b) -> List a -> Result e (List b)
+combineMap f list =
+    combine (List.map f list)

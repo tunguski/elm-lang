@@ -12,7 +12,7 @@ class ResultExtraLibraryTest {
 
   private static final String SRC =
       """
-      module Main exposing (okV, errV, combOk, combErr, partV, mapBothV, mergeOk, mergeErr, orV, orElseV, unwrapV, extractV)
+      module Main exposing (okV, errV, combOk, combErr, partV, mapBothV, mergeOk, mergeErr, orV, orElseV, unwrapV, extractV, andMapV, combineMapOk, combineMapErr)
 
       import Result.Extra as RE
 
@@ -28,6 +28,9 @@ class ResultExtraLibraryTest {
       orElseV = RE.orElse (Ok 9) (Err "x")
       unwrapV = RE.unwrap 0 (\\n -> n + 1) (Ok 10)
       extractV = RE.extract String.length (Err "oops")
+      andMapV = Ok (\\a b -> a + b) |> RE.andMap (Ok 3) |> RE.andMap (Ok 4)
+      combineMapOk = RE.combineMap (\\n -> if n > 0 then Ok (n * 2) else Err "neg") [ 1, 2, 3 ]
+      combineMapErr = RE.combineMap (\\n -> if n > 0 then Ok (n * 2) else Err "neg") [ 1, -1, 3 ]
       """;
 
   private static String value(String name) {
@@ -52,5 +55,8 @@ class ResultExtraLibraryTest {
     assertEquals("Ok 9", value("orElseV"));
     assertEquals("11", value("unwrapV"));
     assertEquals("4", value("extractV")); // String.length "oops" = 4
+    assertEquals("Ok 7", value("andMapV")); // 3 + 4
+    assertEquals("Ok [2,4,6]", value("combineMapOk"));
+    assertEquals("Err \"neg\"", value("combineMapErr"));
   }
 }
