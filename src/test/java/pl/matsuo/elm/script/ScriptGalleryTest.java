@@ -60,6 +60,18 @@ class ScriptGalleryTest {
   }
 
   @Test
+  void bigFilesScriptListsFilesOverThreshold() throws Exception {
+    Path dir = Files.createTempDirectory("elm-bigfiles-");
+    Files.writeString(dir.resolve("big.txt"), "a\nb\nc\nd\ne\n", StandardCharsets.UTF_8); // 5 lines
+    Files.writeString(dir.resolve("small.txt"), "x\ny\n", StandardCharsets.UTF_8); // 2 lines
+    // Threshold 3 over the temp dir: only the 5-line file qualifies; the 2-line one is filtered out.
+    String out = run("big-files.elm", List.of("3", dir.toString()));
+    assertTrue(out.contains("big.txt"), "big file listed: " + out);
+    assertTrue(!out.contains("small.txt"), "small file excluded: " + out);
+    assertTrue(out.contains("5"), "line count shown: " + out);
+  }
+
+  @Test
   void csvReportScriptRendersAnHtmlTable() throws Exception {
     Path f = tempFile("people.csv", "name,age\nAda,36\n\"Tu, ring\",41\n");
     String html = run("csv-report.elm", List.of(f.toString()));
