@@ -1,3 +1,5 @@
+module Keyboard exposing (main)
+
 -- Move a square around with the arrow keys: UP, DOWN, LEFT, RIGHT
 -- Try making it move around more quickly!
 --

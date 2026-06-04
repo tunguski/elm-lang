@@ -1,3 +1,5 @@
+module Numbers exposing (main)
+
 -- Press a button to generate a random number between 1 and 6.
 --
 -- Read how it works:

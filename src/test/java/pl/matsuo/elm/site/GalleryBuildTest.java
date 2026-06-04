@@ -36,20 +36,20 @@ class GalleryBuildTest {
     assertTrue(index.contains("Buttons"), "index lists an example title");
 
     // A live, compiled demo page (compile JS produced a full htmlPage bundle).
-    assertTrue(Files.exists(out.resolve("demos/hello.html")), "demo page written");
-    String demo = Files.readString(out.resolve("demos/hello.html"), StandardCharsets.UTF_8);
+    assertTrue(Files.exists(out.resolve("demos/Hello.html")), "demo page written");
+    String demo = Files.readString(out.resolve("demos/Hello.html"), StandardCharsets.UTF_8);
     assertTrue(demo.contains("$start"), "demo is a live JS bundle");
 
     // A per-example wrapper page and a rendered guide page.
-    assertTrue(Files.exists(out.resolve("buttons.html")), "wrapper page written");
+    assertTrue(Files.exists(out.resolve("Buttons.html")), "wrapper page written");
     assertTrue(Files.exists(out.resolve("examples.html")), "guide page written");
 
     // The gallery stylesheet (gallery.css copied as styles.css) is present.
     assertTrue(Files.exists(out.resolve("styles.css")), "gallery stylesheet copied");
 
     // HTTP/Files examples compile to live pages too, and .nojekyll is emitted for Pages.
-    assertTrue(Files.exists(out.resolve("demos/book.html")), "HTTP example demo written");
-    assertTrue(Files.exists(out.resolve("demos/image-previews.html")), "Files example demo written");
+    assertTrue(Files.exists(out.resolve("demos/Book.html")), "HTTP example demo written");
+    assertTrue(Files.exists(out.resolve("demos/ImagePreviews.html")), "Files example demo written");
     assertTrue(Files.exists(out.resolve(".nojekyll")), ".nojekyll written");
 
     // The shared sidebar lists the Guides group (embedded on every sub-page by Gallery.elm).

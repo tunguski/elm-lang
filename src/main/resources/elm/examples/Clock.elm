@@ -1,3 +1,5 @@
+module Clock exposing (main)
+
 -- Show an analog clock for your time zone.
 --
 -- Dependencies:

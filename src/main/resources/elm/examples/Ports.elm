@@ -1,4 +1,4 @@
-port module Main exposing (..)
+port module Ports exposing (..)
 
 import Browser
 import Html exposing (Html, button, div, text)

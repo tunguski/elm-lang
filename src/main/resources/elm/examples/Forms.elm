@@ -1,3 +1,5 @@
+module Forms exposing (main)
+
 import Browser
 import Html exposing (..)
 import Html.Attributes exposing (..)

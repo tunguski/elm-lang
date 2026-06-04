@@ -49,10 +49,10 @@ class SiteGeneratorTest {
   @Test
   void buttonsIsALiveCompiledDemo() throws IOException {
     Path out = generate();
-    String demo = Files.readString(out.resolve("demos/buttons.html"), StandardCharsets.UTF_8);
+    String demo = Files.readString(out.resolve("demos/Buttons.html"), StandardCharsets.UTF_8);
     // The JS backend produced a runnable bundle that mounts into the page.
     assertTrue(demo.contains("$start"), "buttons demo should be the compiled JS bundle");
-    String wrapper = Files.readString(out.resolve("buttons.html"), StandardCharsets.UTF_8);
+    String wrapper = Files.readString(out.resolve("Buttons.html"), StandardCharsets.UTF_8);
     assertTrue(wrapper.contains("badge live"), "buttons should be labelled live");
     assertTrue(wrapper.contains("Browser.sandbox"), "wrapper should show the source");
   }
@@ -60,11 +60,11 @@ class SiteGeneratorTest {
   @Test
   void playgroundIsBundledAsLiveJs() throws IOException {
     Path out = generate();
-    String demo = Files.readString(out.resolve("demos/picture.html"), StandardCharsets.UTF_8);
+    String demo = Files.readString(out.resolve("demos/Picture.html"), StandardCharsets.UTF_8);
     // Multi-module Playground program: bundled live (Playground + example), not a server snapshot.
     assertTrue(demo.contains("$start"), "picture should be a compiled JS bundle");
     assertTrue(demo.contains("$Playground$") || demo.contains("Playground"), "Playground is bundled");
-    String wrapper = Files.readString(out.resolve("picture.html"), StandardCharsets.UTF_8);
+    String wrapper = Files.readString(out.resolve("Picture.html"), StandardCharsets.UTF_8);
     assertTrue(wrapper.contains("badge live"), "picture should be labelled live");
   }
 
@@ -100,8 +100,8 @@ class SiteGeneratorTest {
     assertTrue(Files.exists(out.resolve("nav.css")) && Files.exists(out.resolve("nav.html")),
         "the shared sidebar assets are written");
     String nav = Files.readString(out.resolve("nav.html"), StandardCharsets.UTF_8);
-    assertTrue(nav.contains("href=\"life.html\">Game of Life</a>"), "Demos sidebar links Game of Life");
-    assertTrue(Files.exists(out.resolve("life.html")), "the Game of Life wrapper page exists");
+    assertTrue(nav.contains("href=\"Life.html\">Game of Life</a>"), "Demos sidebar links Game of Life");
+    assertTrue(Files.exists(out.resolve("Life.html")), "the Game of Life wrapper page exists");
     assertTrue(Files.exists(out.resolve("scripting.bodyhtml")), "Markdown body artifact written by Java");
   }
 
@@ -136,8 +136,8 @@ class SiteGeneratorTest {
     Path out = generate();
     // Raw .elm sources are served under examples/ (downloadable, and fetchable by the editor):
     // every gallery example, the editor's own demos, and the flagship TodoMVC.
-    assertTrue(Files.exists(out.resolve("examples/buttons.elm")), "gallery example source served");
-    assertTrue(Files.exists(out.resolve("examples/Buttons.elm")), "editor demo source served");
+    assertTrue(Files.exists(out.resolve("examples/Buttons.elm")), "gallery example source served");
+    assertTrue(Files.exists(out.resolve("editor/Buttons.elm")), "editor demo source served");
     assertTrue(Files.exists(out.resolve("examples/todomvc.elm")), "todomvc source served");
     // TodoMVC compiles to a live page and is linked from the landing page.
     assertTrue(Files.exists(out.resolve("todomvc.html")), "todomvc.html generated");

@@ -24,8 +24,9 @@ class PlaygroundExamplesTest {
   }
 
   private String render(String slug) {
+    String module = Character.toUpperCase(slug.charAt(0)) + slug.substring(1);
     Project project =
-        Project.load(resource("/elm/examples/Playground.elm"), resource("/elm/examples/" + slug + ".elm"));
+        Project.load(resource("/elm/examples/Playground.elm"), resource("/elm/examples/" + module + ".elm"));
     return Tea.start(project.main()).html();
   }
 

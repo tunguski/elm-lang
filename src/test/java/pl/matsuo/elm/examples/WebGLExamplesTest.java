@@ -20,11 +20,19 @@ import pl.matsuo.elm.runtime.ElmList;
 class WebGLExamplesTest {
 
   private static String source(String slug) {
-    try (InputStream in = WebGLExamplesTest.class.getResourceAsStream("/elm/examples/" + slug + ".elm")) {
+    try (InputStream in = WebGLExamplesTest.class.getResourceAsStream("/elm/examples/" + pascal(slug) + ".elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private static String pascal(String slug) {
+    StringBuilder b = new StringBuilder();
+    for (String part : slug.split("-")) {
+      b.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+    }
+    return b.toString();
   }
 
   @Test

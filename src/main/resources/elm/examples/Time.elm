@@ -1,3 +1,5 @@
+module Time exposing (main)
+
 -- Show the current time in your time zone.
 --
 -- Read how it works:

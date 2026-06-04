@@ -1,3 +1,5 @@
+module Life exposing (main)
+
 -- Conway's Game of Life, in the elm-playground style.
 --
 -- Press a number key to load a starting pattern:

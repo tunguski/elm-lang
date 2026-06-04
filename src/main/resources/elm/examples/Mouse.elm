@@ -1,3 +1,5 @@
+module Mouse exposing (main)
+
 -- Draw a cicle around the mouse. Change its color by pressing down.
 --
 -- Learn more about the playground here:

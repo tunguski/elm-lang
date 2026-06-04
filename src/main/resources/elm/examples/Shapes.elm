@@ -1,3 +1,5 @@
+module Shapes exposing (main)
+
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
 

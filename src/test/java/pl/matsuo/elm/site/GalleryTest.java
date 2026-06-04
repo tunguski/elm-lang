@@ -25,10 +25,10 @@ class GalleryTest {
     SiteGenerator.generate(EXAMPLES, PLAYGROUND, out);
     String manifest = Files.readString(out.resolve("manifest.tsv"), StandardCharsets.UTF_8);
     // Typed lines: example rows, the auxiliary-page links, and a live/total stat.
-    assertTrue(manifest.contains("example\thello\tHello\tHTML\tdemos/hello.html\t"), manifest);
+    assertTrue(manifest.contains("example\tHello\tHello\tHTML\tdemos/Hello.html\t"), manifest);
     assertTrue(manifest.contains("aux\tbackends.html\tJS vs WASM"), manifest);
     assertTrue(manifest.lines().anyMatch(l -> l.startsWith("stat\t")), manifest);
-    assertTrue(Files.exists(out.resolve("demos/hello.html")), "the demo artifact exists");
+    assertTrue(Files.exists(out.resolve("demos/Hello.html")), "the demo artifact exists");
   }
 
   @Test
@@ -44,7 +44,7 @@ class GalleryTest {
     assertTrue(index.contains("examples run as live compiled JavaScript"), "stats line rendered");
     assertTrue(index.contains("href=\"backends.html\""), "links the JS-vs-WASM page from the index");
     assertTrue(index.contains("<h2>HTML</h2>"), "examples grouped by category");
-    assertTrue(index.contains("href=\"hello.html\"") && index.contains("src=\"demos/hello.html\""),
+    assertTrue(index.contains("href=\"Hello.html\"") && index.contains("src=\"demos/Hello.html\""),
         "a card links its wrapper page and embeds the compiled demo as a thumbnail");
     assertTrue(index.contains(">Hello</strong>"), "the card shows the example title");
     assertTrue(index.contains("href=\"styles.css\""), "links the static stylesheet");
@@ -65,9 +65,9 @@ class GalleryTest {
         "the shared theme behaviour + top-right toggle is in theme.js");
 
     // The per-example wrapper pages are Elm-generated (template) and link the static page.css.
-    String wrapper = Files.readString(out.resolve("hello.html"), StandardCharsets.UTF_8);
+    String wrapper = Files.readString(out.resolve("Hello.html"), StandardCharsets.UTF_8);
     assertTrue(wrapper.contains("class=\"badge live\""), wrapper.substring(0, Math.min(300, wrapper.length())));
-    assertTrue(wrapper.contains("src=\"demos/hello.html\""), "wrapper embeds the demo");
+    assertTrue(wrapper.contains("src=\"demos/Hello.html\""), "wrapper embeds the demo");
     assertTrue(wrapper.contains("language-elm") && wrapper.contains("main ="), "wrapper shows the source");
     assertTrue(wrapper.contains("href=\"page.css\""), "wrapper links the static page stylesheet");
     assertTrue(Files.exists(out.resolve("page.css")), "page.css copied in by the Java side");
@@ -85,7 +85,7 @@ class GalleryTest {
 
     // The demo artifacts (compiled by the Java side) are still present and live.
     assertTrue(
-        Files.readString(out.resolve("demos/hello.html"), StandardCharsets.UTF_8).contains("$start"),
+        Files.readString(out.resolve("demos/Hello.html"), StandardCharsets.UTF_8).contains("$start"),
         "the demo is the JS-compiled bundle");
   }
 }

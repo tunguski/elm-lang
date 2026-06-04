@@ -1,3 +1,5 @@
+module Quotes exposing (main)
+
 -- Press a button to send a GET request for random quotes.
 --
 -- Read how it works:

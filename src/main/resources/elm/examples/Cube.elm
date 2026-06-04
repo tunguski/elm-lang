@@ -1,3 +1,5 @@
+module Cube exposing (main)
+
 -- Render a spinning cube.
 --
 -- Dependencies:

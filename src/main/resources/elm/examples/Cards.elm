@@ -1,3 +1,5 @@
+module Cards exposing (main)
+
 -- Press a button to draw a random card.
 --
 -- Dependencies:

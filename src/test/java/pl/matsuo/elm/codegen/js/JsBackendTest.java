@@ -691,18 +691,18 @@ class JsBackendTest {
   @Test
   void editorRendersTheGallerySvgExamples() {
     // The elm-lang.org shapes and clock examples render as inline SVG (clock also needs Time + trig).
-    String shapes = editorRender(read("/elm/examples/shapes.elm"));
+    String shapes = editorRender(read("/elm/examples/Shapes.elm"));
     assertTrue(shapes.contains("<svg") && shapes.contains("<circle") && shapes.contains("<rect"), shapes);
-    String clock = editorRender(read("/elm/examples/clock.elm"));
+    String clock = editorRender(read("/elm/examples/Clock.elm"));
     assertTrue(clock.contains("<svg") && clock.contains("<circle") && clock.contains("<line"), clock);
   }
 
   @Test
   void editorRendersElmPlaygroundPictureAndAnimation() {
     // evancz/elm-playground: `picture` draws shapes to SVG; `animation` draws its initial frame.
-    String picture = editorRender(read("/elm/examples/picture.elm"));
+    String picture = editorRender(read("/elm/examples/Picture.elm"));
     assertTrue(picture.contains("<svg") && picture.contains("<rect") && picture.contains("<ellipse"), picture);
-    String animation = editorRender(read("/elm/examples/animation.elm"));
+    String animation = editorRender(read("/elm/examples/Animation.elm"));
     assertTrue(animation.contains("<svg") && animation.contains("<path"), animation); // octagons as paths
   }
 
@@ -719,7 +719,7 @@ class JsBackendTest {
     // samples with its seed and feeds back as a NewFace message — landing a die face in 1..6.
     String out =
         editorScript(
-            read("/elm/examples/numbers.elm"),
+            read("/elm/examples/Numbers.elm"),
             "var roll=$data('VCtor',['Roll',$nil]);"
                 + "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0];"
                 + "var up=_$Eval$appUpdateCmd(files)(roll)(model);"
@@ -734,8 +734,8 @@ class JsBackendTest {
   @Test
   void editorRendersElmPlaygroundGames() {
     // turtle/keyboard/mario use the interactive `game` API; their initial frame renders to SVG.
-    assertTrue(editorRender(read("/elm/examples/turtle.elm")).contains("<svg"), "turtle");
-    assertTrue(editorRender(read("/elm/examples/keyboard.elm")).contains("<rect"), "keyboard square");
+    assertTrue(editorRender(read("/elm/examples/Turtle.elm")).contains("<svg"), "turtle");
+    assertTrue(editorRender(read("/elm/examples/Keyboard.elm")).contains("<rect"), "keyboard square");
   }
 
   @Test
@@ -744,7 +744,7 @@ class JsBackendTest {
     // from 0 toward +1 (toX keyboard = 1), and the rendered square follows.
     String out =
         editorScript(
-            read("/elm/examples/keyboard.elm"),
+            read("/elm/examples/Keyboard.elm"),
             "var mem=_$Eval$gameInitMem(files)._[0];"
                 + "var keys=$cons('ArrowRight',$nil);"
                 + "var mem2=_$Eval$gameStep(files)(keys)(0)(mem)._[0];"
@@ -760,7 +760,7 @@ class JsBackendTest {
     // — the body is supplied directly, exercising the full response path.)
     String out =
         editorScript(
-            read("/elm/examples/book.elm"),
+            read("/elm/examples/Book.elm"),
             "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0]; var cmd=init._[0].vs[1];"
                 + "var h=_$Eval$httpCmd(cmd);" // Just (url, toMsg)
                 + "var url=h._[0].vs[0], toMsg=h._[0].vs[1];"
@@ -780,7 +780,7 @@ class JsBackendTest {
         "{\\\"quote\\\":\\\"Be the change\\\",\\\"source\\\":\\\"Speech\\\",\\\"author\\\":\\\"Gandhi\\\",\\\"year\\\":1947}";
     String out =
         editorScript(
-            read("/elm/examples/quotes.elm"),
+            read("/elm/examples/Quotes.elm"),
             "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0]; var cmd=init._[0].vs[1];"
                 + "var h=_$Eval$httpCmd(cmd); var expect=h._[0].vs[1];"
                 + "var mr=_$Eval$httpResult(files)(expect)($maybe(\""
@@ -799,7 +799,7 @@ class JsBackendTest {
     // live tick.
     String out =
         editorScript(
-            read("/elm/examples/clock.elm"),
+            read("/elm/examples/Clock.elm"),
             "var init=_$Eval$appInitCmd(files); var model=init._[0].vs[0];"
                 + "var sub=_$Eval$appSubscription(files)(model);"
                 + "process.stdout.write(sub.$+':'+(sub.$==='Just'?String(sub._[0].vs[0]):''));");

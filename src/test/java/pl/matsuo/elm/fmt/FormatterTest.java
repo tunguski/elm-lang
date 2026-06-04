@@ -77,7 +77,11 @@ class FormatterTest {
   }
 
   private static String example(String slug) {
-    try (InputStream in = FormatterTest.class.getResourceAsStream("/elm/examples/" + slug + ".elm")) {
+    StringBuilder m = new StringBuilder();
+    for (String part : slug.split("-")) {
+      m.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+    }
+    try (InputStream in = FormatterTest.class.getResourceAsStream("/elm/examples/" + m + ".elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     } catch (Exception e) {
       throw new RuntimeException(e);
@@ -98,7 +102,7 @@ class FormatterTest {
   @Test
   void producesElmFormatStyleLayout() {
     String out = Formatter.format(example("buttons"));
-    assertTrue(out.startsWith("module Main exposing (..)\n"), out);
+    assertTrue(out.startsWith("module Buttons exposing (main)\n"), out);
     assertTrue(out.contains("\nimport Browser\n"), out); // imports, one per line, sorted
     assertTrue(out.contains("type Msg\n    = Increment\n    | Decrement"), out); // union layout
     assertTrue(out.contains("    case msg of\n        Increment ->\n"), out); // case 4-space indent

@@ -55,7 +55,7 @@ class ProjectCheckTest {
     // polymorphic across picture/animation/game, and row-polymorphic records for the games whose
     // memory is a record (turtle's { x : Float }, mario's { y : Float }).
     String playground = resource("/elm/examples/Playground.elm");
-    for (String game : new String[] {"picture", "animation", "mouse", "keyboard", "turtle", "mario"}) {
+    for (String game : new String[] {"Picture", "Animation", "Mouse", "Keyboard", "Turtle", "Mario"}) {
       Map<String, String> types = TypeChecker.checkProject(playground, resource("/elm/examples/" + game + ".elm"));
       assertTrue(
           types.get("main") != null && types.get("main").startsWith("Program"),

@@ -1,3 +1,5 @@
+module Upload exposing (main)
+
 -- File upload with the <input type="file"> node.
 --
 -- Dependencies:

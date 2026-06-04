@@ -180,7 +180,7 @@ class EditorInterpreterTest {
     // five cells across a generation, time advances `gen`, and a number key swaps the starting setup.
     String src =
         java.nio.file.Files.readString(
-            java.nio.file.Path.of("src/main/resources/elm/examples/life.elm"));
+            java.nio.file.Path.of("src/main/resources/elm/examples/Life.elm"));
     ElmList fs = files("Main.elm", src);
     ElmList none = ElmList.fromJava(new ArrayList<>());
 
@@ -585,7 +585,7 @@ class EditorInterpreterTest {
   void parsesTheWebglExamples() throws Exception {
     // triangle/crate/thwomp/cube use unit, record and tuple-destructuring patterns plus `[glsl| … |]`
     // shader literals; the editor must at least parse them and evaluate `main` to a program record.
-    for (String slug : new String[] {"triangle", "crate", "thwomp", "cube"}) {
+    for (String slug : new String[] {"Triangle", "Crate", "Thwomp", "Cube"}) {
       String src =
           java.nio.file.Files.readString(
               java.nio.file.Path.of("src/main/resources/elm/examples/" + slug + ".elm"));

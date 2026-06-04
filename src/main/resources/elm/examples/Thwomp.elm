@@ -1,3 +1,5 @@
+module Thwomp exposing (main)
+
 -- Thwomp looks at your mouse. What is it up to?
 --
 -- Dependencies:

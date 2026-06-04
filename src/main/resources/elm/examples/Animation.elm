@@ -1,3 +1,5 @@
+module Animation exposing (main)
+
 -- Create animations that spin, wave, and zig-zag.
 -- This one is a little red wagon bumping along a dirt road.
 --

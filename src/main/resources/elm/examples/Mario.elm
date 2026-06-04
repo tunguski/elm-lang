@@ -1,3 +1,5 @@
+module Mario exposing (main)
+
 -- Walk around with the arrow keys. Press the UP arrow to jump!
 --
 -- Learn more about the playground here:

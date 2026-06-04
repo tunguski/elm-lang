@@ -1,3 +1,5 @@
+module FirstPerson exposing (main)
+
 -- Walk around in 3D space using the keyboard.
 --
 -- Dependencies:

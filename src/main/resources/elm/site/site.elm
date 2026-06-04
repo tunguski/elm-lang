@@ -26,21 +26,21 @@ import Build exposing (..)
 (`title`, `category`). -}
 examples : List { slug : String, title : String, category : String }
 examples =
-    [ { slug = "hello", title = "Hello", category = "HTML" }
-    , { slug = "groceries", title = "Groceries", category = "HTML" }
-    , { slug = "shapes", title = "Shapes", category = "HTML" }
-    , { slug = "buttons", title = "Buttons", category = "User Input" }
-    , { slug = "text-fields", title = "Text Fields", category = "User Input" }
-    , { slug = "forms", title = "Forms", category = "User Input" }
-    , { slug = "numbers", title = "Numbers", category = "Random" }
-    , { slug = "cards", title = "Cards", category = "Random" }
-    , { slug = "time", title = "Time", category = "Time" }
-    , { slug = "clock", title = "Clock", category = "Time" }
-    , { slug = "book", title = "Book", category = "HTTP" }
-    , { slug = "quotes", title = "Quotes", category = "HTTP" }
-    , { slug = "upload", title = "Upload", category = "Files" }
-    , { slug = "drag-and-drop", title = "Drag and Drop", category = "Files" }
-    , { slug = "image-previews", title = "Image Previews", category = "Files" }
+    [ { slug = "Hello", title = "Hello", category = "HTML" }
+    , { slug = "Groceries", title = "Groceries", category = "HTML" }
+    , { slug = "Shapes", title = "Shapes", category = "HTML" }
+    , { slug = "Buttons", title = "Buttons", category = "User Input" }
+    , { slug = "TextFields", title = "Text Fields", category = "User Input" }
+    , { slug = "Forms", title = "Forms", category = "User Input" }
+    , { slug = "Numbers", title = "Numbers", category = "Random" }
+    , { slug = "Cards", title = "Cards", category = "Random" }
+    , { slug = "Time", title = "Time", category = "Time" }
+    , { slug = "Clock", title = "Clock", category = "Time" }
+    , { slug = "Book", title = "Book", category = "HTTP" }
+    , { slug = "Quotes", title = "Quotes", category = "HTTP" }
+    , { slug = "Upload", title = "Upload", category = "Files" }
+    , { slug = "DragAndDrop", title = "Drag and Drop", category = "Files" }
+    , { slug = "ImagePreviews", title = "Image Previews", category = "Files" }
     ]
 
 

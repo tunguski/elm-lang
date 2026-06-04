@@ -1,3 +1,5 @@
+module Factorial exposing (main)
+
 main = text (String.fromInt (fact 5))
 
 fact n =

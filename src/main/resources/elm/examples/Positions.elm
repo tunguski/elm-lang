@@ -1,3 +1,5 @@
+module Positions exposing (main)
+
 -- A button that moves to random positions when pressed.
 --
 -- Dependencies:

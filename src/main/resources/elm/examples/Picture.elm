@@ -1,3 +1,5 @@
+module Picture exposing (main)
+
 -- Create pictures from simple shapes. Like a tree!
 --
 -- Learn more about the playground here:

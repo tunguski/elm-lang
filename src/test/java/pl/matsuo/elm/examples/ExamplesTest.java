@@ -23,11 +23,20 @@ import pl.matsuo.elm.runtime.ElmRecord;
 class ExamplesTest {
 
   private static String source(String slug) {
-    try (InputStream in = ExamplesTest.class.getResourceAsStream("/elm/examples/" + slug + ".elm")) {
+    try (InputStream in = ExamplesTest.class.getResourceAsStream("/elm/examples/" + pascal(slug) + ".elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  /** Maps an example slug (e.g. "text-fields") to its PascalCase module filename ("TextFields"). */
+  private static String pascal(String slug) {
+    StringBuilder b = new StringBuilder();
+    for (String part : slug.split("-")) {
+      b.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+    }
+    return b.toString();
   }
 
   // --- HTML group (static) ----------------------------------------------

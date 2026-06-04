@@ -1,3 +1,5 @@
+module Toggle exposing (main)
+
 main = Browser.sandbox { init = init, update = update, view = view }
 
 init = False

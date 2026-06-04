@@ -38,34 +38,34 @@ public final class SiteGenerator {
   /** The full elm-lang.org/examples catalogue, in display order. */
   public static final List<Example> EXAMPLES =
       List.of(
-          new Example("HTML", "Hello", "hello"),
-          new Example("HTML", "Groceries", "groceries"),
-          new Example("HTML", "Shapes", "shapes"),
-          new Example("User Input", "Buttons", "buttons"),
-          new Example("User Input", "Text Fields", "text-fields"),
-          new Example("User Input", "Forms", "forms"),
-          new Example("Random", "Numbers", "numbers"),
-          new Example("Random", "Cards", "cards"),
-          new Example("Random", "Positions", "positions"),
-          new Example("HTTP", "Book", "book"),
-          new Example("HTTP", "Quotes", "quotes"),
-          new Example("Time", "Time", "time"),
-          new Example("Time", "Clock", "clock"),
-          new Example("Files", "Upload", "upload"),
-          new Example("Files", "Drag and Drop", "drag-and-drop"),
-          new Example("Files", "Image Previews", "image-previews"),
-          new Example("WebGL", "Triangle", "triangle"),
-          new Example("WebGL", "Cube", "cube"),
-          new Example("WebGL", "Crate", "crate"),
-          new Example("WebGL", "Thwomp", "thwomp"),
-          new Example("WebGL", "First Person", "first-person"),
-          new Example("Playground", "Picture", "picture"),
-          new Example("Playground", "Animation", "animation"),
-          new Example("Playground", "Mouse", "mouse"),
-          new Example("Playground", "Keyboard", "keyboard"),
-          new Example("Playground", "Turtle", "turtle"),
-          new Example("Playground", "Mario", "mario"),
-          new Example("Playground", "Game of Life", "life"));
+          new Example("HTML", "Hello", "Hello"),
+          new Example("HTML", "Groceries", "Groceries"),
+          new Example("HTML", "Shapes", "Shapes"),
+          new Example("User Input", "Buttons", "Buttons"),
+          new Example("User Input", "Text Fields", "TextFields"),
+          new Example("User Input", "Forms", "Forms"),
+          new Example("Random", "Numbers", "Numbers"),
+          new Example("Random", "Cards", "Cards"),
+          new Example("Random", "Positions", "Positions"),
+          new Example("HTTP", "Book", "Book"),
+          new Example("HTTP", "Quotes", "Quotes"),
+          new Example("Time", "Time", "Time"),
+          new Example("Time", "Clock", "Clock"),
+          new Example("Files", "Upload", "Upload"),
+          new Example("Files", "Drag and Drop", "DragAndDrop"),
+          new Example("Files", "Image Previews", "ImagePreviews"),
+          new Example("WebGL", "Triangle", "Triangle"),
+          new Example("WebGL", "Cube", "Cube"),
+          new Example("WebGL", "Crate", "Crate"),
+          new Example("WebGL", "Thwomp", "Thwomp"),
+          new Example("WebGL", "First Person", "FirstPerson"),
+          new Example("Playground", "Picture", "Picture"),
+          new Example("Playground", "Animation", "Animation"),
+          new Example("Playground", "Mouse", "Mouse"),
+          new Example("Playground", "Keyboard", "Keyboard"),
+          new Example("Playground", "Turtle", "Turtle"),
+          new Example("Playground", "Mario", "Mario"),
+          new Example("Playground", "Game of Life", "Life"));
 
   private enum Method {
     LIVE("Live JS (compiled)"),
@@ -207,7 +207,7 @@ public final class SiteGenerator {
     b.append(navLink("index.html", "Gallery"));
     b.append(navLink("backends.html", "JS vs WASM"));
     b.append(navLink("playground.html", "Playground"));
-    b.append(navLink("life.html", "Game of Life"));
+    b.append(navLink("Life.html", "Game of Life"));
     b.append(navLink("editor.html", "Editor"));
     b.append(navLink("todomvc.html", "TodoMVC"));
     if (rts) {
@@ -616,9 +616,13 @@ public final class SiteGenerator {
           dir.resolve(ex.slug() + ".elm"),
           java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
+    // The editor's own demo modules go under editor/ (kept apart from the elm-lang.org gallery
+    // examples, which share PascalCase names like Buttons/Hello now that the gallery is capitalised).
+    Path editorDir = outDir.resolve("editor");
+    Files.createDirectories(editorDir);
     for (String name : EDITOR_EXAMPLES) {
       Files.writeString(
-          dir.resolve(name + ".elm"),
+          editorDir.resolve(name + ".elm"),
           pl.matsuo.elm.util.Resources.read("/elm/editor-examples/" + name + ".elm"),
           StandardCharsets.UTF_8);
     }

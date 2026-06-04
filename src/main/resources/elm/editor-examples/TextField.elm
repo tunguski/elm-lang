@@ -1,4 +1,4 @@
-module Main exposing (main)
+module TextField exposing (main)
 
 import Browser
 import Html exposing (div, input, text)

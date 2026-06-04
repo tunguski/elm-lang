@@ -1,3 +1,5 @@
+module Crate exposing (main)
+
 -- Demonstrate how to load textures and put them on a cube.
 --
 -- Dependencies:

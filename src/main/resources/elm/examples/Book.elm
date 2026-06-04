@@ -1,3 +1,5 @@
+module Book exposing (main)
+
 -- Make a GET request to load a book called "Public Opinion"
 --
 -- Read how it works:

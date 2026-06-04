@@ -19,20 +19,20 @@ full elm-lang.org gallery examples — editable and viewable here, though many u
 WebGL, HTTP, …) the small interpreter can't run, so their result pane shows what it can. -}
 exampleUrls : List String
 exampleUrls =
-    [ "examples/Buttons.elm"
-    , "examples/TextField.elm"
-    , "examples/Element.elm"
-    , "examples/Hello.elm"
-    , "examples/Greeting.elm"
-    , "examples/Factorial.elm"
-    , "examples/ListSum.elm"
-    , "examples/Squares.elm"
-    , "examples/Toggle.elm"
+    [ "editor/Buttons.elm"
+    , "editor/TextField.elm"
+    , "editor/Element.elm"
+    , "editor/Hello.elm"
+    , "editor/Greeting.elm"
+    , "editor/Factorial.elm"
+    , "editor/ListSum.elm"
+    , "editor/Squares.elm"
+    , "editor/Toggle.elm"
     , "examples/todomvc.elm"
     ]
         ++ List.map (\slug -> "examples/" ++ slug ++ ".elm")
-            [ "hello", "groceries", "shapes", "buttons", "text-fields", "forms", "numbers", "cards"
-            , "positions", "book", "quotes", "time", "clock", "upload", "drag-and-drop"
-            , "image-previews", "triangle", "cube", "crate", "thwomp", "first-person", "picture"
-            , "animation", "mouse", "keyboard", "turtle", "mario", "life"
+            [ "Hello", "Groceries", "Shapes", "Buttons", "TextFields", "Forms", "Numbers", "Cards"
+            , "Positions", "Book", "Quotes", "Time", "Clock", "Upload", "DragAndDrop"
+            , "ImagePreviews", "Triangle", "Cube", "Crate", "Thwomp", "FirstPerson", "Picture"
+            , "Animation", "Mouse", "Keyboard", "Turtle", "Mario", "Life"
             ]

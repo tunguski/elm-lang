@@ -1,3 +1,5 @@
+module Turtle exposing (main)
+
 -- Use arrow keys to move the turtle around.
 --
 -- Forward with UP and turn with LEFT and RIGHT.

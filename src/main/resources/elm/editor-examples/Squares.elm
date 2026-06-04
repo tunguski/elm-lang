@@ -1,3 +1,5 @@
+module Squares exposing (main)
+
 main = div [] (List.map square (List.range 1 5))
 
 square n =
