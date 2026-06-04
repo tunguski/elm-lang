@@ -20,7 +20,7 @@ import pl.matsuo.elm.runtime.ElmList;
 class WebGLExamplesTest {
 
   private static String source(String slug) {
-    try (InputStream in = WebGLExamplesTest.class.getResourceAsStream("/examples/" + slug + ".elm")) {
+    try (InputStream in = WebGLExamplesTest.class.getResourceAsStream("/elm/examples/" + slug + ".elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new RuntimeException(e);

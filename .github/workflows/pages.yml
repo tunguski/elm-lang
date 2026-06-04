@@ -39,8 +39,8 @@ jobs:
       - name: Generate the example gallery
         run: |
           java -jar target/elm.jar site \
-            src/test/resources/examples \
-            src/test/resources/Playground.elm \
+            src/main/resources/elm/examples \
+            src/main/resources/elm/examples/Playground.elm \
             target/site \
             docs
 

@@ -180,7 +180,7 @@ class EditorInterpreterTest {
     // five cells across a generation, time advances `gen`, and a number key swaps the starting setup.
     String src =
         java.nio.file.Files.readString(
-            java.nio.file.Path.of("src/test/resources/examples/life.elm"));
+            java.nio.file.Path.of("src/main/resources/elm/examples/life.elm"));
     ElmList fs = files("Main.elm", src);
     ElmList none = ElmList.fromJava(new ArrayList<>());
 
@@ -588,7 +588,7 @@ class EditorInterpreterTest {
     for (String slug : new String[] {"triangle", "crate", "thwomp", "cube"}) {
       String src =
           java.nio.file.Files.readString(
-              java.nio.file.Path.of("src/test/resources/examples/" + slug + ".elm"));
+              java.nio.file.Path.of("src/main/resources/elm/examples/" + slug + ".elm"));
       String out = evalProject(files("Main.elm", src), "main");
       assertTrue(out.startsWith("{ init ="), slug + " did not parse/evaluate: " + out);
     }

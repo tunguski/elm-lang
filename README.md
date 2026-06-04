@@ -375,7 +375,7 @@ linear memory (string `{len, bytes}`, cons-list cells, Float bit-patterns). Buil
 
 ```sh
 ./mvnw.cmd -DskipTests package
-java -jar target/elm.jar site src/test/resources/examples src/test/resources/Playground.elm target/site
+java -jar target/elm.jar site src/main/resources/elm/examples src/main/resources/elm/examples/Playground.elm target/site
 ```
 
 ## Continuous integration

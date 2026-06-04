@@ -16,7 +16,7 @@ import pl.matsuo.elm.types.TypeChecker;
 class PortsTest {
 
   private static String ports() throws Exception {
-    try (InputStream in = PortsTest.class.getResourceAsStream("/examples/ports.elm")) {
+    try (InputStream in = PortsTest.class.getResourceAsStream("/elm/examples/ports.elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     }
   }

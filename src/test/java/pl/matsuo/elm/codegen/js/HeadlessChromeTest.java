@@ -50,7 +50,7 @@ class HeadlessChromeTest {
   }
 
   private static String example(String slug) {
-    try (InputStream in = HeadlessChromeTest.class.getResourceAsStream("/examples/" + slug + ".elm")) {
+    try (InputStream in = HeadlessChromeTest.class.getResourceAsStream("/elm/examples/" + slug + ".elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -695,7 +695,7 @@ class HeadlessChromeTest {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The real evancz/elm-playground source is bundled with the example into one JS program that
     // runs live in the browser (previously this could only be a server-rendered snapshot).
-    String playground = example2("/Playground.elm");
+    String playground = example2("/elm/examples/Playground.elm");
     String dom = renderPage(JsCompiler.htmlPageProject(null, playground, example("picture")));
     assertTrue(dom.contains("<svg"), dom);
     assertTrue(dom.contains("<rect") && dom.contains("<circle"), dom);

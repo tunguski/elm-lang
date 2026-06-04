@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Test;
  */
 class SiteGeneratorTest {
 
-  private static final Path EXAMPLES = Path.of("src/test/resources/examples");
-  private static final Path PLAYGROUND = Path.of("src/test/resources/Playground.elm");
+  private static final Path EXAMPLES = Path.of("src/main/resources/elm/examples");
+  private static final Path PLAYGROUND = Path.of("src/main/resources/elm/examples/Playground.elm");
 
   private Path generate() throws IOException {
     Path out = Files.createTempDirectory("elm-site-");

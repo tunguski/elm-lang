@@ -25,7 +25,7 @@ class PlaygroundExamplesTest {
 
   private String render(String slug) {
     Project project =
-        Project.load(resource("/Playground.elm"), resource("/examples/" + slug + ".elm"));
+        Project.load(resource("/elm/examples/Playground.elm"), resource("/elm/examples/" + slug + ".elm"));
     return Tea.start(project.main()).html();
   }
 

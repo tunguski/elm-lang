@@ -23,7 +23,7 @@ class GalleryBuildTest {
     ByteArrayOutputStream log = new ByteArrayOutputStream();
     int code =
         GalleryBuild.generate(
-            Path.of("src/test/resources/examples"),
+            Path.of("src/main/resources/elm/examples"),
             Path.of("docs"),
             out,
             new PrintStream(log, true, StandardCharsets.UTF_8));

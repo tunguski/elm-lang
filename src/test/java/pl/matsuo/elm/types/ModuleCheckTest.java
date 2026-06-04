@@ -13,7 +13,7 @@ import pl.matsuo.elm.error.ElmTypeError;
 class ModuleCheckTest {
 
   private static String example(String slug) throws Exception {
-    try (InputStream in = ModuleCheckTest.class.getResourceAsStream("/examples/" + slug + ".elm")) {
+    try (InputStream in = ModuleCheckTest.class.getResourceAsStream("/elm/examples/" + slug + ".elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     }
   }

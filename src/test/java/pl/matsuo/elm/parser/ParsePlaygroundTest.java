@@ -13,7 +13,7 @@ class ParsePlaygroundTest {
   @Test
   void parsesPlayground() throws Exception {
     String src;
-    try (InputStream in = getClass().getResourceAsStream("/Playground.elm")) {
+    try (InputStream in = getClass().getResourceAsStream("/elm/examples/Playground.elm")) {
       src = new String(in.readAllBytes(), StandardCharsets.UTF_8);
     }
     Module m = Parser.parseModule(src);

@@ -22,7 +22,7 @@ import pl.matsuo.elm.runtime.ElmRecord;
 class FilesExamplesTest {
 
   private static String source(String slug) {
-    try (InputStream in = FilesExamplesTest.class.getResourceAsStream("/examples/" + slug + ".elm")) {
+    try (InputStream in = FilesExamplesTest.class.getResourceAsStream("/elm/examples/" + slug + ".elm")) {
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new RuntimeException(e);

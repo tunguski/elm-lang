@@ -54,9 +54,9 @@ class ProjectCheckTest {
     // module-level let-generalization (SCC ordering) so shared helpers like `render` stay
     // polymorphic across picture/animation/game, and row-polymorphic records for the games whose
     // memory is a record (turtle's { x : Float }, mario's { y : Float }).
-    String playground = resource("/Playground.elm");
+    String playground = resource("/elm/examples/Playground.elm");
     for (String game : new String[] {"picture", "animation", "mouse", "keyboard", "turtle", "mario"}) {
-      Map<String, String> types = TypeChecker.checkProject(playground, resource("/examples/" + game + ".elm"));
+      Map<String, String> types = TypeChecker.checkProject(playground, resource("/elm/examples/" + game + ".elm"));
       assertTrue(
           types.get("main") != null && types.get("main").startsWith("Program"),
           game + " main: " + types.get("main"));
