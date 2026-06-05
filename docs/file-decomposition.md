@@ -55,7 +55,7 @@ scatters a hot web across files.
 | File | Lines | Recommendation | Status |
 |------|-------|----------------|--------|
 | `editor/Eval.elm` | ~3910 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | 🟡 `EvalRender` + `EvalPlayground` extracted; Core/Builtins/App/Json remain |
-| `wasm/WasmCompiler.java` | ~2767 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` extracted; string runtime remains |
+| `wasm/WasmCompiler.java` | ~1831 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` + `WasmNativeFns` (string/apply/record natives) extracted; `FunctionGen` core stays (documented exception) |
 | `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
 | `wasm/WasmGc.java` | ~2105 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` + `WasmGcTypes` (Tuples + W/StructDef) extracted; `Gen` core stays (documented exception) |
 | `Main.java` | ~1898 | **Split** — one file per CLI command group + a shared support file | ⬜ |
