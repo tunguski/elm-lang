@@ -29,6 +29,7 @@ class EditorInterpreterTest {
     "/elm/editor/Lexer.elm",
     "/elm/editor/Parser.elm",
     "/elm/editor/EvalRender.elm",
+    "/elm/editor/EvalPlayground.elm",
     "/elm/editor/Eval.elm",
     "/elm/editor/Highlight.elm",
     "/elm/editor/Assist.elm",

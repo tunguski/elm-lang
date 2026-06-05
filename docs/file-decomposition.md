@@ -46,7 +46,7 @@ extracted; more proposed below), ⬜ not started, ⏸ deliberately left whole.
 
 | File | Lines | Recommendation | Status |
 |------|-------|----------------|--------|
-| `editor/Eval.elm` | ~4344 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | 🟡 `EvalRender` (pure display) extracted; Core/Builtins/App/Json/Playground remain |
+| `editor/Eval.elm` | ~3910 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | 🟡 `EvalRender` + `EvalPlayground` extracted; Core/Builtins/App/Json remain |
 | `wasm/WasmCompiler.java` | ~2767 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` extracted; string runtime remains |
 | `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
 | `wasm/WasmGc.java` | ~2440 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` shared; `Tuples` type registry remains |
@@ -94,9 +94,11 @@ jobs are visible as contiguous bands in the file:
 4. **`Eval.Json`** — the hand-rolled JSON parser/serialiser and the `Json.Decode`/`Encode`
    interpreter (≈3119–3574). *Why:* it is a self-contained codec with one entry point (`runDecoder`,
    `jsonEncode`) used only by `Eval.App` (HTTP) and a few `runBuiltin` cases. It touches nothing else.
-5. **`Eval.Playground`** — elm-playground shape construction, SVG rendering, and the game/animation
-   loop `gameInitMem`/`gameStep` (≈3766–4196). *Why:* a closed world — shapes in, SVG out — that only
-   needs `applyValue`. The single most extractable band in the file.
+5. **`Eval.Playground`** ✅ — elm-playground shape construction, SVG rendering, and the game/animation
+   loop now live in `editor/EvalPlayground.elm`. *Why:* a closed world — shapes in, SVG out. It needs
+   the evaluator only to apply a game's `view`/`update` and resolve `main`, so `applyValue`/`mainValue`
+   are passed into `gameView`/`gameStep`/`gameInitMem` as parameters (no import back into `Eval`);
+   everything else is pure. `Eval` re-exposes the game functions via thin wrappers. ~464 lines.
 6. **`Eval.Render`** ✅ — the pure display helpers `renderValue` + the Html-value→string
    `htmlToString`/`attrKey` now live in `editor/EvalRender.elm` (flat module name to match the editor's
    flat, module=filename convention; `Eval` re-exposes `renderValue` via a thin alias since Elm has no
