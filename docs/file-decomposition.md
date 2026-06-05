@@ -41,23 +41,33 @@ A note on language mechanics:
 
 ## The files
 
-| File | Lines | Recommendation |
-|------|-------|----------------|
-| `editor/Eval.elm` | ~4195 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json |
-| `wasm/WasmCompiler.java` | ~3215 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core |
-| `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors |
-| `wasm/WasmGc.java` | ~2461 | **Split** — extract the type registry and the shared encoding; keep `Gen` |
-| `interp/Prelude.java` | ~2138 | **Split** — one class per Elm module group (cleanest of all) |
-| `Main.java` | ~1860 | **Split** — one file per CLI command group + a shared support file |
-| `test/Playground.elm` | ~1708 | **Leave** — vendored elm-playground; splitting forks upstream |
-| `js/JsCompiler.java` | ~1397 | **Partial** — extract the optimiser pipeline; keep codegen together |
-| `editor/Editor.elm` | ~1230 | **Split** — app/update vs. view vs. session vs. html-bridge |
-| `test/WasmHeapTest.java` | ~1202 | **Split** — by feature area, with a shared test-helper base |
-| `parser/Parser.java` | ~1083 | **Partial** — extract fixities + layout; keep the recursive-descent core |
+Line counts and status as of 2026-06-05. ✅ done, 🟡 partially done (an island already
+extracted; more proposed below), ⬜ not started, ⏸ deliberately left whole.
+
+| File | Lines | Recommendation | Status |
+|------|-------|----------------|--------|
+| `editor/Eval.elm` | ~4484 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | ⬜ |
+| `wasm/WasmCompiler.java` | ~2767 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` extracted; string runtime remains |
+| `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
+| `wasm/WasmGc.java` | ~2440 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` shared; `Tuples` type registry remains |
+| `Main.java` | ~1898 | **Split** — one file per CLI command group + a shared support file | ⬜ |
+| `interp/Prelude.java` | ~1806 | **Split** — one class per Elm module group (cleanest of all) | 🟡 `PreludeCollections` extracted; other groups remain |
+| `examples/Playground.elm` | ~1708 | **Leave** — vendored elm-playground; splitting forks upstream | ⏸ |
+| `editor/Editor.elm` | ~1370 | **Split** — app/update vs. view vs. session vs. html-bridge | ⬜ |
+| `js/JsCompiler.java` | ~1239 | **Partial** — extract the optimiser pipeline; keep codegen together | ✅ `JsOptimizer` + `JsRuntime` extracted; remainder coherent |
+| `test/WasmHeapTest.java` | ~1221 | **Split** — by feature area, with a shared test-helper base | ⬜ |
+| `test/EditorInterpreterTest.java` | ~1066 | **Watch** — cohesive editor-interpreter suite; split by feature only if it keeps growing | ⬜ |
+
+`parser/Parser.java` has dropped to ~995 (below the 1000-line threshold): `OperatorFixities`
+was extracted, and the recursive-descent core is intentionally kept whole — so it no longer
+appears above.
 
 ---
 
-### `editor/Eval.elm` (~4195) — the biggest, and a clean split
+### `editor/Eval.elm` (~4484) — the biggest, and a clean split
+
+(The line ranges below are approximate and predate recent edits — vector math, Random generator
+combinators — that grew the Builtins band; the six-way seam is unchanged.)
 
 `Eval.elm` is the in-browser editor's Elm-in-Elm interpreter. It has grown to hold five jobs that
 only share the `Value`/`Globals`/`Env` types and the central `evalExpr`/`applyValue` pair. Those
@@ -91,20 +101,19 @@ untouched. The risk to watch: keep `Eval.Core` free of imports from the other fi
 cycle. `runBuiltin` is the one place that may need a function passed in (to evaluate closures) rather
 than importing `Eval.App`.
 
-### `wasm/WasmCompiler.java` (~3215) — extract the islands, keep the engine
+### `wasm/WasmCompiler.java` (~2767) — extract the islands, keep the engine 🟡 partial
 
 Three large parts of this file are only loosely attached to the actual compiler:
 
-- **`WasmPrelude`** — the `WASM_PRELUDE` Elm-source string and the `PRELUDE_NAMES` map (≈93–411,
-  ~320 lines of data). *Why:* it is data, not logic; it changes when we add a stdlib function, which
-  is a different cadence from changing codegen. Moving it also makes it diffable without scrolling
-  past bytecode emitters.
-- **`WasmStringRuntime`** — the hand-assembled native functions `stringRuntime()` and their entry
-  builders (`strToListEntry`, `strReverseEntry`, `strConcatEntry`, …) (≈1928–2823, ~900 lines). *Why:*
-  these are raw-bytecode emitters that depend only on the encoding helpers (`leb`/`sleb`/`entry`).
-  They are the file's most self-contained island and the part least related to compiling Elm ASTs.
-- **`WasmEncoding`** (shared — see cross-cutting note) — `leb`/`sleb`/`section`/`name`/`nameSection`
-  (≈3057–3214). *Why:* pure binary-format plumbing, byte-identical to the copies in `WasmGc.java`.
+- **`WasmPrelude`** ✅ — the `WASM_PRELUDE` Elm-source string and the `PRELUDE_NAMES` map (~320 lines
+  of data) now live in `wasm/WasmPrelude.java`. *Why:* it is data, not logic; it changes when we add a
+  stdlib function, a different cadence from changing codegen.
+- **`WasmStringRuntime`** ⬜ — the hand-assembled native functions `stringRuntime()` and their entry
+  builders (`strToListEntry`, `strReverseEntry`, `strConcatEntry`, …, ~900 lines) **remain**. *Why
+  extract:* raw-bytecode emitters that depend only on the encoding helpers (`leb`/`sleb`/`entry`) — the
+  file's most self-contained island and the part least related to compiling Elm ASTs. The next cut here.
+- **`WasmEncoding`** ✅ (shared — see cross-cutting note) — `leb`/`sleb`/`section`/`name`/`nameSection`
+  now in `wasm/WasmEncoding.java`, shared with `WasmGc`.
 
 What stays in `WasmCompiler`: the `FunctionGen` inner class (≈769–1918) — the expression→bytecode
 compiler — together with `compileModules`/`assemble` and the lambda-lifting pass. `FunctionGen` is a
@@ -112,16 +121,16 @@ mutually-recursive web over the shared `funcs`/`ctorTag`/`nodeTypes` maps (`intE
 `intCase` ↔ `tailExpr`); cutting inside it would scatter that web. It could become its own
 top-level package-private `FunctionGen.java`, but its halves should not be split further.
 
-### `wasm/WasmGc.java` (~2461) — lift out the type registry
+### `wasm/WasmGc.java` (~2440) — lift out the type registry 🟡 partial
 
 The WasmGC backend's natural seam is the **`Tuples`** inner class (≈812–1105): the struct/type
 registry that assigns stable indices to every cons/tuple/record/closure shape. It is a cohesive
-data structure with its own helpers and no dependency on codegen — a clean `WasmGcTypes.java`.
-The `StructDef`/`W` type model (≈140–178) goes with it. The `Gen` inner class (≈1109–2264) is the
-codegen engine and, like `FunctionGen`, stays whole. The `leb`/`sleb`/`section`/`name` helpers
-(≈2423–2459) are the same duplicated encoding utilities and should move to the shared `WasmEncoding`.
+data structure with its own helpers and no dependency on codegen — a clean `WasmGcTypes.java`. ⬜
+**remains.** The `StructDef`/`W` type model (≈140–178) goes with it. The `Gen` inner class is the
+codegen engine and, like `FunctionGen`, stays whole. The `leb`/`sleb`/`section`/`name` helpers ✅ have
+already moved to the shared `WasmEncoding`.
 
-### `interp/Prelude.java` (~2138) — the cleanest split of all
+### `interp/Prelude.java` (~1806) — the cleanest split of all 🟡 partial
 
 `Prelude` is one `static` class that registers ~400 builtins into three shared maps (`BUILTINS`,
 `UNQUALIFIED`, `CTOR_ARITY`) from a static initialiser. Crucially, the `registerXxx()` methods **do
@@ -131,21 +140,22 @@ maps, leaving `Prelude` as the initialiser that calls them.
 
 Proposed grouping (by how often they change together, not one-class-per-method):
 
-- `PreludeCore` — Basics, List, String, Char, Bitwise (≈1410–2004; the high-traffic core).
-- `PreludeCollections` — Array, Dict, Set (≈130–475).
-- `PreludeData` — Maybe, Result, Tuple, Debug, constructors (≈2006–2138, 1397–1408).
+- `PreludeCore` — Basics, List, String, Char, Bitwise (the high-traffic core). ⬜
+- `PreludeCollections` ✅ — Array, Dict, Set, now in `interp/PreludeCollections.java`.
+- `PreludeData` — Maybe, Result, Tuple, Debug, constructors. ⬜
 - `PreludeEffects` — Cmd/Sub, Random (incl. the seeded `stepGen` cluster), Time, Task,
-  Browser.Events (≈475–562, 564–1040). *Why kept together:* `registerEffects` and `stepGen` share
-  the `advance`/`scrambleSeed` helpers — the one genuinely coupled sub-system here.
-- `PreludeJson` — Json.Decode/Encode, Url, Navigation, Storage, plus `decodeErrorToString`
-  (≈795–1290). *Why:* the decoder and its error renderer are a bound pair.
-- `PreludeHtml` — registerHtml/registerSvg/registerBrowser and the tag/attr tables (≈1292–1395).
-- `PreludeMedia` — WebGL, Math (Vec/Mat), Regex, File (≈602–764).
+  Browser.Events. *Why kept together:* `registerEffects` and `stepGen` share the `advance`/
+  `scrambleSeed` helpers — the one genuinely coupled sub-system here. ⬜
+- `PreludeJson` — Json.Decode/Encode (`registerJson` alone is ~500 lines), Url, Navigation, Storage,
+  plus `decodeErrorToString`. *Why:* the decoder and its error renderer are a bound pair. **The single
+  highest-impact remaining cut here.** ⬜
+- `PreludeHtml` — registerHtml/registerSvg/registerBrowser and the tag/attr tables. ⬜
+- `PreludeMedia` — WebGL, Math (Vec/Mat), Regex, File. ⬜
 
 The only shared surface is the handful of one-liners `fn`/`basics`/`just`/`d`/`isJust`/`isOk`, which
 become `static` helpers on a small `PreludeSupport`.
 
-### `Main.java` (~1860) — one class per command, already
+### `Main.java` (~1898) — one class per command, already
 
 `Main` is a picocli CLI whose body is **33 independent `@Command` static inner classes** (`Run`, `Js`,
 `Make`, `Eval`, `Script`, `Serve`, `Bundle`, `TestCmd`, `Docs`, `Lsp`, `Format`, `Build`, …). They
@@ -167,18 +177,17 @@ Rather than 33 tiny files, group by domain so related commands sit together:
 one-per-file:* the seam that matters is "what part of the toolchain does this drive", and commands in
 a group tend to change together (e.g. all the package commands when the registry format moves).
 
-### `js/JsCompiler.java` (~1397) — extract only the optimiser
+### `js/JsCompiler.java` (~1239) — extract only the optimiser ✅ done
 
 Most of this file is one tightly-woven codegen pipeline: expression `compile` ↔ pattern `matchJs` ↔
 the TCO path `compileNamedFunction` all share the local-scope stack and temp counter. That web stays.
 The cleanly separable part is the **post-processing pipeline** — `minify`, `treeShake`, `pruneKernel`,
 `balancedLine` (≈414–565): pure `String → String` passes with no dependency on the compiler instance.
-Moving them to `JsOptimizer.java` removes ~150 lines and isolates the one part that is about output
-text rather than Elm semantics. The multi-module caching layer (`appBundleProjectCached`,
-`interfaceSalt`, `sha256`, ≈255–332) is a second, smaller candidate (`JsBundleCache.java`). Below
-~1100 lines the remainder is coherent enough to leave.
+These now live in `JsOptimizer.java`, and the runtime kernel in `JsRuntime.java` — the remainder is
+the coherent codegen pipeline, left whole as recommended. (A further multi-module caching layer
+`JsBundleCache` was noted as an optional second candidate; not pursued.)
 
-### `editor/Editor.elm` (~1230) — separate UI from orchestration
+### `editor/Editor.elm` (~1370) — separate UI from orchestration
 
 `Editor.elm` mixes the TEA wiring with a large view layer. The seam is clear because the view
 functions only *read* the model:
@@ -197,7 +206,7 @@ functions only *read* the model:
 `Editor.View`/`Render` import `Editor` for the `Model`/`Msg` types; `Editor` must not import them
 back (move the few shared layout constants down, not up) to avoid a cycle.
 
-### `parser/Parser.java` (~1083) — extract the edges, keep the descent
+### `parser/Parser.java` (~995, now under threshold) — extract the edges, keep the descent ✅ done
 
 A recursive-descent + Pratt parser is the canonical "leave the core whole" case: `parseExpr`,
 `parseApplication`, `parseAtom`, `parsePattern`, and `parseType` all advance the same `tokens`/`p`
@@ -206,15 +215,14 @@ cursor and call one another freely. Splitting that across files would mean threa
 
 What *can* leave cleanly:
 
-- **`OperatorFixities`** — the static `FIXITY` table, `scanFixities`, `scanInfixDeclarations`
-  (≈27–152). Pure precedence data + a pre-scan, independent of the cursor.
+- **`OperatorFixities`** ✅ — the static `FIXITY` table, `scanFixities`, `scanInfixDeclarations` now
+  live in `parser/OperatorFixities.java`. Pure precedence data + a pre-scan, independent of the cursor.
 - **Layout helpers** — `atNewLine`/`continues`/`withIndent` and the error-recovery
-  `recoverToNextTopLevel` (≈228–341) could become a small `Layout` mixin, though the payoff is
-  modest.
+  `recoverToNextTopLevel` could become a small `Layout` mixin, though the payoff is modest; left in place.
 
-The recommendation is the modest one: extract fixities (and optionally layout), and accept that the
-~900-line descent core is one coherent unit. Forcing a 50/50 split here would make the parser harder
-to read, not easier — exactly the "random split" this doc exists to avoid.
+The modest recommendation was taken: fixities extracted, and the ~900-line descent core kept as one
+coherent unit (the file is now ~995 lines, below the threshold). Forcing a 50/50 split here would
+make the parser harder to read, not easier — exactly the "random split" this doc exists to avoid.
 
 ### `test/WasmHeapTest.java` (~1202) — split by feature, share the harness
 
@@ -226,7 +234,17 @@ recursion), records, higher-order/closures, and the property-based RNG tests. Th
 `WasmRecordTest`, `WasmHigherOrderTest`, etc. *Why bother for tests:* faster targeted runs and a
 clearer map of what the WASM backend guarantees, with no production risk.
 
-### `test/Playground.elm` (~1708) — do not split
+### `test/EditorInterpreterTest.java` (~1066) — watch, don't split yet
+
+New over the threshold (it grew as the editor gallery examples gained interpreter-fidelity regression
+tests — Mouse colours, Upload `multiple`, FirstPerson vectors, Positions `Random`, Thwomp textures).
+It is still **one cohesive suite**: every `@Test` exercises the same `Eval`/`Editor` interpreter
+through the shared `evalProject`/`files`/`renderGame` helpers. If it keeps growing, the natural cut
+mirrors `WasmHeapTest`: an `EditorInterpreterTestSupport` base holding the helpers, with the `@Test`s
+split into language-core, gallery-examples, and lexer/format clusters. Until then, leaving it whole
+keeps the editor's behavioural contract in one readable place.
+
+### `examples/Playground.elm` (~1708) — do not split
 
 This is **vendored** evancz/elm-playground, kept as a test resource so the gallery's Playground
 examples compile against the real library. It has clean internal seams (entry points, transforms,
@@ -236,27 +254,28 @@ cost of vendoring. If we ever *do* want it modular, that should be a deliberate,
 
 ---
 
-## Cross-cutting: the duplicated WASM encoder
+## Cross-cutting: the duplicated WASM encoder ✅ done
 
-`WasmCompiler.java` and `WasmGc.java` carry **byte-identical** copies of `leb`, `sleb`, `section`, and
-`name`, and `WasmGc` already reaches into `WasmCompiler.nameSection`. This is the one change that
-shrinks two files at once and removes a real duplication hazard (a fix to LEB128 encoding has to be
-made twice today). Extract a single `wasm/WasmEncoding.java` holding the LEB128 writers, the section
-framer, and the name-section builder, and have both backends call it. Low risk, high leverage — a
-good first step before any of the larger structural splits.
+`WasmCompiler.java` and `WasmGc.java` used to carry **byte-identical** copies of `leb`, `sleb`,
+`section`, and `name`. These now live in a single `wasm/WasmEncoding.java` that both backends call —
+the duplication hazard (a LEB128 fix needed twice) is gone. This was the recommended first step and
+de-risked the remaining WASM islands.
 
 ## Suggested sequencing
 
-Ordered by payoff-to-risk, easiest and safest first:
+Ordered by payoff-to-risk, easiest and safest first. ✅ = completed.
 
-1. **`WasmEncoding`** extraction — mechanical, removes duplication, de-risks the two WASM splits.
-2. **`Prelude.java`** — independent register methods make this the lowest-risk large split.
-3. **`Main.java`** — independent command classes; pure file moves.
-4. **`WasmHeapTest.java`** — test-only, no production risk.
-5. **`WasmCompiler` / `WasmGc`** islands (prelude string, string runtime, type registry).
-6. **`Eval.elm`** and **`Editor.elm`** — highest value but need care with Elm import cycles; do the
+1. ✅ **`WasmEncoding`** extraction — done; removed the duplicated encoder.
+2. 🟡 **`Prelude.java`** — `PreludeCollections` (Array/Dict/Set) extracted; the other module groups
+   (Core, Data, Effects, Json, Html, Media) remain. Independent register methods → lowest-risk large split.
+3. ⬜ **`Main.java`** — independent command classes; pure file moves into a `cmd/` package.
+4. ⬜ **`WasmHeapTest.java`** — test-only, no production risk.
+5. 🟡 **`WasmCompiler` / `WasmGc`** islands — `WasmPrelude` extracted; the hand-assembled string
+   runtime (`WasmCompiler`) and the `Tuples` type registry (`WasmGc`) remain.
+6. ⬜ **`Eval.elm`** and **`Editor.elm`** — highest value but need care with Elm import cycles; do the
    evaluator/UI split first and the finer cuts only if they still feel warranted afterwards.
-7. **`JsCompiler` / `Parser`** — extract only the clean edges (optimiser, fixities); leave the cores.
+7. ✅ **`JsCompiler` / `Parser`** — `JsOptimizer`/`JsRuntime` and `OperatorFixities` extracted; the
+   codegen and recursive-descent cores are intentionally left whole.
 
 Each step should be a behaviour-preserving move validated by the existing test suite before the next.
 The measure of success is not the line count afterwards — it is whether a newcomer can guess which
