@@ -51,7 +51,7 @@ extracted; more proposed below), ⬜ not started, ⏸ deliberately left whole.
 | `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
 | `wasm/WasmGc.java` | ~2440 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` shared; `Tuples` type registry remains |
 | `Main.java` | ~1898 | **Split** — one file per CLI command group + a shared support file | ⬜ |
-| `interp/Prelude.java` | ~1564 | **Split** — one class per Elm module group (cleanest of all) | 🟡 `PreludeCollections` + `PreludeJson` extracted; other groups remain |
+| `interp/Prelude.java` | ~967 | **Split** — one class per Elm module group (cleanest of all) | ✅ `PreludeCollections` + `PreludeJson` + `PreludeCore` extracted; now under threshold |
 | `examples/Playground.elm` | ~1708 | **Leave** — vendored elm-playground; splitting forks upstream | ⏸ |
 | `editor/Editor.elm` | ~1370 | **Split** — app/update vs. view vs. session vs. html-bridge | ⬜ |
 | `js/JsCompiler.java` | ~1239 | **Partial** — extract the optimiser pipeline; keep codegen together | ✅ `JsOptimizer` + `JsRuntime` extracted; remainder coherent |
@@ -139,7 +139,7 @@ data structure with its own helpers and no dependency on codegen — a clean `Wa
 codegen engine and, like `FunctionGen`, stays whole. The `leb`/`sleb`/`section`/`name` helpers ✅ have
 already moved to the shared `WasmEncoding`.
 
-### `interp/Prelude.java` (~1564) — the cleanest split of all 🟡 partial
+### `interp/Prelude.java` (~967, under threshold) — the cleanest split of all ✅
 
 `Prelude` is one `static` class that registers ~400 builtins into three shared maps (`BUILTINS`,
 `UNQUALIFIED`, `CTOR_ARITY`) from a static initialiser. Crucially, the `registerXxx()` methods **do
@@ -149,7 +149,9 @@ maps, leaving `Prelude` as the initialiser that calls them.
 
 Proposed grouping (by how often they change together, not one-class-per-method):
 
-- `PreludeCore` — Basics, List, String, Char, Bitwise (the high-traffic core). ⬜
+- `PreludeCore` ✅ — Basics, List, String, Char, Bitwise (the high-traffic core), now in
+  `interp/PreludeCore.java`. The shared helpers it needed (`basics`/`javaList`/`ordering`/`split` +
+  the `UNQUALIFIED` map) became package-private; this single ~595-line cut took Prelude under 1000.
 - `PreludeCollections` ✅ — Array, Dict, Set, now in `interp/PreludeCollections.java`.
 - `PreludeData` — Maybe, Result, Tuple, Debug, constructors. ⬜
 - `PreludeEffects` — Cmd/Sub, Random (incl. the seeded `stepGen` cluster), Time, Task,
@@ -276,9 +278,10 @@ de-risked the remaining WASM islands.
 Ordered by payoff-to-risk, easiest and safest first. ✅ = completed.
 
 1. ✅ **`WasmEncoding`** extraction — done; removed the duplicated encoder.
-2. 🟡 **`Prelude.java`** — `PreludeCollections` (Array/Dict/Set) and `PreludeJson` (Json/Url/Nav/Storage)
-   extracted; the other groups (Core, Data, Effects, Html, Media) remain. Independent register methods →
-   lowest-risk large split.
+2. ✅ **`Prelude.java`** — `PreludeCollections` (Array/Dict/Set), `PreludeJson` (Json/Url/Nav/Storage)
+   and `PreludeCore` (Basics/List/String/Char/Bitwise) extracted; now ~967 lines (under threshold).
+   The remaining groups (Data, Effects, Html, Media) could still be split for cleanliness, but the
+   size target is met.
 3. ⬜ **`Main.java`** — independent command classes; pure file moves into a `cmd/` package.
 4. ⬜ **`WasmHeapTest.java`** — test-only, no production risk.
 5. 🟡 **`WasmCompiler` / `WasmGc`** islands — `WasmPrelude` extracted; the hand-assembled string
