@@ -42,6 +42,7 @@ builtins =
         ++ [ "Bitwise.and", "Bitwise.or", "Bitwise.xor", "Bitwise.complement", "Bitwise.shiftLeftBy", "Bitwise.shiftRightBy", "Bitwise.shiftRightZfBy" ]
         ++ [ "Time.millisToPosix", "Time.posixToMillis", "Time.toHour", "Time.toMinute", "Time.toSecond", "Time.every" ]
         ++ [ "Random.int", "Random.float", "Random.uniform", "Random.generate" ]
+        ++ [ "Random.map", "Random.map2", "Random.map3", "Random.pair", "Random.list", "Random.constant", "Random.andThen" ]
         ++ [ "Http.get", "Http.expectString", "Http.expectJson" ]
         ++ [ "File.Select.file", "File.Select.files", "File.toString", "File.toUrl", "File.name", "File.mime", "File.size", "Task.perform", "Task.attempt" ]
         ++ [ "field", "at", "map", "oneOrMore", "map2", "map3", "map4", "map5", "map6", "map7", "map8", "succeed", "list", "andThen", "oneOf", "nullable" ]
@@ -198,13 +199,13 @@ arity name =
     else if List.member name [ "cos", "sin", "tan", "sqrt", "toFloat", "round", "floor", "ceiling", "truncate", "abs", "asin", "acos", "atan", "radians", "turns", "isNaN", "isInfinite", "Time.millisToPosix", "Time.posixToMillis", "picture", "animation", "Http.get", "Http.expectString", "succeed", "list", "oneOf", "nullable", "Encode.string", "Encode.int", "Encode.float", "Encode.bool", "Encode.object" ] then
         1
 
-    else if List.member name [ "toX", "toY", "degrees" ] then
+    else if List.member name [ "toX", "toY", "degrees", "Random.constant" ] then
         1
 
-    else if List.member name [ "oval", "rectangle", "move", "rgb", "game", "image", "map2" ] then
+    else if List.member name [ "oval", "rectangle", "move", "rgb", "game", "image", "map2", "Random.map2" ] then
         3
 
-    else if List.member name [ "wave", "zigzag", "map3" ] then
+    else if List.member name [ "wave", "zigzag", "map3", "Random.map3" ] then
         4
 
     else if name == "map4" then
@@ -1189,6 +1190,27 @@ runBuiltin globals name args =
 
             ( "Random.uniform", [ first, VList rest ] ) ->
                 Ok (VCtor "Random.Gen" [ VStr "uniform", VList (first :: rest) ])
+
+            ( "Random.constant", [ x ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "constant", x ])
+
+            ( "Random.map", [ f, g ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "map", f, g ])
+
+            ( "Random.map2", [ f, g1, g2 ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "map2", f, g1, g2 ])
+
+            ( "Random.map3", [ f, g1, g2, g3 ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "map3", f, g1, g2, g3 ])
+
+            ( "Random.pair", [ g1, g2 ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "pair", g1, g2 ])
+
+            ( "Random.list", [ VNum n, g ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "list", VNum n, g ])
+
+            ( "Random.andThen", [ f, g ] ) ->
+                Ok (VCtor "Random.Gen" [ VStr "andThen", f, g ])
 
             ( "Random.generate", [ toMsg, gen ] ) ->
                 Ok (VCtor "Cmd.random" [ toMsg, gen ])
@@ -3126,13 +3148,18 @@ randomCmd : List ( String, String ) -> Int -> Value -> Maybe ( Value, Int )
 randomCmd files seed cmd =
     case cmd of
         VCtor "Cmd.random" [ toMsg, gen ] ->
-            let
-                ( v, seed2 ) =
-                    sampleGen seed gen
-            in
-            case applyMsgIn files toMsg v of
-                Ok msg ->
-                    Just ( msg, seed2 )
+            case parseProject files of
+                Ok globals ->
+                    let
+                        ( v, seed2 ) =
+                            sampleGen globals seed gen
+                    in
+                    case applyMsgIn files toMsg v of
+                        Ok msg ->
+                            Just ( msg, seed2 )
+
+                        Err _ ->
+                            Nothing
 
                 Err _ ->
                     Nothing
@@ -3710,8 +3737,8 @@ skipWs chars =
 
 
 {-| Samples a generator with a linear-congruential step of the seed, returning (value, next seed). -}
-sampleGen : Int -> Value -> ( Value, Int )
-sampleGen seed gen =
+sampleGen : Globals -> Int -> Value -> ( Value, Int )
+sampleGen globals seed gen =
     let
         s =
             abs (modBy 2147483647 (seed * 1103515245 + 12345))
@@ -3726,8 +3753,82 @@ sampleGen seed gen =
         VCtor "Random.Gen" [ VStr "uniform", VList xs ] ->
             ( listGet (modBy (max 1 (List.length xs)) s) xs, s )
 
+        VCtor "Random.Gen" [ VStr "constant", x ] ->
+            ( x, seed )
+
+        VCtor "Random.Gen" [ VStr "map", f, g ] ->
+            let
+                ( v, s2 ) =
+                    sampleGen globals seed g
+            in
+            ( applyVal globals f v, s2 )
+
+        VCtor "Random.Gen" [ VStr "map2", f, g1, g2 ] ->
+            let
+                ( v1, s1 ) =
+                    sampleGen globals seed g1
+
+                ( v2, s2 ) =
+                    sampleGen globals s1 g2
+            in
+            ( applyVal globals (applyVal globals f v1) v2, s2 )
+
+        VCtor "Random.Gen" [ VStr "map3", f, g1, g2, g3 ] ->
+            let
+                ( v1, s1 ) =
+                    sampleGen globals seed g1
+
+                ( v2, s2 ) =
+                    sampleGen globals s1 g2
+
+                ( v3, s3 ) =
+                    sampleGen globals s2 g3
+            in
+            ( applyVal globals (applyVal globals (applyVal globals f v1) v2) v3, s3 )
+
+        VCtor "Random.Gen" [ VStr "pair", g1, g2 ] ->
+            let
+                ( v1, s1 ) =
+                    sampleGen globals seed g1
+
+                ( v2, s2 ) =
+                    sampleGen globals s1 g2
+            in
+            ( VTup [ v1, v2 ], s2 )
+
+        VCtor "Random.Gen" [ VStr "list", VNum n, g ] ->
+            sampleList globals seed g (round n) []
+
+        VCtor "Random.Gen" [ VStr "andThen", f, g ] ->
+            let
+                ( v, s2 ) =
+                    sampleGen globals seed g
+            in
+            sampleGen globals s2 (applyVal globals f v)
+
         _ ->
             ( VNum 0, s )
+
+
+{-| Applies a function value to one argument, falling back to a number on error (so generator
+sampling stays total). -}
+applyVal : Globals -> Value -> Value -> Value
+applyVal globals f a =
+    Result.withDefault (VNum 0) (applyValue globals f a)
+
+
+{-| Samples a `Random.list n gen` by drawing `n` values, threading the seed. -}
+sampleList : Globals -> Int -> Value -> Int -> List Value -> ( Value, Int )
+sampleList globals seed g n acc =
+    if n <= 0 then
+        ( VList (List.reverse acc), seed )
+
+    else
+        let
+            ( v, s2 ) =
+                sampleGen globals seed g
+        in
+        sampleList globals s2 g (n - 1) (v :: acc)
 
 
 listGet : Int -> List Value -> Value

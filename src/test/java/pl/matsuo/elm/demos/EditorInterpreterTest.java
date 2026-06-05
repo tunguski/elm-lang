@@ -258,6 +258,24 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void positionsResolvesRandomMap2ToASampleableGenerator() throws Exception {
+    // Positions: clicking samples a new (Int, Int) from `Random.map2 Tuple.pair (Random.int 50 350)
+    // (Random.int 50 350)` and dispatches `NewPosition (x, y)`. Regression — the editor mis-resolved
+    // `Random.map2` to Json.Decode's map (Dec.map), which the random sampler didn't recognise, so it
+    // produced 0 and `NewPosition (x, y)` failed with "no matching case branch". The generator must
+    // now be a real Random generator (a `Random.Gen` the editor samples), not a decoder.
+    String src =
+        java.nio.file.Files.readString(java.nio.file.Path.of("src/main/elm/examples/Positions.elm"));
+    ElmList fs = files("Main.elm", src);
+    String gen = evalProject(fs, "positionGenerator");
+    assertTrue(gen.contains("Random.Gen") && gen.contains("map2"), "real Random generator: " + gen);
+    assertTrue(!gen.contains("Dec.map"), "not mis-resolved to a Json decoder: " + gen);
+    // The combinators compose: a map of two int generators is also a Random.Gen, sampleable to a list.
+    String listGen = evalProject(fs, "Random.list 3 (Random.int 1 6)");
+    assertTrue(listGen.contains("Random.Gen") && listGen.contains("list"), "Random.list is a generator: " + listGen);
+  }
+
+  @Test
   void uploadExampleRendersTheMultipleFileInput() throws Exception {
     // Upload (Browser.element): the view is `<input type="file" multiple ...>`. Regression — the
     // editor must resolve the `multiple` boolean attribute, not fail "undefined variable: multiple".
