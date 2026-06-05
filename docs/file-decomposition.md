@@ -46,7 +46,7 @@ extracted; more proposed below), ⬜ not started, ⏸ deliberately left whole.
 
 | File | Lines | Recommendation | Status |
 |------|-------|----------------|--------|
-| `editor/Eval.elm` | ~4484 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | ⬜ |
+| `editor/Eval.elm` | ~4344 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | 🟡 `EvalRender` (pure display) extracted; Core/Builtins/App/Json/Playground remain |
 | `wasm/WasmCompiler.java` | ~2767 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` extracted; string runtime remains |
 | `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
 | `wasm/WasmGc.java` | ~2440 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` shared; `Tuples` type registry remains |
@@ -64,10 +64,14 @@ appears above.
 
 ---
 
-### `editor/Eval.elm` (~4484) — the biggest, and a clean split
+### `editor/Eval.elm` (~4344) — the biggest, and a clean split 🟡 in progress
 
-(The line ranges below are approximate and predate recent edits — vector math, Random generator
-combinators — that grew the Builtins band; the six-way seam is unchanged.)
+Being done incrementally, one cycle-free module at a time (Elm forbids import cycles, and the
+evaluator core is one mutually-recursive web). `EvalRender` (pure display) is extracted; the leaf
+bands that call back into the evaluator (`Eval.Playground`, the `Json.Decode` interpreter) will take
+`applyValue`/`mainValue` as parameters rather than importing the core, and `Eval` re-exposes the
+public functions via thin aliases. (The line ranges below are approximate and predate recent edits —
+vector math, Random combinators, the `EvalRender` extraction.)
 
 `Eval.elm` is the in-browser editor's Elm-in-Elm interpreter. It has grown to hold five jobs that
 only share the `Value`/`Globals`/`Env` types and the central `evalExpr`/`applyValue` pair. Those
@@ -93,8 +97,11 @@ jobs are visible as contiguous bands in the file:
 5. **`Eval.Playground`** — elm-playground shape construction, SVG rendering, and the game/animation
    loop `gameInitMem`/`gameStep` (≈3766–4196). *Why:* a closed world — shapes in, SVG out — that only
    needs `applyValue`. The single most extractable band in the file.
-6. **`Eval.Render`** — `renderValue`/`renderProgram` and the Html-value→string helpers
-   (≈2569–2658, 3611–3763). *Why:* display logic, used by the REPL path and the editor's result pane.
+6. **`Eval.Render`** ✅ — the pure display helpers `renderValue` + the Html-value→string
+   `htmlToString`/`attrKey` now live in `editor/EvalRender.elm` (flat module name to match the editor's
+   flat, module=filename convention; `Eval` re-exposes `renderValue` via a thin alias since Elm has no
+   re-export). *Why:* display logic with no dependency on evaluation — the cleanest, injection-free
+   leaf. `renderProgram` stays in the core (it orchestrates init/view, i.e. it evaluates).
 
 `Eval` itself becomes a thin module re-exposing the ~25 public functions so `Editor.elm` is
 untouched. The risk to watch: keep `Eval.Core` free of imports from the other five so there is no
