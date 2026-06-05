@@ -242,6 +242,17 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void uploadExampleRendersTheMultipleFileInput() throws Exception {
+    // Upload (Browser.element): the view is `<input type="file" multiple ...>`. Regression — the
+    // editor must resolve the `multiple` boolean attribute, not fail "undefined variable: multiple".
+    String src =
+        java.nio.file.Files.readString(java.nio.file.Path.of("src/main/elm/examples/Upload.elm"));
+    String rendered = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
+    assertTrue(rendered.contains("<input"), "renders the file input: " + rendered);
+    assertTrue(rendered.contains("multiple"), "the multiple boolean attribute is present: " + rendered);
+  }
+
+  @Test
   void interpretsDict() {
     assertEquals("Just 2", eval("Dict.get \"b\" (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])"));
     assertEquals("Nothing", eval("Dict.get \"z\" (Dict.fromList [ ( \"a\", 1 ) ])"));

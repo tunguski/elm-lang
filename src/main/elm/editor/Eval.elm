@@ -116,7 +116,7 @@ htmlStringAttrs =
 {-| `Html.Attributes` taking a single bool, rendered as a bare `key` when `True`. -}
 htmlBoolAttrs : List String
 htmlBoolAttrs =
-    [ "checked", "disabled", "selected", "readonly", "autofocus", "hidden" ]
+    [ "checked", "disabled", "selected", "readonly", "autofocus", "hidden", "multiple" ]
 
 
 {-| How many arguments a builtin consumes before it runs. -}
