@@ -276,6 +276,44 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void thwompRendersTwoTexturedWebglEntitiesOnceTexturesLoad() throws Exception {
+    // Thwomp (WebGL): once both textures resolve the view draws two textured WebGL entities (face +
+    // sides). The editor resolves the texture tasks immediately, so the scene must render rather than
+    // staying on "Loading textures...". (The async image upload/redraw is a JS-runtime concern the
+    // headless JVM can't pixel-verify; this guards the Elm render path.)
+    String src =
+        java.nio.file.Files.readString(java.nio.file.Path.of("src/main/elm/examples/Thwomp.elm"));
+    ElmList fs = files("Main.elm", src);
+    String view =
+        evalProject(
+            fs,
+            "view { width = 500, height = 500, x = 0, y = 0,"
+                + " side = Just (Texture.load \"s\"), face = Just (Texture.load \"f\") }");
+    assertTrue(view.contains("WebGL.scene"), "renders a WebGL scene once textures load: " + view);
+    assertEquals(2, countMatches(view, "WebGL.entity"), "two textured entities (face + sides): " + view);
+  }
+
+  @Test
+  void thwompTextureLoadWithTaskResolves() throws Exception {
+    // Regression: Thwomp loads textures with `Texture.loadWith options url`. A fully-applied loadWith
+    // evaluates to a VCtor (not a VBuiltin), so the editor's task resolver returned Nothing — GotFace
+    // never fired and the view stuck on "Loading textures...". The Task.attempt must now resolve to
+    // the url-carrying texture value the GL bridge loads (here surfaced via `identity` as toMsg).
+    String probe =
+        "main = Task.attempt identity (Texture.loadWith options \"wood.jpg\")\n"
+            + "options =\n"
+            + "    { magnify = Texture.nearest, minify = Texture.nearest\n"
+            + "    , horizontalWrap = Texture.repeat, verticalWrap = Texture.repeat, flipY = True\n"
+            + "    }\n";
+    ElmList fs = files("Main.elm", probe);
+    Object cmd = okValue(Apply.apply(EDITOR.value("Eval", "mainValue"), fs));
+    String resolved = Show.plain(Apply.applyAll(EDITOR.value("Eval", "taskResult"), fs, cmd));
+    assertTrue(
+        resolved.contains("Texture.load") && resolved.contains("wood.jpg"),
+        "texture task resolves to a loadable texture, not Nothing: " + resolved);
+  }
+
+  @Test
   void uploadExampleRendersTheMultipleFileInput() throws Exception {
     // Upload (Browser.element): the view is `<input type="file" multiple ...>`. Regression — the
     // editor must resolve the `multiple` boolean attribute, not fail "undefined variable: multiple".

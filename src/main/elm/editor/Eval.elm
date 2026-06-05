@@ -3256,7 +3256,19 @@ taskValueOf task =
         VBuiltin "WebGL.Texture.load" args ->
             Just (VCtor "Texture.load" args)
 
+        VCtor "WebGL.Texture.load" args ->
+            Just (VCtor "Texture.load" args)
+
+        -- A fully-applied `Texture.loadWith options url` evaluates to a `VCtor` (not a `VBuiltin`), so
+        -- the VBuiltin cases never matched it — `Thwomp`'s textures never resolved and it stuck on
+        -- "Loading textures...". Drop the options record, keep the url for the GL bridge.
         VBuiltin "Texture.loadWith" args ->
+            Just (VCtor "Texture.load" (List.drop 1 args))
+
+        VCtor "Texture.loadWith" args ->
+            Just (VCtor "Texture.load" (List.drop 1 args))
+
+        VCtor "WebGL.Texture.loadWith" args ->
             Just (VCtor "Texture.load" (List.drop 1 args))
 
         _ ->

@@ -375,12 +375,17 @@
   // as a $Texture. The image loads async, so clear the uploaded GL texture on load to force a
   // re-upload on the next frame (animated WebGL scenes redraw every frame).
   var $glTexCache = {};
+  // WebGL canvases currently mounted. An async texture load can then trigger a redraw of a
+  // non-animated scene (e.g. Thwomp, which only subscribes to mouse/resize): without it the canvas
+  // keeps showing the placeholder texture until the next render that happens to occur.
+  var $glCanvases = [];
+  function $glRedraw(){ requestAnimationFrame(function(){ $glCanvases = $glCanvases.filter(function(el){ return el.isConnected; }); $glCanvases.forEach(drawGL); }); }
   function $glTexture(url){
     if ($glTexCache[url]) return $glTexCache[url];
     var img = new Image();
     if (/^https?:/.test(url)) img.crossOrigin = 'anonymous';
     var t = $data('$Texture', [img]);
-    img.onload = function(){ t.$tex = null; };
+    img.onload = function(){ t.$tex = null; $glRedraw(); };
     img.src = url;
     $glTexCache[url] = t;
     return t;
@@ -498,6 +503,7 @@
       // A WebGL canvas: stash the entities/clear-colour and (re)draw after sizing attributes
       // have been applied. Redrawn on every render, so animated scenes update each frame.
       el.$glEntities=a._[0]; el.$glClear=a._[1];
+      if ($glCanvases.indexOf(el) < 0) $glCanvases.push(el);
       requestAnimationFrame(function(){ drawGL(el); });
     }
     else if (t==='$On'){
