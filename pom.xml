@@ -53,6 +53,13 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Pure-Java JDBC driver backing the `Db` server library (in-memory for tests, file/server
+             for deployment). Any JDBC driver on the classpath works; H2 ships by default. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.3.232</version>
+        </dependency>
     </dependencies>
 
     <build>

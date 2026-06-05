@@ -55,11 +55,19 @@ final class Serve implements Callable<Integer> {
         description = "Serve text files (HTML/CSS/JS/JSON/SVG) from this directory before the handler.")
     Path staticDir;
 
+    @Option(
+        names = "--db",
+        description =
+            "JDBC URL for the `Db` library (e.g. jdbc:h2:./data or jdbc:h2:mem:app;DB_CLOSE_DELAY=-1);"
+                + " a `handle : Request -> Db Response` then runs queries against it.")
+    String db;
+
     @Override
     public Integer call() throws IOException, InterruptedException {
       String userSource = Main.readElmSource(file);
       String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Server.elm");
-      var project = pl.matsuo.elm.interp.Project.load(userSource, lib);
+      String dbLib = pl.matsuo.elm.util.Resources.read("/elm/lib/Db.elm");
+      var project = pl.matsuo.elm.interp.Project.load(userSource, lib, dbLib);
       // A stateful app exposes `main : Server.Program model`; a stateless one exposes `handle`.
       Object main = null;
       try {
@@ -71,9 +79,13 @@ final class Serve implements Callable<Integer> {
       if (main instanceof pl.matsuo.elm.runtime.ElmRecord r && r.has("onRequest")) {
         server = pl.matsuo.elm.server.ServerRunner.startStateful(r, port, staticDir);
       } else {
-        server = pl.matsuo.elm.server.ServerRunner.start(project.entryValue("handle"), port, staticDir);
+        server =
+            pl.matsuo.elm.server.ServerRunner.start(
+                project.entryValue("handle"), port, staticDir, db);
       }
-      System.out.println("Serving " + file + " on http://localhost:" + port + " (Ctrl-C to stop)");
+      String dbNote = db == null ? "" : " (db: " + db + ")";
+      System.out.println(
+          "Serving " + file + " on http://localhost:" + port + dbNote + " (Ctrl-C to stop)");
       Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));
       Thread.currentThread().join(); // block until the process is interrupted
       return 0;

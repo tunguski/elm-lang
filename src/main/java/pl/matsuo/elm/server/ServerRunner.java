@@ -33,12 +33,46 @@ public final class ServerRunner {
   /** Applies a stateless {@code handle} to a request and decodes the response (unit-testable). */
   public static Resp dispatch(
       Object handler, String method, String path, String rawQuery, String body) {
-    return decodeResponse(Apply.apply(handler, buildRequest(method, path, rawQuery, body)));
+    return dispatch(handler, null, method, path, rawQuery, body);
+  }
+
+  /**
+   * As {@link #dispatch(Object, String, String, String, String)} but for a database-backed handler
+   * {@code handle : Request -> Db Response}: when the handler returns a {@code Db} effect, it is run
+   * against a connection opened from {@code jdbcUrl} (any JDBC URL; {@code null} means a pure
+   * handler) before the {@code Response} is decoded.
+   */
+  public static Resp dispatch(
+      Object handler, String jdbcUrl, String method, String path, String rawQuery, String body) {
+    Object result = Apply.apply(handler, buildRequest(method, path, rawQuery, body));
+    return decodeResponse(runDbEffects(result, jdbcUrl));
+  }
+
+  /**
+   * Interprets a {@code Db Response} effect against a fresh JDBC connection and returns the decoded
+   * {@code Response}; a plain {@code Response} record (pure {@code Server} handler) passes straight
+   * through. A query-free effect ({@code succeed}) needs no connection, so a url-less server can
+   * still answer routes that don't touch the database.
+   */
+  private static Object runDbEffects(Object result, String jdbcUrl) {
+    Object resolved = Thunk.resolve(result);
+    if (!DbRunner.isDbEffect(resolved)) {
+      return resolved;
+    }
+    if (jdbcUrl == null) {
+      return DbRunner.run(resolved, null);
+    }
+    try (java.sql.Connection conn = java.sql.DriverManager.getConnection(jdbcUrl)) {
+      return DbRunner.run(resolved, conn);
+    } catch (java.sql.SQLException e) {
+      String msg = e.getMessage() == null ? e.toString() : e.getMessage();
+      throw new pl.matsuo.elm.error.ElmRuntimeError("database error: " + msg);
+    }
   }
 
   /** Binds and starts an HTTP server dispatching to a stateless {@code handle}; returns it. */
   public static HttpServer start(Object handler, int port) throws IOException {
-    return start(handler, port, null);
+    return start(handler, port, null, null);
   }
 
   /**
@@ -47,12 +81,21 @@ public final class ServerRunner {
    */
   public static HttpServer start(Object handler, int port, java.nio.file.Path staticDir)
       throws IOException {
+    return start(handler, port, staticDir, null);
+  }
+
+  /**
+   * As {@link #start(Object, int, java.nio.file.Path)} but for a database-backed handler: a non-null
+   * {@code jdbcUrl} makes each request run its {@code Db Response} against a JDBC connection.
+   */
+  public static HttpServer start(
+      Object handler, int port, java.nio.file.Path staticDir, String jdbcUrl) throws IOException {
     return serve(
         port,
         staticDir,
         exchange -> {
           var r = request(exchange);
-          return dispatch(handler, r[0], r[1], r[2], r[3]);
+          return dispatch(handler, jdbcUrl, r[0], r[1], r[2], r[3]);
         });
   }
 
