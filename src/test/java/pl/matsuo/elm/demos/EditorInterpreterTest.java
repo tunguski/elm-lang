@@ -227,6 +227,21 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void mouseExampleResolvesTheLightPurplePlaygroundColor() throws Exception {
+    // Mouse (elm-playground): `circle lightPurple 30` follows the cursor. Regression — the editor
+    // interpreter must resolve the `lightPurple` Playground colour (and the rest of the palette)
+    // instead of failing with "undefined variable: lightPurple".
+    String src =
+        java.nio.file.Files.readString(java.nio.file.Path.of("src/main/elm/examples/Mouse.elm"));
+    ElmList fs = files("Main.elm", src);
+    Object mem = unwrapJust(Apply.apply(EDITOR.value("Eval", "gameInitMem"), fs));
+    String frame = renderGame(fs, List.of(), 0.0, mem);
+    // A Playground `circle` renders as an <ellipse> with rx = ry; the key point is the fill resolves.
+    assertTrue(frame.contains("VStr \"ellipse\""), "draws the follower circle: " + frame);
+    assertTrue(frame.contains("#ad7fa8"), "circle is filled with the resolved lightPurple: " + frame);
+  }
+
+  @Test
   void interpretsDict() {
     assertEquals("Just 2", eval("Dict.get \"b\" (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])"));
     assertEquals("Nothing", eval("Dict.get \"z\" (Dict.fromList [ ( \"a\", 1 ) ])"));

@@ -4203,5 +4203,44 @@ playgroundColor name =
         "darkBlue" ->
             Just "#204a87"
 
+        "lightPurple" ->
+            Just "#ad7fa8"
+
+        "darkPurple" ->
+            Just "#5c3566"
+
+        "lightRed" ->
+            Just "#ef2929"
+
+        "lightOrange" ->
+            Just "#fcaf3e"
+
+        "darkOrange" ->
+            Just "#ce5c00"
+
+        "darkYellow" ->
+            Just "#c4a000"
+
+        "lightBrown" ->
+            Just "#e9b96e"
+
+        "darkBrown" ->
+            Just "#8f5902"
+
+        "lightCharcoal" ->
+            Just "#888a85"
+
+        "darkCharcoal" ->
+            Just "#202325"
+
+        "grey" ->
+            Just "#babdb6"
+
+        "lightGrey" ->
+            Just "#d3d7cf"
+
+        "darkGrey" ->
+            Just "#888a85"
+
         _ ->
             Nothing
