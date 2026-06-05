@@ -957,6 +957,17 @@ runBuiltin globals name args =
             _ ->
                 Err "WebGL.toHtmlWith needs options, attributes and entities"
 
+    else if List.member name vec3Ops then
+        -- Linear-algebra on *concrete* vectors is computed for real: the examples' physics needs
+        -- numbers (e.g. `Vec3.getY position > eyeLevel`). When an argument isn't a concrete vector
+        -- (a symbolic Mat4 result bound for the GPU), fall through to an opaque value instead.
+        case vecBuiltin name args of
+            Just result ->
+                result
+
+            Nothing ->
+                Ok (VCtor name args)
+
     else if List.member name webglNames then
         -- Meshes, entities, vectors, matrices and textures: opaque values the preview just counts.
         Ok (VCtor name args)
@@ -1993,6 +2004,120 @@ handing the entities to the JS WebGL runtime; the Java interpreter keeps it as d
 webglScene : Value -> Value -> Value
 webglScene attrs entities =
     VCtor "WebGL.scene" [ attrs, entities ]
+
+
+{-| The linear-algebra builtins that are evaluated on concrete vectors (rather than kept opaque for
+the GPU). `vecBuiltin` returns `Nothing` when an argument isn't a concrete `vec2`/`vec3`. -}
+vec3Ops : List String
+vec3Ops =
+    [ "Vec3.getX", "Vec3.getY", "Vec3.getZ", "Vec3.setX", "Vec3.setY", "Vec3.setZ" ]
+        ++ [ "Vec3.add", "Vec3.sub", "Vec3.scale", "Vec3.negate", "Vec3.dot", "Vec3.length" ]
+        ++ [ "Vec3.distance", "Vec3.normalize", "Vec3.cross", "Vec3.direction" ]
+        ++ [ "Vec2.getX", "Vec2.getY" ]
+
+
+vec3Of : Value -> Maybe ( Float, Float, Float )
+vec3Of v =
+    case v of
+        VCtor "vec3" [ VNum x, VNum y, VNum z ] ->
+            Just ( x, y, z )
+
+        _ ->
+            Nothing
+
+
+vec2Of : Value -> Maybe ( Float, Float )
+vec2Of v =
+    case v of
+        VCtor "vec2" [ VNum x, VNum y ] ->
+            Just ( x, y )
+
+        _ ->
+            Nothing
+
+
+mkVec3 : Float -> Float -> Float -> Value
+mkVec3 x y z =
+    VCtor "vec3" [ VNum x, VNum y, VNum z ]
+
+
+vec3Map2 : (( Float, Float, Float ) -> ( Float, Float, Float ) -> Value) -> Value -> Value -> Maybe (Result String Value)
+vec3Map2 f a b =
+    Maybe.map2 (\va vb -> Ok (f va vb)) (vec3Of a) (vec3Of b)
+
+
+vecBuiltin : String -> List Value -> Maybe (Result String Value)
+vecBuiltin name args =
+    case ( name, args ) of
+        ( "Vec3.getX", [ v ] ) ->
+            Maybe.map (\( x, _, _ ) -> Ok (VNum x)) (vec3Of v)
+
+        ( "Vec3.getY", [ v ] ) ->
+            Maybe.map (\( _, y, _ ) -> Ok (VNum y)) (vec3Of v)
+
+        ( "Vec3.getZ", [ v ] ) ->
+            Maybe.map (\( _, _, z ) -> Ok (VNum z)) (vec3Of v)
+
+        ( "Vec3.setX", [ VNum n, v ] ) ->
+            Maybe.map (\( _, y, z ) -> Ok (mkVec3 n y z)) (vec3Of v)
+
+        ( "Vec3.setY", [ VNum n, v ] ) ->
+            Maybe.map (\( x, _, z ) -> Ok (mkVec3 x n z)) (vec3Of v)
+
+        ( "Vec3.setZ", [ VNum n, v ] ) ->
+            Maybe.map (\( x, y, _ ) -> Ok (mkVec3 x y n)) (vec3Of v)
+
+        ( "Vec3.scale", [ VNum s, v ] ) ->
+            Maybe.map (\( x, y, z ) -> Ok (mkVec3 (s * x) (s * y) (s * z))) (vec3Of v)
+
+        ( "Vec3.negate", [ v ] ) ->
+            Maybe.map (\( x, y, z ) -> Ok (mkVec3 (negate x) (negate y) (negate z))) (vec3Of v)
+
+        ( "Vec3.add", [ a, b ] ) ->
+            vec3Map2 (\( ax, ay, az ) ( bx, by, bz ) -> mkVec3 (ax + bx) (ay + by) (az + bz)) a b
+
+        ( "Vec3.sub", [ a, b ] ) ->
+            vec3Map2 (\( ax, ay, az ) ( bx, by, bz ) -> mkVec3 (ax - bx) (ay - by) (az - bz)) a b
+
+        ( "Vec3.cross", [ a, b ] ) ->
+            vec3Map2 (\( ax, ay, az ) ( bx, by, bz ) -> mkVec3 (ay * bz - az * by) (az * bx - ax * bz) (ax * by - ay * bx)) a b
+
+        ( "Vec3.dot", [ a, b ] ) ->
+            Maybe.map2 (\( ax, ay, az ) ( bx, by, bz ) -> Ok (VNum (ax * bx + ay * by + az * bz))) (vec3Of a) (vec3Of b)
+
+        ( "Vec3.length", [ v ] ) ->
+            Maybe.map (\( x, y, z ) -> Ok (VNum (sqrt (x * x + y * y + z * z)))) (vec3Of v)
+
+        ( "Vec3.distance", [ a, b ] ) ->
+            Maybe.map2 (\( ax, ay, az ) ( bx, by, bz ) -> Ok (VNum (sqrt ((ax - bx) ^ 2 + (ay - by) ^ 2 + (az - bz) ^ 2)))) (vec3Of a) (vec3Of b)
+
+        ( "Vec3.normalize", [ v ] ) ->
+            Maybe.map (\( x, y, z ) -> Ok (normalizeVec3 x y z)) (vec3Of v)
+
+        ( "Vec3.direction", [ a, b ] ) ->
+            Maybe.map2 (\( ax, ay, az ) ( bx, by, bz ) -> Ok (normalizeVec3 (ax - bx) (ay - by) (az - bz))) (vec3Of a) (vec3Of b)
+
+        ( "Vec2.getX", [ v ] ) ->
+            Maybe.map (\( x, _ ) -> Ok (VNum x)) (vec2Of v)
+
+        ( "Vec2.getY", [ v ] ) ->
+            Maybe.map (\( _, y ) -> Ok (VNum y)) (vec2Of v)
+
+        _ ->
+            Nothing
+
+
+normalizeVec3 : Float -> Float -> Float -> Value
+normalizeVec3 x y z =
+    let
+        len =
+            sqrt (x * x + y * y + z * z)
+    in
+    if len == 0 then
+        mkVec3 0 0 0
+
+    else
+        mkVec3 (x / len) (y / len) (z / len)
 
 
 asNum : Value -> Maybe Float

@@ -242,6 +242,22 @@ class EditorInterpreterTest {
   }
 
   @Test
+  void firstPersonResolvesVectorMathInThePhysicsLoop() throws Exception {
+    // FirstPerson (WebGL): the movement physics compares `Vec3.getY position > eyeLevel`. Regression
+    // — the editor interpreter must compute Vec3 accessors/arithmetic on concrete vectors instead of
+    // keeping them symbolic, which made the comparison fail with "> needs two numbers".
+    String src =
+        java.nio.file.Files.readString(java.nio.file.Path.of("src/main/elm/examples/FirstPerson.elm"));
+    ElmList fs = files("Main.elm", src);
+    assertEquals("2", evalProject(fs, "Vec3.getY (vec3 0 2 -10)"), "Vec3.getY computes a number");
+    assertEquals("vec3 1 4 9", evalProject(fs, "Vec3.add (vec3 1 2 3) (vec3 0 2 6)"), "Vec3.add computes");
+    String step = evalProject(fs, "stepVelocity 16 noKeys (Person (vec3 0 2 -10) (vec3 0 0 0))");
+    assertTrue(step.startsWith("vec3"), "stepVelocity yields a vector, not an error: " + step);
+    String upd = evalProject(fs, "updatePerson 16 noKeys (Person (vec3 0 2 -10) (vec3 0 0 0))");
+    assertTrue(!upd.contains("needs two numbers") && upd.contains("position ="), "physics loop computes: " + upd);
+  }
+
+  @Test
   void uploadExampleRendersTheMultipleFileInput() throws Exception {
     // Upload (Browser.element): the view is `<input type="file" multiple ...>`. Regression — the
     // editor must resolve the `multiple` boolean attribute, not fail "undefined variable: multiple".
