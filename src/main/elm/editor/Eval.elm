@@ -278,7 +278,7 @@ evalExpr globals env expr =
                                 Ok (VCtor ("Dec." ++ name) [])
 
                             else
-                                case playgroundColor name of
+                                case EvalPlayground.playgroundColor name of
                                     Just hex ->
                                         Ok (VStr hex)
 
@@ -912,12 +912,12 @@ arraySlice from to xs =
 `globals` so higher-order builtins (List.map) can apply the function value they're given. -}
 runBuiltin : Globals -> String -> List Value -> Result String Value
 runBuiltin globals name args =
-    if name == "circle" && playgroundCircle args then
+    if name == "circle" && EvalPlayground.playgroundCircle args then
         -- Playground `circle color radius` (Svg `circle attrs children` falls through below).
-        Ok (mkShape (VCtor "PCircle" args))
+        Ok (EvalPlayground.mkShape (VCtor "PCircle" args))
 
     else if List.member name playgroundNames then
-        runPlayground globals name args
+        EvalPlayground.runPlayground globals name args
 
     else if name == "onAnimationFrameDelta" then
         -- The editor drives this live: a frame's delta (ms) is fed to its toMsg each animation frame.
@@ -986,7 +986,7 @@ runBuiltin globals name args =
     else if List.member name htmlStringAttrs || List.member name htmlBoolAttrs then
         case args of
             [ v ] ->
-                Ok (VCtor "Html.attr" [ VStr (attrKey name), v ])
+                Ok (VCtor "Html.attr" [ VStr (EvalRender.attrKey name), v ])
 
             _ ->
                 Err (name ++ " needs a value")
@@ -2750,6 +2750,13 @@ renderValue =
     EvalRender.renderValue
 
 
+{-| Re-exposed from EvalRender so `Eval.htmlToString` stays available (the JS-backend test driver
+calls it on a rendered view). -}
+htmlToString : Value -> String
+htmlToString =
+    EvalRender.htmlToString
+
+
 
 -- PUBLIC ENTRY POINTS
 
@@ -3863,37 +3870,10 @@ renderProgram source =
                 "main error: " ++ e
 
 
-htmlToString : Value -> String
-htmlToString =
-    EvalRender.htmlToString
-
-
-attrKey : String -> String
-attrKey =
-    EvalRender.attrKey
-
-
--- PLAYGROUND (delegated to EvalPlayground; game functions inject the evaluator) -------------------
-
-
-playgroundCircle : List Value -> Bool
-playgroundCircle =
-    EvalPlayground.playgroundCircle
-
-
-mkShape : Value -> Value
-mkShape =
-    EvalPlayground.mkShape
-
-
-runPlayground : Globals -> String -> List Value -> Result String Value
-runPlayground =
-    EvalPlayground.runPlayground
-
-
-playgroundColor : String -> Maybe String
-playgroundColor =
-    EvalPlayground.playgroundColor
+-- PLAYGROUND game loop: thin wrappers that inject the evaluator (mainValue/applyValue) into
+-- EvalPlayground and re-expose the game functions on Eval's public surface. The pure Playground
+-- helpers (EvalPlayground.runPlayground/mkShape/playgroundColor/…) are called qualified at their
+-- use sites; only these game functions need a local definition (for the injection + re-export).
 
 
 gameInitMem : List ( String, String ) -> Maybe Value
