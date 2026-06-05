@@ -44,6 +44,14 @@ A note on language mechanics:
 Line counts and status as of 2026-06-05. ✅ done, 🟡 partially done (an island already
 extracted; more proposed below), ⬜ not started, ⏸ deliberately left whole.
 
+**Policy decision (2026-06-05):** the goal is to extract every *cohesive island* and bring the
+cleanly-splittable files under 1000; two kinds of file are left as **documented exceptions** rather
+than forced under the threshold: (1) the **vendored** `examples/Playground.elm` (splitting forks
+upstream), and (2) **tightly mutually-recursive cores** (`Eval.elm`'s evaluator+runBuiltin web,
+`WasmCompiler`'s `FunctionGen`, `WasmGc`'s `Gen`, `JsCompiler`'s codegen core) — these have their
+islands extracted to shrink them, but the irreducible core stays whole because splitting it just
+scatters a hot web across files.
+
 | File | Lines | Recommendation | Status |
 |------|-------|----------------|--------|
 | `editor/Eval.elm` | ~3910 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | 🟡 `EvalRender` + `EvalPlayground` extracted; Core/Builtins/App/Json remain |
@@ -55,8 +63,8 @@ extracted; more proposed below), ⬜ not started, ⏸ deliberately left whole.
 | `examples/Playground.elm` | ~1708 | **Leave** — vendored elm-playground; splitting forks upstream | ⏸ |
 | `editor/Editor.elm` | ~1370 | **Split** — app/update vs. view vs. session vs. html-bridge | ⬜ |
 | `js/JsCompiler.java` | ~1239 | **Partial** — extract the optimiser pipeline; keep codegen together | ✅ `JsOptimizer` + `JsRuntime` extracted; remainder coherent |
-| `test/WasmHeapTest.java` | ~1221 | **Split** — by feature area, with a shared test-helper base | ⬜ |
-| `test/EditorInterpreterTest.java` | ~1066 | **Watch** — cohesive editor-interpreter suite; split by feature only if it keeps growing | ⬜ |
+| `test/WasmHeapTest.java` | ~595 | **Split** — by feature area, with a shared test-helper base | ✅ `WasmHeapTestSupport` base + `WasmLangFeaturesTest`; all <1000 |
+| `test/EditorInterpreterTest.java` | ~796 | split by feature with a shared base | ✅ `EditorInterpreterTestSupport` base + `EditorToolingInterpreterTest`; all <1000 |
 
 `parser/Parser.java` has dropped to ~995 (below the 1000-line threshold): `OperatorFixities`
 was extracted, and the recursive-descent core is intentionally kept whole — so it no longer
