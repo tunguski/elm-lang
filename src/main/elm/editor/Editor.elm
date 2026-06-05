@@ -50,6 +50,7 @@ type alias Model =
     , completions : List String -- live autocomplete candidates for the word at the caret
     , shareText : String -- the encoded share string (shown to copy, or pasted in to restore)
     , restored : Bool -- True once a permalink (#hash) session has replaced the defaults
+    , collapsed : Set String -- folder groups (see `folderOf`) the user has collapsed in the file list
     }
 
 
@@ -63,6 +64,8 @@ type Msg
     | OpenFile
     | OpenedFile String String
     | RemoveFile String
+    | ToggleGroup String
+    | ToggleAll
     | Interp Value
     | Rewind Int
     | Tick Int
@@ -244,6 +247,7 @@ initModel =
         , completions = []
         , shareText = ""
         , restored = False
+        , collapsed = Set.empty
         }
 
 
@@ -251,6 +255,63 @@ initModel =
 baseName : String -> String
 baseName url =
     url |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault url
+
+
+{-| The folder a file key belongs to, used to group the file list. A key with a path
+({@code examples/Foo.elm}) groups under its directory ({@code examples}); a bare name the user
+created or opened ({@code Foo.elm}) groups under {@code Workspace}. -}
+folderOf : String -> String
+folderOf key =
+    let
+        parts =
+            String.split "/" key
+    in
+    if List.length parts <= 1 then
+        "Workspace"
+
+    else
+        String.join "/" (List.take (List.length parts - 1) parts)
+
+
+{-| Display order for folder groups: the user's own files first, then the curated editor demos, then
+the elm-lang.org gallery, then anything else alphabetically. -}
+groupOrder : String -> Int
+groupOrder folder =
+    case folder of
+        "Workspace" ->
+            0
+
+        "editor" ->
+            1
+
+        "examples" ->
+            2
+
+        _ ->
+            3
+
+
+{-| The file list grouped by folder, each group's files sorted by base name, the groups themselves in
+{@code groupOrder}. Drives both the foldable sidebar and the "toggle all" button. -}
+groupedFiles : Model -> List ( String, List ( String, String ) )
+groupedFiles model =
+    let
+        folders =
+            model.files
+                |> List.map (Tuple.first >> folderOf)
+                |> Set.fromList
+                |> Set.toList
+                |> List.sortBy (\g -> ( groupOrder g, g ))
+    in
+    List.map
+        (\g ->
+            ( g
+            , model.files
+                |> List.filter (\f -> folderOf (Tuple.first f) == g)
+                |> List.sortBy (Tuple.first >> baseName)
+            )
+        )
+        folders
 
 
 {-| The file set evaluated for the selected file: the selected file first (so its definitions win),
@@ -685,10 +746,12 @@ update msg model =
             else
                 case result of
                     Ok content ->
-                        -- Add (or refresh) the fetched example as an editable file.
+                        -- Add (or refresh) the fetched example as an editable file, keyed by its full
+                        -- path (e.g. `examples/Hello.elm`) so files with the same base name in
+                        -- different folders stay distinct and group by folder in the sidebar.
                         let
                             name =
-                                baseName url
+                                url
 
                             files =
                                 if hasFile name model.files then
@@ -724,6 +787,36 @@ update msg model =
             -- Return to the previous page when the visitor came from elsewhere on the site (the side
             -- menu links here from other pages); otherwise go to the gallery home page.
             ( model, Browser.Navigation.backOr "index.html" )
+
+        ToggleGroup folder ->
+            -- Fold/unfold a single folder group in the file list.
+            ( { model
+                | collapsed =
+                    if Set.member folder model.collapsed then
+                        Set.remove folder model.collapsed
+
+                    else
+                        Set.insert folder model.collapsed
+              }
+            , Cmd.none
+            )
+
+        ToggleAll ->
+            -- One button to fold/unfold every group: if anything is open, collapse all; else expand all.
+            let
+                groups =
+                    List.map Tuple.first (groupedFiles model)
+            in
+            ( { model
+                | collapsed =
+                    if List.all (\g -> Set.member g model.collapsed) groups then
+                        Set.empty
+
+                    else
+                        Set.fromList groups
+              }
+            , Cmd.none
+            )
 
         NoOp ->
             ( model, Cmd.none )
@@ -1019,9 +1112,12 @@ segClass cls =
 fileSidebar : Model -> Html Msg
 fileSidebar model =
     div [ class "ed-files" ]
-        [ div [ class "ed-files-title" ] [ text "Files" ]
-        , ul [ class "ed-file-list" ]
-            (List.map (fileRow model.selected) (List.sortBy Tuple.first model.files))
+        [ div [ class "ed-files-head" ]
+            [ div [ class "ed-files-title" ] [ text "Files" ]
+            , button [ onClick ToggleAll, class "ed-toggle-all" ] [ text "Toggle all" ]
+            ]
+        , div [ class "ed-file-groups" ]
+            (List.map (fileGroup model) (groupedFiles model))
         , div [ class "ed-newfile-row" ]
             [ input
                 [ placeholder "New.elm"
@@ -1036,6 +1132,37 @@ fileSidebar model =
         ]
 
 
+{-| One folder group: a clickable header (caret + folder name + file count) that folds the group,
+and — unless collapsed — the group's file rows. -}
+fileGroup : Model -> ( String, List ( String, String ) ) -> Html Msg
+fileGroup model ( folder, files ) =
+    let
+        isCollapsed =
+            Set.member folder model.collapsed
+    in
+    div [ class "ed-file-group" ]
+        (div [ class "ed-group-header", onClick (ToggleGroup folder) ]
+            [ span [ class "ed-group-caret" ]
+                [ text
+                    (if isCollapsed then
+                        "▸"
+
+                     else
+                        "▾"
+                    )
+                ]
+            , span [ class "ed-group-name" ] [ text folder ]
+            , span [ class "ed-group-count" ] [ text (String.fromInt (List.length files)) ]
+            ]
+            :: (if isCollapsed then
+                    []
+
+                else
+                    [ ul [ class "ed-file-list" ] (List.map (fileRow model.selected) files) ]
+               )
+        )
+
+
 fileRow : String -> ( String, String ) -> Html Msg
 fileRow selected file =
     let
@@ -1047,7 +1174,7 @@ fileRow selected file =
             [ onClick (SelectFile name)
             , classList [ ( "ed-file-btn", True ), ( "active", name == selected ) ]
             ]
-            [ text name ]
+            [ text (baseName name) ]
         , button [ onClick (RemoveFile name), class "ed-file-x" ] [ text "x" ]
         ]
 

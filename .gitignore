@@ -29,3 +29,6 @@ dependency-reduced-pom.xml
 
 # Stray build outputs
 out/
+
+# Claude Code transient scheduled-task lock (keep settings*.json tracked)
+.claude/scheduled_tasks.lock
