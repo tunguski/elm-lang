@@ -21,53 +21,7 @@ class ServerDbTest {
 
   private static final String SERVER_LIB = Resources.read("/elm/lib/Server.elm");
   private static final String DB_LIB = Resources.read("/elm/lib/Db.elm");
-
-  private static final String APP =
-      """
-      module DbServer exposing (handle, schema)
-
-      import Db exposing (..)
-      import Server exposing (Request, Response)
-
-
-      schema : Db (Result String Int)
-      schema =
-          execute "CREATE TABLE items (id INT PRIMARY KEY, name VARCHAR)" []
-              |> andThen (\\_ -> execute "INSERT INTO items VALUES (1, 'sock'), (2, 'shoe'), (3, 'hat')" [])
-
-
-      handle : Request -> Db Response
-      handle req =
-          case Server.segments req of
-              [ "count" ] ->
-                  queryWith "SELECT COUNT(*) FROM items" [] (row identity |> andMap intColumn)
-                      |> map
-                          (\\result ->
-                              case result of
-                                  Ok (n :: _) ->
-                                      Server.text (String.fromInt n)
-
-                                  _ ->
-                                      Server.response 500 "text/plain" "no count"
-                          )
-
-              [ "item", id ] ->
-                  queryWith "SELECT name FROM items WHERE id = ?"
-                      [ int (Maybe.withDefault 0 (String.toInt id)) ]
-                      (row identity |> andMap textColumn)
-                      |> map
-                          (\\result ->
-                              case result of
-                                  Ok (name :: _) ->
-                                      Server.json ("{\\"name\\":\\"" ++ name ++ "\\"}")
-
-                                  _ ->
-                                      Server.notFound
-                          )
-
-              _ ->
-                  succeed Server.notFound
-      """;
+  private static final String APP = Resources.read("/elm/fixtures/DbServer.elm");
 
   private String url;
   private Connection keepAlive;
