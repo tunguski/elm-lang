@@ -627,8 +627,8 @@ public final class SiteGenerator {
           StandardCharsets.UTF_8);
     }
     Files.writeString(
-        dir.resolve("todomvc.elm"),
-        pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm"),
+        dir.resolve("TodoMvc.elm"),
+        pl.matsuo.elm.util.Resources.read("/elm/examples/TodoMvc.elm"),
         StandardCharsets.UTF_8);
     // The scripting libraries the editor fetches into its hidden lib scope (so a program can
     // `import Awk`/`M4`/`Csv` if loaded as a project file).
@@ -646,7 +646,7 @@ public final class SiteGenerator {
         outDir.resolve("todomvc.html"),
         withSidebar(
             JsCompiler.htmlPageProject(
-                null, pl.matsuo.elm.util.Resources.read("/elm/demos/todomvc.elm")),
+                null, pl.matsuo.elm.util.Resources.read("/elm/examples/TodoMvc.elm")),
             nav),
         StandardCharsets.UTF_8);
   }
@@ -677,14 +677,14 @@ public final class SiteGenerator {
 
   /** The RTS game's frontend modules (relative to the repo root, where the gallery is generated). */
   private static final String[] RTS_MODULES = {
-    "examples/rts/Model.elm",
-    "examples/rts/Logic.elm",
-    "examples/rts/View.elm",
-    "examples/rts/Main.elm",
+    "src/main/elm/rts/Model.elm",
+    "src/main/elm/rts/Logic.elm",
+    "src/main/elm/rts/View.elm",
+    "src/main/elm/rts/Main.elm",
   };
 
   /**
-   * Compiles the multi-module RTS Mini game (examples/rts) to a single live page that runs entirely
+   * Compiles the multi-module RTS Mini game (src/main/elm/rts) to a single live page that runs entirely
    * in the browser — no backend needed. Returns whether the page was written (the example may be
    * absent in some checkouts). The whole game model/logic/view is the JS-compiled output.
    */

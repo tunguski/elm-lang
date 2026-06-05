@@ -1,14 +1,14 @@
-module Main exposing (main)
+module M4Expand exposing (main)
 
-{-| `elm script m4-expand.elm <name>` — emit an m4 macro program (a `greet` macro and a call to it),
+{-| `elm script M4Expand.elm <name>` — emit an m4 macro program (a `greet` macro and a call to it),
 built with the `M4` library. The point is to *compose* the m4 source so you can save it as a `.m4`
 file or pipe it to `m4`, not to expand it here:
 
-    $ elm script m4-expand.elm world
+    $ elm script M4Expand.elm world
     define(`greet', `Hello $1!')dnl
     greet(`world')
 
-    $ elm script m4-expand.elm world | m4
+    $ elm script M4Expand.elm world | m4
     Hello world!
 -}
 
@@ -25,7 +25,7 @@ main =
                     print (M4.program (greetProgram name)) done
 
                 _ ->
-                    print "usage: m4-expand <name>" (exit 1)
+                    print "usage: M4Expand <name>" (exit 1)
         )
 
 

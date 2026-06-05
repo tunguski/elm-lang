@@ -69,7 +69,7 @@ class TestRunnerTest {
 
   @Test
   void runsTheBundledExampleSuite() {
-    String suite = Resources.read("/elm/demos/example-test.elm");
+    String suite = Resources.read("/elm/examples/ExampleTest.elm");
     TestRunner.Result r = TestRunner.run(List.of(suite));
     assertEquals(0, r.exitCode(), r.report());
     assertEquals(9, r.passed(), r.report()); // 3 arithmetic + 3 list + 1 comparison + 2 fuzz
@@ -333,7 +333,7 @@ class TestRunnerTest {
 
   @Test
   void filterRunsOnlyMatchingTestsAndSkipsTheRest() {
-    String suite = Resources.read("/elm/demos/example-test.elm");
+    String suite = Resources.read("/elm/examples/ExampleTest.elm");
     TestRunner.Result r =
         TestRunner.run(List.of(suite), new TestRunner.Options(100, 0x5eedL, "addition"));
     assertEquals(1, r.passed(), r.report()); // only "addition" runs

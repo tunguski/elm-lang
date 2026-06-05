@@ -1,9 +1,9 @@
-module Main exposing (site)
+module ElmLang exposing (site)
 
 {-| A static site for the elm-lang project, described entirely in Elm with the bundled `Site`
 library. Generate it with:
 
-    elm gen-site examples/site/ElmLang.elm out --api src/main/resources/elm/lib --api examples/rts
+    elm gen-site src/main/elm/examples/ElmLang.elm out --api src/main/elm/lib --api src/main/elm/rts
 
 Each `Page` is rendered to HTML by `Site.render`; `--api` additionally writes grouped API docs.
 -}
@@ -79,9 +79,9 @@ cli =
         , h2 "Compile & run"
         , codeBlock "elm run Main.elm\nelm make Main.elm -o app.html --optimize\nelm js Main.elm --min"
         , h2 "Scripting & serving"
-        , codeBlock "elm script wordcount.elm README.md\nelm server api.elm --port 8080\nelm bundle script wordcount.elm -o wc   # standalone executable"
+        , codeBlock "elm script WordCount.elm README.md\nelm server api.elm --port 8080\nelm bundle script WordCount.elm -o wc   # standalone executable"
         , h2 "This site"
-        , codeBlock "elm gen-site examples/site/ElmLang.elm out --api src/main/resources/elm/lib"
+        , codeBlock "elm gen-site src/main/elm/examples/ElmLang.elm out --api src/main/elm/lib"
         ]
 
 

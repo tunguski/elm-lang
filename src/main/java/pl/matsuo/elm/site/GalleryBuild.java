@@ -17,7 +17,7 @@ import pl.matsuo.elm.util.Resources;
 /**
  * The example gallery generated <b>entirely through {@code elm build}</b> — the Elm-defined
  * counterpart of the Java {@link SiteGenerator}. This class is pure glue: it stages the bundled
- * build inputs (the {@code site.elm} {@code Build.Project}, the {@code Gallery.elm} layout script,
+ * build inputs (the {@code Site.elm} {@code Build.Project}, the {@code Gallery.elm} layout script,
  * the example sources, the Markdown guides and the static assets) into a work directory, then runs
  * the {@code package} phase of that build through {@link BuildRunner}. All the real work — compiling
  * each example to a live page, theming it, rendering the guides, writing the manifest and laying out
@@ -32,14 +32,14 @@ public final class GalleryBuild {
 
   private GalleryBuild() {}
 
-  /** The examples {@code site.elm} compiles to live JS pages (must match its {@code examples} list). */
+  /** The examples {@code Site.elm} compiles to live JS pages (must match its {@code examples} list). */
   static final String[] EXAMPLES = {
     "Hello", "Groceries", "Shapes", "Buttons", "TextFields",
     "Forms", "Numbers", "Cards", "Time", "Clock",
     "Book", "Quotes", "Upload", "DragAndDrop", "ImagePreviews"
   };
 
-  /** The Markdown guides {@code site.elm} renders (must match its {@code guides} list). */
+  /** The Markdown guides {@code Site.elm} renders (must match its {@code guides} list). */
   static final String[] GUIDES = {"examples", "scripting", "server", "build", "site"};
 
   /** Output asset filename -> bundled resource. {@code styles.css} is the gallery stylesheet. */
@@ -55,14 +55,14 @@ public final class GalleryBuild {
   }
 
   /**
-   * Stages the inputs, runs the {@code site.elm} build's {@code package} phase, and copies the
+   * Stages the inputs, runs the {@code Site.elm} build's {@code package} phase, and copies the
    * generated gallery into {@code outDir}. {@code examplesDir} supplies the example {@code .elm}
    * sources and {@code docsDir} the guide {@code .md} files.
    */
   public static int generate(Path examplesDir, Path docsDir, Path outDir, PrintStream out)
       throws IOException {
     Path work = Files.createTempDirectory("elm-gallery-");
-    write(work.resolve("site.elm"), Resources.read("/elm/site/site.elm"));
+    write(work.resolve("Site.elm"), Resources.read("/elm/site/Site.elm"));
     write(work.resolve("Gallery.elm"), Resources.read("/elm/site/Gallery.elm"));
 
     Path examples = Files.createDirectories(work.resolve("examples"));
@@ -88,7 +88,7 @@ public final class GalleryBuild {
 
     // Load, plan and run the package phase of the Elm-defined build (baseDir = the work dir, so the
     // build's `out/…` paths land under it).
-    String buildSource = Resources.read("/elm/site/site.elm");
+    String buildSource = Resources.read("/elm/site/Site.elm");
     String buildLib = Resources.read("/elm/lib/Build.elm");
     Project project = Project.load(buildSource, buildLib);
     Object projectValue = project.entryValue("project");

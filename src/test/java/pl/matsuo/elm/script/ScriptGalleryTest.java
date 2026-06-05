@@ -27,7 +27,7 @@ class ScriptGalleryTest {
   /** Loads a demo script with the full scripting library set and runs its `main`. */
   private String run(String demo, List<String> args) {
     String[] sources = new String[LIBS.length + 1];
-    sources[0] = Resources.read("/elm/demos/" + demo);
+    sources[0] = Resources.read("/elm/scripts/" + demo);
     for (int i = 0; i < LIBS.length; i++) {
       sources[i + 1] = Resources.read(LIBS[i]);
     }
@@ -49,13 +49,13 @@ class ScriptGalleryTest {
   @Test
   void awkSumScriptEmitsTheAwkCommand() throws Exception {
     // The Awk builder composes the awk program text; the demo prints the command to run.
-    String out = run("awk-sum.elm", List.of("2", "sales.csv")).trim();
+    String out = run("AwkSum.elm", List.of("2", "sales.csv")).trim();
     assertEquals("awk '{ s += $2 } END { print s }' sales.csv", out);
   }
 
   @Test
   void m4ExpandScriptEmitsAnM4Program() throws Exception {
-    String out = run("m4-expand.elm", List.of("world")).trim();
+    String out = run("M4Expand.elm", List.of("world")).trim();
     assertEquals("define(`greet', `Hello $1!')dnl\ngreet(`world')", out);
   }
 
@@ -65,7 +65,7 @@ class ScriptGalleryTest {
     Files.writeString(dir.resolve("big.txt"), "a\nb\nc\nd\ne\n", StandardCharsets.UTF_8); // 5 lines
     Files.writeString(dir.resolve("small.txt"), "x\ny\n", StandardCharsets.UTF_8); // 2 lines
     // Threshold 3 over the temp dir: only the 5-line file qualifies; the 2-line one is filtered out.
-    String out = run("big-files.elm", List.of("3", dir.toString()));
+    String out = run("BigFiles.elm", List.of("3", dir.toString()));
     assertTrue(out.contains("big.txt"), "big file listed: " + out);
     assertTrue(!out.contains("small.txt"), "small file excluded: " + out);
     assertTrue(out.contains("5"), "line count shown: " + out);
@@ -74,7 +74,7 @@ class ScriptGalleryTest {
   @Test
   void csvReportScriptRendersAnHtmlTable() throws Exception {
     Path f = tempFile("people.csv", "name,age\nAda,36\n\"Tu, ring\",41\n");
-    String html = run("csv-report.elm", List.of(f.toString()));
+    String html = run("CsvReport.elm", List.of(f.toString()));
     assertTrue(html.contains("<th>name</th>") && html.contains("<th>age</th>"), html);
     assertTrue(html.contains("<td>Ada</td>") && html.contains("<td>36</td>"), html);
     assertTrue(html.contains("<td>Tu, ring</td>"), "quoted field with a comma survives: " + html);

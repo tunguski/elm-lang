@@ -54,7 +54,7 @@ keyboard-driven First Person (21) currently fall back to an interpreter-rendered
 The gallery also showcases larger, hand-written apps that exercise the backends end to end:
 
 - **[RTS Mini](https://tunguski.github.io/elm-lang/rts.html)** — a small but functional real-time
-  strategy game ([examples/rts](../examples/rts/)): build buildings, train units, gather resources
+  strategy game ([src/main/elm/rts](../src/main/elm/rts/)): build buildings, train units, gather resources
   (a worker walks a BFS path around water/rock to a mine, hauls loads back to base and deposits them)
   and uncover the whole map to win. It's cleanly split into `RTS.Model` / `RTS.Logic` / `RTS.View` /
   `RTS.Main`, with an optional `RTS.Backend` HTTP handler that shares the model. The page is the
@@ -89,15 +89,15 @@ guides:
 
 | Demo | Run with | Demonstrates | Guide |
 |------|----------|--------------|-------|
-| `wordcount` | `elm script wordcount <files…>` | A `wc`-style CLI script (stdin/files/args/exit code). | [scripting.md](scripting.md) |
-| `folderreport` | `elm script folderreport <dir>` | Recursively walks a directory and summarises it (counts, total size, largest files, by extension) using the structured `Bash`/`Posix` `find`. | [scripting.md](scripting.md) |
-| `big-files` | `elm script big-files [threshold] [dir]` | Lists files over a line threshold (default 1000), largest first — `find` + `wc` over a directory. | [scripting.md](scripting.md) |
-| `awk-sum` | `elm script awk-sum <col> <file>` | Composes an `awk` program with the `Awk` builder (sum a column). | [scripting.md](scripting.md) |
-| `csv-report` | `elm script csv-report <file.csv>` | Parses CSV with the `Csv` library and renders it to an HTML table via `Site`. | [scripting.md](scripting.md) |
-| `m4-expand` | `elm script m4-expand <name>` | Generates an `m4` macro program with the `M4` builder. | [scripting.md](scripting.md) |
-| `simple-server-showcase` | `elm server simple-server-showcase` | A stateless HTTP app: routing on path/query, `text`/`html`/`json`. | [server.md](server.md) |
-| `live-dashboard` | `elm server live-dashboard` | A stateful server: in-memory time series, a timer-driven random walk, and a self-updating SVG chart polled by the client. | [server.md](server.md) |
+| `WordCount` | `elm script WordCount <files…>` | A `wc`-style CLI script (stdin/files/args/exit code). | [scripting.md](scripting.md) |
+| `FolderReport` | `elm script FolderReport <dir>` | Recursively walks a directory and summarises it (counts, total size, largest files, by extension) using the structured `Bash`/`Posix` `find`. | [scripting.md](scripting.md) |
+| `BigFiles` | `elm script BigFiles [threshold] [dir]` | Lists files over a line threshold (default 1000), largest first — `find` + `wc` over a directory. | [scripting.md](scripting.md) |
+| `AwkSum` | `elm script AwkSum <col> <file>` | Composes an `awk` program with the `Awk` builder (sum a column). | [scripting.md](scripting.md) |
+| `CsvReport` | `elm script CsvReport <file.csv>` | Parses CSV with the `Csv` library and renders it to an HTML table via `Site`. | [scripting.md](scripting.md) |
+| `M4Expand` | `elm script M4Expand <name>` | Generates an `m4` macro program with the `M4` builder. | [scripting.md](scripting.md) |
+| `SimpleServerShowcase` | `elm server SimpleServerShowcase` | A stateless HTTP app: routing on path/query, `text`/`html`/`json`. | [server.md](server.md) |
+| `LiveDashboard` | `elm server LiveDashboard` | A stateful server: in-memory time series, a timer-driven random walk, and a self-updating SVG chart polled by the client. | [server.md](server.md) |
 | editor | open `editor.html` in the gallery | An in-browser, multi-file Elm playground with a from-scratch Elm interpreter and a time-travel debugger. | — |
 
-A bundled demo name (e.g. `wordcount`, `live-dashboard`) resolves to the shipped resource; you can
+A bundled demo name (e.g. `WordCount`, `LiveDashboard`) resolves to the shipped resource; you can
 also pass a path to your own `.elm` file.

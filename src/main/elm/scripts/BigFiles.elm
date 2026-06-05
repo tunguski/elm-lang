@@ -1,4 +1,4 @@
-module Main exposing (main)
+module BigFiles exposing (main)
 
 {-| List project files longer than a line threshold (default 1000), largest first — an `elm script`.
 
@@ -6,9 +6,9 @@ Recursively walks a directory (default `.`), counts each file's lines with `wc`,
 over the threshold sorted by line count (descending). Build output, dependencies and VCS metadata
 are skipped, so it reports on source files rather than generated artifacts.
 
-    elm script tools/big-files.elm             # files over 1000 lines, scanning .
-    elm script tools/big-files.elm 500         # files over 500 lines, scanning .
-    elm script tools/big-files.elm 500 src     # files over 500 lines, scanning src
+    elm script tools/BigFiles.elm             # files over 1000 lines, scanning .
+    elm script tools/BigFiles.elm 500         # files over 500 lines, scanning .
+    elm script tools/BigFiles.elm 500 src     # files over 500 lines, scanning src
 
 -}
 

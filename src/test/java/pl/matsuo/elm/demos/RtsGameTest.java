@@ -16,16 +16,16 @@ import pl.matsuo.elm.runtime.ElmTuple;
 import pl.matsuo.elm.util.Resources;
 
 /**
- * The multi-file RTS example (examples/rts): the frontend's pure model/logic runs correctly under
+ * The multi-file RTS example (src/main/elm/rts): the frontend's pure model/logic runs correctly under
  * the interpreter (build/train/gather/fog), and the backend handler answers requests. This both
  * documents the game and guards the example against bit-rot as the language evolves.
  */
 class RtsGameTest {
 
-  // The example lives under examples/rts (outside the resources root), so read it from disk.
+  // The example lives under src/main/elm/rts (outside the resources root), so read it from disk.
   private static String src(String name) {
     try {
-      return java.nio.file.Files.readString(java.nio.file.Path.of("examples/rts", name));
+      return java.nio.file.Files.readString(java.nio.file.Path.of("src/main/elm/rts", name));
     } catch (IOException e) {
       throw new RuntimeException(e);
     }

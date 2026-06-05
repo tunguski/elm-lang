@@ -1,10 +1,10 @@
-module Main exposing (main)
+module AwkSum exposing (main)
 
-{-| `elm script awk-sum.elm <column> <file>` — emit the `awk` command that sums a numeric column of
+{-| `elm script AwkSum.elm <column> <file>` — emit the `awk` command that sums a numeric column of
 a file, built with the `Awk` library. The point is to *compose* the awk program (so you can drop it
 into a shell script), not to run awk here:
 
-    $ elm script awk-sum.elm 2 sales.csv
+    $ elm script AwkSum.elm 2 sales.csv
     awk '{ s += $2 } END { print s }' sales.csv
 -}
 
@@ -21,7 +21,7 @@ main =
                     print ("awk " ++ Awk.oneLiner (sumColumn (toInt col)) ++ " " ++ file) done
 
                 _ ->
-                    print "usage: awk-sum <column> <file>" (exit 1)
+                    print "usage: AwkSum <column> <file>" (exit 1)
         )
 
 

@@ -184,7 +184,13 @@ public final class SiteGen {
     if (s.contains("/rts/")) {
       return "Examples — the RTS game";
     }
-    if (s.contains("/demos/") || s.contains("/examples/") || s.contains("editor-examples")) {
+    if (s.contains("/scripts/")) {
+      return "Scripting";
+    }
+    if (s.contains("/servers/")) {
+      return "Backend — HTTP server";
+    }
+    if (s.contains("/examples/") || s.contains("editor-examples")) {
       return "Examples";
     }
     if (s.endsWith("Server.elm")) {

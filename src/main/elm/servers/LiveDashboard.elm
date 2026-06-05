@@ -1,6 +1,6 @@
-module Main exposing (main)
+module LiveDashboard exposing (main)
 
-{-| A full-stack stateful server written in Elm, run by `elm server live-dashboard`.
+{-| A full-stack stateful server written in Elm, run by `elm server LiveDashboard`.
 
 It keeps an **in-memory database** (a rolling time series) that a **server-side randomized process**
 advances on every tick (a seeded random walk — no external randomness, fully deterministic-yet-

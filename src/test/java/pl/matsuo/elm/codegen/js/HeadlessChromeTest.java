@@ -80,7 +80,7 @@ class HeadlessChromeTest {
             + "window.$app.dispatch($data('UpdateField',['eggs']));"
             + "window.$app.dispatch($data('Add',[]));"
             + "window.$app.dispatch($data('Toggle',[1]));";
-    String dom = renderInBrowser(resource("/elm/demos/todomvc.elm"), driver);
+    String dom = renderInBrowser(resource("/elm/examples/TodoMvc.elm"), driver);
     assertTrue(dom.contains("milk") && dom.contains("eggs"), dom);
     assertTrue(dom.contains("1 items left"), dom); // one toggled complete
     assertTrue(dom.contains("[x]"), dom); // the completed marker

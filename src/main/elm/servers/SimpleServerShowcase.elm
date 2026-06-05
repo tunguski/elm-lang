@@ -1,4 +1,4 @@
-module Main exposing (handle)
+module SimpleServerShowcase exposing (handle)
 
 {-| An example HTTP server written in Elm, run by `elm server server.elm`. It routes on the path
 segments (path parameters), reads a query parameter, echoes POST bodies, and returns 404 otherwise —

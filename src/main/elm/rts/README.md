@@ -31,7 +31,7 @@ browser app) alongside a **backend** (a server-side handler) that share one mode
 Compile the playable client to a single HTML page:
 
 ```sh
-elm make examples/rts/Model.elm examples/rts/Logic.elm examples/rts/View.elm examples/rts/Main.elm -o rts.html
+elm make src/main/elm/rts/Model.elm src/main/elm/rts/Logic.elm src/main/elm/rts/View.elm src/main/elm/rts/Main.elm -o rts.html
 # then open rts.html in a browser
 ```
 

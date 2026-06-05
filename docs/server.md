@@ -34,7 +34,7 @@ Response builders cover the common content types, and two request helpers parse 
 
 ## A stateless server
 
-The bundled [`simple-server-showcase.elm`](../src/main/elm/demos/simple-server-showcase.elm)
+The bundled [`SimpleServerShowcase.elm`](../src/main/elm/servers/SimpleServerShowcase.elm)
 routes on the path segments and echoes query parameters:
 
 ```elm
@@ -59,12 +59,12 @@ handle req =
 ```
 
 ```sh
-elm server simple-server-showcase --port 8080
+elm server SimpleServerShowcase --port 8080
 curl localhost:8080/ping              # -> pong
 curl 'localhost:8080/greet?name=Ada'  # -> Hello, Ada!
 ```
 
-`simple-server-showcase` resolves to the bundled demo; you can also pass a path to your own file.
+`SimpleServerShowcase` resolves to the bundled demo; you can also pass a path to your own file.
 
 ## A stateful server
 
@@ -81,7 +81,7 @@ type alias Program model =
 ```
 
 Model access is serialized, so `onRequest` and `onTick` never interleave. The bundled
-[`live-dashboard.elm`](../src/main/elm/demos/live-dashboard.elm) is a complete example: an
+[`LiveDashboard.elm`](../src/main/elm/servers/LiveDashboard.elm) is a complete example: an
 in-memory time series advanced by a seeded random walk on every tick, with the server itself serving
 
 - `/` — an HTML page with a little Elm-rendered shell,
@@ -89,7 +89,7 @@ in-memory time series advanced by a seeded random walk on every tick, with the s
 - `/api/series` — the current series as JSON, polled by the client every second.
 
 ```sh
-elm server live-dashboard --port 8080
+elm server LiveDashboard --port 8080
 # open http://localhost:8080 — the chart updates on its own as the server ticks
 ```
 

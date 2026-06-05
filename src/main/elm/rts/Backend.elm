@@ -124,7 +124,7 @@ landingPage =
         , "<li>Reveal every tile to win — there is no enemy AI.</li>"
         , "</ul>"
         , "<p>Build the playable client with"
-        , "<code>elm make examples/rts/Main.elm --project examples/rts -o rts.html</code>.</p>"
+        , "<code>elm make src/main/elm/rts/Main.elm --project src/main/elm/rts -o rts.html</code>.</p>"
         , "<p>Machine-readable world data: <a href=\"/api/map\">/api/map</a>. Health check:"
         , "<a href=\"/ping\">/ping</a>.</p>"
         , "</body></html>"

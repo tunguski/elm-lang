@@ -179,17 +179,17 @@ class MainCliTest {
     assertTrue(help.contains("elm server"), help);
     // Each command also carries its own examples (shown via `help <command>`).
     String scriptHelp = invoke("help", "script").out();
-    assertTrue(scriptHelp.contains("wordcount"), scriptHelp);
+    assertTrue(scriptHelp.contains("WordCount"), scriptHelp);
   }
 
   @Test
   void scriptRunsABundledDemoByName() throws Exception {
-    // No such file on disk -> resolves the bundled demo /elm/demos/wordcount.elm.
+    // No such file on disk -> resolves the bundled demo /elm/scripts/WordCount.elm.
     Path f = tempElm("hello world\n");
-    assertTrue(invoke("script", "wordcount", f.toString()).out().contains("total:"));
+    assertTrue(invoke("script", "WordCount", f.toString()).out().contains("total:"));
     // A stale/relocated path whose base name still matches a bundled demo also resolves.
     assertTrue(
-        invoke("script", "any/old/path/wordcount.elm", f.toString()).out().contains("total:"));
+        invoke("script", "any/old/path/WordCount.elm", f.toString()).out().contains("total:"));
   }
 
   @Test
@@ -236,7 +236,7 @@ class MainCliTest {
 
   @Test
   void testCommandRunsTheBundledSuite() {
-    Result r = invoke("test", "example-test"); // resolves the bundled demo by name
+    Result r = invoke("test", "ExampleTest"); // resolves the bundled demo by name
     assertTrue(r.code() == 0, r.out());
     assertTrue(r.out().contains("9 passed"), r.out());
   }

@@ -21,8 +21,8 @@ class ScriptRunnerTest {
   private static final String POSIX = Resources.read("/elm/lib/Posix.elm");
   private static final String BASH = Resources.read("/elm/lib/Bash.elm");
   private static final String SITE = Resources.read("/elm/lib/Site.elm");
-  private static final String WORDCOUNT = Resources.read("/elm/demos/wordcount.elm");
-  private static final String FOLDERREPORT = Resources.read("/elm/demos/folderreport.elm");
+  private static final String WORDCOUNT = Resources.read("/elm/scripts/WordCount.elm");
+  private static final String FOLDERREPORT = Resources.read("/elm/scripts/FolderReport.elm");
 
   private record Run(int code, String out) {}
 

@@ -17,7 +17,7 @@ import pl.matsuo.elm.util.Resources;
 class TodoMvcTest {
 
   private static String source() {
-    return Resources.read("/elm/demos/todomvc.elm");
+    return Resources.read("/elm/examples/TodoMvc.elm");
   }
 
   @Test

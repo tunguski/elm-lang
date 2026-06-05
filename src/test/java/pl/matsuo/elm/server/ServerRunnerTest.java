@@ -17,7 +17,7 @@ import pl.matsuo.elm.util.Resources;
 class ServerRunnerTest {
 
   private static final String LIB = Resources.read("/elm/lib/Server.elm");
-  private static final String APP = Resources.read("/elm/demos/simple-server-showcase.elm");
+  private static final String APP = Resources.read("/elm/servers/SimpleServerShowcase.elm");
   private static final Object HANDLER = Project.load(APP, LIB).entryValue("handle");
 
   @Test

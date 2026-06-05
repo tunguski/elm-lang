@@ -6,7 +6,7 @@ generator renders each page to a self-contained HTML document, copies in the sha
 writes a `sitemap.xml`. No HTML templating, no JavaScript: the whole site is plain Elm.
 
 This is the same library the project's own showcase site is built with (see
-[`examples/site/ElmLang.elm`](../examples/site/ElmLang.elm)).
+[`src/main/elm/examples/ElmLang.elm`](../src/main/elm/examples/ElmLang.elm)).
 
 ## The shape of a site
 

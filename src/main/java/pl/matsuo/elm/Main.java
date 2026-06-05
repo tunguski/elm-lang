@@ -43,14 +43,14 @@ import pl.matsuo.elm.runtime.ElmData;
       "  elm make Main.elm -o index.html --optimize  Build a deployable HTML page",
       "  elm check src/Main.elm src/Lib.elm        Type-check a module or project",
       "  elm format Main.elm --write               Reformat in place (--check to verify)",
-      "  elm script wordcount.elm a.txt b.txt      Run an Elm file as a CLI script",
-      "  elm server simple-server-showcase --port 8080  Serve HTTP from a `handle` function",
+      "  elm script WordCount.elm a.txt b.txt      Run an Elm file as a CLI script",
+      "  elm server SimpleServerShowcase --port 8080  Serve HTTP from a `handle` function",
       "  elm repl                                  Start the interactive REPL",
       "  elm init                                  Scaffold elm.json + src/",
       "",
-      "Bundled examples live under src/main/elm/demos/ — e.g.:",
-      "  elm script src/main/elm/demos/wordcount.elm README.md",
-      "  elm server simple-server-showcase   # then: curl localhost:8080/ping",
+      "Bundled examples live under src/main/elm/ (scripts/, servers/, examples/) — e.g.:",
+      "  elm script src/main/elm/scripts/WordCount.elm README.md",
+      "  elm server SimpleServerShowcase   # then: curl localhost:8080/ping",
       "",
       "Run 'elm <command> --help' for command-specific options and examples.",
     },
@@ -456,7 +456,7 @@ public final class Main implements Runnable {
       description = "Run an Elm file as a POSIX-style command-line script (JIT). See the Posix module.",
       footerHeading = "%nExample:%n",
       footer = {
-        "  elm script wordcount README.md     # 'wordcount' is the bundled demo (or pass a path)",
+        "  elm script WordCount README.md     # 'wordcount' is the bundled demo (or pass a path)",
         "",
         "The script's `main : Posix.Io` describes effects in continuation-passing style:",
         "print, readLine, readFile, writeFile, getArgs, exit, done (see the bundled Posix module).",
@@ -494,7 +494,7 @@ public final class Main implements Runnable {
       description = "Serve HTTP using an Elm `handle : Server.Request -> Server.Response` app.",
       footerHeading = "%nExample:%n",
       footer = {
-        "  elm server simple-server-showcase --port 8080   # bundled demo (or pass a path)",
+        "  elm server SimpleServerShowcase --port 8080   # bundled demo (or pass a path)",
         "  curl localhost:8080/ping          # -> pong",
         "",
         "The app exposes `handle : Request -> Response` (a pure function). The Server module",
@@ -547,9 +547,9 @@ public final class Main implements Runnable {
               + "files needed. With --native, also attempts a GraalVM native binary.",
       footerHeading = "%nExamples:%n",
       footer = {
-        "  elm bundle script wordcount.elm -o wc    # wc.jar  -> java -jar wc.jar README.md",
+        "  elm bundle script WordCount.elm -o wc    # wc.jar  -> java -jar wc.jar README.md",
         "  elm bundle server my-api.elm --port 8080 # my-api.jar -> java -jar my-api.jar",
-        "  elm bundle script wordcount.elm --native  # also try a native binary (needs GraalVM)",
+        "  elm bundle script WordCount.elm --native  # also try a native binary (needs GraalVM)",
         "",
         "The JAR is the reliable standalone artifact. Native compilation is best-effort: it needs a",
         "GraalVM native-image and isn't possible from inside an already-compiled elm binary.",
@@ -1300,7 +1300,7 @@ public final class Main implements Runnable {
               + "bundled Site library. With --api, also emit grouped API docs for the given Elm dirs.",
       footerHeading = "%nExample:%n",
       footer = {
-        "  elm gen-site examples/site/ElmLang.elm out --api src/main/elm/lib --api examples",
+        "  elm gen-site src/main/elm/examples/ElmLang.elm out --api src/main/elm/lib --api src/main/elm/rts",
         "",
         "The program exposes `site : List Page`; each page is rendered to HTML and written under the",
         "output dir. `--api DIR` adds api/<Module>.html for every .elm file plus a grouped api index.",
@@ -1490,7 +1490,7 @@ public final class Main implements Runnable {
   @Command(
       name = "gallery-elm",
       description =
-          "Generate the example gallery entirely through `elm build`: the bundled site.elm "
+          "Generate the example gallery entirely through `elm build`: the bundled Site.elm "
               + "Build.Project + Gallery.elm layout, run via the build lifecycle (Java only stages "
               + "inputs and executes the Elm-defined tasks). Transitional alongside `gallery`.")
   static final class GalleryElm implements Callable<Integer> {
@@ -1825,10 +1825,13 @@ public final class Main implements Runnable {
 
   /**
    * Reads an Elm source file, falling back to a bundled demo when the path isn't on disk: the file's
-   * base name (with or without {@code .elm}) is looked up under {@code /elm/demos/}. So {@code elm
-   * script wordcount} and {@code elm script wordcount.elm} both run the bundled example, while a real
-   * file on disk always takes precedence. A genuinely missing file still yields a clean error.
+   * base name (with or without {@code .elm}) is looked up under the bundled demo directories ({@code
+   * /elm/scripts/}, {@code /elm/servers/}, {@code /elm/examples/}). So {@code elm script WordCount}
+   * and {@code elm script WordCount.elm} both run the bundled example, while a real file on disk
+   * always takes precedence. A genuinely missing file still yields a clean error.
    */
+  static final String[] BUNDLED_DEMO_DIRS = {"/elm/scripts/", "/elm/servers/", "/elm/examples/"};
+
   static String readElmSource(Path file) throws IOException {
     if (Files.exists(file)) {
       return Files.readString(file);
@@ -1837,9 +1840,11 @@ public final class Main implements Runnable {
     if (!name.endsWith(".elm")) {
       name = name + ".elm";
     }
-    try (var in = Main.class.getResourceAsStream("/elm/demos/" + name)) {
-      if (in != null) {
-        return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    for (String dir : BUNDLED_DEMO_DIRS) {
+      try (var in = Main.class.getResourceAsStream(dir + name)) {
+        if (in != null) {
+          return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
       }
     }
     throw new java.nio.file.NoSuchFileException(file.toString());

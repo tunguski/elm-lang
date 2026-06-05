@@ -28,7 +28,7 @@ exampleUrls =
     , "editor/ListSum.elm"
     , "editor/Squares.elm"
     , "editor/Toggle.elm"
-    , "examples/todomvc.elm"
+    , "examples/TodoMvc.elm"
     ]
         ++ List.map (\slug -> "examples/" ++ slug ++ ".elm")
             [ "Hello", "Groceries", "Shapes", "Buttons", "TextFields", "Forms", "Numbers", "Cards"

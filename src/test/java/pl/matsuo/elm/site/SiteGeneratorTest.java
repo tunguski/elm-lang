@@ -86,7 +86,7 @@ class SiteGeneratorTest {
     String scripting = Files.readString(out.resolve("scripting.html"), StandardCharsets.UTF_8);
     // Repo source links resolve on the published site (correct default branch, original extension).
     assertTrue(
-        scripting.contains("https://github.com/tunguski/elm-lang/blob/master/src/main/elm/demos/wordcount.elm"),
+        scripting.contains("https://github.com/tunguski/elm-lang/blob/master/src/main/elm/scripts/WordCount.elm"),
         "repo link points at blob/master with its .elm extension");
     assertFalse(scripting.contains("blob/main/"), "no stale blob/main links (would 404)");
     // The doc page chrome is now assembled by the Elm gallery generator (links docs.css and the
@@ -138,7 +138,7 @@ class SiteGeneratorTest {
     // every gallery example, the editor's own demos, and the flagship TodoMVC.
     assertTrue(Files.exists(out.resolve("examples/Buttons.elm")), "gallery example source served");
     assertTrue(Files.exists(out.resolve("editor/Buttons.elm")), "editor demo source served");
-    assertTrue(Files.exists(out.resolve("examples/todomvc.elm")), "todomvc source served");
+    assertTrue(Files.exists(out.resolve("examples/TodoMvc.elm")), "todomvc source served");
     // TodoMVC compiles to a live page and is linked from the landing page.
     assertTrue(Files.exists(out.resolve("todomvc.html")), "todomvc.html generated");
     String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);

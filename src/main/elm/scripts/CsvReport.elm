@@ -1,9 +1,9 @@
-module Main exposing (main)
+module CsvReport exposing (main)
 
-{-| `elm script csv-report.elm <file.csv>` — read a CSV (with a header row) and render it as an HTML
+{-| `elm script CsvReport.elm <file.csv>` — read a CSV (with a header row) and render it as an HTML
 table page, using the bundled `Csv` and `Site` libraries.
 
-    $ elm script csv-report.elm people.csv > report.html
+    $ elm script CsvReport.elm people.csv > report.html
 -}
 
 import Csv
@@ -28,7 +28,7 @@ main =
                         )
 
                 _ ->
-                    print "usage: csv-report <file.csv>" (exit 1)
+                    print "usage: CsvReport <file.csv>" (exit 1)
         )
 
 

@@ -51,7 +51,7 @@ class SiteGenTest {
 
   @Test
   void elmLangSiteDefinitionGenerates(@TempDir Path out) throws IOException {
-    String src = Files.readString(Path.of("examples/site/ElmLang.elm"), StandardCharsets.UTF_8);
+    String src = Files.readString(Path.of("src/main/elm/examples/ElmLang.elm"), StandardCharsets.UTF_8);
     SiteGen.generate(src, out, List.of(), "");
     assertTrue(Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8).contains("elm-lang"));
     assertTrue(Files.exists(out.resolve("features.html")), "features page");
@@ -61,8 +61,8 @@ class SiteGenTest {
 
   @Test
   void generatedDocsLinkTheRtsGameAndItsApiDocs(@TempDir Path out) throws IOException {
-    String src = Files.readString(Path.of("examples/site/ElmLang.elm"), StandardCharsets.UTF_8);
-    SiteGen.generate(src, out, List.of(Path.of("examples/rts")), "");
+    String src = Files.readString(Path.of("src/main/elm/examples/ElmLang.elm"), StandardCharsets.UTF_8);
+    SiteGen.generate(src, out, List.of(Path.of("src/main/elm/rts")), "");
     String examples = Files.readString(out.resolve("examples.html"), StandardCharsets.UTF_8);
     assertTrue(examples.contains("href=\"rts.html\""), "examples page links the playable game");
     assertTrue(examples.contains("href=\"api/RTS.Model.html\""), "examples page links the RTS API docs");
@@ -124,6 +124,6 @@ class SiteGenTest {
     assertTrue(SiteGen.purpose(Path.of("src/main/elm/lib/Server.elm")).contains("Backend"));
     assertTrue(SiteGen.purpose(Path.of("src/main/elm/lib/Bash.elm")).contains("Scripting"));
     assertTrue(SiteGen.purpose(Path.of("src/main/elm/editor/Eval.elm")).contains("Frontend"));
-    assertTrue(SiteGen.purpose(Path.of("examples/rts/Main.elm")).contains("RTS"));
+    assertTrue(SiteGen.purpose(Path.of("src/main/elm/rts/Main.elm")).contains("RTS"));
   }
 }

@@ -35,7 +35,7 @@ All four share one value model and are **differential-tested** against each othe
 property-based testing over randomly generated expressions — extended to a fifth path, the **WasmGC**
 backend, over the fragment it supports — and a non-trivial records/lists/closures "task summary" core
 that must agree on all four). A flagship **TodoMVC** app
-([`demos/todomvc.elm`](src/main/elm/demos/todomvc.elm)) runs end to end on the two
+([`demos/TodoMvc.elm`](src/main/elm/examples/TodoMvc.elm)) runs end to end on the two
 TEA-capable backends — driven through add/toggle/delete/clear on the interpreter and rendered +
 reacted live by the JavaScript backend in headless Chrome.
 
@@ -244,11 +244,11 @@ a description of effects — `print`, `readLine`, `readFile`, `writeFile`, `getA
 `listDir`, `exit`, `done` — which the runner walks, performing the real I/O and returning the
 process exit code. Effects that
 produce a value take a continuation, so scripts are written in continuation-passing style. The
-[`wordcount.elm`](src/main/elm/demos/wordcount.elm) example is a `wc`-style
+[`WordCount.elm`](src/main/elm/scripts/WordCount.elm) example is a `wc`-style
 line/word/char counter:
 
 ```sh
-./elm.sh script wordcount README.md   # 'wordcount' resolves to the bundled demo; or pass a path
+./elm.sh script WordCount README.md   # 'wordcount' resolves to the bundled demo; or pass a path
 ```
 
 ## HTTP server (server-side Elm)
@@ -274,15 +274,15 @@ interpreter, and writes the `Response`. `segments` gives the path parts for rout
 parameters via `case`), `param` looks up a query parameter, and a JSON body is decoded with the
 `Json.Decode` module. Because the handler is a pure `Request -> Response`, it is trivial to
 unit-test — `ServerRunnerTest` checks routing, path/query parameters and status by direct dispatch
-and also over a real socket. See [`simple-server-showcase.elm`](src/main/elm/demos/simple-server-showcase.elm).
+and also over a real socket. See [`SimpleServerShowcase.elm`](src/main/elm/servers/SimpleServerShowcase.elm).
 
 For **stateful** servers, expose `main : Server.Program model` instead — an in-memory `model`, an
 `onRequest : Request -> model -> ( model, Response )`, and a background `onTick : model -> model`
 run every `tickMillis`. The runner holds the model (guarded across the request and tick threads).
-The [`live-dashboard.elm`](src/main/elm/demos/live-dashboard.elm) example is a full-stack
+The [`LiveDashboard.elm`](src/main/elm/servers/LiveDashboard.elm) example is a full-stack
 demo: an in-memory time series advanced by a **server-side seeded random walk** on every tick, with
 the Elm server also serving its own client — an HTML page, a stylesheet, and JavaScript that polls
-`/api/series` once a second and draws the series as an SVG graph (`elm server live-dashboard`).
+`/api/series` once a second and draws the series as an SVG graph (`elm server LiveDashboard`).
 
 `elm server <app> --static <dir>` additionally serves text files (HTML/CSS/JS/JSON/SVG) from a
 directory before falling through to the Elm handler (path traversal is refused).

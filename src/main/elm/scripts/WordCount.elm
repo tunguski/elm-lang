@@ -1,6 +1,6 @@
-module Main exposing (main)
+module WordCount exposing (main)
 
-{-| A `wc`-style command-line script written in Elm, run by `elm script wordcount.elm FILE...`.
+{-| A `wc`-style command-line script written in Elm, run by `elm script WordCount.elm FILE...`.
 It reads each file argument, counts its lines/words/characters, prints a line per file, then a
 total — a non-trivial replacement for a small bash/awk pipeline. Demonstrates the Posix I/O API:
 process arguments, reading files (with error handling), and printing, all in continuation-passing
@@ -16,7 +16,7 @@ main =
         (\args ->
             case args of
                 [] ->
-                    print "usage: wordcount FILE..." (exit 2)
+                    print "usage: WordCount FILE..." (exit 2)
 
                 files ->
                     process files 0 0 0

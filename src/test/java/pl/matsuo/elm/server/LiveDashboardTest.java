@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class LiveDashboardTest {
 
   private static final String LIB = Resources.read("/elm/lib/Server.elm");
-  private static final String APP = Resources.read("/elm/demos/live-dashboard.elm");
+  private static final String APP = Resources.read("/elm/servers/LiveDashboard.elm");
 
   private static ElmRecord program() {
     return (ElmRecord) Project.load(APP, LIB).entryValue("main");

@@ -1,11 +1,11 @@
-module Main exposing (main)
+module FolderReport exposing (main)
 
 {-| A folder report `elm script`: recursively walks a directory (default `.`) and prints a summary —
 file and directory counts, total size, the largest files and a breakdown by extension. Demonstrates
 the structured Bash commands: `find` returns `Entry` records, so the report is computed with ordinary
 list/record code rather than by parsing `ls` text.
 
-    elm script folderreport src
+    elm script FolderReport src
 
 -}
 

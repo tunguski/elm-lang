@@ -40,15 +40,15 @@ elm script hello.elm world      # prints: hello world
 
 ## A worked example: word count
 
-The bundled [`wordcount.elm`](../src/main/elm/demos/wordcount.elm) is a `wc`-style
+The bundled [`WordCount.elm`](../src/main/elm/scripts/WordCount.elm) is a `wc`-style
 counter — it reads each file argument, counts lines/words/characters, prints a line per file and a
 total, and handles missing files with a non-zero exit:
 
 ```sh
-elm script wordcount README.md docs/scripting.md
+elm script WordCount README.md docs/scripting.md
 ```
 
-The name `wordcount` resolves to the bundled demo; you can also pass any path to your own script.
+The name `WordCount` resolves to the bundled demo; you can also pass any path to your own script.
 
 ## Structured shell commands (the Bash module)
 
@@ -92,11 +92,11 @@ main =
     )
 ```
 
-The bundled [`folderreport.elm`](../src/main/elm/demos/folderreport.elm) goes further —
+The bundled [`FolderReport.elm`](../src/main/elm/scripts/FolderReport.elm) goes further —
 it `find`s a directory recursively and prints a report from the structured entries:
 
 ```sh
-elm script folderreport src/main/elm/lib
+elm script FolderReport src/main/elm/lib
 ```
 
 ```text
@@ -166,8 +166,8 @@ run =
     Bash.exec "awk" sumCommand (\_ -> Bash.done)
 ```
 
-The bundled `awk-sum.elm` demo prints the awk command to sum a column:
-`elm script awk-sum.elm 2 sales.csv`.
+The bundled `AwkSum.elm` demo prints the awk command to sum a column:
+`elm script AwkSum.elm 2 sales.csv`.
 
 ### M4
 
@@ -190,7 +190,7 @@ out =
         ]
 ```
 
-The bundled `m4-expand.elm` demo emits such a program: `elm script m4-expand.elm world` (pipe it to
+The bundled `M4Expand.elm` demo emits such a program: `elm script M4Expand.elm world` (pipe it to
 `m4` to get `Hello world!`).
 
 ### Csv
@@ -208,8 +208,8 @@ rows =
     Csv.parse "a,\"b,c\"\n1,2"
 ```
 
-`csv-report.elm` renders a CSV as an HTML table page (`Csv` + `Site`):
-`elm script csv-report.elm people.csv > report.html`.
+`CsvReport.elm` renders a CSV as an HTML table page (`Csv` + `Site`):
+`elm script CsvReport.elm people.csv > report.html`.
 
 ## How it runs
 

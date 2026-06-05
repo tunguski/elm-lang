@@ -1,4 +1,4 @@
-module Main exposing (main)
+module TodoMvc exposing (main)
 
 {-| A TodoMVC-style app in The Elm Architecture — the flagship showcase that the interpreter and the
 JavaScript backend run end to end (add / toggle / delete / clear-completed, with a live "items left"

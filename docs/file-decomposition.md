@@ -9,7 +9,7 @@ has one responsibility and the boundaries between them carry real meaning. Where
 You can regenerate the list this doc is based on with the bundled script:
 
 ```bash
-elm script big-files            # files over 1000 lines, largest first
+elm script BigFiles            # files over 1000 lines, largest first
 ```
 
 ## Principles used here

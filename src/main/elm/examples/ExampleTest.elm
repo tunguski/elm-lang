@@ -1,6 +1,6 @@
-module Tests exposing (suite)
+module ExampleTest exposing (suite)
 
-{-| An example test suite, run with `elm test example-test`. -}
+{-| An example test suite, run with `elm test ExampleTest`. -}
 
 import Expect
 import Fuzz

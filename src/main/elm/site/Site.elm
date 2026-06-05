@@ -3,7 +3,7 @@ module Main exposing (project)
 {-| A static-site build expressed entirely with the bundled `Build` library — the build-tool
 counterpart of the Java `SiteGenerator`. Run it with:
 
-    elm build -f site.elm package
+    elm build -f Site.elm package
 
 It compiles each example to a live, self-contained JS page (`compile JS …`), injects the shared
 light/dark theme into each one (`replaceInFile …`, the build-tool counterpart of the generator's

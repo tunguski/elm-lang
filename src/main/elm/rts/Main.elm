@@ -2,7 +2,7 @@ module RTS.Main exposing (main)
 
 {-| The RTS frontend: a `Browser.element` program wiring the model, the pure `update` from
 `RTS.Logic`, the SVG/HTML `view` from `RTS.View`, and a real-time clock that fires `Tick` five times
-a second. Compile it with `elm make examples/rts/Main.elm --project examples/rts -o rts.html`.
+a second. Compile it with `elm make src/main/elm/rts/Main.elm --project src/main/elm/rts -o rts.html`.
 -}
 
 import Browser
