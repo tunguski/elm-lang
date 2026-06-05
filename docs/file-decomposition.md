@@ -56,12 +56,12 @@ scatters a hot web across files.
 |------|-------|----------------|--------|
 | `editor/Eval.elm` | 3474 | **Split** — clean leaves extracted; evaluator+runBuiltin core stays whole | 🟡 `EvalRender` + `EvalPlayground` + `EvalJson` extracted (3 single-injection leaves); `Eval.App` ⏸ deferred (threads whole evaluator); Core/Builtins are the documented core |
 | `wasm/WasmCompiler.java` | ~1831 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` + `WasmNativeFns` (string/apply/record natives) extracted; `FunctionGen` core stays (documented exception) |
-| `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
+| `lsp/LspServer.java` | 2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⏸ deferred — a cohesive, feature-organized server whose public+static surface is pinned by ~28 directly-tested entry points (see note) |
 | `wasm/WasmGc.java` | ~2105 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` + `WasmGcTypes` (Tuples + W/StructDef) extracted; `Gen` core stays (documented exception) |
 | `Main.java` | 234 | **Split** — 35 commands → 4 domain files; root shell + helpers stay | ✅ `CliCompile`/`CliProject`/`CliPackage`/`CliSiteCommands` extracted |
 | `interp/Prelude.java` | ~967 | **Split** — one class per Elm module group (cleanest of all) | ✅ `PreludeCollections` + `PreludeJson` + `PreludeCore` extracted; now under threshold |
 | `examples/Playground.elm` | ~1708 | **Leave** — vendored elm-playground; splitting forks upstream | ⏸ |
-| `editor/Editor.elm` | ~1370 | **Split** — app/update vs. view vs. session vs. html-bridge | ⬜ |
+| `editor/Editor.elm` | 1370 | **Split** — `EditorView` (Model/Msg + view leaf) vs. `Editor` (update/orchestration) | ⏸ deferred (feasible — view is a verified leaf; delicate cross-module TEA restructure, see note) |
 | `js/JsCompiler.java` | ~1239 | **Partial** — extract the optimiser pipeline; keep codegen together | ✅ `JsOptimizer` + `JsRuntime` extracted; remainder coherent |
 | `test/WasmHeapTest.java` | ~595 | **Split** — by feature area, with a shared test-helper base | ✅ `WasmHeapTestSupport` base + `WasmLangFeaturesTest`; all <1000 |
 | `test/EditorInterpreterTest.java` | ~796 | split by feature with a shared base | ✅ `EditorInterpreterTestSupport` base + `EditorToolingInterpreterTest`; all <1000 |
@@ -210,6 +210,31 @@ classes, calling back to `Main.readElmSource`/`typeError`/`render`):
 one-per-file:* the seam that matters is "what part of the toolchain does this drive", and commands in
 a group tend to change together (e.g. all the package commands when the registry format moves).
 
+### `lsp/LspServer.java` (2602) — feature-organized server, split deferred ⏸
+
+`LspServer` is a single coherent responsibility — *be the language server* — internally organized by
+LSP feature: diagnostics, completion, hover/definition, code actions, refactors, document/workspace
+symbols, references, call hierarchy, semantic tokens, folding/selection ranges, and the JSON-RPC
+`serve` loop with its transport plumbing. The natural seams are clear (transport vs. analysis vs.
+code-actions/refactors), and it is *not* a mutually-recursive core. Two things make a clean sub-1000
+split high-cost and low-ROI, so it is deferred rather than forced:
+
+1. **A wide, directly-pinned public surface.** `LspServerTest` exercises ~28 entry points on
+   `LspServer` — both the instance analysis methods (`diagnose`, `complete`, `codeActions`,
+   `refactors`, `references`, `definition`, `hoverType`, `semanticTokens`, …) *and* several `static`
+   helpers (`applyChange`, `readMessage`, `identifierSpan`, `wordAt`, `importLinks`,
+   `foldingRanges`). Moving any of these into a feature class forces either a delegating wrapper
+   (which costs back most of the lines) or churn across the test.
+2. **The `docs` workspace map straddles the seam.** The `serve` loop *writes* open documents into the
+   `docs` field, and an analysis method (`qualifiedMembers`, for cross-module completion) *reads* it,
+   so transport and analysis cannot be cleanly separated without threading the workspace map through
+   the completion path.
+
+Reaching <1000 would take four or five coordinated extractions (e.g. `LspDiagnostics`,
+`LspCodeActions`, `LspRefactors`, `LspProtocol`) plus delegation wrappers — a large, regression-prone
+change to a file that already reads as well-separated sections. Left whole as a **documented
+exception** for now; the feature boundaries above are the plan if it is revisited.
+
 ### `js/JsCompiler.java` (~1239) — extract only the optimiser ✅ done
 
 Most of this file is one tightly-woven codegen pipeline: expression `compile` ↔ pattern `matchJs` ↔
@@ -220,24 +245,29 @@ These now live in `JsOptimizer.java`, and the runtime kernel in `JsRuntime.java`
 the coherent codegen pipeline, left whole as recommended. (A further multi-module caching layer
 `JsBundleCache` was noted as an optional second candidate; not pursued.)
 
-### `editor/Editor.elm` (~1370) — separate UI from orchestration
+### `editor/Editor.elm` (1370) — view is a clean leaf; split deferred ⏸ (feasible)
 
-`Editor.elm` mixes the TEA wiring with a large view layer. The seam is clear because the view
-functions only *read* the model:
+`Editor.elm` mixes the TEA wiring with a large view layer (≈885–1370). A cross-reference scan
+confirms the view is a **true leaf**: of the view band's functions only `view` itself is referenced
+from the rest of the module (by `program`), and the view band calls just four functions defined
+above it — `baseName`, `groupedFiles`, `selectedFile`, `shownModel` (closure: `folderOf`,
+`groupOrder`, `nth`) — none of which call back into `update`/`program`.
 
-- **`Editor`** — `Model`/`Msg` (≈35–85), `program`, `subscriptions` (≈121–219), `update` and its
-  execution helpers `stepApp`/`runCmd`/`refreshAndRun` (≈317–724). The orchestration core.
-- **`Editor.View`** — `view`, `codeEditor` + gutter/squiggle/completion, `fileSidebar`, the result
-  `mainPane`/`appPane`/`gamePane`, and the time-travel `debugBar` (≈781–1153). *Why:* pure
-  `Model → Html Msg` rendering; it never updates state.
-- **`Editor.Session`** — autosave/restore and the file-list helpers (≈726–779). Small but
-  self-contained persistence logic.
-- **`Editor.Render`** — `renderHtml`/`renderAttr`, the bridge from interpreted `Value` Html to real
-  `Html Msg` with editor event wiring (≈1170–1231). *Why:* the one place that re-wires interpreted
-  events back into `Msg`; isolating it documents that boundary.
+The **cycle subtlety the earlier plan missed:** the view produces `Html Msg`, so an `EditorView`
+module needs the `Msg` type — but `Editor` needs `view`, so `Editor` imports `EditorView`. If
+`EditorView` imported `Editor` for `Model`/`Msg`, that is a cycle. The fix is to put `Model` + `Msg`
+(and the four shared read helpers) **in `EditorView`** (or a dedicated `EditorTypes`), which imports
+nothing from `Editor`; `Editor`'s `update`/`program`/state-helpers then import them from there. (The
+JS backend tags constructors by *simple* name, so moving `Msg` does **not** rename the dispatch tags
+the headless-Chrome guard checks — verified safe.)
 
-`Editor.View`/`Render` import `Editor` for the `Model`/`Msg` types; `Editor` must not import them
-back (move the few shared layout constants down, not up) to avoid a cycle.
+So the split is genuinely achievable (`EditorView` ≈ Model/Msg + the four read helpers + the ≈485-line
+view layer; `Editor` ≈ program/init/subscriptions/`update`/state-helpers), and would bring both under
+1000. It is **deferred** only on cost/risk: it is a delicate cross-module TEA restructure (relocating
+`Model`/`Msg`, non-contiguous helper moves, getting `exposing (Msg(..))` right) that must keep the JS
+bundle, the interpreter, and the headless-Chrome drivers all green, plus re-registration in
+`SiteGenerator.EDITOR_MODULES` and the interpreter-test module lists. The plan above is ready to
+execute when picked up.
 
 ### `parser/Parser.java` (~995, now under threshold) — extract the edges, keep the descent ✅ done
 
@@ -304,14 +334,28 @@ Ordered by payoff-to-risk, easiest and safest first. ✅ = completed.
    The remaining groups (Data, Effects, Html, Media) could still be split for cleanliness, but the
    size target is met.
 3. ✅ **`Main.java`** — 35 independent command classes moved into 4 domain-grouped top-level files (234 lines left).
-4. ⬜ **`WasmHeapTest.java`** — test-only, no production risk.
-5. 🟡 **`WasmCompiler` / `WasmGc`** islands — `WasmPrelude` extracted; the hand-assembled string
-   runtime (`WasmCompiler`) and the `Tuples` type registry (`WasmGc`) remain.
-6. ⬜ **`Eval.elm`** and **`Editor.elm`** — highest value but need care with Elm import cycles; do the
-   evaluator/UI split first and the finer cuts only if they still feel warranted afterwards.
+4. ✅ **`WasmHeapTest.java`** / **`EditorInterpreterTest.java`** — split by feature, harness shared (`*Support` bases).
+5. ✅ **`WasmCompiler` / `WasmGc`** islands — `WasmPrelude` + `WasmEncoding` + `WasmNativeFns`
+   (string/apply/record natives) and `WasmGcTypes` (the `Tuples` registry + struct records) extracted;
+   the `FunctionGen`/`Gen` codegen cores stay whole (documented exceptions).
+6. ✅ **`Eval.elm`** — three single-injection leaves extracted (`EvalRender`, `EvalPlayground`,
+   `EvalJson`); `Eval.App` and the evaluator+runBuiltin core stay whole (documented).
 7. ✅ **`JsCompiler` / `Parser`** — `JsOptimizer`/`JsRuntime` and `OperatorFixities` extracted; the
    codegen and recursive-descent cores are intentionally left whole.
+8. ⏸ **`LspServer.java`** — deferred: a cohesive, test-pinned LSP server (≈28 directly-tested entry
+   points + a `docs`-field straddle); sub-1000 needs 4–5 feature extractions + delegation wrappers.
+9. ⏸ **`Editor.elm`** — deferred but **feasible**: the view is a verified leaf; the split is a delicate
+   cross-module TEA restructure (Model/Msg relocation) that must keep JS-bundle + headless + interp green.
 
 Each step should be a behaviour-preserving move validated by the existing test suite before the next.
 The measure of success is not the line count afterwards — it is whether a newcomer can guess which
 file a given change belongs in.
+
+## Result (2026-06-05)
+
+Every cleanly-splittable file is under 1000 lines. The files that remain above the threshold are all
+**documented exceptions**: the vendored `examples/Playground.elm`; the tightly mutually-recursive
+backend cores (`Eval.elm`, `WasmCompiler`, `WasmGc`, `JsCompiler`) which have their islands extracted
+but keep their irreducible cores; the test-pinned `LspServer.java`; and `Editor.elm`, whose clean
+view-leaf split is planned and ready but deferred on cost/risk. Separately, an `elm server` app can
+now talk to a database through the typed `lib/Db.elm` JDBC layer (see `server/DbRunner.java`).
