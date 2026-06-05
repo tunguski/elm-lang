@@ -40,7 +40,7 @@ elm script hello.elm world      # prints: hello world
 
 ## A worked example: word count
 
-The bundled [`wordcount.elm`](../src/main/resources/elm/demos/wordcount.elm) is a `wc`-style
+The bundled [`wordcount.elm`](../src/main/elm/demos/wordcount.elm) is a `wc`-style
 counter — it reads each file argument, counts lines/words/characters, prints a line per file and a
 total, and handles missing files with a non-zero exit:
 
@@ -52,7 +52,7 @@ The name `wordcount` resolves to the bundled demo; you can also pass any path to
 
 ## Structured shell commands (the Bash module)
 
-The bundled [`Bash`](../src/main/resources/elm/lib/Bash.elm) module adds common shell commands that
+The bundled [`Bash`](../src/main/elm/lib/Bash.elm) module adds common shell commands that
 return **structured Elm values** instead of text you have to re-parse — `ls`/`find` give `Entry`
 records, `grep` gives `Match` records, `wc` gives a `Counts` record, and `exec` gives a `Proc`:
 
@@ -92,15 +92,15 @@ main =
     )
 ```
 
-The bundled [`folderreport.elm`](../src/main/resources/elm/demos/folderreport.elm) goes further —
+The bundled [`folderreport.elm`](../src/main/elm/demos/folderreport.elm) goes further —
 it `find`s a directory recursively and prints a report from the structured entries:
 
 ```sh
-elm script folderreport src/main/resources/elm/lib
+elm script folderreport src/main/elm/lib
 ```
 
 ```text
-Folder report for src/main/resources/elm/lib
+Folder report for src/main/elm/lib
 ----------------------------------------
 Files:        7
 Directories:  1
@@ -140,7 +140,7 @@ data. All are plain functions — no `Io` — so they compose inside any handler
 
 ### Awk
 
-[`Awk`](../src/main/resources/elm/lib/Awk.elm) **builds awk program text** to embed in a generated
+[`Awk`](../src/main/elm/lib/Awk.elm) **builds awk program text** to embed in a generated
 shell script or pass to `awk` — it doesn't run awk. An awk program is a list of `pattern { action }`
 rules: `begin`/`end`/`on cond`/`matchLine re`/`eachLine`. `program` renders them, `oneLiner`
 single-quotes the result for a command line, and `invocation` builds the `awk` argument list. The
@@ -171,7 +171,7 @@ The bundled `awk-sum.elm` demo prints the awk command to sum a column:
 
 ### M4
 
-[`M4`](../src/main/resources/elm/lib/M4.elm) **builds m4 macro source** to save as a `.m4` file or
+[`M4`](../src/main/elm/lib/M4.elm) **builds m4 macro source** to save as a `.m4` file or
 pipe to `m4` — it doesn't run m4. `define`/`undefine` write quoted definitions, `call` writes an
 invocation, and `program` joins statements into a document. Inside a body, `arg 1` is `$1`, `args` is
 `$*`, `argCount` is `$#` and `macroName` is `$0`; `ifelse`/`ifdef`/`eval`/`include` write those
@@ -195,7 +195,7 @@ The bundled `m4-expand.elm` demo emits such a program: `elm script m4-expand.elm
 
 ### Csv
 
-[`Csv`](../src/main/resources/elm/lib/Csv.elm) parses and encodes RFC-4180 CSV: `parse` returns rows
+[`Csv`](../src/main/elm/lib/Csv.elm) parses and encodes RFC-4180 CSV: `parse` returns rows
 of fields (honouring quoted fields with embedded commas/newlines), `encode` is the inverse, and
 `parseWithHeader` pairs each row with the header columns (records, looked up with `get`).
 

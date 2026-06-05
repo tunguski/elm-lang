@@ -35,7 +35,7 @@ All four share one value model and are **differential-tested** against each othe
 property-based testing over randomly generated expressions — extended to a fifth path, the **WasmGC**
 backend, over the fragment it supports — and a non-trivial records/lists/closures "task summary" core
 that must agree on all four). A flagship **TodoMVC** app
-([`demos/todomvc.elm`](src/main/resources/elm/demos/todomvc.elm)) runs end to end on the two
+([`demos/todomvc.elm`](src/main/elm/demos/todomvc.elm)) runs end to end on the two
 TEA-capable backends — driven through add/toggle/delete/clear on the interpreter and rendered +
 reacted live by the JavaScript backend in headless Chrome.
 
@@ -239,12 +239,12 @@ offline driver, so they stay deterministic and never touch the network.)
 
 `elm script <file.elm> [args…]` runs an Elm file as a command-line script on the JIT interpreter,
 inspired by [elm-posix](https://github.com/albertdahlin/elm-posix). The bundled
-[`Posix`](src/main/resources/elm/lib/Posix.elm) module gives a script's `main : Posix.Io`
+[`Posix`](src/main/elm/lib/Posix.elm) module gives a script's `main : Posix.Io`
 a description of effects — `print`, `readLine`, `readFile`, `writeFile`, `getArgs`, `getEnv`,
 `listDir`, `exit`, `done` — which the runner walks, performing the real I/O and returning the
 process exit code. Effects that
 produce a value take a continuation, so scripts are written in continuation-passing style. The
-[`wordcount.elm`](src/main/resources/elm/demos/wordcount.elm) example is a `wc`-style
+[`wordcount.elm`](src/main/elm/demos/wordcount.elm) example is a `wc`-style
 line/word/char counter:
 
 ```sh
@@ -254,7 +254,7 @@ line/word/char counter:
 ## HTTP server (server-side Elm)
 
 `elm server <file.elm> [--port N]` serves HTTP from an Elm application that exposes a pure handler,
-using the bundled [`Server`](src/main/resources/elm/lib/Server.elm) API:
+using the bundled [`Server`](src/main/elm/lib/Server.elm) API:
 
 ```elm
 import Server exposing (..)
@@ -274,12 +274,12 @@ interpreter, and writes the `Response`. `segments` gives the path parts for rout
 parameters via `case`), `param` looks up a query parameter, and a JSON body is decoded with the
 `Json.Decode` module. Because the handler is a pure `Request -> Response`, it is trivial to
 unit-test — `ServerRunnerTest` checks routing, path/query parameters and status by direct dispatch
-and also over a real socket. See [`simple-server-showcase.elm`](src/main/resources/elm/demos/simple-server-showcase.elm).
+and also over a real socket. See [`simple-server-showcase.elm`](src/main/elm/demos/simple-server-showcase.elm).
 
 For **stateful** servers, expose `main : Server.Program model` instead — an in-memory `model`, an
 `onRequest : Request -> model -> ( model, Response )`, and a background `onTick : model -> model`
 run every `tickMillis`. The runner holds the model (guarded across the request and tick threads).
-The [`live-dashboard.elm`](src/main/resources/elm/demos/live-dashboard.elm) example is a full-stack
+The [`live-dashboard.elm`](src/main/elm/demos/live-dashboard.elm) example is a full-stack
 demo: an in-memory time series advanced by a **server-side seeded random walk** on every tick, with
 the Elm server also serving its own client — an HTML page, a stylesheet, and JavaScript that polls
 `/api/series` once a second and draws the series as an SVG graph (`elm server live-dashboard`).
@@ -375,7 +375,7 @@ linear memory (string `{len, bytes}`, cons-list cells, Float bit-patterns). Buil
 
 ```sh
 ./mvnw.cmd -DskipTests package
-java -jar target/elm.jar site src/main/resources/elm/examples src/main/resources/elm/examples/Playground.elm target/site
+java -jar target/elm.jar site src/main/elm/examples src/main/elm/examples/Playground.elm target/site
 ```
 
 ## Continuous integration

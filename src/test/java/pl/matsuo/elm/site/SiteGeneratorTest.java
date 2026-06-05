@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Test;
  */
 class SiteGeneratorTest {
 
-  private static final Path EXAMPLES = Path.of("src/main/resources/elm/examples");
-  private static final Path PLAYGROUND = Path.of("src/main/resources/elm/examples/Playground.elm");
+  private static final Path EXAMPLES = Path.of("src/main/elm/examples");
+  private static final Path PLAYGROUND = Path.of("src/main/elm/examples/Playground.elm");
 
   private Path generate() throws IOException {
     Path out = Files.createTempDirectory("elm-site-");
@@ -86,7 +86,7 @@ class SiteGeneratorTest {
     String scripting = Files.readString(out.resolve("scripting.html"), StandardCharsets.UTF_8);
     // Repo source links resolve on the published site (correct default branch, original extension).
     assertTrue(
-        scripting.contains("https://github.com/tunguski/elm-lang/blob/master/src/main/resources/elm/demos/wordcount.elm"),
+        scripting.contains("https://github.com/tunguski/elm-lang/blob/master/src/main/elm/demos/wordcount.elm"),
         "repo link points at blob/master with its .elm extension");
     assertFalse(scripting.contains("blob/main/"), "no stale blob/main links (would 404)");
     // The doc page chrome is now assembled by the Elm gallery generator (links docs.css and the

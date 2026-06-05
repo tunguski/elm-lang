@@ -1,7 +1,7 @@
 # Bundled libraries
 
 Beyond the standard library, the toolchain ships a set of Elm modules in
-[`src/main/resources/elm/lib/`](../src/main/resources/elm/lib/). They are available to `elm script`,
+[`src/main/elm/lib/`](../src/main/elm/lib/). They are available to `elm script`,
 `elm server`, `elm build` and the test runner without an install, and any project can `import` them.
 This page is the index and quick reference; several have a deeper guide of their own.
 
@@ -72,10 +72,10 @@ with `get`).
 ## Bytes
 
 A compact binary-data library — bytes as a list of `0..255` values, so it runs on every backend
-without kernel support. [`Bytes`](../src/main/resources/elm/lib/Bytes.elm) carries `width`/`empty` and
-the `fromByteValues`/`toByteValues` bridge; [`Bytes.Encode`](../src/main/resources/elm/lib/Bytes/Encode.elm)
+without kernel support. [`Bytes`](../src/main/elm/lib/Bytes.elm) carries `width`/`empty` and
+the `fromByteValues`/`toByteValues` bridge; [`Bytes.Encode`](../src/main/elm/lib/Bytes/Encode.elm)
 builds bytes from fixed-width unsigned ints (`unsignedInt8`/`16`/`32` with an `Endianness`),
-`signedInt8`, nested `bytes` and `sequence`; [`Bytes.Decode`](../src/main/resources/elm/lib/Bytes/Decode.elm)
+`signedInt8`, nested `bytes` and `sequence`; [`Bytes.Decode`](../src/main/elm/lib/Bytes/Decode.elm)
 reads them back with `unsignedInt8`/`16`/`32`, `succeed`/`fail`/`map`/`map2`/`andThen` and a `decode`
 that returns `Nothing` on overrun.
 
@@ -183,13 +183,13 @@ point =
 
 ## Parser
 
-A small parser-combinator library ([`Parser`](../src/main/resources/elm/lib/Parser.elm)) in the
+A small parser-combinator library ([`Parser`](../src/main/elm/lib/Parser.elm)) in the
 elm/parser style — building blocks for hand-written parsers.
 
 ## Url.Parser
 
 A typed URL router (a subset of elm/url): match fixed segments with `s`, capture `int`/`string`
-segments, read query params (`<?>`, see [`Url.Parser.Query`](../src/main/resources/elm/lib/Url/Parser/Query.elm))
+segments, read query params (`<?>`, see [`Url.Parser.Query`](../src/main/elm/lib/Url/Parser/Query.elm))
 and the `fragment`, and combine with `</>`. `parse` runs a parser against a `Url`.
 
 ## Site
@@ -212,12 +212,12 @@ Elm functions. See [build.md](build.md).
 
 The testing trio the `elm test` runner discovers:
 
-- [`Test`](../src/main/resources/elm/lib/Test.elm) — `test`/`describe`/`concat`, `fuzz`/`fuzz2`/
+- [`Test`](../src/main/elm/lib/Test.elm) — `test`/`describe`/`concat`, `fuzz`/`fuzz2`/
   `fuzz3`/`fuzzWith`, `only`/`skip`/`todo`.
-- [`Expect`](../src/main/resources/elm/lib/Expect.elm) — `equal`/`notEqual`/`equalLists`/…,
+- [`Expect`](../src/main/elm/lib/Expect.elm) — `equal`/`notEqual`/`equalLists`/…,
   `lessThan`/`greaterThan`/`atMost`/`atLeast`/`within`, `isTrue`/`isFalse`, `ok`/`err`, `all`,
   `pass`/`fail`, `onFail`.
-- [`Fuzz`](../src/main/resources/elm/lib/Fuzz.elm) — value generators with shrinking: `int`/`float`/
+- [`Fuzz`](../src/main/elm/lib/Fuzz.elm) — value generators with shrinking: `int`/`float`/
   `string`/`char`/`bool`, `map`/`map2`/`map3`/`andThen`, `pair`/`triple`/`list`/`array`/`maybe`/
   `result`, `oneOf`/`frequency`/`filter`/`constant`.
 

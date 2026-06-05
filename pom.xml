@@ -56,6 +56,19 @@
     </dependencies>
 
     <build>
+        <!-- The bundled Elm *sources* live under src/main/elm (kept apart from non-Elm assets), while
+             stylesheets, scripts and HTML stay under the conventional src/main/resources/elm. Both are
+             packaged onto the classpath under /elm/… (src/main/elm via targetPath), so every
+             getResourceAsStream("/elm/…") keeps working unchanged. -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>src/main/elm</directory>
+                <targetPath>elm</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

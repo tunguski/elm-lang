@@ -7,7 +7,7 @@ interpreter. There are two shapes of server:
 - **Stateful** — expose `main : Program model`, a small record bundling an in-memory model, a
   request handler, and a background "tick" that mutates the model on a timer.
 
-Both use the bundled [`Server`](../src/main/resources/elm/lib/Server.elm) module.
+Both use the bundled [`Server`](../src/main/elm/lib/Server.elm) module.
 
 ## Requests and responses
 
@@ -34,7 +34,7 @@ Response builders cover the common content types, and two request helpers parse 
 
 ## A stateless server
 
-The bundled [`simple-server-showcase.elm`](../src/main/resources/elm/demos/simple-server-showcase.elm)
+The bundled [`simple-server-showcase.elm`](../src/main/elm/demos/simple-server-showcase.elm)
 routes on the path segments and echoes query parameters:
 
 ```elm
@@ -81,7 +81,7 @@ type alias Program model =
 ```
 
 Model access is serialized, so `onRequest` and `onTick` never interleave. The bundled
-[`live-dashboard.elm`](../src/main/resources/elm/demos/live-dashboard.elm) is a complete example: an
+[`live-dashboard.elm`](../src/main/elm/demos/live-dashboard.elm) is a complete example: an
 in-memory time series advanced by a seeded random walk on every tick, with the server itself serving
 
 - `/` — an HTML page with a little Elm-rendered shell,

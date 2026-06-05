@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
  */
 class GalleryTest {
 
-  private static final Path EXAMPLES = Path.of("src/main/resources/elm/examples");
-  private static final Path PLAYGROUND = Path.of("src/main/resources/elm/examples/Playground.elm");
+  private static final Path EXAMPLES = Path.of("src/main/elm/examples");
+  private static final Path PLAYGROUND = Path.of("src/main/elm/examples/Playground.elm");
 
   @Test
   void siteGeneratorWritesAManifestOfArtifacts() throws IOException {

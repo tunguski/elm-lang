@@ -30,7 +30,7 @@ class FormatterTest {
    */
   @Test
   void formattingIsIdempotentAndPreservesAstAcrossTheCorpus() throws IOException {
-    List<Path> roots = List.of(Path.of("src/main/resources/elm"), Path.of("examples"));
+    List<Path> roots = List.of(Path.of("src/main/elm"), Path.of("examples"));
     int checked = 0;
     List<String> failures = new ArrayList<>();
     for (Path root : roots) {

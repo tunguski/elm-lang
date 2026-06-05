@@ -40,7 +40,7 @@ class SiteGenTest {
 
   @Test
   void generatesGroupedApiDocs(@TempDir Path out) throws IOException {
-    SiteGen.generate(SITE, out, List.of(Path.of("src/main/resources/elm/lib")), "");
+    SiteGen.generate(SITE, out, List.of(Path.of("src/main/elm/lib")), "");
     assertTrue(Files.exists(out.resolve("api/index.html")), "api index written");
     assertTrue(Files.exists(out.resolve("api/Posix.html")), "per-module doc page written");
     String index = Files.readString(out.resolve("api/index.html"), StandardCharsets.UTF_8);
@@ -121,9 +121,9 @@ class SiteGenTest {
 
   @Test
   void purposeGroupsAreDerivedFromPaths() {
-    assertTrue(SiteGen.purpose(Path.of("src/main/resources/elm/lib/Server.elm")).contains("Backend"));
-    assertTrue(SiteGen.purpose(Path.of("src/main/resources/elm/lib/Bash.elm")).contains("Scripting"));
-    assertTrue(SiteGen.purpose(Path.of("src/main/resources/elm/editor/Eval.elm")).contains("Frontend"));
+    assertTrue(SiteGen.purpose(Path.of("src/main/elm/lib/Server.elm")).contains("Backend"));
+    assertTrue(SiteGen.purpose(Path.of("src/main/elm/lib/Bash.elm")).contains("Scripting"));
+    assertTrue(SiteGen.purpose(Path.of("src/main/elm/editor/Eval.elm")).contains("Frontend"));
     assertTrue(SiteGen.purpose(Path.of("examples/rts/Main.elm")).contains("RTS"));
   }
 }
