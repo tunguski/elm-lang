@@ -58,7 +58,7 @@ scatters a hot web across files.
 | `wasm/WasmCompiler.java` | ~1831 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` + `WasmNativeFns` (string/apply/record natives) extracted; `FunctionGen` core stays (documented exception) |
 | `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
 | `wasm/WasmGc.java` | ~2105 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` + `WasmGcTypes` (Tuples + W/StructDef) extracted; `Gen` core stays (documented exception) |
-| `Main.java` | ~1898 | **Split** — one file per CLI command group + a shared support file | ⬜ |
+| `Main.java` | 234 | **Split** — 35 commands → 4 domain files; root shell + helpers stay | ✅ `CliCompile`/`CliProject`/`CliPackage`/`CliSiteCommands` extracted |
 | `interp/Prelude.java` | ~967 | **Split** — one class per Elm module group (cleanest of all) | ✅ `PreludeCollections` + `PreludeJson` + `PreludeCore` extracted; now under threshold |
 | `examples/Playground.elm` | ~1708 | **Leave** — vendored elm-playground; splitting forks upstream | ⏸ |
 | `editor/Editor.elm` | ~1370 | **Split** — app/update vs. view vs. session vs. html-bridge | ⬜ |
@@ -188,23 +188,23 @@ Proposed grouping (by how often they change together, not one-class-per-method):
 The only shared surface is the handful of one-liners `fn`/`basics`/`just`/`d`/`isJust`/`isOk`, which
 become `static` helpers on a small `PreludeSupport`.
 
-### `Main.java` (~1898) — one class per command, already
+### `Main.java` (234, was ~1898) — one class per command, done ✅
 
-`Main` is a picocli CLI whose body is **33 independent `@Command` static inner classes** (`Run`, `Js`,
-`Make`, `Eval`, `Script`, `Serve`, `Bundle`, `TestCmd`, `Docs`, `Lsp`, `Format`, `Build`, …). They
-share no state — only three helpers (`readElmSource`, `typeError`, `render`, ≈1793–1859) and a couple
-of text templates. picocli registers subcommands by class, so each command can live in its own file
-with no behaviour change.
+`Main` was a picocli CLI whose body was **35 independent `@Command` static inner classes** (`Run`,
+`Js`, `Make`, `Eval`, `Script`, `Serve`, `Bundle`, `TestCmd`, `Docs`, `Lsp`, `Format`, …). They share
+no state — only the helpers `readElmSource`/`typeError`/`render` (now package-private on `Main`) and
+two text templates (`ELM_JSON`, `BUNDLED_DEMO_DIRS`). picocli registers subcommands by class, so each
+command moved into a domain-grouped top-level class in the same package with no behaviour change; the
+`@Command(subcommands = …)` list now names the top-level classes directly.
 
-Rather than 33 tiny files, group by domain so related commands sit together:
+`Main` keeps only the root `@Command` shell (`main`/`run`/usage), the shared helpers, and the
+templates — **234 lines**. The 35 commands now live in four domain files (package-private top-level
+classes, calling back to `Main.readElmSource`/`typeError`/`render`):
 
-- `cmd/CompileCommands` — Run, Eval, Js, Wasm, Bytecode, Make, Bundle.
-- `cmd/CheckCommands` — Check, Lint, Format, Doctest, Repl.
-- `cmd/ServeCommands` — Serve, Reactor, Script.
-- `cmd/SiteCommands` — Site, GenSite, Gallery, Docs.
-- `cmd/PackageCommands` — Install, Upgrade, Uninstall, Outdated, Verify, Diff, Bump, Publish, Init.
-- `cmd/TestCommands` — TestCmd, CoverageCmd, Bench.
-- `cmd/CliSupport` — the shared `readElmSource`/`typeError`/`render` + templates.
+- `CliCompileCommands` (483) — Run, Js, Make, Wasm, Eval, Bytecode, Script, Bundle.
+- `CliProjectCommands` (470) — Serve, Reactor, TestCmd, CoverageCmd, Lint, Check, Repl, Lsp, Format, Project, Bench, Doctest.
+- `CliPackageCommands` (452) — Diff, Bump, Publish, Init, Install, Upgrade, Uninstall, Outdated, Verify.
+- `CliSiteCommands` (384) — Docs, Site, GenSite, BuildCmd, Gallery, GalleryElm.
 
 `Main` keeps only the root `@Command`, the exception handler, and `main()`. *Why group rather than
 one-per-file:* the seam that matters is "what part of the toolchain does this drive", and commands in
@@ -303,7 +303,7 @@ Ordered by payoff-to-risk, easiest and safest first. ✅ = completed.
    and `PreludeCore` (Basics/List/String/Char/Bitwise) extracted; now ~967 lines (under threshold).
    The remaining groups (Data, Effects, Html, Media) could still be split for cleanliness, but the
    size target is met.
-3. ⬜ **`Main.java`** — independent command classes; pure file moves into a `cmd/` package.
+3. ✅ **`Main.java`** — 35 independent command classes moved into 4 domain-grouped top-level files (234 lines left).
 4. ⬜ **`WasmHeapTest.java`** — test-only, no production risk.
 5. 🟡 **`WasmCompiler` / `WasmGc`** islands — `WasmPrelude` extracted; the hand-assembled string
    runtime (`WasmCompiler`) and the `Tuples` type registry (`WasmGc`) remain.
