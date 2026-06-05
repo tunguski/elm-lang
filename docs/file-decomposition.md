@@ -54,7 +54,7 @@ scatters a hot web across files.
 
 | File | Lines | Recommendation | Status |
 |------|-------|----------------|--------|
-| `editor/Eval.elm` | ~3910 | **Split** — 6 modules along interpreter / stdlib / app / effects / playground / json | 🟡 `EvalRender` + `EvalPlayground` extracted; Core/Builtins/App/Json remain |
+| `editor/Eval.elm` | 3474 | **Split** — clean leaves extracted; evaluator+runBuiltin core stays whole | 🟡 `EvalRender` + `EvalPlayground` + `EvalJson` extracted (3 single-injection leaves); `Eval.App` ⏸ deferred (threads whole evaluator); Core/Builtins are the documented core |
 | `wasm/WasmCompiler.java` | ~1831 | **Split** — extract prelude, string runtime, binary encoding; keep the codegen core | 🟡 `WasmPrelude` + `WasmEncoding` + `WasmNativeFns` (string/apply/record natives) extracted; `FunctionGen` core stays (documented exception) |
 | `lsp/LspServer.java` | ~2602 | **Split** — transport vs. analysis vs. code-actions/refactors | ⬜ |
 | `wasm/WasmGc.java` | ~2105 | **Split** — extract the type registry and the shared encoding; keep `Gen` | 🟡 `WasmEncoding` + `WasmGcTypes` (Tuples + W/StructDef) extracted; `Gen` core stays (documented exception) |
@@ -72,14 +72,16 @@ appears above.
 
 ---
 
-### `editor/Eval.elm` (~4344) — the biggest, and a clean split 🟡 in progress
+### `editor/Eval.elm` (3474, was ~4344) — clean leaves extracted; evaluator core stays whole 🟡
 
-Being done incrementally, one cycle-free module at a time (Elm forbids import cycles, and the
-evaluator core is one mutually-recursive web). `EvalRender` (pure display) is extracted; the leaf
-bands that call back into the evaluator (`Eval.Playground`, the `Json.Decode` interpreter) will take
-`applyValue`/`mainValue` as parameters rather than importing the core, and `Eval` re-exposes the
-public functions via thin aliases. (The line ranges below are approximate and predate recent edits —
-vector math, Random combinators, the `EvalRender` extraction.)
+Done incrementally, one cycle-free module at a time (Elm forbids import cycles, and the evaluator
+core is one mutually-recursive web). Three clean **single-injection leaves** are extracted —
+`EvalRender` (pure display), `EvalPlayground` (game/animation loop), `EvalJson` (JSON codec) — each
+taking `applyValue`/`mainValue` as parameters rather than importing the core, with `Eval` re-exposing
+the public functions via thin aliases. The `Eval.App` band is a clean one-way leaf too but threads
+the *whole* evaluator through 44 functions for no change to Eval's core-status, so it is deferred
+(see below). The remaining `Eval.Core` + `Eval.Builtins` (`evalExpr` + `runBuiltin`) are the
+documented mutually-recursive core that stays whole. (Line ranges below are approximate.)
 
 `Eval.elm` is the in-browser editor's Elm-in-Elm interpreter. It has grown to hold five jobs that
 only share the `Value`/`Globals`/`Env` types and the central `evalExpr`/`applyValue` pair. Those
@@ -95,13 +97,24 @@ jobs are visible as contiguous bands in the file:
    `case name of` that is conceptually the "standard library", distinct from the evaluator that *calls*
    it. It depends on `Eval.Core` (to apply closures) but `Eval.Core` never calls it back — a clean
    one-way edge.
-3. **`Eval.App`** — the Elm-Architecture glue: `hasApp`, `appInit`/`appUpdate`/`appView` (≈2782–2939),
-   the effect handlers `randomCmd`/`httpCmd`/`fileSelectCmd`/`taskResult` (≈2962–3119), and the
-   time-travel `debugSteps` (≈2695–2760). *Why:* this is the bridge the editor drives every frame; it
-   is a layer *on top of* evaluation and changes for UI reasons, not language reasons.
-4. **`Eval.Json`** — the hand-rolled JSON parser/serialiser and the `Json.Decode`/`Encode`
-   interpreter (≈3119–3574). *Why:* it is a self-contained codec with one entry point (`runDecoder`,
-   `jsonEncode`) used only by `Eval.App` (HTTP) and a few `runBuiltin` cases. It touches nothing else.
+3. **`Eval.App`** ⏸ — the Elm-Architecture glue: `hasApp`, `appInit`/`appUpdate`/`appView`, the
+   effect handlers `randomCmd`/`httpCmd`/`fileSelectCmd`/`taskResult`, the TEA driver
+   `eval`/`evalProject`/`debugSteps`, and the game entry points (≈2766–EOF, ~44 functions). *Why
+   deferred:* unlike the three leaves below — each of which needs only the **single** `applyValue`
+   injection — this band threads the **whole evaluator** (`evalExpr` **and** `applyValue` **and**
+   `renderValue`/`htmlToString`) through all 44 mutually-recursive runtime functions, and it carries
+   ~28 public entry points that external drivers reference by the `Eval` module name (Java
+   `value("Eval", …)`, JS `_$Eval$…`) so each would need a thin re-export alias. It *is* a clean
+   one-way leaf (the evaluator core never calls back into it — the only pre-band references are the
+   `exposing(…)` list and the module doc), so it **could** be extracted with an evaluator-record
+   parameter; but doing so leaves `Eval` a >2700-line core (runBuiltin) either way, so per the
+   "leave cores whole, extract the *clean single-injection* leaves" policy it stays for now.
+4. **`Eval.Json`** ✅ — the hand-rolled JSON parser/serialiser and the `Json.Decode`/`Encode`
+   interpreter now live in `editor/EvalJson.elm` (~445 lines). *Why:* a self-contained codec; it
+   touches the evaluator only to apply decoder/encoder functions, so the seven globals-carrying
+   helpers take `applyValue` as an injected parameter (`ApplyTo`) — the same leaf pattern as
+   Render/Playground. The pure parser/serialiser stays parameterless. `Eval` rewired its five call
+   sites to `EvalJson.*`; the band dropped Eval.elm from 3892 → 3475 lines.
 5. **`Eval.Playground`** ✅ — elm-playground shape construction, SVG rendering, and the game/animation
    loop now live in `editor/EvalPlayground.elm`. *Why:* a closed world — shapes in, SVG out. It needs
    the evaluator only to apply a game's `view`/`update` and resolve `main`, so `applyValue`/`mainValue`
