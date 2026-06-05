@@ -579,16 +579,16 @@ class HeadlessChromeTest {
   void editorLoadsExamplesOverHttp() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Serve the editor page + example files over real HTTP and confirm the editor fetches them at
-    // startup and lists them as editable files (here: Squares.elm and Toggle.elm).
+    // startup and lists them as editable files (here: Shapes.elm and Quotes.elm).
     String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
     for (int i = 0; i < modules.length; i++) {
       modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
     }
     java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("elm-editor-http-");
     java.nio.file.Files.writeString(dir.resolve("editor.html"), JsCompiler.htmlPageProject(null, modules));
-    java.nio.file.Path ex = java.nio.file.Files.createDirectories(dir.resolve("editor"));
-    for (String name : new String[] {"Buttons", "TextField", "Element", "Hello", "Greeting", "Factorial", "ListSum", "Squares", "Toggle"}) {
-      java.nio.file.Files.writeString(ex.resolve(name + ".elm"), resource("/elm/editor-examples/" + name + ".elm"));
+    java.nio.file.Path ex = java.nio.file.Files.createDirectories(dir.resolve("examples"));
+    for (String name : new String[] {"Hello", "Shapes", "Quotes"}) {
+      java.nio.file.Files.writeString(ex.resolve(name + ".elm"), resource("/elm/examples/" + name + ".elm"));
     }
     com.sun.net.httpserver.HttpServer http =
         com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
@@ -606,7 +606,7 @@ class HeadlessChromeTest {
     http.start();
     try {
       String dom = renderUrl("http://127.0.0.1:" + http.getAddress().getPort() + "/editor.html");
-      assertTrue(dom.contains("Squares.elm") && dom.contains("Toggle.elm"), "fetched examples listed: " + dom);
+      assertTrue(dom.contains("Shapes.elm") && dom.contains("Quotes.elm"), "fetched examples listed: " + dom);
     } finally {
       http.stop(0);
     }

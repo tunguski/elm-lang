@@ -13,22 +13,13 @@ main =
     Editor.program exampleUrls
 
 
-{-| The example files the editor loads at startup, served by the gallery under `examples/`. The
-first group are tailored to the in-browser interpreter's subset (they render live); the rest are the
-full elm-lang.org gallery examples — editable and viewable here, though many use features (SVG,
-WebGL, HTTP, …) the small interpreter can't run, so their result pane shows what it can. -}
+{-| The example files the editor loads at startup, served by the gallery under `examples/`: the full
+elm-lang.org gallery examples plus TodoMVC — editable and viewable here, though many use features
+(SVG, WebGL, HTTP, …) the small in-browser interpreter can't run, so their result pane shows what it
+can. -}
 exampleUrls : List String
 exampleUrls =
-    [ "editor/Buttons.elm"
-    , "editor/TextField.elm"
-    , "editor/Element.elm"
-    , "editor/Hello.elm"
-    , "editor/Greeting.elm"
-    , "editor/Factorial.elm"
-    , "editor/ListSum.elm"
-    , "editor/Squares.elm"
-    , "editor/Toggle.elm"
-    , "examples/TodoMvc.elm"
+    [ "examples/TodoMvc.elm"
     ]
         ++ List.map (\slug -> "examples/" ++ slug ++ ".elm")
             [ "Hello", "Groceries", "Shapes", "Buttons", "TextFields", "Forms", "Numbers", "Cards"

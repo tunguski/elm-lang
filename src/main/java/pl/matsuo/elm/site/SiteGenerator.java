@@ -598,14 +598,9 @@ public final class SiteGenerator {
     "/elm/editor/Main.elm",
   };
 
-  /** The editor's loadable example modules, served under {@code examples/} for the editor to fetch. */
-  private static final String[] EDITOR_EXAMPLES = {
-    "Buttons", "TextField", "Element", "Hello", "Greeting", "Factorial", "ListSum", "Squares", "Toggle"
-  };
-
   /**
    * Writes the raw Elm sources under {@code examples/} so they are downloadable from the site and
-   * fetchable by the editor: every elm-lang.org example, the editor's own demo files, and TodoMVC.
+   * fetchable by the editor: every elm-lang.org example and TodoMVC.
    */
   private void writeExampleSources() throws IOException {
     Path dir = outDir.resolve("examples");
@@ -615,16 +610,6 @@ public final class SiteGenerator {
           examplesDir.resolve(ex.slug() + ".elm"),
           dir.resolve(ex.slug() + ".elm"),
           java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-    }
-    // The editor's own demo modules go under editor/ (kept apart from the elm-lang.org gallery
-    // examples, which share PascalCase names like Buttons/Hello now that the gallery is capitalised).
-    Path editorDir = outDir.resolve("editor");
-    Files.createDirectories(editorDir);
-    for (String name : EDITOR_EXAMPLES) {
-      Files.writeString(
-          editorDir.resolve(name + ".elm"),
-          pl.matsuo.elm.util.Resources.read("/elm/editor-examples/" + name + ".elm"),
-          StandardCharsets.UTF_8);
     }
     Files.writeString(
         dir.resolve("TodoMvc.elm"),

@@ -190,7 +190,7 @@ public final class SiteGen {
     if (s.contains("/servers/")) {
       return "Backend — HTTP server";
     }
-    if (s.contains("/examples/") || s.contains("editor-examples")) {
+    if (s.contains("/examples/")) {
       return "Examples";
     }
     if (s.endsWith("Server.elm")) {

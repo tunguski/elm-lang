@@ -135,9 +135,8 @@ class SiteGeneratorTest {
   void servesExampleSourcesTodoMvcAndLinksThem() throws IOException {
     Path out = generate();
     // Raw .elm sources are served under examples/ (downloadable, and fetchable by the editor):
-    // every gallery example, the editor's own demos, and the flagship TodoMVC.
+    // every gallery example and the flagship TodoMVC.
     assertTrue(Files.exists(out.resolve("examples/Buttons.elm")), "gallery example source served");
-    assertTrue(Files.exists(out.resolve("editor/Buttons.elm")), "editor demo source served");
     assertTrue(Files.exists(out.resolve("examples/TodoMvc.elm")), "todomvc source served");
     // TodoMVC compiles to a live page and is linked from the landing page.
     assertTrue(Files.exists(out.resolve("todomvc.html")), "todomvc.html generated");
