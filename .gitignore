@@ -4,6 +4,9 @@ target/
 build.log
 **/build.log
 
+# Local scratch projects (each is its own git repo, pushed to a separate remote)
+projects/
+
 # Tooling / downloads
 tools/
 

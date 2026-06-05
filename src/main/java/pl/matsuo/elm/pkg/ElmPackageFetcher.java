@@ -21,7 +21,10 @@ import pl.matsuo.elm.json.JsonParse;
  */
 public final class ElmPackageFetcher {
 
-  private final HttpClient http = HttpClient.newHttpClient();
+  // GitHub's zipball URL (github.com/<a>/<n>/zipball/<v>) answers 302 -> codeload.github.com, so the
+  // client must follow redirects (the JDK default is NEVER) or the download silently yields no body.
+  private final HttpClient http =
+      HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
   private final String base;
 
   public ElmPackageFetcher(String base) {

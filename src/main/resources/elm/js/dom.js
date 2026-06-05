@@ -102,10 +102,21 @@
   // into incoming subscriptions). `$portOut`/`$portIn` build the Elm-side function for a `port`
   // declaration; `app.ports[name].subscribe/send` (wired in $mount) is the JS side.
   var $ports = {};
-  function $ensurePort(name){ return $ports[name] || ($ports[name] = {subs:[], handlers:[]}); }
-  window.$portOut = function(name){ $ensurePort(name); return function(v){ return $cmd(function(d){ $ensurePort(name).subs.forEach(function(f){ f(v); }); }); }; };
+  // Run a callback after the current synchronous turn (Elm delivers outgoing port values
+  // asynchronously). queueMicrotask/Promise where available, else a 0ms timer.
+  var $defer = (typeof queueMicrotask==='function') ? queueMicrotask
+    : (typeof Promise!=='undefined' ? function(f){ Promise.resolve().then(f); } : function(f){ setTimeout(f,0); });
+  function $ensurePort(name){ return $ports[name] || ($ports[name] = {subs:[], handlers:[], pending:[]}); }
+  // Outgoing port: deliver each value asynchronously, as Elm does. A value emitted before any
+  // subscriber exists (e.g. a Platform.worker that sends from `init`, before the host page's
+  // `subscribe` runs) is buffered in `pending` and flushed to the first subscriber, so the spec a
+  // headless worker produces is never silently dropped.
+  window.$portOut = function(name){ $ensurePort(name); return function(v){ return $cmd(function(d){
+    var p = $ensurePort(name);
+    $defer(function(){ if (p.subs.length) p.subs.forEach(function(f){ f(v); }); else p.pending.push(v); });
+  }); }; };
   window.$portIn = function(name){ $ensurePort(name); return function(toMsg){ return $sub('port:'+name, function(d){ var p=$ensurePort(name); var h=function(v){ d(toMsg(v)); }; p.handlers.push(h); return function(){ var i=p.handlers.indexOf(h); if(i>=0) p.handlers.splice(i,1); }; }); }; };
-  function $portsApi(){ var api={}; Object.keys($ports).forEach(function(name){ api[name]={ subscribe:function(fn){ $ensurePort(name).subs.push(fn); }, unsubscribe:function(fn){ var s=$ensurePort(name).subs; var i=s.indexOf(fn); if(i>=0) s.splice(i,1); }, send:function(v){ $ensurePort(name).handlers.slice().forEach(function(h){ h(v); }); } }; }); return api; }
+  function $portsApi(){ var api={}; Object.keys($ports).forEach(function(name){ api[name]={ subscribe:function(fn){ var p=$ensurePort(name); p.subs.push(fn); if(p.pending.length){ var q=p.pending; p.pending=[]; $defer(function(){ q.forEach(function(v){ fn(v); }); }); } }, unsubscribe:function(fn){ var s=$ensurePort(name).subs; var i=s.indexOf(fn); if(i>=0) s.splice(i,1); }, send:function(v){ $ensurePort(name).handlers.slice().forEach(function(h){ h(v); }); } }; }); return api; }
   // A Task is $Task[run] where run(onOk,onErr).
   function $task(run){ return $data('$Task',[run]); }
   $rt['Task.succeed']=function(v){ return $task(function(ok,err){ ok(v); }); };
