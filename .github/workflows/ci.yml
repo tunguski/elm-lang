@@ -42,11 +42,14 @@ jobs:
       - name: Build and test
         run: |
           chmod +x ./mvnw
-          ./mvnw -B -ntp clean test
+          # -Pfull runs every group, including the benchmark, real-Chrome and full-gallery tests
+          # that the default fast `mvn test` skips. CI provisions Chrome above precisely so the
+          # browser-fidelity tests run, so it must use the full suite.
+          ./mvnw -B -ntp -Pfull clean test
 
       - name: Coverage report (JaCoCo, best-effort)
         continue-on-error: true
-        run: ./mvnw -B -ntp -Pcoverage test
+        run: ./mvnw -B -ntp -Pcoverage,full test
 
       - name: Upload coverage report
         if: always()
