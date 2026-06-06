@@ -16,14 +16,16 @@ import pl.matsuo.elm.runtime.ElmTuple;
 import pl.matsuo.elm.util.Resources;
 
 /**
- * The multi-file RTS example (projects/elm-rts): the frontend's pure model/logic runs correctly under
- * the interpreter (build/train/gather/fog), and the backend handler answers requests. This both
+ * The multi-file RTS example (projects/elm-rts): the real-time strategy game's pure model/logic runs
+ * correctly under the interpreter — setup → start, training and building, worker gathering, the
+ * algorithmic AI growing its economy — and the backend handler still answers requests. This both
  * documents the game and guards the example against bit-rot as the language evolves.
+ *
+ * <p>The game lives in its own repo (github.com/tunguski/elm-rts), checked out under projects/elm-rts;
+ * the whole suite skips when that sibling isn't present.
  */
 class RtsGameTest {
 
-  // The game now lives in its own project+repo (github.com/tunguski/elm-rts), checked out under
-  // projects/elm-rts. Read it from disk; skip the whole suite when that sibling isn't present.
   private static final java.nio.file.Path RTS = java.nio.file.Path.of("projects/elm-rts");
   private static final boolean AVAILABLE =
       java.nio.file.Files.exists(RTS.resolve("src/RTS/Model.elm"));
@@ -36,11 +38,18 @@ class RtsGameTest {
     }
   }
 
+  // The whole frontend module graph (Main pulls in View/Chart/Game/Ai/Logic/Map/Rating/Rng/Model).
   private static final Project FRONTEND =
       AVAILABLE
           ? Project.load(
               src("src/RTS/Model.elm"),
+              src("src/RTS/Rng.elm"),
+              src("src/RTS/Map.elm"),
               src("src/RTS/Logic.elm"),
+              src("src/RTS/Ai.elm"),
+              src("src/RTS/Rating.elm"),
+              src("src/RTS/Game.elm"),
+              src("src/RTS/Chart.elm"),
               src("src/RTS/View.elm"),
               src("src/RTS/Main.elm"))
           : null;
@@ -59,90 +68,215 @@ class RtsGameTest {
         AVAILABLE, "projects/elm-rts not present (separate repo github.com/tunguski/elm-rts)");
   }
 
+  // --- helpers ----------------------------------------------------------------------------------
+
   private ElmRecord init() {
-    return (ElmRecord) FRONTEND.value("RTS.Logic", "init");
+    return (ElmRecord) FRONTEND.value("RTS.Game", "init");
   }
 
   private ElmRecord update(Object msg, ElmRecord model) {
-    return (ElmRecord) Apply.applyAll(FRONTEND.value("RTS.Logic", "update"), msg, model);
+    return (ElmRecord) Apply.applyAll(FRONTEND.value("RTS.Game", "update"), msg, model);
+  }
+
+  private ElmData msg(String ctor, Object... args) {
+    return new ElmData(ctor, args);
+  }
+
+  /** A started match with the given opponent count (and the default Medium map). */
+  private ElmRecord started(long opponents) {
+    ElmRecord configured = update(msg("SetOpponents", opponents), init());
+    return update(msg("StartGame"), configured);
   }
 
   private static long asLong(Object o) {
     return ((Number) o).longValue();
   }
 
-  private static int listSize(Object list) {
-    return ((ElmList) list).toJava().size();
+  private static String ctor(Object o) {
+    return ((ElmData) o).ctor();
+  }
+
+  private static List<Object> list(Object elmList) {
+    return ((ElmList) elmList).toJava();
+  }
+
+  private ElmRecord player(ElmRecord model, long id) {
+    for (Object p : list(model.get("players"))) {
+      ElmRecord rec = (ElmRecord) p;
+      if (asLong(rec.get("id")) == id) {
+        return rec;
+      }
+    }
+    return null;
+  }
+
+  private long gold(ElmRecord model, long id) {
+    return asLong(player(model, id).get("gold"));
+  }
+
+  private int countUnits(ElmRecord model, long owner, String kind) {
+    int n = 0;
+    for (Object u : list(model.get("units"))) {
+      ElmRecord rec = (ElmRecord) u;
+      if (asLong(rec.get("owner")) == owner && ctor(rec.get("kind")).equals(kind)) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  private int countBuildings(ElmRecord model, long owner, String kind) {
+    int n = 0;
+    for (Object b : list(model.get("buildings"))) {
+      ElmRecord rec = (ElmRecord) b;
+      if (asLong(rec.get("owner")) == owner && ctor(rec.get("kind")).equals(kind)) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  private ElmRecord humanBase(ElmRecord model) {
+    for (Object b : list(model.get("buildings"))) {
+      ElmRecord rec = (ElmRecord) b;
+      if (asLong(rec.get("owner")) == 0 && ctor(rec.get("kind")).equals("Base")) {
+        return rec;
+      }
+    }
+    return null;
+  }
+
+  private long[] firstTerrain(ElmRecord model, String terrain) {
+    for (Object t : list(model.get("map"))) {
+      ElmRecord rec = (ElmRecord) t;
+      if (ctor(rec.get("terrain")).equals(terrain)) {
+        return new long[] {asLong(rec.get("x")), asLong(rec.get("y"))};
+      }
+    }
+    return null;
+  }
+
+  private long firstHumanWorkerId(ElmRecord model) {
+    for (Object u : list(model.get("units"))) {
+      ElmRecord rec = (ElmRecord) u;
+      if (asLong(rec.get("owner")) == 0 && ctor(rec.get("kind")).equals("Worker")) {
+        return asLong(rec.get("id"));
+      }
+    }
+    return -1;
+  }
+
+  // --- setup & start ----------------------------------------------------------------------------
+
+  @Test
+  void opensOnTheSetupScreen() {
+    ElmRecord m = init();
+    assertEquals("SetupScreen", ctor(m.get("screen")));
+    assertEquals(1L, asLong(m.get("opponents")), "one opponent by default");
   }
 
   @Test
-  void startsWithABaseAWorkerAndGold() {
-    ElmRecord m = init();
-    assertEquals(150L, asLong(m.get("gold")));
-    assertEquals(1, listSize(m.get("units")), "one starting worker");
-    assertEquals(1, listSize(m.get("buildings")), "one starting base");
+  void startingAMatchPlacesBasesWorkersAndGold() {
+    ElmRecord m = started(1);
+    assertEquals("GameScreen", ctor(m.get("screen")));
+    assertEquals(2, list(m.get("players")).size(), "human + one AI");
+    assertEquals(2, countBaseTotal(m), "one base per player");
+    assertEquals(2, countUnits(m, 0, "Worker"), "human starts with two workers");
+    assertEquals(150L, gold(m, 0), "human starts with 150 gold");
+  }
+
+  private int countBaseTotal(ElmRecord model) {
+    int n = 0;
+    for (Object b : list(model.get("buildings"))) {
+      if (ctor(((ElmRecord) b).get("kind")).equals("Base")) {
+        n++;
+      }
+    }
+    return n;
   }
 
   @Test
   void tickAdvancesTheClock() {
-    ElmRecord m = update(new ElmData("Tick", new Object[0]), init());
+    ElmRecord m = update(msg("Tick"), started(1));
     assertEquals(1L, asLong(m.get("tick")));
   }
 
+  // --- economy ----------------------------------------------------------------------------------
+
   @Test
   void trainingAWorkerCostsGoldAndAddsAUnit() {
-    ElmRecord m = update(new ElmData("TrainWorker", new Object[0]), init());
-    assertEquals(2, listSize(m.get("units")), "a worker was added");
-    assertEquals(100L, asLong(m.get("gold")), "50 gold spent");
+    ElmRecord m = update(msg("TrainWorker"), started(0));
+    assertEquals(3, countUnits(m, 0, "Worker"), "a worker was added");
+    assertEquals(100L, gold(m, 0), "50 gold spent");
   }
 
   @Test
   void buildingABarracksRequiresPlacingItOnAClearTile() {
-    // Enter placing mode, then click a clear grass tile near the base.
-    ElmRecord placing = update(new ElmData("StartBarracks", new Object[0]), init());
-    ElmRecord built = update(new ElmData("ClickTile", new Object[] {1L, 4L}), placing);
-    assertEquals(2, listSize(built.get("buildings")), "barracks placed");
-    assertEquals(30L, asLong(built.get("gold")), "120 gold spent (150 - 120)");
+    ElmRecord m = started(0);
+    ElmRecord base = humanBase(m);
+    long bx = asLong(base.get("x"));
+    long by = asLong(base.get("y"));
+
+    ElmRecord placing = update(msg("StartBarracks"), m);
+    ElmRecord built = update(msg("ClickTile", bx, by + 2), placing);
+
+    assertEquals(1, countBuildings(built, 0, "Barracks"), "barracks placed");
+    assertEquals(30L, gold(built, 0), "120 gold spent (150 - 120)");
   }
 
   @Test
-  void workerMovesToAGoldMineGathersAndFogIsCleared() {
-    ElmRecord m = init();
-    int visibleStart = countVisible(m);
-    // The starting worker (id 1) is pre-selected; send it to the gold mine at (14, 2).
-    m = update(new ElmData("ClickTile", new Object[] {14L, 2L}), m);
-    for (int i = 0; i < 200; i++) {
-      m = update(new ElmData("Tick", new Object[0]), m);
-    }
-    assertTrue(asLong(m.get("gold")) > 150L, "worker on the gold mine increased gold");
-    assertTrue(countVisible(m) > visibleStart, "moving across the map cleared more fog");
+  void soldiersNeedABarracksFirst() {
+    ElmRecord m = update(msg("TrainSoldier"), started(0));
+    assertEquals(0, countUnits(m, 0, "Soldier"), "no barracks yet → no soldier");
   }
 
   @Test
-  void workerPathfindsAroundObstaclesToAFarResource() {
-    // The gold mine at (16, 9) sits past the water lake (x 8-10, y 4-7) and scattered rock; a worker
-    // must route *around* them. After enough ticks it gathers and deposits, so gold rises.
-    ElmRecord m = init();
-    m = update(new ElmData("ClickTile", new Object[] {16L, 9L}), m);
-    for (int i = 0; i < 400; i++) {
-      m = update(new ElmData("Tick", new Object[0]), m);
+  void aWorkerSentToAGoldMineRaisesGold() {
+    ElmRecord m = started(0);
+    long[] mine = firstTerrain(m, "GoldMine");
+    long workerId = firstHumanWorkerId(m);
+
+    m = update(msg("SelectUnit", workerId), m);
+    m = update(msg("ClickTile", mine[0], mine[1]), m);
+    for (int i = 0; i < 250; i++) {
+      m = update(msg("Tick"), m);
     }
-    assertTrue(asLong(m.get("gold")) > 150L, "worker reached the far mine around the obstacles");
+    assertTrue(gold(m, 0) > 150L, "a worker on the gold mine increased gold (was " + gold(m, 0) + ")");
   }
 
+  // --- AI ---------------------------------------------------------------------------------------
+
   @Test
-  void runningOutOfTimeWithoutExploringLoses() {
-    ElmRecord m = init();
-    assertEquals("Playing", ((ElmData) m.get("status")).ctor());
-    // Never move the worker out to explore; once the tick limit passes, the game is lost and frozen.
-    for (int i = 0; i < 620; i++) {
-      m = update(new ElmData("Tick", new Object[0]), m);
+  void theAiGrowsItsEconomyOverTime() {
+    ElmRecord m = started(1);
+    for (int i = 0; i < 320; i++) {
+      m = update(msg("Tick"), m);
     }
-    assertEquals("Lost", ((ElmData) m.get("status")).ctor());
-    long lostTick = asLong(m.get("tick"));
-    // Further ticks are ignored once the game is over (the clock froze).
-    m = update(new ElmData("Tick", new Object[0]), m);
-    assertEquals(lostTick, asLong(m.get("tick")), "the game freezes after it ends");
+    int aiUnits = list(m.get("units")).size() == 0 ? 0 : countOwnedUnits(m, 1);
+    int aiBuildings = countOwnedBuildings(m, 1);
+    assertTrue(
+        aiUnits > 2 || aiBuildings > 1,
+        "the AI should train extra units and/or build (units=" + aiUnits + ", buildings=" + aiBuildings + ")");
+  }
+
+  private int countOwnedUnits(ElmRecord model, long owner) {
+    int n = 0;
+    for (Object u : list(model.get("units"))) {
+      if (asLong(((ElmRecord) u).get("owner")) == owner) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  private int countOwnedBuildings(ElmRecord model, long owner) {
+    int n = 0;
+    for (Object b : list(model.get("buildings"))) {
+      if (asLong(((ElmRecord) b).get("owner")) == owner) {
+        n++;
+      }
+    }
+    return n;
   }
 
   // --- backend save/load (stateful server) ------------------------------------------------------
@@ -159,29 +293,15 @@ class RtsGameTest {
 
   @Test
   void backendSavesAndLoadsGameState() {
-    // Saving stores the posted body as the new server state.
     ElmTuple afterSave = onRequest("POST", "/api/save", "{\"gold\":42}", "");
     assertEquals("{\"gold\":42}", afterSave.get(0), "save updates the in-memory state");
-    // Loading from that state returns it as the response body.
     ElmTuple afterLoad = onRequest("GET", "/api/load", "", "{\"gold\":42}");
     assertEquals("{\"gold\":42}", ((ElmRecord) afterLoad.get(1)).get("body"));
-    // Loading with nothing saved yet yields null.
     assertEquals("null", ((ElmRecord) onRequest("GET", "/api/load", "", "").get(1)).get("body"));
-    // Other routes still work through the shared handler.
     assertEquals("pong", ((ElmRecord) onRequest("GET", "/ping", "", "").get(1)).get("body"));
   }
 
-  private int countVisible(ElmRecord model) {
-    int n = 0;
-    for (Object tile : ((ElmList) model.get("map")).toJava()) {
-      if (Boolean.TRUE.equals(((ElmRecord) tile).get("visible"))) {
-        n++;
-      }
-    }
-    return n;
-  }
-
-  // --- backend ----------------------------------------------------------------------------------
+  // --- backend stateless routes -----------------------------------------------------------------
 
   private ElmRecord request(String method, String path) {
     Map<String, Object> fields = new java.util.LinkedHashMap<>();
@@ -199,14 +319,14 @@ class RtsGameTest {
 
     ElmRecord home = request("GET", "/");
     assertEquals(200L, asLong(home.get("status")));
-    assertTrue(((String) home.get("body")).contains("RTS Mini"), "landing page");
+    assertTrue(((String) home.get("body")).contains("Elm RTS"), "landing page");
 
     ElmRecord map = request("GET", "/api/map");
     assertEquals("application/json", map.get("contentType"));
     String json = (String) map.get("body");
-    assertTrue(json.contains("\"width\":20"), json);
+    assertTrue(json.contains("\"sizes\""), json);
     assertTrue(json.contains("\"worker\":50"), json);
-    assertTrue(json.contains("gold"), json);
+    assertTrue(json.contains("\"farm\":90"), json);
 
     assertEquals(404L, asLong(request("GET", "/nope").get("status")));
   }

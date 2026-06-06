@@ -695,7 +695,13 @@ public final class SiteGenerator {
    * gallery is generated. Absent in checkouts without the sibling project (see {@link #rtsAvailable}). */
   private static final String[] RTS_MODULES = {
     "projects/elm-rts/src/RTS/Model.elm",
+    "projects/elm-rts/src/RTS/Rng.elm",
+    "projects/elm-rts/src/RTS/Map.elm",
     "projects/elm-rts/src/RTS/Logic.elm",
+    "projects/elm-rts/src/RTS/Ai.elm",
+    "projects/elm-rts/src/RTS/Rating.elm",
+    "projects/elm-rts/src/RTS/Game.elm",
+    "projects/elm-rts/src/RTS/Chart.elm",
     "projects/elm-rts/src/RTS/View.elm",
     "projects/elm-rts/src/RTS/Main.elm",
   };
