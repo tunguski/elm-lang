@@ -10,9 +10,11 @@ module Life exposing (main)
 --   https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life
 
 import Browser
+import Dict
 import Html exposing (Html, button, div, input, label, option, select, span, text)
 import Html.Attributes exposing (style, type_, value)
 import Html.Events exposing (onClick, onInput)
+import Set
 import Time
 
 
@@ -35,9 +37,9 @@ type alias Model =
 defaults : Model
 defaults =
   reload
-    { cols = 24
-    , rows = 16
-    , cell = 22
+    { cols = 32
+    , rows = 32
+    , cell = 12
     , stepEvery = 120
     , pattern = "glider"
     , cells = []
@@ -203,34 +205,40 @@ pulsar ox oy =
 -- ONE CONWAY STEP ON THE WRAPPED GRID
 
 
+{-| One Conway generation on the wrapped grid. Rather than test all `cols * rows` cells (which is
+O(grid x liveCells) per step and crawls on a 32x32 grid under the interpreter), tally how many live
+cells border each cell — only cells next to a live one get a tally — then keep those with the right
+neighbour count: a cell survives with 2 or 3 neighbours, and is born with exactly 3. That is
+O(liveCells). -}
 step cols rows cells =
-  List.filter (\c -> survives cols rows c cells) (allCells cols rows)
-
-
-allCells cols rows =
-  List.concatMap
-    (\y -> List.map (\x -> ( x, y )) (List.range 0 (cols - 1)))
-    (List.range 0 (rows - 1))
-
-
-survives cols rows ( x, y ) cells =
   let
-    n =
-      neighbors cols rows x y cells
+    live =
+      Set.fromList cells
+
+    counts =
+      List.foldl (tally cols rows) Dict.empty cells
   in
-  if List.member ( x, y ) cells then
-    n == 2 || n == 3
+  Dict.toList counts
+    |> List.filterMap
+        (\( cell, n ) ->
+          if n == 3 || (n == 2 && Set.member cell live) then
+            Just cell
 
-  else
-    n == 3
+          else
+            Nothing
+        )
 
 
-neighbors cols rows x y cells =
-  List.length
-    (List.filter
-      (\( dx, dy ) -> List.member ( wrap cols (x + dx), wrap rows (y + dy) ) cells)
-      deltas
-    )
+{-| Add one to the neighbour tally of each of `cell`'s eight wrapped neighbours. -}
+tally cols rows ( x, y ) counts =
+  List.foldl
+    (\( dx, dy ) -> bump ( wrap cols (x + dx), wrap rows (y + dy) ))
+    counts
+    deltas
+
+
+bump key counts =
+  Dict.update key (\v -> Just (1 + Maybe.withDefault 0 v)) counts
 
 
 deltas =
