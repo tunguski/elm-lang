@@ -19,9 +19,11 @@
              Surefire's argLine references it so the agent and our -Xss flag coexist. -->
         <jacocoArgLine/>
         <!-- JUnit tag groups excluded from the default `mvn test` (the fast inner-loop suite):
-             `bench` = performance benchmarks, `browser` = real-Chrome rendering. Run the full set
-             with `-Pfull` (or `mvn verify`), or override with `-Dtest.excludedGroups=…`. -->
-        <test.excludedGroups>bench,browser</test.excludedGroups>
+             `bench` = performance benchmarks, `browser` = real-Chrome rendering, `slow` = the heavy
+             full-gallery integration tests (every example compiled to JS+WASM). Run the full set
+             with `-Pfull` (or `mvn verify`), or override with `-Dtest.excludedGroups=…`. A couple of
+             light gallery smoke tests (GalleryBuildTest, SiteGenTest) stay in the fast suite. -->
+        <test.excludedGroups>bench,browser,slow</test.excludedGroups>
         <!-- Surefire JVM forks. Each fork is a full GraalVM/Truffle JVM (an optimizing runtime that
              is memory- and init-heavy), so this is a quarter of the cores rather than a half: too
              many concurrent Truffle runtimes exhaust memory and surface as NoClassDefFoundError on
@@ -29,6 +31,10 @@
              1-2 forks. Independent classes only: server tests bind ephemeral ports and DB tests use
              unique in-memory databases, so parallelism here is contention, not a correctness risk. -->
         <test.forkCount>0.25C</test.forkCount>
+        <!-- Within-class method-level concurrency (for @Execution(CONCURRENT) classes). On by
+             default for the fast suite; the `full` profile turns it off to keep the heavier run
+             within memory. -->
+        <test.parallel>true</test.parallel>
     </properties>
 
     <dependencies>
@@ -115,10 +121,18 @@
                          prepare-agent, which runs after POM interpolation, can fill it in). -->
                     <argLine>@{jacocoArgLine} -Xss64m</argLine>
                     <!-- Run independent test classes in parallel JVM forks, and skip the slowest
-                         opt-in groups (benchmarks, real-browser) in the default fast suite. -->
+                         opt-in groups (benchmarks, real-browser, slow gallery) in the fast suite. -->
                     <forkCount>${test.forkCount}</forkCount>
                     <reuseForks>true</reuseForks>
                     <excludedGroups>${test.excludedGroups}</excludedGroups>
+                    <!-- Within-class method concurrency (junit-platform.properties) is toggled here so
+                         the `full` profile can turn it off: under -Pfull the heavy bench/browser/slow
+                         tests run too, and forks + method-threads together exhaust memory. -->
+                    <properties>
+                        <configurationParameters>
+                            junit.jupiter.execution.parallel.enabled = ${test.parallel}
+                        </configurationParameters>
+                    </properties>
                 </configuration>
             </plugin>
             <plugin>
@@ -180,6 +194,12 @@
             <id>full</id>
             <properties>
                 <test.excludedGroups/>
+                <!-- The full run also executes the benchmarks, real-Chrome and full-gallery tests,
+                     which are individually heavy; with the benchmark (~150s) dominating wall time
+                     anyway, trade parallelism for headroom: fewer forks and no method concurrency,
+                     so the combined memory footprint stays well under what crashes a Truffle fork. -->
+                <test.forkCount>0.125C</test.forkCount>
+                <test.parallel>false</test.parallel>
             </properties>
         </profile>
         <!--

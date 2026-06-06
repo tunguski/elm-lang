@@ -7,13 +7,18 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * The compiler/Elm-generator split: SiteGenerator compiles the demo artifacts and a manifest, and
  * the Elm Gallery generator (run as a script) reads that manifest to produce ALL of the gallery's
  * HTML and CSS via the Site library.
+ *
+ * <p>Tagged {@code slow}: builds the gallery artifacts, so the default fast {@code mvn test} skips
+ * it; it runs in {@code mvn verify} / {@code -Pfull}.
  */
+@Tag("slow")
 class GalleryTest {
 
   private static final Path EXAMPLES = Path.of("src/main/elm/examples");

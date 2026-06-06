@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.util.Random;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
 
@@ -14,7 +16,11 @@ import pl.matsuo.elm.interp.Show;
  * pattern matching, records, tail recursion, higher-order functions/closures, large-heap growth and
  * the property-based RNG agreement checks. Shares {@link WasmHeapTestSupport}; split out of
  * {@code WasmHeapTest} to keep both under the line budget.
+ *
+ * <p>{@code @Execution(CONCURRENT)}: each test compiles to a unique temp {@code .wasm} and runs it in
+ * its own {@code node} subprocess, so methods run in parallel to overlap the subprocess waits.
  */
+@Execution(ExecutionMode.CONCURRENT)
 class WasmLangFeaturesTest extends WasmHeapTestSupport {
 
   @Test

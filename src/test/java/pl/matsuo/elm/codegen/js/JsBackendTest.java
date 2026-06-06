@@ -9,13 +9,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
 
 /**
  * Differential tests for the JavaScript backend: compiled-and-run-under-Node output must match the
  * Truffle interpreter's result for the same Elm source.
+ *
+ * <p>{@code @Execution(CONCURRENT)}: every test compiles an independent snippet to a unique temp file
+ * and runs it in its own {@code node} subprocess (see {@link #runNode}), so the methods are
+ * independent and run in parallel to overlap the subprocess waits.
  */
+@Execution(ExecutionMode.CONCURRENT)
 class JsBackendTest {
 
   private static String runNode(String program) {

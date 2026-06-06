@@ -9,13 +9,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
 
 /**
  * Exercises the WASM backend's linear-memory heap: cons-lists and tuples built and consumed inside
  * wasm, with the result compared against the Truffle interpreter. Skipped if Node is unavailable.
+ *
+ * <p>{@code @Execution(CONCURRENT)}: each test compiles to a unique temp {@code .wasm} and runs it in
+ * its own {@code node} subprocess, so methods run in parallel to overlap the subprocess waits.
  */
+@Execution(ExecutionMode.CONCURRENT)
 class WasmHeapTest extends WasmHeapTestSupport {
 
   @Test

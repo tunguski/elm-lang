@@ -9,6 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import pl.matsuo.elm.interp.Interpreter;
 import pl.matsuo.elm.interp.Show;
 
@@ -16,7 +18,11 @@ import pl.matsuo.elm.interp.Show;
  * The WasmGC backend: cons-lists compiled to host-garbage-collected structs (no linear memory).
  * Each program's `main` is compiled, run under Node (whose V8 supports WasmGC), and checked against
  * the tree interpreter. Skipped if Node is unavailable or its WasmGC is disabled.
+ *
+ * <p>{@code @Execution(CONCURRENT)}: each test compiles to a unique temp {@code .wasm} and runs it in
+ * its own {@code node} subprocess, so methods run in parallel to overlap the subprocess waits.
  */
+@Execution(ExecutionMode.CONCURRENT)
 class WasmGcTest {
 
   private static final boolean NODE = nodeAvailable();

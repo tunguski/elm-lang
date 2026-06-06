@@ -9,13 +9,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * Verifies the static gallery generator: it must emit a landing page plus a demo and a wrapper page
  * for every elm-lang.org example, with the live JS bundle for the examples the JavaScript backend
  * can compile and an interpreter-rendered snapshot for the rest.
+ *
+ * <p>Tagged {@code slow}: compiling the whole example gallery (JS + WASM for every example) is the
+ * single heaviest class in the suite, so the default fast {@code mvn test} skips it; it runs in
+ * {@code mvn verify} / {@code -Pfull} (CI). Use {@code -Dtest.excludedGroups=} to force it locally.
  */
+@Tag("slow")
 class SiteGeneratorTest {
 
   private static final Path EXAMPLES = Path.of("src/main/elm/examples");
