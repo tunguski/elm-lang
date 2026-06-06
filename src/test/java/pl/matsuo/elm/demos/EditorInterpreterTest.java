@@ -44,6 +44,19 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void interpretsTripleQuotedMultilineStrings() {
+    // A raw newline inside a triple-quoted string is kept (a, newline, b, c, d -> length 5).
+    assertEquals("5", eval("String.length \"\"\"ab\ncd\"\"\""));
+    // Escape sequences are processed like an ordinary string, not left as literal backslash + letter.
+    assertEquals("3", eval("String.length \"\"\"a\\nb\"\"\"")); // \n -> one newline char
+    assertEquals("3", eval("String.length \"\"\"a\\tb\"\"\"")); // \t -> one tab char
+    assertEquals("3", eval("String.length \"\"\"a\\\"b\"\"\"")); // \" -> one quote char
+    assertEquals("3", eval("String.length \"\"\"a\\\\b\"\"\"")); // \\ -> one backslash char
+    // A raw, unescaped double-quote is a literal quote inside a triple string.
+    assertEquals("3", eval("String.length \"\"\"a\"b\"\"\""));
+  }
+
+  @Test
   void interpretsAdditionalStdlibBuiltins() {
     // elm/core parity additions to the editor interpreter.
     assertEquals("[5]", eval("List.singleton 5"));
