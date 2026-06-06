@@ -24,6 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The RTS game and the in-browser editor live in their own repos, checked out under the
+      # gitignored projects/. The gallery builds their pages (rts.html, editor.html) from there;
+      # without this step the published gallery omits them.
+      - name: Fetch sibling example projects (elm-rts, elm-editor)
+        run: |
+          git clone --depth 1 --branch master https://github.com/tunguski/elm-rts.git    projects/elm-rts
+          git clone --depth 1 --branch master https://github.com/tunguski/elm-editor.git projects/elm-editor
+
       - name: Set up GraalVM for JDK 25
         uses: graalvm/setup-graalvm@v1
         with:
