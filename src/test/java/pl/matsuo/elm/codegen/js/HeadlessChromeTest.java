@@ -141,21 +141,23 @@ class HeadlessChromeTest {
     // A minimal Browser.application: it mounts (Document view + title), reads the initial Url's path,
     // and routes — dispatching the message onUrlChange produces updates the view's shown path.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (text)\n"
-            + "type Msg = Changed String | Ignore\n"
-            + "main =\n"
-            + "    Browser.application\n"
-            + "        { init = \\_ url key -> ( { path = url.path, key = key }, Cmd.none )\n"
-            + "        , view = \\m -> { title = \"Routed\", body = [ text (\"at \" ++ m.path) ] }\n"
-            + "        , update = \\msg m -> case msg of\n"
-            + "            Changed p -> ( { m | path = p }, Cmd.none )\n"
-            + "            Ignore -> ( m, Cmd.none )\n"
-            + "        , subscriptions = \\_ -> Sub.none\n"
-            + "        , onUrlChange = \\u -> Changed u.path\n"
-            + "        , onUrlRequest = \\_ -> Ignore\n"
-            + "        }\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (text)
+        type Msg = Changed String | Ignore
+        main =
+            Browser.application
+                { init = \\_ url key -> ( { path = url.path, key = key }, Cmd.none )
+                , view = \\m -> { title = "Routed", body = [ text ("at " ++ m.path) ] }
+                , update = \\msg m -> case msg of
+                    Changed p -> ( { m | path = p }, Cmd.none )
+                    Ignore -> ( m, Cmd.none )
+                , subscriptions = \\_ -> Sub.none
+                , onUrlChange = \\u -> Changed u.path
+                , onUrlRequest = \\_ -> Ignore
+                }
+        """;
     String dom = renderInBrowser(app, "window.$app.dispatch($data('Changed',['/about']));");
     assertTrue(dom.contains("<title>Routed</title>"), "the Document title is set: " + dom);
     assertTrue(dom.contains("at /about"), "routing updated the view's path: " + dom);
@@ -167,16 +169,19 @@ class HeadlessChromeTest {
     // A child view dispatches Bump; the parent wraps it with Html.map into Child, so clicking the
     // child's button drives the parent's update through the mapped message.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (button, div, text)\n"
-            + "import Html.Events exposing (onClick)\n"
-            + "type ChildMsg = Bump\n"
-            + "type Msg = Child ChildMsg\n"
-            + "childView = button [ onClick Bump ] [ text \"+\" ]\n"
-            + "main = Browser.sandbox { init = 0, update = update, view = view }\n"
-            + "update msg n = case msg of\n  Child Bump -> n + 1\n"
-            + "view n = div [] [ Html.map Child childView, text (\"count=\" ++ String.fromInt n) ]\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (button, div, text)
+        import Html.Events exposing (onClick)
+        type ChildMsg = Bump
+        type Msg = Child ChildMsg
+        childView = button [ onClick Bump ] [ text "+" ]
+        main = Browser.sandbox { init = 0, update = update, view = view }
+        update msg n = case msg of
+          Child Bump -> n + 1
+        view n = div [] [ Html.map Child childView, text ("count=" ++ String.fromInt n) ]
+        """;
     String dom = renderInBrowser(app, "document.querySelector('button').click();");
     assertTrue(dom.contains("count=1"), "the mapped child click reached the parent: " + dom);
   }
@@ -187,16 +192,18 @@ class HeadlessChromeTest {
     // A keyed list of items; Flip reverses the order. Because nodes are matched by key, the DOM
     // node for "a" is reused (its data-touched marker, set via JS, survives the reorder).
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (text)\n"
-            + "import Html.Keyed as Keyed\n"
-            + "import Html.Attributes exposing (id)\n"
-            + "type Msg = Flip\n"
-            + "main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }\n"
-            + "row k = ( k, Html.node \"li\" [ id k ] [ text k ] )\n"
-            + "view flipped =\n"
-            + "    Keyed.node \"ul\" [] (if flipped then [ row \"b\", row \"a\" ] else [ row \"a\", row \"b\" ])\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (text)
+        import Html.Keyed as Keyed
+        import Html.Attributes exposing (id)
+        type Msg = Flip
+        main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }
+        row k = ( k, Html.node "li" [ id k ] [ text k ] )
+        view flipped =
+            Keyed.node "ul" [] (if flipped then [ row "b", row "a" ] else [ row "a", row "b" ])
+        """;
     // Mark the #a node, then Flip; if its DOM node was reused, the marker is still there afterwards.
     String driver =
         "document.getElementById('a').setAttribute('data-kept','yes');"
@@ -212,11 +219,14 @@ class HeadlessChromeTest {
     assumeTrue(CHROME != null, "Chrome not installed");
     // A headless worker (no view): dispatch Inc, then write the model into the DOM so we can read it.
     String app =
-        "module Main exposing (main)\n"
-            + "import Platform\n"
-            + "type Msg = Inc\n"
-            + "main = Platform.worker { init = \\_ -> ( 0, Cmd.none ), update = update, subscriptions = \\_ -> Sub.none }\n"
-            + "update msg n = case msg of\n  Inc -> ( n + 1, Cmd.none )\n";
+        """
+        module Main exposing (main)
+        import Platform
+        type Msg = Inc
+        main = Platform.worker { init = \\_ -> ( 0, Cmd.none ), update = update, subscriptions = \\_ -> Sub.none }
+        update msg n = case msg of
+          Inc -> ( n + 1, Cmd.none )
+        """;
     String driver =
         "window.$app.dispatch($data('Inc',[]));"
             + "window.$app.dispatch($data('Inc',[]));"
@@ -230,16 +240,18 @@ class HeadlessChromeTest {
     assumeTrue(CHROME != null, "Chrome not installed");
     // classList renders only the true classes; onDoubleClick drives an update.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (div, text)\n"
-            + "import Html.Attributes exposing (classList)\n"
-            + "import Html.Events exposing (onDoubleClick)\n"
-            + "type Msg = Hit\n"
-            + "main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }\n"
-            + "view active =\n"
-            + "    div [ classList [ ( \"on\", active ), ( \"off\", not active ) ], onDoubleClick Hit ]\n"
-            + "        [ text (if active then \"ACTIVE\" else \"idle\") ]\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (div, text)
+        import Html.Attributes exposing (classList)
+        import Html.Events exposing (onDoubleClick)
+        type Msg = Hit
+        main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }
+        view active =
+            div [ classList [ ( "on", active ), ( "off", not active ) ], onDoubleClick Hit ]
+                [ text (if active then "ACTIVE" else "idle") ]
+        """;
     String dom = renderPage(JsCompiler.htmlPage(app, "document.querySelector('.off').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));"));
     assertTrue(dom.contains("ACTIVE"), "double-click updated the model: " + dom);
     assertTrue(dom.contains("class=\"on\""), "classList rendered the active class only: " + dom);
@@ -251,15 +263,17 @@ class HeadlessChromeTest {
     // The lazy subtree's arg (the constant 5) doesn't change when the counter bumps, so its view is
     // not re-run and its DOM node is reused — proven by a marker set via JS surviving the re-render.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (div, text)\n"
-            + "import Html.Attributes exposing (id)\n"
-            + "import Html.Lazy exposing (lazy)\n"
-            + "type Msg = Inc\n"
-            + "main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }\n"
-            + "staticView _ = div [ id \"static\" ] [ text \"S\" ]\n"
-            + "view n = div [] [ lazy staticView 5, div [ id \"count\" ] [ text (String.fromInt n) ] ]\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (div, text)
+        import Html.Attributes exposing (id)
+        import Html.Lazy exposing (lazy)
+        type Msg = Inc
+        main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }
+        staticView _ = div [ id "static" ] [ text "S" ]
+        view n = div [] [ lazy staticView 5, div [ id "count" ] [ text (String.fromInt n) ] ]
+        """;
     String driver =
         "document.getElementById('static').setAttribute('data-kept','yes');"
             + "window.$app.dispatch($data('Inc',[]));";
@@ -273,15 +287,17 @@ class HeadlessChromeTest {
     assumeTrue(CHROME != null, "Chrome not installed");
     // lazy4 must apply its four args to render, and (like lazy) reuse the node when none change.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (div, text)\n"
-            + "import Html.Attributes exposing (id)\n"
-            + "import Html.Lazy exposing (lazy4)\n"
-            + "type Msg = Inc\n"
-            + "main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }\n"
-            + "sumView a b c d = div [ id \"sum\" ] [ text (String.fromInt (a + b + c + d)) ]\n"
-            + "view n = div [] [ lazy4 sumView 1 2 3 4, div [ id \"count\" ] [ text (String.fromInt n) ] ]\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (div, text)
+        import Html.Attributes exposing (id)
+        import Html.Lazy exposing (lazy4)
+        type Msg = Inc
+        main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }
+        sumView a b c d = div [ id "sum" ] [ text (String.fromInt (a + b + c + d)) ]
+        view n = div [] [ lazy4 sumView 1 2 3 4, div [ id "count" ] [ text (String.fromInt n) ] ]
+        """;
     String dom = renderPage(JsCompiler.htmlPage(app, null));
     assertTrue(dom.contains("id=\"sum\">10") || dom.contains(">10</div>"), "lazy4 applied all four args: " + dom);
   }
@@ -308,12 +324,14 @@ class HeadlessChromeTest {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The app imports List.Extra without supplying it; appBundle pulls the bundled lib in.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (text)\n"
-            + "import List.Extra as LE\n"
-            + "main = Browser.sandbox { init = 0, update = \\_ m -> m, view = view }\n"
-            + "view _ = text (String.fromInt (List.length (LE.unique [ 1, 1, 2, 3, 2 ])))\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (text)
+        import List.Extra as LE
+        main = Browser.sandbox { init = 0, update = \\_ m -> m, view = view }
+        view _ = text (String.fromInt (List.length (LE.unique [ 1, 1, 2, 3, 2 ])))
+        """;
     String dom = renderInBrowser(app, null);
     assertTrue(dom.contains(">3<"), "List.Extra.unique resolved and ran in the bundle: " + dom);
   }
@@ -338,20 +356,23 @@ class HeadlessChromeTest {
     // Decode.map2 (so autocomplete knows the caret). If selectionStart doesn't decode as an Int,
     // the whole input message is dropped and typing does nothing. Drive a real input event.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (div, text, textarea)\n"
-            + "import Html.Attributes exposing (value)\n"
-            + "import Html.Events exposing (on)\n"
-            + "import Json.Decode as Decode\n"
-            + "type Msg = EditAt String Int\n"
-            + "main = Browser.sandbox { init = \"\", update = update, view = view }\n"
-            + "update msg _ = case msg of\n  EditAt s _ -> s\n"
-            + "view model =\n"
-            + "    div []\n"
-            + "        [ textarea [ on \"input\" (Decode.map2 EditAt (Decode.at [ \"target\", \"value\" ] Decode.string) (Decode.at [ \"target\", \"selectionStart\" ] Decode.int)), value model ] []\n"
-            + "        , div [] [ text (\"got=\" ++ model) ]\n"
-            + "        ]\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (div, text, textarea)
+        import Html.Attributes exposing (value)
+        import Html.Events exposing (on)
+        import Json.Decode as Decode
+        type Msg = EditAt String Int
+        main = Browser.sandbox { init = "", update = update, view = view }
+        update msg _ = case msg of
+          EditAt s _ -> s
+        view model =
+            div []
+                [ textarea [ on "input" (Decode.map2 EditAt (Decode.at [ "target", "value" ] Decode.string) (Decode.at [ "target", "selectionStart" ] Decode.int)), value model ] []
+                , div [] [ text ("got=" ++ model) ]
+                ]
+        """;
     String driver =
         "var ta=document.querySelector('textarea'); ta.focus();"
             + "ta.value='hi'; ta.setSelectionRange(2,2);"
@@ -366,18 +387,20 @@ class HeadlessChromeTest {
     // A back link that uses Browser.Navigation.backOr: history.back() when the visitor came from
     // this site, else load the fallback url.
     String app =
-        "module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Browser.Navigation\n"
-            + "import Html exposing (button, text)\n"
-            + "import Html.Events exposing (onClick)\n"
-            + "type Msg = Back\n"
-            + "main = Browser.element\n"
-            + "    { init = \\_ -> ( 0, Cmd.none )\n"
-            + "    , update = \\msg m -> ( m, Browser.Navigation.backOr \"#fallback\" )\n"
-            + "    , view = \\m -> button [ onClick Back ] [ text \"back\" ]\n"
-            + "    , subscriptions = \\_ -> Sub.none\n"
-            + "    }\n";
+        """
+        module Main exposing (main)
+        import Browser
+        import Browser.Navigation
+        import Html exposing (button, text)
+        import Html.Events exposing (onClick)
+        type Msg = Back
+        main = Browser.element
+            { init = \\_ -> ( 0, Cmd.none )
+            , update = \\msg m -> ( m, Browser.Navigation.backOr "#fallback" )
+            , view = \\m -> button [ onClick Back ] [ text "back" ]
+            , subscriptions = \\_ -> Sub.none
+            }
+        """;
     // No same-site referrer (file:// page) -> falls back to the url (a hash, so we stay on the page).
     String fallbackDriver =
         "document.querySelector('button').click();"
@@ -448,19 +471,21 @@ class HeadlessChromeTest {
     // subscribes to `out`, pushes a value in through `incoming`, and the app echoes the running
     // total back out — exercising both directions of the JS port boundary.
     String source =
-        "port module Main exposing (main)\n"
-            + "import Browser\n"
-            + "import Html exposing (text)\n"
-            + "port out : Int -> Cmd msg\n"
-            + "port incoming : (Int -> msg) -> Sub msg\n"
-            + "type Msg = Got Int\n"
-            + "main = Browser.element\n"
-            + "    { init = \\_ -> ( 0, Cmd.none )\n"
-            + "    , update = \\msg model -> case msg of\n"
-            + "        Got n -> ( model + n, out (model + n) )\n"
-            + "    , view = \\model -> text (String.fromInt model)\n"
-            + "    , subscriptions = \\_ -> incoming Got\n"
-            + "    }\n";
+        """
+        port module Main exposing (main)
+        import Browser
+        import Html exposing (text)
+        port out : Int -> Cmd msg
+        port incoming : (Int -> msg) -> Sub msg
+        type Msg = Got Int
+        main = Browser.element
+            { init = \\_ -> ( 0, Cmd.none )
+            , update = \\msg model -> case msg of
+                Got n -> ( model + n, out (model + n) )
+            , view = \\model -> text (String.fromInt model)
+            , subscriptions = \\_ -> incoming Got
+            }
+        """;
     String driver =
         "window.$app.ports.out.subscribe(function(v){ document.title = 'out=' + v; });"
             + "window.$app.ports.incoming.send(5);"
