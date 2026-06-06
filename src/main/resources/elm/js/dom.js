@@ -98,7 +98,15 @@
     if(s.$==='$Sub') out.push(s);
   }
   $rt['Sub.none']=$data('$SubNone',[]); $rt['Sub.batch']=function(l){ return $data('$SubBatch',[l]); };
-  $rt['Sub.map']=function(f){ return function(s){ if(!s||s.$!=='$Sub') return s; return $sub('map:'+s._[0], function(d){ return s._[1](function(m){ d(f(m)); }); }); }; };
+  // Sub.map must recurse into Sub.batch (and pass Sub.none through), or a mapped batch — e.g. an
+  // embedded component's `Sub.map ToChild (Sub.batch [...])` — would leave its inner subs unmapped,
+  // dispatching the child's raw messages to the parent (which ignores them).
+  $rt['Sub.map']=function(f){ var go=function(s){
+    if(!s||s.$==='$SubNone') return s;
+    if(s.$==='$SubBatch') return $data('$SubBatch',[ $list($listToArray(s._[0]).map(go)) ]);
+    if(s.$==='$Sub') return $sub('map:'+s._[0], function(d){ return s._[1](function(m){ d(f(m)); }); });
+    return s;
+  }; return go; };
   // ---- ports ----
   // Each port has subscribers (JS callbacks for outgoing values) and handlers (push values from JS
   // into incoming subscriptions). `$portOut`/`$portIn` build the Elm-side function for a `port`
