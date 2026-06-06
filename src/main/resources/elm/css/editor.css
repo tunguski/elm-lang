@@ -60,10 +60,41 @@
   min-height: 0;
 }
 
+/* Draggable bars between the panes — grab one to resize the panes on either side. */
+.ed-divider {
+  flex: 0 0 6px;
+  align-self: stretch;
+  cursor: col-resize;
+  position: relative;
+  background: transparent;
+}
+.ed-divider::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: rgba(15, 23, 32, 0.18);
+}
+.ed-divider:hover::after,
+.ed-dragging .ed-divider::after {
+  background: #3a7bd5;
+}
+/* While dragging, suppress text selection and keep the resize cursor everywhere. */
+.ed-dragging {
+  user-select: none;
+  cursor: col-resize;
+}
+
 /* Files sidebar */
 .ed-files {
   flex: 0 0 220px;
   width: 220px;
+  /* border-box so a dragged px width matches the measured offsetWidth (no jump on grab). */
+  box-sizing: border-box;
   min-height: 0;
   overflow: auto;
   margin: 16px 0 16px 16px;
@@ -342,6 +373,7 @@
 .ed-result-col {
   flex: 0 0 40%;
   max-width: 40%;
+  box-sizing: border-box;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -434,6 +466,9 @@
   background: #111a24;
   border-color: #243041;
   box-shadow: none;
+}
+[data-theme=dark] .ed-divider::after {
+  background: rgba(205, 217, 229, 0.22);
 }
 [data-theme=dark] .ed-files-title,
 [data-theme=dark] .ed-result-title {
