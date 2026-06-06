@@ -423,15 +423,10 @@ class HeadlessChromeTest {
   @Test
   void editorRendersTheSelectedFilesMainLive() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] =
-          new String(
-              HeadlessChromeTest.class
-                  .getResourceAsStream(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i])
-                  .readAllBytes(),
-              StandardCharsets.UTF_8);
-    }
+    assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     String dom = renderPage(JsCompiler.htmlPageProject(null, modules));
     // The editor fetches its example files over HTTP at startup; rendered from a file:// page those
     // fetches don't resolve, so only the built-in starter (Buttons.elm) is present — and it runs
@@ -476,10 +471,10 @@ class HeadlessChromeTest {
   @Test
   void editorRendersAWebglProgramToALiveCanvas() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
-    }
+    assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     // Replace the selected file with a small WebGL program (one red triangle behind a perspective
     // matrix). The editor evaluates it to a WebGL.scene and the bridge mounts a real <canvas> driven
     // by the GL runtime. We assert the canvas appears and the page didn't error — not the pixels.
@@ -505,10 +500,10 @@ class HeadlessChromeTest {
   @Test
   void editorTimeTravelDebuggerRecordsAndRewinds() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
-    }
+    assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     // Dispatch two Increment messages into the interpreted Buttons app, then rewind to the start.
     String inc = "$data('Interp',[$data('VCtor',['Increment',$nil])])";
     String driver =
@@ -527,10 +522,10 @@ class HeadlessChromeTest {
   @Test
   void editorRestoresASharedSessionFromAPermalink() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
-    }
+    assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     // A GotHash carrying an encoded one-file session (Share.encodeFiles format: <len>,<text> per
     // field) replaces the default starter files with the shared file — the permalink restore path.
     // The file's main concatenates "RESTO" ++ "RED": the rendered "RESTORED" appears only if the
@@ -544,10 +539,10 @@ class HeadlessChromeTest {
   @Test
   void editorShowsALineNumberGutter() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
-    }
+    assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     // Edit to a 3-line file; the gutter renders a numbered <div> per line. ">N</div>" only appears in
     // the rendered DOM (the compiled bundle builds nodes via $data, not literal tags), so it's a
     // gutter-specific check.
@@ -563,10 +558,10 @@ class HeadlessChromeTest {
   @Test
   void editorRestoresAnAutosavedSessionFromLocalStorage() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
-    }
+    assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     // LoadedSession(Just <encoded>) is what the autosave load dispatches at startup; it restores the
     // saved file, whose main concatenates "AUTO" ++ "SAVED" (the rendered "AUTOSAVED" proves it ran).
     String encoded = "9,Saved.elm31,main = text (\"AUTO\" ++ \"SAVED\")";
@@ -580,10 +575,10 @@ class HeadlessChromeTest {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Serve the editor page + example files over real HTTP and confirm the editor fetches them at
     // startup and lists them as editable files (here: Shapes.elm and Quotes.elm).
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = resource(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
-    }
+    assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("elm-editor-http-");
     java.nio.file.Files.writeString(dir.resolve("editor.html"), JsCompiler.htmlPageProject(null, modules));
     java.nio.file.Path ex = java.nio.file.Files.createDirectories(dir.resolve("examples"));

@@ -486,9 +486,14 @@ class JsBackendTest {
 
   /** Runs the Elm-in-Elm editor's `Eval.eval` under Node, to catch interpreter/JS-kernel divergence. */
   private String editorEval(String input) {
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = pl.matsuo.elm.util.Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules;
+    try {
+      modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
     }
     String escaped = input.replace("\\", "\\\\").replace("\"", "\\\"");
     // The DOM kernel attaches to `window`; under Node we alias it to the global object. The bundle
@@ -539,9 +544,14 @@ class JsBackendTest {
 
   /** Runs the editor's `Eval.renderProgram` on a single-file source, returning the serialized view. */
   private String editorRender(String source) {
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = pl.matsuo.elm.util.Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules;
+    try {
+      modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
     }
     String escaped = source.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     String program =
@@ -929,9 +939,14 @@ class JsBackendTest {
   /** Runs a Node script with the editor bundle loaded and {@code files} bound to a single-file
    * project, returning its stdout — lets a test drive the editor's interpreter directly. */
   private String editorScript(String source, String body) {
-    String[] modules = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < modules.length; i++) {
-      modules[i] = pl.matsuo.elm.util.Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        pl.matsuo.elm.site.SiteGenerator.editorAvailable(),
+        "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+    String[] modules;
+    try {
+      modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
     }
     String escaped = source.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     String program =

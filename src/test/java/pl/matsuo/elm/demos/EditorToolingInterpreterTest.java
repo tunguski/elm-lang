@@ -12,7 +12,6 @@ import pl.matsuo.elm.interp.Project;
 import pl.matsuo.elm.interp.Show;
 import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmTuple;
-import pl.matsuo.elm.util.Resources;
 
 /**
  * The editor's tooling layer — syntax highlighting (Highlight), autocomplete/assist (Assist), the
@@ -153,19 +152,23 @@ class EditorToolingInterpreterTest extends EditorInterpreterTestSupport {
   @Test
   void fullEditorAppWithAssistCompiles() {
     String[] paths = {
-      "/elm/editor/Lang.elm",
-      "/elm/editor/Lexer.elm",
-      "/elm/editor/Parser.elm",
-      "/elm/editor/Eval.elm",
-      "/elm/editor/Highlight.elm",
-      "/elm/editor/Assist.elm",
-      "/elm/editor/Share.elm",
-      "/elm/editor/Editor.elm",
-      "/elm/editor/Main.elm",
+      "projects/elm-editor/src/Lang.elm",
+      "projects/elm-editor/src/Lexer.elm",
+      "projects/elm-editor/src/Parser.elm",
+      "projects/elm-editor/src/Eval.elm",
+      "projects/elm-editor/src/Highlight.elm",
+      "projects/elm-editor/src/Assist.elm",
+      "projects/elm-editor/src/Share.elm",
+      "projects/elm-editor/src/Editor.elm",
+      "projects/elm-editor/src/Main.elm",
     };
     String[] sources = new String[paths.length];
     for (int i = 0; i < paths.length; i++) {
-      sources[i] = Resources.read(paths[i]);
+      try {
+        sources[i] = java.nio.file.Files.readString(java.nio.file.Path.of(paths[i]));
+      } catch (java.io.IOException e) {
+        throw new RuntimeException(e);
+      }
     }
     String page = JsCompiler.htmlPageProject(null, sources);
     assertTrue(page.contains("$start"), "the full editor (with Assist + Share wiring) bundles to JS");
@@ -179,9 +182,11 @@ class EditorToolingInterpreterTest extends EditorInterpreterTestSupport {
    */
   @Test
   void editorBundleHandlesTheMessagesTheHeadlessDriversDispatch() {
-    String[] sources = new String[pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES.length];
-    for (int i = 0; i < sources.length; i++) {
-      sources[i] = Resources.read(pl.matsuo.elm.site.SiteGenerator.EDITOR_MODULES[i]);
+    String[] sources;
+    try {
+      sources = pl.matsuo.elm.site.SiteGenerator.editorSources();
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
     }
     String page = JsCompiler.htmlPageProject(null, sources);
     // The exact constructors HeadlessChromeTest dispatches via window.$app.dispatch($data('X',...)).
@@ -195,7 +200,7 @@ class EditorToolingInterpreterTest extends EditorInterpreterTestSupport {
   /** Calls `Share.encodeFiles`/`Share.decodeFiles` and checks they round-trip the file set. */
   @Test
   void shareEncodesAndDecodesTheFileSet() {
-    Project share = Project.load(Resources.read("/elm/editor/Share.elm"));
+    Project share = Project.load(src("Share.elm"));
     // files : List (String, String) with content containing separators/newlines to stress the format.
     ElmList files =
         files(

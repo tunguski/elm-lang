@@ -153,7 +153,9 @@ step-back/forward overlay; `window.$app` exposes `history()`, `goto(i)`, `live()
 
 The gallery includes a reusable [editor](https://tunguski.github.io/elm-lang/editor.html) — a
 from-scratch Elm interpreter **written in Elm** (itself a `Browser.element` app) that fetches the
-example files over HTTP at startup and runs each selected file's `main` live in the browser:
+example files over HTTP at startup and runs each selected file's `main` live in the browser. It is
+its own project+repo ([github.com/tunguski/elm-editor](https://github.com/tunguski/elm-editor),
+checked out under `projects/elm-editor`); the gallery builds it from there when present:
 
 - **Renders** pure-Html / TEA apps (`Browser.sandbox`/`element` with `onClick`/`onInput`), inline
   **SVG** (the *shapes* and *clock* examples), and a built-in **`elm-playground`** (`picture` and

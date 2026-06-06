@@ -7,7 +7,6 @@ import pl.matsuo.elm.interp.Project;
 import pl.matsuo.elm.interp.Show;
 import pl.matsuo.elm.runtime.ElmList;
 import pl.matsuo.elm.runtime.ElmTuple;
-import pl.matsuo.elm.util.Resources;
 
 /**
  * Shared harness for the editor-interpreter test classes: it loads the Elm-in-Elm editor project
@@ -18,29 +17,53 @@ import pl.matsuo.elm.util.Resources;
  */
 class EditorInterpreterTestSupport {
 
+  // The editor is its own project+repo (github.com/tunguski/elm-editor), checked out under
+  // projects/elm-editor. Read it from disk; skip these suites when that sibling isn't present.
   private static final String[] MODULE_PATHS = {
-    "/elm/editor/Lang.elm",
-    "/elm/editor/Lexer.elm",
-    "/elm/editor/Parser.elm",
-    "/elm/editor/EvalRender.elm",
-    "/elm/editor/EvalPlayground.elm",
-    "/elm/editor/EvalJson.elm",
-    "/elm/editor/Eval.elm",
-    "/elm/editor/Highlight.elm",
-    "/elm/editor/Assist.elm",
-    "/elm/editor/Share.elm",
-    "/elm/editor/Main.elm",
+    "projects/elm-editor/src/Lang.elm",
+    "projects/elm-editor/src/Lexer.elm",
+    "projects/elm-editor/src/Parser.elm",
+    "projects/elm-editor/src/EvalRender.elm",
+    "projects/elm-editor/src/EvalPlayground.elm",
+    "projects/elm-editor/src/EvalJson.elm",
+    "projects/elm-editor/src/Eval.elm",
+    "projects/elm-editor/src/Highlight.elm",
+    "projects/elm-editor/src/Assist.elm",
+    "projects/elm-editor/src/Share.elm",
+    "projects/elm-editor/src/Main.elm",
   };
+
+  protected static final boolean AVAILABLE =
+      java.nio.file.Files.exists(java.nio.file.Path.of(MODULE_PATHS[0]));
+
+  /** Reads one editor module by file name (e.g. {@code "Share.elm"}) from projects/elm-editor/src. */
+  protected static String src(String name) {
+    try {
+      return java.nio.file.Files.readString(java.nio.file.Path.of("projects/elm-editor/src", name));
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
 
   protected static String[] moduleSources() {
     String[] s = new String[MODULE_PATHS.length];
     for (int i = 0; i < MODULE_PATHS.length; i++) {
-      s[i] = Resources.read(MODULE_PATHS[i]);
+      try {
+        s[i] = java.nio.file.Files.readString(java.nio.file.Path.of(MODULE_PATHS[i]));
+      } catch (java.io.IOException e) {
+        throw new RuntimeException(e);
+      }
     }
     return s;
   }
 
-  protected static final Project EDITOR = Project.load(moduleSources());
+  protected static final Project EDITOR = AVAILABLE ? Project.load(moduleSources()) : null;
+
+  @org.junit.jupiter.api.BeforeEach
+  void requireEditorProject() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        AVAILABLE, "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
+  }
 
   /** Calls the Elm-written `Eval.eval : String -> String` on a source expression. */
   protected String eval(String expression) {

@@ -174,7 +174,7 @@ final class Site implements Callable<Integer> {
               + "bundled Site library. With --api, also emit grouped API docs for the given Elm dirs.",
       footerHeading = "%nExample:%n",
       footer = {
-        "  elm gen-site src/main/elm/examples/ElmLang.elm out --api src/main/elm/lib --api src/main/elm/rts",
+        "  elm gen-site src/main/elm/examples/ElmLang.elm out --api src/main/elm/lib --api projects/elm-rts/src/RTS",
         "",
         "The program exposes `site : List Page`; each page is rendered to HTML and written under the",
         "output dir. `--api DIR` adds api/<Module>.html for every .elm file plus a grouped api index.",

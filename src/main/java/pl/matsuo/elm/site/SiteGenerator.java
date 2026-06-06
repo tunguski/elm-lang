@@ -133,7 +133,8 @@ public final class SiteGenerator {
    * stat     live  total                              (how many demos run as live compiled JS)
    * </pre>
    */
-  private void writeManifest(List<Built> built, List<DocPage> docs, boolean rts) throws IOException {
+  private void writeManifest(List<Built> built, List<DocPage> docs, boolean rts, boolean editor)
+      throws IOException {
     StringBuilder sb = new StringBuilder();
     for (Built b : built) {
       sb.append("example\t").append(b.example.slug()).append('\t').append(b.example.title())
@@ -144,7 +145,9 @@ public final class SiteGenerator {
     sb.append("aux\tbackends.html\tJS vs WASM\n");
     sb.append("aux\tplayground.html\tPlayground\n");
     sb.append("aux\ttodomvc.html\tTodoMVC\n");
-    sb.append("aux\teditor.html\tElm-in-Elm editor\n");
+    if (editor) {
+      sb.append("aux\teditor.html\tElm-in-Elm editor\n");
+    }
     if (rts) {
       sb.append("aux\trts.html\tRTS Mini game\n");
     }
@@ -198,7 +201,7 @@ public final class SiteGenerator {
    * backends/playground templates) so the menu is identical site-wide. The active link is marked
    * client-side by {@code nav.js} from the URL, keeping this a single static fragment.
    */
-  private String navHtml(List<DocPage> docs, boolean rts) {
+  private String navHtml(List<DocPage> docs, boolean rts, boolean editor) {
     StringBuilder b = new StringBuilder();
     b.append("<nav class=\"sidebar\">");
     b.append("<a class=\"brand\" href=\"index.html\">elm-lang</a>");
@@ -208,7 +211,9 @@ public final class SiteGenerator {
     b.append(navLink("backends.html", "JS vs WASM"));
     b.append(navLink("playground.html", "Playground"));
     b.append(navLink("Life.html", "Game of Life"));
-    b.append(navLink("editor.html", "Editor"));
+    if (editor) {
+      b.append(navLink("editor.html", "Editor"));
+    }
     b.append(navLink("todomvc.html", "TodoMVC"));
     if (rts) {
       b.append(navLink("rts.html", "RTS Mini game"));
@@ -265,20 +270,23 @@ public final class SiteGenerator {
     // the shared sidebar — written once as nav.html and embedded by every sub-page — can list them.
     List<DocPage> docs = writeDocPages();
     boolean rts = rtsAvailable();
-    String nav = navHtml(docs, rts);
+    boolean editor = editorAvailable();
+    String nav = navHtml(docs, rts, editor);
     writeNavAssets(nav);
     writeBackendsPage(nav);
     writePlaygroundPage(nav);
     writeExampleSources();
     writeTodoMvcPage(nav);
-    writeEditorPage(nav);
+    if (editor) {
+      writeEditorPage(nav);
+    }
     if (rts) {
       writeRtsPage(nav);
     }
     // The gallery's HTML is rendered by the Elm generator from the manifest; its stylesheets and
     // client script are static resource files we copy in (the Elm side only links them).
     copyStaticAssets();
-    writeManifest(built, docs, rts);
+    writeManifest(built, docs, rts, editor);
     renderGalleryIndex(outDir);
     // GitHub Pages: skip Jekyll so files/dirs are served verbatim.
     Files.writeString(outDir.resolve(".nojekyll"), "", StandardCharsets.UTF_8);
@@ -585,21 +593,43 @@ public final class SiteGenerator {
     Files.writeString(outDir.resolve("backends.html"), page, StandardCharsets.UTF_8);
   }
 
-  /** The editor's Elm modules (a small interpreter + an Ellie-style multi-file UI), bundled together. */
+  /** The editor's Elm modules (a small interpreter + an Ellie-style multi-file UI), bundled together.
+   * The editor is its own project+repo (github.com/tunguski/elm-editor), checked out under
+   * projects/elm-editor; paths are relative to the repo root. Absent in checkouts without the sibling
+   * project (see {@link #editorAvailable}). */
   public static final String[] EDITOR_MODULES = {
-    "/elm/editor/Lang.elm",
-    "/elm/editor/Lexer.elm",
-    "/elm/editor/Parser.elm",
-    "/elm/editor/EvalRender.elm",
-    "/elm/editor/EvalPlayground.elm",
-    "/elm/editor/EvalJson.elm",
-    "/elm/editor/Eval.elm",
-    "/elm/editor/Highlight.elm",
-    "/elm/editor/Assist.elm",
-    "/elm/editor/Share.elm",
-    "/elm/editor/Editor.elm",
-    "/elm/editor/Main.elm",
+    "projects/elm-editor/src/Lang.elm",
+    "projects/elm-editor/src/Lexer.elm",
+    "projects/elm-editor/src/Parser.elm",
+    "projects/elm-editor/src/EvalRender.elm",
+    "projects/elm-editor/src/EvalPlayground.elm",
+    "projects/elm-editor/src/EvalJson.elm",
+    "projects/elm-editor/src/Eval.elm",
+    "projects/elm-editor/src/Highlight.elm",
+    "projects/elm-editor/src/Assist.elm",
+    "projects/elm-editor/src/Share.elm",
+    "projects/elm-editor/src/Editor.elm",
+    "projects/elm-editor/src/Main.elm",
   };
+
+  /** Whether the editor project is checked out (the example is absent in checkouts without it). */
+  public static boolean editorAvailable() {
+    for (String m : EDITOR_MODULES) {
+      if (!Files.exists(Path.of(m))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Reads the editor's module sources from disk (in {@link #EDITOR_MODULES} order). */
+  public static String[] editorSources() throws IOException {
+    String[] sources = new String[EDITOR_MODULES.length];
+    for (int i = 0; i < EDITOR_MODULES.length; i++) {
+      sources[i] = Files.readString(Path.of(EDITOR_MODULES[i]), StandardCharsets.UTF_8);
+    }
+    return sources;
+  }
 
   /**
    * Writes the raw Elm sources under {@code examples/} so they are downloadable from the site and
@@ -645,10 +675,7 @@ public final class SiteGenerator {
    * example files over HTTP and lets you edit them, rendering each selected file's `main`.
    */
   private void writeEditorPage(String nav) throws IOException {
-    String[] sources = new String[EDITOR_MODULES.length];
-    for (int i = 0; i < EDITOR_MODULES.length; i++) {
-      sources[i] = pl.matsuo.elm.util.Resources.read(EDITOR_MODULES[i]);
-    }
+    String[] sources = editorSources();
     // The editor is a full-screen, three-column IDE with its own in-app "back to gallery" link, so
     // it deliberately does NOT get the shared sidebar wrapper (it would crowd the panes). Reset the
     // body margin so its 100vh layout fills the viewport exactly (no page scrollbar).
@@ -663,18 +690,21 @@ public final class SiteGenerator {
         StandardCharsets.UTF_8);
   }
 
-  /** The RTS game's frontend modules (relative to the repo root, where the gallery is generated). */
+  /** The RTS game's frontend modules. The game lives in its own project+repo (github.com/tunguski/
+   * elm-rts), checked out under projects/elm-rts; paths are relative to the repo root, where the
+   * gallery is generated. Absent in checkouts without the sibling project (see {@link #rtsAvailable}). */
   private static final String[] RTS_MODULES = {
-    "src/main/elm/rts/Model.elm",
-    "src/main/elm/rts/Logic.elm",
-    "src/main/elm/rts/View.elm",
-    "src/main/elm/rts/Main.elm",
+    "projects/elm-rts/src/RTS/Model.elm",
+    "projects/elm-rts/src/RTS/Logic.elm",
+    "projects/elm-rts/src/RTS/View.elm",
+    "projects/elm-rts/src/RTS/Main.elm",
   };
 
   /**
-   * Compiles the multi-module RTS Mini game (src/main/elm/rts) to a single live page that runs entirely
-   * in the browser — no backend needed. Returns whether the page was written (the example may be
-   * absent in some checkouts). The whole game model/logic/view is the JS-compiled output.
+   * Compiles the multi-module RTS Mini game (the separate projects/elm-rts project) to a single live
+   * page that runs entirely in the browser — no backend needed. Returns whether the page was written
+   * (the example is absent in checkouts without the sibling project). The whole game model/logic/view
+   * is the JS-compiled output.
    */
   private static boolean rtsAvailable() {
     for (String m : RTS_MODULES) {

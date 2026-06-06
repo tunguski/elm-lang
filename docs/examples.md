@@ -54,14 +54,17 @@ keyboard-driven First Person (21) currently fall back to an interpreter-rendered
 The gallery also showcases larger, hand-written apps that exercise the backends end to end:
 
 - **[RTS Mini](https://tunguski.github.io/elm-lang/rts.html)** — a small but functional real-time
-  strategy game ([src/main/elm/rts](../src/main/elm/rts/)): build buildings, train units, gather resources
+  strategy game (its own project+repo: [github.com/tunguski/elm-rts](https://github.com/tunguski/elm-rts),
+  checked out under `projects/elm-rts`): build buildings, train units, gather resources
   (a worker walks a BFS path around water/rock to a mine, hauls loads back to base and deposits them)
   and uncover the whole map to win. It's cleanly split into `RTS.Model` / `RTS.Logic` / `RTS.View` /
   `RTS.Main`, with an optional `RTS.Backend` HTTP handler that shares the model. The page is the
   **JS-compiled** game running **entirely in your browser — no server needed**.
 - **[TodoMVC](https://tunguski.github.io/elm-lang/todomvc.html)** — the flagship TEA app.
 - **[Elm-in-Elm editor](https://tunguski.github.io/elm-lang/editor.html)** — an Elm interpreter
-  written in Elm, with live evaluation and syntax highlighting.
+  written in Elm, with live evaluation and syntax highlighting. Its own project+repo
+  ([github.com/tunguski/elm-editor](https://github.com/tunguski/elm-editor), checked out under
+  `projects/elm-editor`); the gallery builds it from there when present.
 
 ## Backends
 

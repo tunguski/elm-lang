@@ -16,26 +16,48 @@ import pl.matsuo.elm.runtime.ElmTuple;
 import pl.matsuo.elm.util.Resources;
 
 /**
- * The multi-file RTS example (src/main/elm/rts): the frontend's pure model/logic runs correctly under
+ * The multi-file RTS example (projects/elm-rts): the frontend's pure model/logic runs correctly under
  * the interpreter (build/train/gather/fog), and the backend handler answers requests. This both
  * documents the game and guards the example against bit-rot as the language evolves.
  */
 class RtsGameTest {
 
-  // The example lives under src/main/elm/rts (outside the resources root), so read it from disk.
-  private static String src(String name) {
+  // The game now lives in its own project+repo (github.com/tunguski/elm-rts), checked out under
+  // projects/elm-rts. Read it from disk; skip the whole suite when that sibling isn't present.
+  private static final java.nio.file.Path RTS = java.nio.file.Path.of("projects/elm-rts");
+  private static final boolean AVAILABLE =
+      java.nio.file.Files.exists(RTS.resolve("src/RTS/Model.elm"));
+
+  private static String src(String rel) {
     try {
-      return java.nio.file.Files.readString(java.nio.file.Path.of("src/main/elm/rts", name));
+      return java.nio.file.Files.readString(RTS.resolve(rel));
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
   }
 
   private static final Project FRONTEND =
-      Project.load(src("Model.elm"), src("Logic.elm"), src("View.elm"), src("Main.elm"));
+      AVAILABLE
+          ? Project.load(
+              src("src/RTS/Model.elm"),
+              src("src/RTS/Logic.elm"),
+              src("src/RTS/View.elm"),
+              src("src/RTS/Main.elm"))
+          : null;
 
   private static final Project BACKEND =
-      Project.load(src("Model.elm"), src("Backend.elm"), Resources.read("/elm/lib/Server.elm"));
+      AVAILABLE
+          ? Project.load(
+              src("src/RTS/Model.elm"),
+              src("backend/RTS/Backend.elm"),
+              Resources.read("/elm/lib/Server.elm"))
+          : null;
+
+  @org.junit.jupiter.api.BeforeEach
+  void requireProject() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        AVAILABLE, "projects/elm-rts not present (separate repo github.com/tunguski/elm-rts)");
+  }
 
   private ElmRecord init() {
     return (ElmRecord) FRONTEND.value("RTS.Logic", "init");

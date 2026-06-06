@@ -74,8 +74,11 @@ class GalleryTest {
 
     // The unified sidebar is embedded on every sub-page, with Elm + Bash highlighting.
     assertTrue(wrapper.contains("<nav class=\"sidebar\">"), "wrapper has the shared sidebar");
-    assertTrue(wrapper.contains(">Gallery</a>") && wrapper.contains("href=\"editor.html\""),
-        "sidebar links the gallery and the other demos");
+    assertTrue(wrapper.contains(">Gallery</a>"), "sidebar links the gallery");
+    // The editor is a separate project (projects/elm-editor); linked only when it's checked out.
+    if (pl.matsuo.elm.site.SiteGenerator.editorAvailable()) {
+      assertTrue(wrapper.contains("href=\"editor.html\""), "sidebar links the editor demo");
+    }
     assertTrue(wrapper.contains("href=\"nav.css\"") && wrapper.contains("src=\"nav.js\""),
         "wrapper links the shared sidebar assets");
     assertTrue(wrapper.contains("languages/bash.min.js"), "wrapper loads the Bash highlighter too");

@@ -61,8 +61,11 @@ class SiteGenTest {
 
   @Test
   void generatedDocsLinkTheRtsGameAndItsApiDocs(@TempDir Path out) throws IOException {
+    Path rts = Path.of("projects/elm-rts/src/RTS");
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        Files.exists(rts), "projects/elm-rts not present (separate repo github.com/tunguski/elm-rts)");
     String src = Files.readString(Path.of("src/main/elm/examples/ElmLang.elm"), StandardCharsets.UTF_8);
-    SiteGen.generate(src, out, List.of(Path.of("src/main/elm/rts")), "");
+    SiteGen.generate(src, out, List.of(rts), "");
     String examples = Files.readString(out.resolve("examples.html"), StandardCharsets.UTF_8);
     assertTrue(examples.contains("href=\"rts.html\""), "examples page links the playable game");
     assertTrue(examples.contains("href=\"api/RTS.Model.html\""), "examples page links the RTS API docs");
@@ -123,7 +126,7 @@ class SiteGenTest {
   void purposeGroupsAreDerivedFromPaths() {
     assertTrue(SiteGen.purpose(Path.of("src/main/elm/lib/Server.elm")).contains("Backend"));
     assertTrue(SiteGen.purpose(Path.of("src/main/elm/lib/Bash.elm")).contains("Scripting"));
-    assertTrue(SiteGen.purpose(Path.of("src/main/elm/editor/Eval.elm")).contains("Frontend"));
-    assertTrue(SiteGen.purpose(Path.of("src/main/elm/rts/Main.elm")).contains("RTS"));
+    assertTrue(SiteGen.purpose(Path.of("projects/elm-editor/src/Eval.elm")).contains("Frontend"));
+    assertTrue(SiteGen.purpose(Path.of("projects/elm-rts/src/RTS/Main.elm")).contains("RTS"));
   }
 }

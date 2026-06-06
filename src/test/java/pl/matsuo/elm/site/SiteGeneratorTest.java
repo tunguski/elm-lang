@@ -107,6 +107,11 @@ class SiteGeneratorTest {
 
   @Test
   void rtsGamePageIsCompiledAndLinked() throws IOException {
+    // The game is a separate project+repo (github.com/tunguski/elm-rts) checked out under
+    // projects/elm-rts; the gallery includes it only when that sibling is present.
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        Files.exists(Path.of("projects/elm-rts/src/RTS/Main.elm")),
+        "projects/elm-rts not present");
     Path out = generate();
     // The multi-module RTS game compiles to one live, standalone page.
     String page = Files.readString(out.resolve("rts.html"), StandardCharsets.UTF_8);

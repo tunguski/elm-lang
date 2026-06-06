@@ -178,10 +178,10 @@ public final class SiteGen {
   /** A purpose label derived from a module's location (backend / frontend / scripting / examples …). */
   static String purpose(Path file) {
     String s = file.toString().replace('\\', '/');
-    if (s.contains("/editor/")) {
+    if (s.contains("/editor/") || s.contains("elm-editor/")) {
       return "Frontend — the in-browser editor";
     }
-    if (s.contains("/rts/")) {
+    if (s.contains("/rts/") || s.contains("elm-rts/")) {
       return "Examples — the RTS game";
     }
     if (s.contains("/scripts/")) {
