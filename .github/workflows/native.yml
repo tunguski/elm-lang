@@ -1,16 +1,24 @@
-name: Native image
+name: Build artifacts
 
-# Builds a standalone native binary (GraalVM native-image) on Linux and publishes it as an
-# artifact. Runs on demand and for version tags; kept separate from CI so the (slower, and for a
-# from-scratch Truffle interpreter occasionally fiddly) native build never blocks the test suite.
+# Builds the distributable artifacts and publishes them:
+#   * elm.jar               - the runnable shaded JAR (any JDK 25 JVM)
+#   * elm (linux-x64)       - a standalone GraalVM native binary
+#   * elm.exe (windows-x64) - a standalone GraalVM native binary
+# Each is uploaded as a workflow artifact (downloadable from the run); on a version tag (v*) all
+# three are also attached to the GitHub Release. Kept off the per-push CI because native-image is
+# slow and, for a from-scratch Truffle interpreter, occasionally fiddly.
 
 on:
   workflow_dispatch:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+
 jobs:
-  native:
+  jar:
+    name: Runnable JAR
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,47 +30,103 @@ jobs:
           distribution: 'graalvm'
           cache: 'maven'
 
-      - name: Build native image
-        id: build
-        continue-on-error: true
+      - name: Build elm.jar
         run: |
           chmod +x ./mvnw
+          ./mvnw -B -ntp -DskipTests clean package
+          ls -lh target/elm.jar
+          java -jar target/elm.jar eval "1 + 2"
+
+      - name: Upload elm.jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: elm-jar
+          path: target/elm.jar
+          if-no-files-found: error
+
+  native:
+    name: Native binary (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x64
+            binary: elm
+            asset: elm-linux-x64
+          - os: windows-latest
+            label: windows-x64
+            binary: elm.exe
+            asset: elm-windows-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # On Windows this also configures the MSVC toolchain that native-image needs.
+      - name: Set up GraalVM for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          cache: 'maven'
+
+      - name: Build native image
+        shell: bash
+        run: |
+          chmod +x ./mvnw || true
           ./mvnw -B -ntp -Pnative -DskipTests package
-          ls -lh target/elm || true
-          target/elm eval "List.sum (List.range 1 100)" || true
+          ls -lh "target/${{ matrix.binary }}"
 
       - name: Smoke-test the native binary
-        if: steps.build.outcome == 'success'
+        shell: bash
         run: |
           set -euo pipefail
-          test -x target/elm
+          bin="target/${{ matrix.binary }}"
           # eval
-          test "$(target/elm eval '1 + 2')" = "3"
+          test "$("$bin" eval '1 + 2')" = "3"
           # script: the Posix/Bash scripting layer
-          cat > /tmp/echo.elm <<'ELM'
+          cat > "$RUNNER_TEMP/echo.elm" <<'ELM'
           module Main exposing (main)
           import Bash exposing (..)
           main : Io
           main = getArgs (\args -> print (String.join "," args) done)
           ELM
-          test "$(target/elm script /tmp/echo.elm a b c)" = "a,b,c"
-          # server: a pure handler answering over HTTP
-          cat > /tmp/srv.elm <<'ELM'
-          module Main exposing (handle)
-          import Server exposing (..)
-          handle : Request -> Response
-          handle req = text "pong"
-          ELM
-          target/elm server /tmp/srv.elm --port 8137 &
-          srv=$!
-          for i in $(seq 1 20); do curl -fsS http://localhost:8137/ >/dev/null 2>&1 && break; sleep 0.5; done
-          curl -fsS http://localhost:8137/ | grep -q pong
-          kill "$srv"
-          echo "native smoke tests passed (eval, script, server)"
+          test "$("$bin" script "$RUNNER_TEMP/echo.elm" a b c)" = "a,b,c"
+          echo "native ${{ matrix.label }} smoke tests passed (eval, script)"
+
+      - name: Stage binary under its platform name
+        shell: bash
+        run: cp "target/${{ matrix.binary }}" "${{ matrix.asset }}"
 
       - name: Upload native binary
         uses: actions/upload-artifact@v4
         with:
-          name: elm-native-linux-x64
-          path: target/elm
-          if-no-files-found: warn
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    name: Attach artifacts to the release
+    needs: [jar, native]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish them on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -lR dist
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber

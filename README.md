@@ -385,8 +385,10 @@ java -jar target/elm.jar site src/main/elm/examples src/main/elm/examples/Playgr
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds and runs the full test suite on
 GraalVM for JDK 25 (via the Maven wrapper) for every push and pull request, with real headless
 **Chrome** installed so the browser-fidelity tests run. A separate
-[`native.yml`](.github/workflows/native.yml) builds the GraalVM native binary on Linux and
-publishes it as an artifact.
+[`native.yml`](.github/workflows/native.yml) builds the distributable artifacts — the runnable
+`elm.jar` and standalone GraalVM native binaries for **Linux** (`elm`) and **Windows** (`elm.exe`) —
+and uploads each as a workflow artifact; on a version tag (`v*`) all three are also attached to the
+GitHub Release. Run it on demand from the Actions tab, or push a `v…` tag to cut a release.
 
 ## Known limitations
 
