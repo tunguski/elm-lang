@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -27,15 +28,25 @@ class SiteGeneratorTest {
   private static final Path EXAMPLES = Path.of("src/main/elm/examples");
   private static final Path PLAYGROUND = Path.of("src/main/elm/examples/Playground.elm");
 
-  private Path generate() throws IOException {
-    Path out = Files.createTempDirectory("elm-site-");
-    SiteGenerator.generate(EXAMPLES, PLAYGROUND, out);
-    return out;
+  // The whole gallery (every example compiled to JS + WASM) is the heaviest build in the suite, and
+  // each test used to regenerate it. Build it ONCE per class instead and let the tests read the
+  // shared output. The doc-page tests need the docs build and the rest need the plain build (the Elm
+  // generator assembles pages differently in docs mode), so we make the two variants once each --
+  // two compiles instead of ten. The tests only read the trees, so sharing them is safe.
+  private static Path SITE;
+  private static Path SITE_DOCS;
+
+  @BeforeAll
+  static void buildGalleryOnce() throws IOException {
+    SITE = Files.createTempDirectory("elm-site-");
+    SiteGenerator.generate(EXAMPLES, PLAYGROUND, SITE);
+    SITE_DOCS = Files.createTempDirectory("elm-site-docs-");
+    SiteGenerator.generate(EXAMPLES, PLAYGROUND, SITE_DOCS, Path.of("docs"));
   }
 
   @Test
   void emitsAPageForEveryExample() throws IOException {
-    Path out = generate();
+    Path out = SITE;
     String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
     assertTrue(index.contains("elm-lang"), index.substring(0, 200));
     assertTrue(Files.exists(out.resolve(".nojekyll")));
@@ -54,7 +65,7 @@ class SiteGeneratorTest {
 
   @Test
   void buttonsIsALiveCompiledDemo() throws IOException {
-    Path out = generate();
+    Path out = SITE;
     String demo = Files.readString(out.resolve("demos/Buttons.html"), StandardCharsets.UTF_8);
     // The JS backend produced a runnable bundle that mounts into the page.
     assertTrue(demo.contains("$start"), "buttons demo should be the compiled JS bundle");
@@ -65,7 +76,7 @@ class SiteGeneratorTest {
 
   @Test
   void playgroundIsBundledAsLiveJs() throws IOException {
-    Path out = generate();
+    Path out = SITE;
     String demo = Files.readString(out.resolve("demos/Picture.html"), StandardCharsets.UTF_8);
     // Multi-module Playground program: bundled live (Playground + example), not a server snapshot.
     assertTrue(demo.contains("$start"), "picture should be a compiled JS bundle");
@@ -76,7 +87,7 @@ class SiteGeneratorTest {
 
   @Test
   void backendsPageRunsJsAndWasm() throws IOException {
-    Path out = generate();
+    Path out = SITE;
     String page = Files.readString(out.resolve("backends.html"), StandardCharsets.UTF_8);
     assertTrue(page.contains("$evalAll"), "embeds the JS evaluator");
     assertTrue(page.contains("WebAssembly.instantiate"), "instantiates the wasm module");
@@ -87,8 +98,7 @@ class SiteGeneratorTest {
 
   @Test
   void docPagesRewriteRepoLinksToTheDefaultBranchAndKeepExtensions() throws IOException {
-    Path out = Files.createTempDirectory("elm-site-docs-");
-    SiteGenerator.generate(EXAMPLES, PLAYGROUND, out, Path.of("docs"));
+    Path out = SITE_DOCS;
     String scripting = Files.readString(out.resolve("scripting.html"), StandardCharsets.UTF_8);
     // Repo source links resolve on the published site (correct default branch, original extension).
     assertTrue(
@@ -118,7 +128,7 @@ class SiteGeneratorTest {
     org.junit.jupiter.api.Assumptions.assumeTrue(
         Files.exists(Path.of("projects/elm-rts/src/RTS/Main.elm")),
         "projects/elm-rts not present");
-    Path out = generate();
+    Path out = SITE;
     // The multi-module RTS game compiles to one live, standalone page.
     String page = Files.readString(out.resolve("rts.html"), StandardCharsets.UTF_8);
     assertTrue(page.contains("$start"), "rts.html is the compiled JS bundle");
@@ -133,7 +143,7 @@ class SiteGeneratorTest {
 
   @Test
   void playgroundPageEmbedsBothBackends() throws IOException {
-    Path out = generate();
+    Path out = SITE;
     String page = Files.readString(out.resolve("playground.html"), StandardCharsets.UTF_8);
     assertTrue(page.contains("_$fib"), "embeds the compiled JS function");
     assertTrue(page.contains("WebAssembly.instantiate"), "embeds the wasm module");
@@ -144,7 +154,7 @@ class SiteGeneratorTest {
 
   @Test
   void servesExampleSourcesTodoMvcAndLinksThem() throws IOException {
-    Path out = generate();
+    Path out = SITE;
     // Raw .elm sources are served under examples/ (downloadable, and fetchable by the editor):
     // every gallery example and the flagship TodoMVC.
     assertTrue(Files.exists(out.resolve("examples/Buttons.elm")), "gallery example source served");
@@ -157,7 +167,7 @@ class SiteGeneratorTest {
 
   @Test
   void everyExampleIsLiveCompiledJs() throws IOException {
-    Path out = generate();
+    Path out = SITE;
     // After multi-module bundling + the WebGL/effect kernels, all examples run as live JS.
     String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
     assertFalse(index.contains("badge snapshot"), "no example should fall back to a snapshot");
@@ -166,8 +176,7 @@ class SiteGeneratorTest {
 
   @Test
   void rendersRepoDocsToHtmlAndLinksThemFromTheIndex() throws IOException {
-    Path out = Files.createTempDirectory("elm-site-");
-    SiteGenerator.generate(EXAMPLES, PLAYGROUND, out, Path.of("docs"));
+    Path out = SITE_DOCS;
 
     // Each guide becomes a styled HTML page derived from its Markdown.
     for (String slug : new String[] {"examples", "scripting", "server"}) {
