@@ -610,6 +610,7 @@ public final class SiteGenerator {
     "projects/elm-editor/src/Assist.elm",
     "projects/elm-editor/src/Share.elm",
     "projects/elm-editor/src/Preview.elm",
+    "projects/elm-editor/src/ElmPreview.elm",
     "projects/elm-editor/src/Editor.elm",
     "projects/elm-editor/src/Main.elm",
   };

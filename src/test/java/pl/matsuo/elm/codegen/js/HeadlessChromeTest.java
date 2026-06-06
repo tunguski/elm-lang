@@ -508,10 +508,12 @@ class HeadlessChromeTest {
         "projects/elm-editor not present (separate repo github.com/tunguski/elm-editor)");
     String[] modules = pl.matsuo.elm.site.SiteGenerator.editorSources();
     // Dispatch two Increment messages into the interpreted Buttons app, then rewind to the start.
-    String inc = "$data('Interp',[$data('VCtor',['Increment',$nil])])";
+    // Interp/Rewind belong to the preview pane (ElmPreview.Msg), which the Editor shell wraps as
+    // PreviewMsg, so the drivers dispatch the wrapped form.
+    String inc = "$data('PreviewMsg',[$data('Interp',[$data('VCtor',['Increment',$nil])])])";
     String driver =
         "window.$app.dispatch(" + inc + ");window.$app.dispatch(" + inc + ");"
-            + "window.$app.dispatch($data('Rewind',[0]));";
+            + "window.$app.dispatch($data('PreviewMsg',[$data('Rewind',[0])]));";
     String dom = renderPage(JsCompiler.htmlPageProject(driver, modules));
     assertTrue(dom.contains("time travel"), "the time-travel scrubber appears after steps");
     assertTrue(dom.contains("msg 0 /"), "cursor rewound to message 0");

@@ -190,7 +190,10 @@ class EditorToolingInterpreterTest extends EditorInterpreterTestSupport {
     }
     String page = JsCompiler.htmlPageProject(null, sources);
     // The exact constructors HeadlessChromeTest dispatches via window.$app.dispatch($data('X',...)).
-    for (String ctor : new String[] {"EditAt", "Interp", "Rewind", "GotHash", "LoadedSession"}) {
+    // Interp/Rewind are preview-pane messages wrapped by the shell as PreviewMsg (the form drivers
+    // dispatch); the inner tags must still be present in the bundle, hence both are checked.
+    for (String ctor :
+        new String[] {"EditAt", "PreviewMsg", "Interp", "Rewind", "GotHash", "LoadedSession"}) {
       assertTrue(
           page.contains("'" + ctor + "'") || page.contains("\"" + ctor + "\""),
           "compiled editor bundle has no handler for the dispatched message " + ctor);
