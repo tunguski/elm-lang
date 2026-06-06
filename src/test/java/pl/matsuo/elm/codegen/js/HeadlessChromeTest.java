@@ -9,13 +9,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end browser-fidelity tests: compiles an example to a JS app bundle (kernel + DOM/TEA
  * runtime), loads it in real headless Chrome, and asserts on the actually-rendered DOM. Skipped if
- * Chrome is not installed.
+ * Chrome is not installed. Tagged {@code browser} so the default fast {@code mvn test} skips it
+ * (it launches a real browser); run it with {@code -Pfull} (or {@code mvn verify}).
  */
+@Tag("browser")
 class HeadlessChromeTest {
 
   private static final String CHROME = findChrome();

@@ -7,8 +7,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Performance benchmarks (warmup + measured loops), not correctness tests — tagged {@code bench} so
+ * the default fast {@code mvn test} skips them. Run them with {@code -Pfull} (or {@code mvn verify}).
+ */
+@Tag("bench")
 class BenchmarkTest {
 
   @Test

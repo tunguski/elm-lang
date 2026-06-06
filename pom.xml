@@ -18,6 +18,17 @@
         <!-- Empty by default; the `coverage` profile's JaCoCo agent fills it in (see propertyName).
              Surefire's argLine references it so the agent and our -Xss flag coexist. -->
         <jacocoArgLine/>
+        <!-- JUnit tag groups excluded from the default `mvn test` (the fast inner-loop suite):
+             `bench` = performance benchmarks, `browser` = real-Chrome rendering. Run the full set
+             with `-Pfull` (or `mvn verify`), or override with `-Dtest.excludedGroups=…`. -->
+        <test.excludedGroups>bench,browser</test.excludedGroups>
+        <!-- Surefire JVM forks. Each fork is a full GraalVM/Truffle JVM (an optimizing runtime that
+             is memory- and init-heavy), so this is a quarter of the cores rather than a half: too
+             many concurrent Truffle runtimes exhaust memory and surface as NoClassDefFoundError on
+             generated nodes. The `C` suffix scales with the machine, so small CI runners stay at
+             1-2 forks. Independent classes only: server tests bind ephemeral ports and DB tests use
+             unique in-memory databases, so parallelism here is contention, not a correctness risk. -->
+        <test.forkCount>0.25C</test.forkCount>
     </properties>
 
     <dependencies>
@@ -103,6 +114,11 @@
                          unless the coverage profile is active (late-bound so JaCoCo's
                          prepare-agent, which runs after POM interpolation, can fill it in). -->
                     <argLine>@{jacocoArgLine} -Xss64m</argLine>
+                    <!-- Run independent test classes in parallel JVM forks, and skip the slowest
+                         opt-in groups (benchmarks, real-browser) in the default fast suite. -->
+                    <forkCount>${test.forkCount}</forkCount>
+                    <reuseForks>true</reuseForks>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>
@@ -155,6 +171,17 @@
     </build>
 
     <profiles>
+        <!--
+          Full suite:  ./mvnw -Pfull test   (or `mvn verify`)
+          Runs every test group, including the benchmarks and the real-Chrome rendering tests that
+          the default fast suite skips. Use this in CI. Equivalent to `-Dtest.excludedGroups=`.
+        -->
+        <profile>
+            <id>full</id>
+            <properties>
+                <test.excludedGroups/>
+            </properties>
+        </profile>
         <!--
           Code coverage:  ./mvnw -Pcoverage test
           Runs the suite under the JaCoCo agent and writes target/site/jacoco/ (HTML + jacoco.xml).
