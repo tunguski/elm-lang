@@ -209,6 +209,12 @@ public final class Prelude {
     BUILTINS.put("Browser.Dom.getViewport", d("$Task_Const", viewport()));
     // Browser.Dom.getElement id: a Task yielding a fixed element box (headless stub).
     fn("Browser.Dom.getElement", 1, a -> d("$Task_Const", element()));
+    // Browser.Dom.getViewportOf id / setViewportOf id x y: headless stubs (a fixed viewport / unit).
+    fn("Browser.Dom.getViewportOf", 1, a -> d("$Task_Const", viewport()));
+    fn(
+        "Browser.Dom.setViewportOf",
+        3,
+        a -> d("$Task_Const", pl.matsuo.elm.runtime.ElmUnit.INSTANCE));
 
     registerHttp();
     PreludeJson.registerJson();

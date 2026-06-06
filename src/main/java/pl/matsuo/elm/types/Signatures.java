@@ -453,6 +453,8 @@ public final class Signatures {
         "{ scene : { width : Float, height : Float },"
             + " viewport : { x : Float, y : Float, width : Float, height : Float } }";
     g("Browser.Dom.getViewport", "Task x " + viewport);
+    g("Browser.Dom.getViewportOf", "String -> Task Error " + viewport);
+    g("Browser.Dom.setViewportOf", "String -> Float -> Float -> Task Error ()");
     String elementBox =
         "{ scene : { width : Float, height : Float },"
             + " viewport : { x : Float, y : Float, width : Float, height : Float },"

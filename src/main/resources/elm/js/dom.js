@@ -24,7 +24,9 @@
   $rt['Html.Events.onCheck']=function(f){ return $data('$On',['check',f]); };
   $rt['Html.Events.onSubmit']=function(m){ return $data('$On',['submit',m]); };
   $rt['Html.Events.on']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
-  $rt['Html.Events.preventDefaultOn']=function(e){ return function(d){ return $data('$On',[e,d]); }; };
+  // preventDefaultOn carries a `(msg, Bool)` decoder; the 'pd' marker tells the dispatcher to unwrap
+  // the tuple and call e.preventDefault() when the Bool is True.
+  $rt['Html.Events.preventDefaultOn']=function(e){ return function(d){ return $data('$On',[e,d,'pd']); }; };
   // More plain-message event handlers ($On[domEvent, msg]).
   ['onDoubleClick:dblclick','onMouseDown:mousedown','onMouseUp:mouseup','onMouseEnter:mouseenter',
    'onMouseLeave:mouseleave','onMouseOver:mouseover','onMouseOut:mouseout','onFocus:focus','onBlur:blur'
@@ -279,6 +281,10 @@
   $rt['Browser.Dom.getViewport']=$task(function(ok,err){ ok(viewportRecord()); });
   $rt['Browser.Dom.getElement']=function(id){ return $task(function(ok,err){ var el=(typeof document!=='undefined')&&document.getElementById(id); if(!el){ err($data('NotFound',[id])); return; } var r=el.getBoundingClientRect(), vp=viewportRecord(); ok({scene:vp.scene, viewport:vp.viewport, element:{x:r.left+(window.pageXOffset||0), y:r.top+(window.pageYOffset||0), width:r.width, height:r.height}}); }); };
   $rt['Browser.Dom.setViewport']=function(x){ return function(y){ return $task(function(ok,err){ window.scrollTo(x,y); ok($unit); }); }; };
+  // getViewportOf/setViewportOf: read and scroll a specific scroll container by id (the real
+  // elm/browser API). The editor uses these to page its code pane with PageUp/PageDown/Home/End.
+  $rt['Browser.Dom.getViewportOf']=function(id){ return $task(function(ok,err){ var el=(typeof document!=='undefined')&&document.getElementById(id); if(!el){ err($data('NotFound',[id])); return; } ok({scene:{width:el.scrollWidth,height:el.scrollHeight}, viewport:{x:el.scrollLeft,y:el.scrollTop,width:el.clientWidth,height:el.clientHeight}}); }); };
+  $rt['Browser.Dom.setViewportOf']=function(id){ return function(x){ return function(y){ return $task(function(ok,err){ var el=(typeof document!=='undefined')&&document.getElementById(id); if(!el){ err($data('NotFound',[id])); return; } el.scrollLeft=x; el.scrollTop=y; ok($unit); }); }; }; };
   $rt['Browser.Dom.focus']=function(id){ return $task(function(ok,err){ var el=document.getElementById(id); if(el){el.focus(); ok($unit);} else err($data('NotFound',[id])); }); };
   // File: real <input type=file> selection and FileReader-based reads.
   $rt['File.decoder']=$dec(function(j){ return (j&&typeof j==='object')?{ok:1,v:j}:{ok:0,v:'expected a file'}; });
@@ -518,11 +524,15 @@
       requestAnimationFrame(function(){ drawGL(el); });
     }
     else if (t==='$On'){
-      var ev=nm, h=a._[1];
+      var ev=nm, h=a._[1], pd=(a._[2]==='pd');
       var domEvent = ev==='check'?'change':ev;
       var fn = function(e){
         var msg;
-        if (h && h.$==='$Dec'){ var r=h._[0](e); if(!r.ok) return; msg=r.v; } // on "ev" decoder (runs against the event)
+        if (h && h.$==='$Dec'){
+          var r=h._[0](e); if(!r.ok) return; // decoder declined: ignore the event (default still happens)
+          // preventDefaultOn's decoder yields a (msg, Bool) tuple — unwrap it and honour the flag.
+          if (pd){ msg=r.v.vs[0]; if(r.v.vs[1]) e.preventDefault(); } else { msg=r.v; } // on/preventDefaultOn decoder
+        }
         else if (ev==='input') msg = h(e.target.value); // onInput tagger (String -> msg)
         else if (ev==='check') msg = h(e.target.checked); // onCheck tagger (Bool -> msg)
         else msg = h;
