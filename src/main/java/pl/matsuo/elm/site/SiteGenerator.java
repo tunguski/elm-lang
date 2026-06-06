@@ -187,8 +187,9 @@ public final class SiteGenerator {
     copyResource("/elm/css/gallery.css", "styles.css");
     copyResource("/elm/css/page.css", "page.css");
     copyResource("/elm/css/docs.css", "docs.css");
-    copyResource("/elm/css/editor.css", "editor.css"); // the editor's class-based styles
     copyResource("/elm/js/theme.js", "theme.js"); // shared light/dark theme + top-right toggle
+    // editor.css is owned by the elm-editor project (it ships the shell's own styles); it is copied
+    // from the sibling in writeEditorPage, only when that project is checked out.
   }
 
   private void copyResource(String resource, String name) throws IOException {
@@ -612,6 +613,10 @@ public final class SiteGenerator {
     "projects/elm-editor/src/Main.elm",
   };
 
+  /** The editor shell's stylesheet, owned by the elm-editor project and copied into the gallery
+   * output by {@link #writeEditorPage} when that project is checked out. */
+  public static final String EDITOR_CSS = "projects/elm-editor/editor.css";
+
   /** Whether the editor project is checked out (the example is absent in checkouts without it). */
   public static boolean editorAvailable() {
     for (String m : EDITOR_MODULES) {
@@ -676,6 +681,12 @@ public final class SiteGenerator {
    */
   private void writeEditorPage(String nav) throws IOException {
     String[] sources = editorSources();
+    // The shell's stylesheet lives in the elm-editor project (so embedders are styled); copy it
+    // from the sibling into the gallery output, where the page's <link href="editor.css"> finds it.
+    Files.writeString(
+        outDir.resolve("editor.css"),
+        Files.readString(Path.of(EDITOR_CSS), StandardCharsets.UTF_8),
+        StandardCharsets.UTF_8);
     // The editor is a full-screen, three-column IDE with its own in-app "back to gallery" link, so
     // it deliberately does NOT get the shared sidebar wrapper (it would crowd the panes). Reset the
     // body margin so its 100vh layout fills the viewport exactly (no page scrollbar).
