@@ -1,58 +1,159 @@
 module Life exposing (main)
 
--- Conway's Game of Life, in the elm-playground style.
+-- Conway's Game of Life, with a small control form.
 --
--- Press a number key to load a starting pattern:
---   1  Glider        2  Oscillators
---   3  Pulsar        4  R-pentomino
--- Hold SPACE to pause. The grid wraps around at the edges.
+-- Use the form to set the grid size (cols × rows), the cell size in pixels, the step interval, and
+-- which starting pattern to drop in (a glider, a lightweight spaceship, some oscillators, …). Press
+-- Pause to freeze the simulation and Reset to reload the chosen pattern. The grid wraps at the edges.
 --
--- Learn more about the playground here:
---   https://package.elm-lang.org/packages/evancz/elm-playground/latest/
+-- Learn more about Conway's Game of Life:
+--   https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life
 
-import Playground exposing (..)
-
-
-cols =
-  24
-
-
-rows =
-  16
+import Browser
+import Html exposing (Html, button, div, input, label, option, select, span, text)
+import Html.Attributes exposing (style, type_, value)
+import Html.Events exposing (onClick, onInput)
+import Time
 
 
-cell =
-  22
+
+-- MODEL
 
 
-stepEvery =
-  5
+type alias Model =
+  { cols : Int
+  , rows : Int
+  , cell : Int            -- cell size in pixels
+  , stepEvery : Int       -- milliseconds between generations
+  , pattern : String      -- key of the starting pattern (see `patterns`)
+  , cells : List ( Int, Int )
+  , gen : Int
+  , running : Bool
+  }
+
+
+defaults : Model
+defaults =
+  reload
+    { cols = 24
+    , rows = 16
+    , cell = 22
+    , stepEvery = 120
+    , pattern = "glider"
+    , cells = []
+    , gen = 0
+    , running = True
+    }
 
 
 main =
-  game view update (load 1)
+  Browser.element
+    { init = init
+    , update = update
+    , view = view
+    , subscriptions = subscriptions
+    }
 
 
-load n =
-  { cells = setup n, gen = 0, sub = 0 }
+init _ =
+  ( defaults, Cmd.none )
 
 
-setup n =
-  if n == 2 then
+{-| Drop the current pattern onto the grid and reset the generation counter. -}
+reload : Model -> Model
+reload model =
+  { model | cells = setup model.pattern, gen = 0 }
+
+
+{-| While running, tick one generation every `stepEvery` milliseconds. -}
+subscriptions : Model -> Sub Msg
+subscriptions model =
+  if model.running then
+    Time.every (toFloat model.stepEvery) (\_ -> Tick)
+
+  else
+    Sub.none
+
+
+
+-- UPDATE
+
+
+type Msg
+  = Tick
+  | TogglePlay
+  | Reset
+  | SetPattern String
+  | SetCols String
+  | SetRows String
+  | SetCell String
+  | SetStepEvery String
+
+
+update msg model =
+  case msg of
+    Tick ->
+      ( { model | cells = step model.cols model.rows model.cells, gen = model.gen + 1 }, Cmd.none )
+
+    TogglePlay ->
+      ( { model | running = not model.running }, Cmd.none )
+
+    Reset ->
+      ( reload model, Cmd.none )
+
+    SetPattern p ->
+      ( reload { model | pattern = p }, Cmd.none )
+
+    SetCols s ->
+      ( { model | cols = parseInt 3 80 model.cols s }, Cmd.none )
+
+    SetRows s ->
+      ( { model | rows = parseInt 3 80 model.rows s }, Cmd.none )
+
+    SetCell s ->
+      ( { model | cell = parseInt 4 60 model.cell s }, Cmd.none )
+
+    SetStepEvery s ->
+      ( { model | stepEvery = parseInt 20 2000 model.stepEvery s }, Cmd.none )
+
+
+{-| Parse a form field to an int, clamped to [lo, hi]; keep the old value if it isn't a number. -}
+parseInt : Int -> Int -> Int -> String -> Int
+parseInt lo hi current s =
+  clamp lo hi (Maybe.withDefault current (String.toInt s))
+
+
+
+-- STARTING PATTERNS (each a list of (col, row) cells, offset from an origin)
+
+
+{-| The choices offered by the pattern <select>: (value, label). -}
+patterns : List ( String, String )
+patterns =
+  [ ( "glider", "Glider" )
+  , ( "lwss", "Lightweight spaceship" )
+  , ( "oscillators", "Oscillators" )
+  , ( "pulsar", "Pulsar" )
+  , ( "rpentomino", "R-pentomino" )
+  ]
+
+
+setup : String -> List ( Int, Int )
+setup pattern =
+  if pattern == "lwss" then
+    lwss 3 5
+
+  else if pattern == "oscillators" then
     blinker 4 4 ++ toad 13 4 ++ beacon 5 10
 
-  else if n == 3 then
+  else if pattern == "pulsar" then
     pulsar 5 1
 
-  else if n == 4 then
+  else if pattern == "rpentomino" then
     rPentomino 11 7
 
   else
     glider 1 1
-
-
-
--- PATTERNS (each a list of (col, row) cells, offset from an origin)
 
 
 at ox oy coords =
@@ -61,6 +162,10 @@ at ox oy coords =
 
 glider ox oy =
   at ox oy [ ( 1, 0 ), ( 2, 1 ), ( 0, 2 ), ( 1, 2 ), ( 2, 2 ) ]
+
+
+lwss ox oy =
+  at ox oy [ ( 1, 0 ), ( 2, 0 ), ( 3, 0 ), ( 4, 0 ), ( 0, 1 ), ( 4, 1 ), ( 4, 2 ), ( 0, 3 ), ( 3, 3 ) ]
 
 
 blinker ox oy =
@@ -98,20 +203,20 @@ pulsar ox oy =
 -- ONE CONWAY STEP ON THE WRAPPED GRID
 
 
-step cells =
-  List.filter (\c -> survives c cells) allCells
+step cols rows cells =
+  List.filter (\c -> survives cols rows c cells) (allCells cols rows)
 
 
-allCells =
+allCells cols rows =
   List.concatMap
     (\y -> List.map (\x -> ( x, y )) (List.range 0 (cols - 1)))
     (List.range 0 (rows - 1))
 
 
-survives ( x, y ) cells =
+survives cols rows ( x, y ) cells =
   let
     n =
-      neighbors x y cells
+      neighbors cols rows x y cells
   in
   if List.member ( x, y ) cells then
     n == 2 || n == 3
@@ -120,7 +225,7 @@ survives ( x, y ) cells =
     n == 3
 
 
-neighbors x y cells =
+neighbors cols rows x y cells =
   List.length
     (List.filter
       (\( dx, dy ) -> List.member ( wrap cols (x + dx), wrap rows (y + dy) ) cells)
@@ -137,49 +242,135 @@ wrap m v =
 
 
 
--- UPDATE: number keys load a pattern, SPACE pauses, otherwise step every few frames
-
-
-update computer mem =
-  if List.member "1" computer.keyboard.keys then
-    load 1
-
-  else if List.member "2" computer.keyboard.keys then
-    load 2
-
-  else if List.member "3" computer.keyboard.keys then
-    load 3
-
-  else if List.member "4" computer.keyboard.keys then
-    load 4
-
-  else if computer.keyboard.space then
-    mem
-
-  else if mem.sub + 1 >= stepEvery then
-    { mem | cells = step mem.cells, gen = mem.gen + 1, sub = 0 }
-
-  else
-    { mem | sub = mem.sub + 1 }
-
-
-
 -- VIEW
 
 
-view computer mem =
-  rectangle (rgb 12 12 28) computer.screen.width computer.screen.height
-    :: List.map cellShape mem.cells
+view : Model -> Html Msg
+view model =
+  div
+    [ style "font-family" "system-ui, -apple-system, Segoe UI, sans-serif"
+    , style "color" "#e6edf3"
+    , style "background" "#0b1020"
+    , style "padding" "16px"
+    ]
+    [ controls model
+    , grid model
+    ]
 
 
-cellShape ( x, y ) =
-  square (rgb 80 220 140) cell
-    |> move (px x) (py y)
+controls : Model -> Html Msg
+controls model =
+  div
+    [ style "display" "flex"
+    , style "flex-wrap" "wrap"
+    , style "gap" "12px"
+    , style "align-items" "flex-end"
+    , style "margin-bottom" "12px"
+    ]
+    [ numberField "Cols" model.cols SetCols
+    , numberField "Rows" model.rows SetRows
+    , numberField "Cell (px)" model.cell SetCell
+    , numberField "Step every (ms)" model.stepEvery SetStepEvery
+    , patternField
+    , button (onClick TogglePlay :: btnAttrs)
+        [ text
+            (if model.running then
+              "Pause"
+
+             else
+              "Play"
+            )
+        ]
+    , button (onClick Reset :: btnAttrs) [ text "Reset" ]
+    , span [ style "opacity" "0.7", style "font-size" "12px" ]
+        [ text ("generation " ++ String.fromInt model.gen) ]
+    ]
 
 
-px x =
-  toFloat x * cell - toFloat cols * cell / 2 + cell / 2
+numberField : String -> Int -> (String -> Msg) -> Html Msg
+numberField name v toMsg =
+  label fieldAttrs
+    [ span labelAttrs [ text name ]
+    , input ([ type_ "number", value (String.fromInt v), onInput toMsg, style "width" "84px" ] ++ inputAttrs) []
+    ]
 
 
-py y =
-  toFloat rows * cell / 2 - toFloat y * cell - cell / 2
+patternField : Html Msg
+patternField =
+  label fieldAttrs
+    [ span labelAttrs [ text "Pattern" ]
+    , select (onInput SetPattern :: style "width" "190px" :: inputAttrs)
+        (List.map patternOption patterns)
+    ]
+
+
+patternOption : ( String, String ) -> Html Msg
+patternOption ( val, lbl ) =
+  option [ value val ] [ text lbl ]
+
+
+grid : Model -> Html Msg
+grid model =
+  div
+    [ style "position" "relative"
+    , style "width" (px (model.cols * model.cell))
+    , style "height" (px (model.rows * model.cell))
+    , style "background" "#0c0c1c"
+    , style "overflow" "hidden"
+    , style "border" "1px solid #2a3550"
+    , style "border-radius" "6px"
+    ]
+    (List.map (cellView model.cell) model.cells)
+
+
+cellView : Int -> ( Int, Int ) -> Html Msg
+cellView cell ( x, y ) =
+  div
+    [ style "position" "absolute"
+    , style "left" (px (x * cell))
+    , style "top" (px (y * cell))
+    , style "width" (px (cell - 1))
+    , style "height" (px (cell - 1))
+    , style "background" "#50dc8c"
+    ]
+    []
+
+
+px : Int -> String
+px n =
+  String.fromInt n ++ "px"
+
+
+
+-- STYLES (inline, since a gallery example has no stylesheet)
+
+
+fieldAttrs : List (Html.Attribute msg)
+fieldAttrs =
+  [ style "display" "flex", style "flex-direction" "column", style "gap" "3px", style "font-size" "12px" ]
+
+
+labelAttrs : List (Html.Attribute msg)
+labelAttrs =
+  [ style "opacity" "0.7" ]
+
+
+inputAttrs : List (Html.Attribute msg)
+inputAttrs =
+  [ style "padding" "5px 7px"
+  , style "border-radius" "5px"
+  , style "border" "1px solid #2a3550"
+  , style "background" "#0f1730"
+  , style "color" "#e6edf3"
+  ]
+
+
+btnAttrs : List (Html.Attribute msg)
+btnAttrs =
+  [ style "padding" "7px 14px"
+  , style "border-radius" "6px"
+  , style "border" "1px solid #2a3550"
+  , style "background" "#1b2747"
+  , style "color" "#e6edf3"
+  , style "cursor" "pointer"
+  ]

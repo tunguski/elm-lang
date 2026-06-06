@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import pl.matsuo.elm.interp.Apply;
@@ -97,39 +96,31 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
 
 
   @Test
-  void lifeExampleEvolvesAGliderAndSwitchesSetups() throws Exception {
-    // Conway's Game of Life (life.elm) must run under the editor's game loop: a glider conserves its
-    // five cells across a generation, time advances `gen`, and a number key swaps the starting setup.
+  void lifeExampleHasAConfigFormAndEvolvesAGlider() throws Exception {
+    // Conway's Game of Life (Life.elm) is a Browser.element with a config form: a pattern <select>
+    // and number inputs (cols/rows/cell/step), no number-key handling. Its default is a glider that
+    // conserves its five cells across a generation, and a `Tick` advances exactly one generation.
     String src =
         java.nio.file.Files.readString(
             java.nio.file.Path.of("src/main/elm/examples/Life.elm"));
+
+    // The initial view is the form (pattern select + number inputs) over the default glider's 5 cells.
+    String view0 = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
+    assertTrue(view0.contains("<select"), "the form has a pattern <select>: " + view0);
+    assertEquals(4, countMatches(view0, "type=number"), "the form has four number inputs: " + view0);
+    assertEquals(5, countMatches(view0, "#50dc8c"), "the default glider has 5 live cells: " + view0);
+
+    // The app is drivable through the editor's TEA loop. One timer Tick (built by applying the
+    // subscription's toMsg) advances one Conway generation; the glider keeps its five cells.
     ElmList fs = files("Main.elm", src);
-    ElmList none = ElmList.fromJava(new ArrayList<>());
-
-    Object mem = unwrapJust(Apply.apply(EDITOR.value("Eval", "gameInitMem"), fs));
-    // Initial frame: 5 glider cells + 1 background rectangle = 6 <rect>.
-    String frame0 = renderGame(fs, List.of(), 0.0, mem);
-    assertEquals(6, countMatches(frame0, "VStr \"rect\""), "glider draws 5 cells: " + frame0);
-
-    // stepEvery (5) frames advance exactly one Conway generation.
-    for (int i = 0; i < 5; i++) {
-      mem = okValue(Apply.applyAll(EDITOR.value("Eval", "gameStep"), fs, none, (double) (i * 16), mem));
-    }
-    String afterGen = Show.plain(mem);
-    assertTrue(afterGen.contains("(\"gen\",VNum 1)"), "one generation elapsed: " + afterGen);
+    Object model0 = okValue(Apply.apply(EDITOR.value("Eval", "appInit"), fs));
+    Object subPair = unwrapJust(Apply.applyAll(EDITOR.value("Eval", "appSubscription"), fs, model0));
+    Object toMsg = ((pl.matsuo.elm.runtime.ElmTuple) subPair).get(1);
+    Object tick = okValue(Apply.applyAll(EDITOR.value("Eval", "applyMsgIn"), fs, toMsg, model0));
+    Object model1 = okValue(Apply.applyAll(EDITOR.value("Eval", "appUpdate"), fs, tick, model0));
+    String view1 = Show.plain(okValue(Apply.applyAll(EDITOR.value("Eval", "appView"), fs, model1)));
     assertEquals(
-        6,
-        countMatches(renderGame(fs, List.of(), 80.0, mem), "VStr \"rect\""),
-        "a glider still has 5 live cells after a generation");
-
-    // Holding "3" loads the pulsar setup: many cells, generation reset to 0.
-    Object pulsar =
-        okValue(
-            Apply.applyAll(
-                EDITOR.value("Eval", "gameStep"), fs, ElmList.fromJava(List.of("3")), 96.0, mem));
-    assertTrue(Show.plain(pulsar).contains("(\"gen\",VNum 0)"), "loading a setup resets gen");
-    assertTrue(
-        countMatches(renderGame(fs, List.of(), 0.0, pulsar), "VStr \"rect\"") > 30, "pulsar has many cells");
+        5, countMatches(view1, "#50dc8c"), "a glider still has 5 live cells after a generation: " + view1);
   }
 
   @Test
