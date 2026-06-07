@@ -217,6 +217,101 @@ public final class Js {
     return paren(function(param, body)) + "(" + arg + ")";
   }
 
+  /** {@code (function(){body})()} — an immediately-invoked function with no parameters. */
+  public static String iife(String body) {
+    return paren("function(){" + body + "}") + "()";
+  }
+
+  /** {@code lhs=rhs;} — a reassignment statement (no {@code var}). */
+  public static String assign(String lhs, String rhs) {
+    return lhs + "=" + rhs + ";";
+  }
+
+  /** {@code if(cond){thenBody}else{elseBody}}. */
+  public static String ifElse(String cond, String thenBody, String elseBody) {
+    return "if(" + cond + "){" + thenBody + "}else{" + elseBody + "}";
+  }
+
+  /** {@code {body}} — a brace-wrapped statement block. */
+  public static String block(String body) {
+    return "{" + body + "}";
+  }
+
+  /** {@code continue label;}. */
+  public static String continueTo(String label) {
+    return "continue " + label + ";";
+  }
+
+  /** {@code label: while(true){body}} — the labelled loop the self-tail-call optimisation emits. */
+  public static String labeledWhileTrue(String label, String body) {
+    return label + ": while(true){" + body + "}";
+  }
+
+  /** {@code switch(key){cases}}. */
+  public static String switchStmt(String key, String cases) {
+    return "switch(" + key + "){" + cases + "}";
+  }
+
+  /** {@code case label:{body break;}} — one labelled case that falls through to the default on no
+   *  match (the trailing {@code break} leaves the switch so the post-switch default code runs). */
+  public static String caseLabel(String label, String body) {
+    return "case " + label + ":{" + body + "break;}";
+  }
+
+  /** A curried arrow chain {@code (p0=>p1=>…=>body)}; {@code body} may be a block or an expression. */
+  public static String curried(List<String> params, String body) {
+    String acc = body;
+    for (int i = params.size() - 1; i >= 0; i--) {
+      acc = arrow(params.get(i), acc);
+    }
+    return paren(acc);
+  }
+
+  /** A generated temporary or parameter name, e.g. {@code $s7} or {@code a0}. */
+  public static String tmp(String prefix, int n) {
+    return prefix + n;
+  }
+
+  // -------------------------------------------------------- program assembly
+
+  /** A module-qualified top-level identifier {@code _$tag$name}. */
+  public static String qualifiedId(String tag, String name) {
+    return "_$" + tag + "$" + name;
+  }
+
+  /** Joins program sections (kernel, declarations, entry point, …) with newlines. */
+  public static String lines(String... sections) {
+    return String.join("\n", sections);
+  }
+
+  /** The prefix of a top-level binding, {@code var id = } — shared by emission and source maps. */
+  public static String topLevelVarPrefix(String id) {
+    return "var " + id + " = ";
+  }
+
+  /** A top-level binding {@code var id = expr;} on its own line. */
+  public static String topLevelVar(String id, String expr) {
+    return topLevelVarPrefix(id) + expr + ";\n";
+  }
+
+  /** {@code process.stdout.write($show(expr));} — a Node program's "print this value" entry point. */
+  public static String printShow(String expr) {
+    return call("process.stdout.write", call("$show", expr)) + ";";
+  }
+
+  /** {@code window.$start(mainId, document.getElementById('app'));} — mounts a browser app. */
+  public static String mount(String mainId) {
+    return call("window.$start", List.of(mainId, "document.getElementById('app')")) + ";";
+  }
+
+  /** A minimal HTML page that hosts {@code script} in an {@code <div id="app">} mount point. */
+  public static String htmlAppPage(String script) {
+    return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
+        + "<script>\n"
+        + script
+        + "\n</script></body></html>\n";
+  }
+
   private static String commas(List<String> xs) {
     return String.join(", ", xs);
   }

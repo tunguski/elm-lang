@@ -5,9 +5,11 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
@@ -132,16 +134,13 @@ public final class JsCompiler {
 
   /** Encodes a name to a valid JS identifier fragment, so operator names like {@code +++} are safe. */
   private static String jsIdent(String name) {
-    StringBuilder sb = new StringBuilder(name.length());
-    for (int i = 0; i < name.length(); i++) {
-      char c = name.charAt(i);
-      if (Character.isLetterOrDigit(c) || c == '_' || c == '$') {
-        sb.append(c);
-      } else {
-        sb.append("$op").append((int) c);
-      }
-    }
-    return sb.toString();
+    return name.chars()
+        .mapToObj(
+            c ->
+                Character.isLetterOrDigit(c) || c == '_' || c == '$'
+                    ? String.valueOf((char) c)
+                    : "$op" + c)
+        .collect(Collectors.joining());
   }
 
   // --- public API --------------------------------------------------------
@@ -149,7 +148,7 @@ public final class JsCompiler {
   /** Full program that prints {@code main} (a pure value) via {@code $show}. */
   public static String moduleProgram(String source) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
-    return JsRuntime.SOURCE + "\n" + c.declarations() + "\nprocess.stdout.write($show(_$main));\n";
+    return Js.lines(JsRuntime.SOURCE, c.declarations(), Js.printShow(Js.local("main"))) + "\n";
   }
 
   /** The compiled program ({@code code}) and a Source Map v3 ({@code map}) tying it to the source. */
@@ -176,7 +175,7 @@ public final class JsCompiler {
   /** Kernel + the module's compiled top-level declarations (no entry point), for embedding/calling. */
   public static String declarationsScript(String source) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
-    return JsRuntime.SOURCE + "\n" + c.declarations();
+    return Js.lines(JsRuntime.SOURCE, c.declarations());
   }
 
   /**
@@ -186,7 +185,7 @@ public final class JsCompiler {
    */
   public static String declarationsScriptWithDom(String source) {
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
-    return JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + c.declarations();
+    return Js.lines(JsRuntime.SOURCE, JsRuntime.DOM, c.declarations());
   }
 
   /**
@@ -200,11 +199,14 @@ public final class JsCompiler {
       modules.add(Parser.parseModule(s));
     }
     Map<String, ModuleInfo> scope = buildScope(modules);
-    StringBuilder decls = new StringBuilder();
-    for (Module m : orderModules(modules)) {
-      decls.append(new JsCompiler(m, scope).declarations());
-    }
-    return JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + decls;
+    return Js.lines(JsRuntime.SOURCE, JsRuntime.DOM, compileModules(modules, scope));
+  }
+
+  /** Every module's compiled declarations, in import order, concatenated. */
+  private static String compileModules(List<Module> modules, Map<String, ModuleInfo> scope) {
+    return orderModules(modules).stream()
+        .map(m -> new JsCompiler(m, scope).declarations())
+        .collect(Collectors.joining());
   }
 
   /** A browser app bundle: kernel + DOM/TEA runtime + module + a mount call. */
@@ -215,12 +217,7 @@ public final class JsCompiler {
       return appBundleProject(resolved.toArray(new String[0]));
     }
     JsCompiler c = new JsCompiler(Parser.parseModule(source));
-    return JsRuntime.SOURCE
-        + "\n"
-        + JsRuntime.DOM
-        + "\n"
-        + c.declarations()
-        + "\nwindow.$start(_$main, document.getElementById('app'));\n";
+    return Js.lines(JsRuntime.SOURCE, JsRuntime.DOM, c.declarations(), Js.mount(Js.local("main"))) + "\n";
   }
 
   /**
@@ -234,18 +231,9 @@ public final class JsCompiler {
       modules.add(Parser.parseModule(s));
     }
     Map<String, ModuleInfo> scope = buildScope(modules);
-    Module entry = entryModule(modules);
-    StringBuilder decls = new StringBuilder();
-    for (Module m : orderModules(modules)) { // imported modules first, so eager values resolve
-      decls.append(new JsCompiler(m, scope).declarations());
-    }
-    String mainId = "_$" + sanitizeTag(entry.name()) + "$main";
-    return JsRuntime.SOURCE
-        + "\n"
-        + JsRuntime.DOM
-        + "\n"
-        + decls
-        + "\nwindow.$start(" + mainId + ", document.getElementById('app'));\n";
+    String mainId = Js.qualifiedId(sanitizeTag(entryModule(modules).name()), "main");
+    return Js.lines(JsRuntime.SOURCE, JsRuntime.DOM, compileModules(modules, scope), Js.mount(mainId))
+        + "\n";
   }
 
   /**
@@ -268,26 +256,26 @@ public final class JsCompiler {
     Map<String, ModuleInfo> scope = buildScope(modules);
     Module entry = entryModule(modules);
     String salt = interfaceSalt(modules);
-    StringBuilder decls = new StringBuilder();
+    List<String> fragments = new ArrayList<>();
     try {
       java.nio.file.Files.createDirectories(cacheDir);
       for (Module m : orderModules(modules)) {
         String key = sha256(sourceByName.get(m.name()) + " " + salt);
         java.nio.file.Path frag = cacheDir.resolve(key + ".js");
         if (java.nio.file.Files.exists(frag)) {
-          decls.append(java.nio.file.Files.readString(frag, java.nio.charset.StandardCharsets.UTF_8));
+          fragments.add(java.nio.file.Files.readString(frag, java.nio.charset.StandardCharsets.UTF_8));
         } else {
           String compiled = new JsCompiler(m, scope).declarations();
           java.nio.file.Files.writeString(frag, compiled, java.nio.charset.StandardCharsets.UTF_8);
-          decls.append(compiled);
+          fragments.add(compiled);
         }
       }
     } catch (java.io.IOException e) {
       throw new java.io.UncheckedIOException(e);
     }
-    String mainId = "_$" + sanitizeTag(entry.name()) + "$main";
-    return JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + decls
-        + "\nwindow.$start(" + mainId + ", document.getElementById('app'));\n";
+    String mainId = Js.qualifiedId(sanitizeTag(entry.name()), "main");
+    return Js.lines(JsRuntime.SOURCE, JsRuntime.DOM, String.join("", fragments), Js.mount(mainId))
+        + "\n";
   }
 
   /** A salt over every module's declared/exposed names — what another module's codegen can depend
@@ -295,27 +283,25 @@ public final class JsCompiler {
   private static String interfaceSalt(List<Module> modules) {
     List<String> ifaces = new ArrayList<>();
     for (Module m : modules) {
-      StringBuilder b = new StringBuilder(m.name()).append('|');
-      b.append(m.exposing().open() ? "*" : m.exposing().names()).append('|');
       List<String> decls = new ArrayList<>();
       for (Decl d : m.decls()) {
         switch (d) {
           case Decl.Value v -> decls.add("v:" + v.name());
           case Decl.Port p -> decls.add("p:" + p.name());
           case Decl.TypeAlias ta -> decls.add("a:" + ta.name() + "/" + ta.params().size());
-          case Decl.Union u -> {
-            StringBuilder u2 = new StringBuilder("u:" + u.name());
-            for (Decl.Union.Variant variant : u.variants()) {
-              u2.append(',').append(variant.name()).append('/').append(variant.args().size());
-            }
-            decls.add(u2.toString());
-          }
+          case Decl.Union u ->
+              decls.add(
+                  "u:"
+                      + u.name()
+                      + u.variants().stream()
+                          .map(variant -> "," + variant.name() + "/" + variant.args().size())
+                          .collect(Collectors.joining()));
           default -> {}
         }
       }
       java.util.Collections.sort(decls);
-      b.append(String.join(";", decls));
-      ifaces.add(b.toString());
+      String exposing = m.exposing().open() ? "*" : m.exposing().names().toString();
+      ifaces.add(m.name() + "|" + exposing + "|" + String.join(";", decls));
     }
     java.util.Collections.sort(ifaces);
     return sha256(String.join("\n", ifaces));
@@ -326,11 +312,7 @@ public final class JsCompiler {
     try {
       byte[] h = java.security.MessageDigest.getInstance("SHA-256")
           .digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-      StringBuilder hex = new StringBuilder(h.length * 2);
-      for (byte b : h) {
-        hex.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-      }
-      return hex.toString();
+      return HexFormat.of().formatHex(h);
     } catch (java.security.NoSuchAlgorithmException e) {
       throw new IllegalStateException(e);
     }
@@ -338,12 +320,7 @@ public final class JsCompiler {
 
   /** A full HTML page hosting {@link #appBundleProject}. */
   public static String htmlPageProject(String driver, String... sources) {
-    return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
-        + "<script>\n"
-        + appBundleProject(sources)
-        + "\n"
-        + (driver == null ? "" : driver)
-        + "\n</script></body></html>\n";
+    return Js.htmlAppPage(appBundleProject(sources) + "\n" + (driver == null ? "" : driver));
   }
 
   /** Orders modules so an imported module is emitted before its importer (cycles keep order). */
@@ -413,12 +390,7 @@ public final class JsCompiler {
 
   /** A full HTML page hosting {@link #appBundle}; {@code driver} (may be null) runs after mount. */
   public static String htmlPage(String source, String driver) {
-    return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
-        + "<script>\n"
-        + appBundle(source)
-        + "\n"
-        + (driver == null ? "" : driver)
-        + "\n</script></body></html>\n";
+    return Js.htmlAppPage(appBundle(source) + "\n" + (driver == null ? "" : driver));
   }
 
   /** Full program that prints the value of a single expression. */
@@ -432,7 +404,7 @@ public final class JsCompiler {
             new pl.matsuo.elm.error.Position(1, 1, 0));
     JsCompiler c = new JsCompiler(empty);
     String e = c.compile(pl.matsuo.elm.opt.ConstantFold.fold(Parser.parseExpression(expression)));
-    return JsRuntime.SOURCE + "\nprocess.stdout.write($show((" + e + ")));\n";
+    return Js.lines(JsRuntime.SOURCE, Js.printShow(Js.paren(e))) + "\n";
   }
 
   /**
@@ -465,14 +437,11 @@ public final class JsCompiler {
             List.of(),
             new pl.matsuo.elm.error.Position(1, 1, 0));
     JsCompiler c = new JsCompiler(empty);
-    StringBuilder sb = new StringBuilder(JsRuntime.SOURCE).append("\nfunction $evalAll(){return [");
-    for (int i = 0; i < expressions.size(); i++) {
-      if (i > 0) {
-        sb.append(",");
-      }
-      sb.append("$show((").append(c.compile(Parser.parseExpression(expressions.get(i)))).append("))");
-    }
-    return sb.append("];}\n").toString();
+    String shows =
+        expressions.stream()
+            .map(e -> Js.call("$show", Js.paren(c.compile(Parser.parseExpression(e)))))
+            .collect(Collectors.joining(","));
+    return Js.lines(JsRuntime.SOURCE, "function $evalAll(){return [" + shows + "];}") + "\n";
   }
 
   /**
@@ -489,13 +458,17 @@ public final class JsCompiler {
             List.of(),
             new pl.matsuo.elm.error.Position(1, 1, 0));
     JsCompiler c = new JsCompiler(empty);
-    StringBuilder sb = new StringBuilder(JsRuntime.SOURCE).append("\nvar $out=[];\n");
-    for (String expr : expressions) {
-      sb.append("$out.push($show((")
-          .append(c.compile(pl.matsuo.elm.opt.ConstantFold.fold(Parser.parseExpression(expr))))
-          .append(")));\n");
-    }
-    return sb.append("process.stdout.write($out.join(\"\\n\"));\n").toString();
+    String pushes =
+        expressions.stream()
+            .map(
+                expr ->
+                    "$out.push("
+                        + Js.call(
+                            "$show",
+                            Js.paren(c.compile(pl.matsuo.elm.opt.ConstantFold.fold(Parser.parseExpression(expr)))))
+                        + ");\n")
+            .collect(Collectors.joining());
+    return JsRuntime.SOURCE + "\nvar $out=[];\n" + pushes + "process.stdout.write($out.join(\"\\n\"));\n";
   }
 
   /**
@@ -516,7 +489,7 @@ public final class JsCompiler {
     List<SourceMap.Seg> segs = new ArrayList<>();
     segs.add(new SourceMap.Seg(0, declPos.line() - 1, declPos.col() - 1));
     if (body != null) {
-      int prefixLen = ("var " + topLevelId(name) + " = ").length();
+      int prefixLen = Js.topLevelVarPrefix(topLevelId(name)).length();
       segs.add(new SourceMap.Seg(prefixLen, body.pos().line() - 1, body.pos().col() - 1));
     }
     declMappings.add(segs);
@@ -524,7 +497,7 @@ public final class JsCompiler {
 
   public String declarations() {
     declMappings.clear();
-    StringBuilder sb = new StringBuilder();
+    JsBlock out = new JsBlock();
     java.util.Map<String, Decl.Value> values = new java.util.LinkedHashMap<>(); // parameterless
     java.util.Map<String, Decl.Value> byName = new java.util.LinkedHashMap<>(); // all top-levels
     for (Decl d : module.decls()) {
@@ -533,8 +506,7 @@ public final class JsCompiler {
         if (v.params().isEmpty()) {
           values.put(v.name(), v);
         } else {
-          sb.append("var ").append(topLevelId(v.name())).append(" = ")
-              .append(compileNamedFunction(v.name(), v.params(), v.body())).append(";\n");
+          out.add(Js.topLevelVar(topLevelId(v.name()), compileNamedFunction(v.name(), v.params(), v.body())));
           recordMapping(v.name(), v.pos(), v.body());
         }
       }
@@ -544,20 +516,16 @@ public final class JsCompiler {
     // a Sub that JS can `send` into. Both register the named port on the app's `ports` object.
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Port p) {
-        boolean incoming = portReturnsSub(p.type());
-        sb.append("var ")
-            .append(topLevelId(p.name()))
-            .append(incoming ? " = $portIn(" : " = $portOut(")
-            .append(Js.str(p.name()))
-            .append(");\n");
+        String portFn = portReturnsSub(p.type()) ? "$portIn" : "$portOut";
+        out.add(Js.topLevelVar(topLevelId(p.name()), Js.call(portFn, Js.str(p.name()))));
         recordMapping(p.name(), p.pos(), null);
       }
     }
     java.util.Set<String> emitted = new java.util.HashSet<>();
     for (String name : values.keySet()) {
-      emitValue(name, values, byName, emitted, new java.util.HashSet<>(), sb);
+      emitValue(name, values, byName, emitted, new java.util.HashSet<>(), out);
     }
-    return sb.toString();
+    return out.toString();
   }
 
   private void emitValue(
@@ -566,7 +534,7 @@ public final class JsCompiler {
       java.util.Map<String, Decl.Value> byName,
       java.util.Set<String> emitted,
       java.util.Set<String> visiting,
-      StringBuilder sb) {
+      JsBlock out) {
     if (emitted.contains(name) || !values.containsKey(name) || !visiting.add(name)) {
       return; // already emitted, not a value, or a cycle — emit in whatever order we reach it
     }
@@ -576,11 +544,10 @@ public final class JsCompiler {
     java.util.Set<String> deps = new java.util.HashSet<>();
     valueDeps(values.get(name).body(), byName, deps, new java.util.HashSet<>());
     for (String dep : deps) {
-      emitValue(dep, values, byName, emitted, visiting, sb);
+      emitValue(dep, values, byName, emitted, visiting, out);
     }
     if (emitted.add(name)) {
-      sb.append("var ").append(topLevelId(name)).append(" = ").append(compile(values.get(name).body()))
-          .append(";\n");
+      out.add(Js.topLevelVar(topLevelId(name), compile(values.get(name).body())));
       recordMapping(name, values.get(name).pos(), values.get(name).body());
     }
   }
@@ -775,25 +742,29 @@ public final class JsCompiler {
     // A record type alias is also a constructor: positional args build the record, curried.
     List<String> fields = recordAliases.get(name);
     if (fields != null) {
-      StringBuilder chain = new StringBuilder();
+      List<String> params = argNames(fields.size());
       List<String> entries = new ArrayList<>(fields.size());
       for (int i = 0; i < fields.size(); i++) {
-        chain.append(Js.arrow("a" + i, ""));
-        entries.add(Js.entry(fields.get(i), "a" + i));
+        entries.add(Js.entry(fields.get(i), params.get(i)));
       }
-      return Js.paren(chain + Js.object(entries));
+      return Js.curried(params, Js.object(entries));
     }
     int arity = ctorArity.getOrDefault(name, 0);
     if (arity == 0) {
       return Js.data(name, List.of());
     }
-    StringBuilder chain = new StringBuilder();
-    List<String> args = new ArrayList<>(arity);
-    for (int i = 0; i < arity; i++) {
-      chain.append(Js.arrow("a" + i, ""));
-      args.add("a" + i);
+    // A union constructor: a curried function of its arguments that tags them.
+    List<String> params = argNames(arity);
+    return Js.curried(params, Js.data(name, params));
+  }
+
+  /** The positional argument names {@code [a0, a1, …, a(n-1)]} for a curried constructor. */
+  private static List<String> argNames(int n) {
+    List<String> names = new ArrayList<>(n);
+    for (int i = 0; i < n; i++) {
+      names.add(Js.tmp("a", i));
     }
-    return Js.paren(chain + Js.data(name, args));
+    return names;
   }
 
   private String compileRecord(Expr.Record r) {
@@ -812,31 +783,36 @@ public final class JsCompiler {
     return Js.update(compileVar(new Expr.Var(null, u.base(), u.pos())), entries);
   }
 
-  private String compileLambda(List<Pattern> params, Expr body) {
-    List<String> binds = new ArrayList<>();
-    Set<String> names = new HashSet<>();
+  /**
+   * The JS parameter name for each Elm pattern parameter: a plain var binds directly, anything else
+   * gets a fresh {@code $p}<i>i</i> parameter whose destructuring bindings are appended to {@code
+   * binds} (to run at the function-body top). The bound Elm names are added to {@code names}.
+   */
+  private String[] paramVars(List<Pattern> params, List<String> binds, Set<String> names) {
     String[] arg = new String[params.size()];
     for (int i = 0; i < params.size(); i++) {
       Pattern p = params.get(i);
       if (p instanceof Pattern.Var v) {
         arg[i] = Js.local(v.name());
         names.add(v.name());
-      } else if (p instanceof Pattern.Wildcard) {
-        arg[i] = "$p" + i;
       } else {
-        arg[i] = "$p" + i;
-        patBinds(p, "$p" + i, binds, names);
+        arg[i] = Js.tmp("$p", i);
+        if (!(p instanceof Pattern.Wildcard)) {
+          patBinds(p, arg[i], binds, names);
+        }
       }
     }
+    return arg;
+  }
+
+  private String compileLambda(List<Pattern> params, Expr body) {
+    List<String> binds = new ArrayList<>();
+    Set<String> names = new HashSet<>();
+    String[] arg = paramVars(params, binds, names);
     localFrames.push(names);
     String b = compile(body);
     localFrames.pop();
-    String inner = "{" + String.join("", binds) + "return " + b + ";}";
-    StringBuilder sb = new StringBuilder(inner);
-    for (int i = params.size() - 1; i >= 0; i--) {
-      sb = new StringBuilder(arg[i] + "=>" + sb);
-    }
-    return "(" + sb + ")";
+    return Js.curried(List.of(arg), Js.block(String.join("", binds) + Js.ret(b)));
   }
 
   /**
@@ -856,30 +832,14 @@ public final class JsCompiler {
     }
     List<String> binds = new ArrayList<>();
     Set<String> names = new HashSet<>();
-    String[] arg = new String[params.size()];
-    for (int i = 0; i < params.size(); i++) {
-      Pattern p = params.get(i);
-      if (p instanceof Pattern.Var v) {
-        arg[i] = Js.local(v.name());
-        names.add(v.name());
-      } else if (p instanceof Pattern.Wildcard) {
-        arg[i] = "$p" + i;
-      } else {
-        arg[i] = "$p" + i;
-        patBinds(p, "$p" + i, binds, names);
-      }
-    }
+    String[] arg = paramVars(params, binds, names);
     localFrames.push(names);
-    StringBuilder loop = new StringBuilder();
+    JsBlock loop = new JsBlock();
     emitTail(body, elmName, arg, loop);
     localFrames.pop();
     // Pattern binds re-run at the loop top so they reflect the reassigned parameters each iteration.
-    String inner = "{$tco: while(true){" + String.join("", binds) + loop + "}}";
-    StringBuilder sb = new StringBuilder(inner);
-    for (int i = params.size() - 1; i >= 0; i--) {
-      sb = new StringBuilder(arg[i] + "=>" + sb);
-    }
-    return "(" + sb + ")";
+    String inner = Js.block(Js.labeledWhileTrue("$tco", String.join("", binds) + loop));
+    return Js.curried(List.of(arg), inner);
   }
 
   /** If {@code e} is a saturated application of the function named {@code elmName} (arity args, head
@@ -957,51 +917,50 @@ public final class JsCompiler {
 
   /** Emits the body of a tail-recursive function as loop statements: a tail self-call reassigns the
    * parameters and {@code continue}s; if/case/let recurse into tail position; anything else returns. */
-  private void emitTail(Expr e, String elmName, String[] arg, StringBuilder out) {
+  private void emitTail(Expr e, String elmName, String[] arg, JsBlock out) {
     List<Expr> selfArgs = selfCallArgs(e, elmName, arg.length);
     if (selfArgs != null) {
       // Evaluate every new argument into a temp first (they may read the current parameters), then
       // reassign the parameters and loop.
       String[] tmp = new String[arg.length];
       for (int i = 0; i < arg.length; i++) {
-        tmp[i] = "$tc" + (counter++);
-        out.append("var ").append(tmp[i]).append("=").append(compile(selfArgs.get(i))).append(";");
+        tmp[i] = Js.tmp("$tc", counter++);
+        out.varDecl(tmp[i], compile(selfArgs.get(i)));
       }
       for (int i = 0; i < arg.length; i++) {
-        out.append(arg[i]).append("=").append(tmp[i]).append(";");
+        out.assign(arg[i], tmp[i]);
       }
-      out.append("continue $tco;");
+      out.continueTo("$tco");
       return;
     }
     switch (e) {
       case Expr.If iff -> {
-        out.append("if(").append(compile(iff.cond())).append("){");
-        emitTail(iff.thenBranch(), elmName, arg, out);
-        out.append("}else{");
-        emitTail(iff.elseBranch(), elmName, arg, out);
-        out.append("}");
+        JsBlock thenBlock = new JsBlock();
+        emitTail(iff.thenBranch(), elmName, arg, thenBlock);
+        JsBlock elseBlock = new JsBlock();
+        emitTail(iff.elseBranch(), elmName, arg, elseBlock);
+        out.add(Js.ifElse(compile(iff.cond()), thenBlock.toString(), elseBlock.toString()));
       }
       case Expr.Case c -> {
-        String sv = "$s" + (counter++);
-        out.append("var ").append(sv).append("=").append(compile(c.scrutinee())).append(";");
+        String sv = Js.tmp("$s", counter++);
+        out.varDecl(sv, compile(c.scrutinee()));
         for (Expr.Case.Branch br : c.branches()) {
           List<String> conds = new ArrayList<>();
           List<String> binds = new ArrayList<>();
           Set<String> names = new HashSet<>();
           matchJs(br.pattern(), sv, conds, binds, names);
-          String cond = conds.isEmpty() ? "true" : String.join(" && ", conds);
-          out.append("if(").append(cond).append("){").append(String.join("", binds));
           localFrames.push(names);
+          JsBlock branch = new JsBlock();
           // If the branch's pattern shadows the function name, its body can't be a self-tail-call.
           if (patternBindsName(br.pattern(), elmName)) {
-            out.append("return ").append(compile(br.body())).append(";");
+            branch.ret(compile(br.body()));
           } else {
-            emitTail(br.body(), elmName, arg, out);
+            emitTail(br.body(), elmName, arg, branch);
           }
           localFrames.pop();
-          out.append("}");
+          out.add(Js.ifStmt(Js.and(conds), String.join("", binds) + branch));
         }
-        out.append("throw new Error('non-exhaustive pattern');");
+        out.throwError("non-exhaustive pattern");
       }
       case Expr.Let let when !letBindsName(let, elmName) -> {
         Set<String> names = new HashSet<>();
@@ -1019,19 +978,19 @@ public final class JsCompiler {
                 v.params().isEmpty()
                     ? compile(v.body())
                     : compileNamedFunction(v.name(), v.params(), v.body());
-            out.append("var ").append(Js.local(v.name())).append("=").append(rhs).append(";");
+            out.varDecl(Js.local(v.name()), rhs);
           } else if (d instanceof Decl.Destructure de) {
-            String t = "$d" + (counter++);
-            out.append("var ").append(t).append("=").append(compile(de.body())).append(";");
+            String t = Js.tmp("$d", counter++);
+            out.varDecl(t, compile(de.body()));
             List<String> binds = new ArrayList<>();
             patBinds(de.pattern(), t, binds, new HashSet<>());
-            out.append(String.join("", binds));
+            out.add(String.join("", binds));
           }
         }
         emitTail(let.body(), elmName, arg, out);
         localFrames.pop();
       }
-      default -> out.append("return ").append(compile(e)).append(";");
+      default -> out.ret(compile(e));
     }
   }
 
@@ -1045,7 +1004,7 @@ public final class JsCompiler {
       }
     }
     localFrames.push(names);
-    StringBuilder stmts = new StringBuilder();
+    JsBlock stmts = new JsBlock();
     for (Decl d : let.defs()) {
       if (d instanceof Decl.Value v) {
         // A let-bound function gets self-tail-call optimisation too (like top-level functions).
@@ -1053,18 +1012,18 @@ public final class JsCompiler {
             v.params().isEmpty()
                 ? compile(v.body())
                 : compileNamedFunction(v.name(), v.params(), v.body());
-        stmts.append("var ").append(Js.local(v.name())).append("=").append(rhs).append(";");
+        stmts.varDecl(Js.local(v.name()), rhs);
       } else if (d instanceof Decl.Destructure de) {
-        String tmp = "$d" + (counter++);
-        stmts.append("var ").append(tmp).append("=").append(compile(de.body())).append(";");
+        String tmp = Js.tmp("$d", counter++);
+        stmts.varDecl(tmp, compile(de.body()));
         List<String> binds = new ArrayList<>();
         patBinds(de.pattern(), tmp, binds, new HashSet<>());
-        stmts.append(String.join("", binds));
+        stmts.add(String.join("", binds));
       }
     }
     String body = compile(let.body());
     localFrames.pop();
-    return "(function(){" + stmts + "return " + body + ";})()";
+    return Js.iife(stmts + Js.ret(body));
   }
 
   private String compileCase(Expr.Case c) {
@@ -1075,8 +1034,8 @@ public final class JsCompiler {
     if (switched != null) {
       return switched;
     }
-    String sv = "$s" + (counter++);
-    StringBuilder body = new StringBuilder();
+    String sv = Js.tmp("$s", counter++);
+    JsBlock body = new JsBlock();
     for (Expr.Case.Branch br : c.branches()) {
       List<String> conds = new ArrayList<>();
       List<String> binds = new ArrayList<>();
@@ -1085,9 +1044,9 @@ public final class JsCompiler {
       localFrames.push(names);
       String e = compile(br.body());
       localFrames.pop();
-      body.append(Js.ifStmt(Js.and(conds), String.join("", binds) + Js.ret(e)));
+      body.add(Js.ifStmt(Js.and(conds), String.join("", binds) + Js.ret(e)));
     }
-    body.append(Js.throwError("non-exhaustive pattern"));
+    body.throwError("non-exhaustive pattern");
     return Js.iife(sv, body.toString(), compile(c.scrutinee()));
   }
 
@@ -1168,10 +1127,9 @@ public final class JsCompiler {
       groups.computeIfAbsent(label, k -> new ArrayList<>()).add(b);
     }
 
-    StringBuilder body = new StringBuilder();
-    body.append("switch(").append(key).append("){");
+    List<String> cases = new ArrayList<>();
     for (var entry : groups.entrySet()) {
-      body.append("case ").append(entry.getKey()).append(":{");
+      JsBlock caseBody = new JsBlock();
       for (Expr.Case.Branch b : entry.getValue()) {
         List<String> conds = new ArrayList<>();
         List<String> binds = new ArrayList<>();
@@ -1186,25 +1144,25 @@ public final class JsCompiler {
         String e = compile(b.body());
         localFrames.pop();
         String stmt = String.join("", binds) + Js.ret(e);
-        body.append(conds.isEmpty() ? stmt : Js.ifStmt(Js.and(conds), stmt));
+        caseBody.add(conds.isEmpty() ? stmt : Js.ifStmt(Js.and(conds), stmt));
       }
-      body.append("break;}");
+      cases.add(Js.caseLabel(entry.getKey(), caseBody.toString()));
     }
-    body.append("}");
+    JsBlock body = new JsBlock();
+    body.add(Js.switchStmt(key, String.join("", cases)));
     // Default: reached when no case matched, or a case `break`s out (its arg patterns all failed).
     if (def != null) {
       Set<String> names = new HashSet<>();
-      String bind = "";
       if (def.pattern() instanceof Pattern.Var v) {
-        bind = Js.varDecl(Js.local(v.name()), sv);
+        body.varDecl(Js.local(v.name()), sv);
         names.add(v.name());
       }
       localFrames.push(names);
       String e = compile(def.body());
       localFrames.pop();
-      body.append(bind).append(Js.ret(e));
+      body.ret(e);
     } else {
-      body.append(Js.throwError("non-exhaustive pattern"));
+      body.throwError("non-exhaustive pattern");
     }
     return Js.iife(sv, body.toString(), compile(c.scrutinee()));
   }
