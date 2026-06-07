@@ -1085,6 +1085,13 @@ public final class JsCompiler {
   }
 
   private String compileCase(Expr.Case c) {
+    // When every branch dispatches on a literal (the scrutinee itself, or element 0 of a tuple
+    // scrutinee), emit a JS `switch` — O(1) — instead of the sequential if-chain below. This turns a
+    // big name-dispatch like the interpreter's `case (name, args) of` from O(branches) into O(1).
+    String switched = trySwitchCase(c);
+    if (switched != null) {
+      return switched;
+    }
     String sv = "$s" + (counter++);
     String scrut = compile(c.scrutinee());
     StringBuilder body = new StringBuilder();
@@ -1102,6 +1109,129 @@ public final class JsCompiler {
     }
     body.append("throw new Error('non-exhaustive pattern');");
     return "(function(" + sv + "){" + body + "})(" + scrut + ")";
+  }
+
+  /**
+   * Compiles a `case` to a JS `switch` when it is a literal dispatch: every branch (bar an optional
+   * trailing wildcard/var default) matches a string/int literal in a fixed position — either the
+   * scrutinee itself (`case s of "a" -> …`) or element 0 of a tuple scrutinee (`case (name, args) of
+   * ("List.map", …) -> …`). The rest of a tuple pattern is matched with an `if` inside the case, and
+   * branches sharing a literal are grouped under one label (JS forbids duplicate case labels), so the
+   * first-match semantics of the if-chain are preserved. Returns null when not applicable.
+   */
+  private String trySwitchCase(Expr.Case c) {
+    List<Expr.Case.Branch> brs = c.branches();
+    if (brs.size() < 6) {
+      return null; // not worth a switch for a handful of branches
+    }
+    // An optional trailing wildcard/var becomes the switch default.
+    Expr.Case.Branch def = null;
+    Pattern lastPat = brs.get(brs.size() - 1).pattern();
+    if (lastPat instanceof Pattern.Wildcard || lastPat instanceof Pattern.Var) {
+      def = brs.get(brs.size() - 1);
+    }
+    int dispatchCount = def == null ? brs.size() : brs.size() - 1;
+    if (dispatchCount == 0) {
+      return null;
+    }
+    // Detect the dispatch shape from the branches: all scalar-literal, or all tuple-with-literal-0,
+    // of one literal kind (all string or all int) and (for tuples) one arity.
+    boolean tupleMode = false;
+    boolean intKind = false;
+    int tupleSize = -1;
+    for (int i = 0; i < dispatchCount; i++) {
+      Pattern p = brs.get(i).pattern();
+      boolean t;
+      boolean isInt;
+      if (p instanceof Pattern.StrLit) {
+        t = false;
+        isInt = false;
+      } else if (p instanceof Pattern.IntLit) {
+        t = false;
+        isInt = true;
+      } else if (p instanceof Pattern.Tuple tup && !tup.items().isEmpty()) {
+        Pattern p0 = tup.items().get(0);
+        if (p0 instanceof Pattern.StrLit) {
+          isInt = false;
+        } else if (p0 instanceof Pattern.IntLit) {
+          isInt = true;
+        } else {
+          return null; // first element isn't a literal -> can't switch on it
+        }
+        t = true;
+        if (tupleSize == -1) {
+          tupleSize = tup.items().size();
+        } else if (tupleSize != tup.items().size()) {
+          return null; // mixed tuple arities
+        }
+      } else {
+        return null; // a non-default branch that isn't a literal dispatch
+      }
+      if (i == 0) {
+        tupleMode = t;
+        intKind = isInt;
+      } else if (t != tupleMode || isInt != intKind) {
+        return null; // mixed shapes/kinds
+      }
+    }
+
+    String sv = "$s" + (counter++);
+    String key = tupleMode ? sv + ".vs[0]" : sv;
+
+    // Group branches by literal value (insertion order), so duplicate keys share one case label.
+    java.util.LinkedHashMap<String, List<Expr.Case.Branch>> groups = new java.util.LinkedHashMap<>();
+    for (int i = 0; i < dispatchCount; i++) {
+      Expr.Case.Branch b = brs.get(i);
+      Pattern keyPat = tupleMode ? ((Pattern.Tuple) b.pattern()).items().get(0) : b.pattern();
+      String label =
+          intKind ? Long.toString(((Pattern.IntLit) keyPat).value()) : jsString(((Pattern.StrLit) keyPat).value());
+      groups.computeIfAbsent(label, k -> new ArrayList<>()).add(b);
+    }
+
+    StringBuilder body = new StringBuilder();
+    body.append("switch(").append(key).append("){");
+    for (var entry : groups.entrySet()) {
+      body.append("case ").append(entry.getKey()).append(":{");
+      for (Expr.Case.Branch b : entry.getValue()) {
+        List<String> conds = new ArrayList<>();
+        List<String> binds = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        if (tupleMode) {
+          List<Pattern> items = ((Pattern.Tuple) b.pattern()).items();
+          for (int j = 1; j < items.size(); j++) {
+            matchJs(items.get(j), sv + ".vs[" + j + "]", conds, binds, names);
+          }
+        }
+        localFrames.push(names);
+        String e = compile(b.body());
+        localFrames.pop();
+        String bindStr = String.join("", binds);
+        if (conds.isEmpty()) {
+          body.append(bindStr).append("return ").append(e).append(";");
+        } else {
+          body.append("if(").append(String.join(" && ", conds)).append("){").append(bindStr)
+              .append("return ").append(e).append(";}");
+        }
+      }
+      body.append("break;}");
+    }
+    body.append("}");
+    // Default: reached when no case matched, or a case `break`s out (its arg patterns all failed).
+    if (def != null) {
+      Set<String> names = new HashSet<>();
+      String bind = "";
+      if (def.pattern() instanceof Pattern.Var v) {
+        bind = "var " + jsVar(v.name()) + "=" + sv + ";";
+        names.add(v.name());
+      }
+      localFrames.push(names);
+      String e = compile(def.body());
+      localFrames.pop();
+      body.append(bind).append("return ").append(e).append(";");
+    } else {
+      body.append("throw new Error('non-exhaustive pattern');");
+    }
+    return "(function(" + sv + "){" + body + "})(" + compile(c.scrutinee()) + ")";
   }
 
   // --- pattern compilation ----------------------------------------------
