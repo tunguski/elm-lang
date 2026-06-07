@@ -164,6 +164,7 @@ class EditorToolingInterpreterTest extends EditorInterpreterTestSupport {
       "projects/elm-editor/src/EvalTuple.elm",
       "projects/elm-editor/src/EvalMaybe.elm",
       "projects/elm-editor/src/EvalResult.elm",
+      "projects/elm-editor/src/EvalList.elm",
       "projects/elm-editor/src/Eval.elm",
       "projects/elm-editor/src/Highlight.elm",
       "projects/elm-editor/src/Assist.elm",
