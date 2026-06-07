@@ -548,7 +548,7 @@ public final class JsCompiler {
         sb.append("var ")
             .append(topLevelId(p.name()))
             .append(incoming ? " = $portIn(" : " = $portOut(")
-            .append(jsString(p.name()))
+            .append(Js.str(p.name()))
             .append(");\n");
         recordMapping(p.name(), p.pos(), null);
       }
@@ -663,53 +663,51 @@ public final class JsCompiler {
     return switch (e) {
       case Expr.IntLit i -> Long.toString(i.value());
       case Expr.FloatLit f -> Double.toString(f.value());
-      case Expr.StrLit s -> jsString(s.value());
-      case Expr.CharLit c -> "$char(" + c.codePoint() + ")";
-      case Expr.Shader s -> "$data(\"$Shader\",[" + jsString(s.source()) + "])";
+      case Expr.StrLit s -> Js.str(s.value());
+      case Expr.CharLit c -> Js.charLit(c.codePoint());
+      case Expr.Shader s -> Js.data("$Shader", List.of(Js.str(s.source())));
       case Expr.Unit ignored -> "$unit";
       case Expr.Var v -> compileVar(v);
       case Expr.Ctor c -> compileCtor(c.name());
       case Expr.OpFunc o ->
           pl.matsuo.elm.interp.Operators.isBuiltin(o.op())
-              ? "(a=>b=>" + binJs(o.op(), "a", "b") + ")"
+              ? Js.paren(Js.arrow("a", Js.arrow("b", Js.binOp(o.op(), "a", "b"))))
               : compile(new Expr.Var(null, o.op(), o.pos())); // (op) as a value -> its function
-      case Expr.ListLit l -> "$list([" + compileList(l.items()) + "])";
-      case Expr.Tuple t -> "$tuple([" + compileList(t.items()) + "])";
+      case Expr.ListLit l -> Js.list(compileEach(l.items()));
+      case Expr.Tuple t -> Js.tuple(compileEach(t.items()));
       case Expr.Record r -> compileRecord(r);
       case Expr.RecordUpdate u -> compileRecordUpdate(u);
-      case Expr.RecordAccess a -> "(" + compile(a.target()) + ")[" + jsString(a.field()) + "]";
-      case Expr.Accessor a -> "(r=>r[" + jsString(a.field()) + "])";
-      case Expr.App app -> "(" + compile(app.fn()) + ")(" + compile(app.arg()) + ")";
+      case Expr.RecordAccess a -> Js.index(Js.paren(compile(a.target())), Js.str(a.field()));
+      case Expr.Accessor a -> Js.paren(Js.arrow("r", Js.index("r", Js.str(a.field()))));
+      case Expr.App app -> Js.apply(compile(app.fn()), compile(app.arg()));
       case Expr.BinOp b ->
           pl.matsuo.elm.interp.Operators.isBuiltin(b.op())
-              ? binJs(b.op(), compile(b.left()), compile(b.right()))
+              ? Js.binOp(b.op(), compile(b.left()), compile(b.right()))
               // A user/package-defined operator: `a op b` is the function `(op)` applied to a and b.
-              : "(" + compile(new Expr.Var(null, b.op(), b.pos())) + ")(" + compile(b.left()) + ")(" + compile(b.right()) + ")";
-      case Expr.Negate n -> "(-(" + compile(n.operand()) + "))";
-      case Expr.If iff ->
-          "(" + compile(iff.cond()) + " ? " + compile(iff.thenBranch()) + " : "
-              + compile(iff.elseBranch()) + ")";
+              : Js.apply(
+                  Js.apply(compile(new Expr.Var(null, b.op(), b.pos())), compile(b.left())),
+                  compile(b.right()));
+      case Expr.Negate n -> Js.negate(compile(n.operand()));
+      case Expr.If iff -> Js.ternary(compile(iff.cond()), compile(iff.thenBranch()), compile(iff.elseBranch()));
       case Expr.Lambda l -> compileLambda(l.params(), l.body());
       case Expr.Let let -> compileLet(let);
       case Expr.Case c -> compileCase(c);
     };
   }
 
-  private String compileList(List<Expr> items) {
-    StringBuilder sb = new StringBuilder();
-    for (int i = 0; i < items.size(); i++) {
-      if (i > 0) {
-        sb.append(", ");
-      }
-      sb.append(compile(items.get(i)));
+  /** Each expression compiled to JS source, in order — for argument and element lists. */
+  private List<String> compileEach(List<Expr> items) {
+    List<String> out = new ArrayList<>(items.size());
+    for (Expr item : items) {
+      out.add(compile(item));
     }
-    return sb.toString();
+    return out;
   }
 
   private String compileVar(Expr.Var v) {
     if (v.module() == null) {
       if (isLocal(v.name())) {
-        return jsVar(v.name());
+        return Js.local(v.name());
       }
       if (topLevelNames.contains(v.name())) {
         return topLevelId(v.name());
@@ -720,17 +718,17 @@ public final class JsCompiler {
       }
       String canonical = unqualified.get(v.name());
       if (canonical != null && builtinKeys.contains(canonical)) {
-        return "$g(" + jsString(canonical) + ")";
+        return Js.global(canonical);
       }
       if (builtinKeys.contains(v.name())) {
-        return "$g(" + jsString(v.name()) + ")";
+        return Js.global(v.name());
       }
       throw new ElmRuntimeError("Unbound variable in JS codegen: " + v.name());
     }
     String realModule = aliases.getOrDefault(v.module(), v.module());
     String canonical = realModule + "." + v.name();
     if (builtinKeys.contains(canonical)) {
-      return "$g(" + jsString(canonical) + ")";
+      return Js.global(canonical);
     }
     if (realModule.equals(currentModule) && topLevelNames.contains(v.name())) {
       return topLevelId(v.name());
@@ -743,7 +741,7 @@ public final class JsCompiler {
     // Not a known interpreter builtin, local or project name: assume it is provided by the JS
     // runtime kernel (which has effect/Math/WebGL builtins the interpreter list doesn't enumerate)
     // and resolve it dynamically. $g throws a clear "Unbound: <name>" at runtime if it is missing.
-    return "$g(" + jsString(canonical) + ")";
+    return Js.global(canonical);
   }
 
   /** The module that exports unqualified {@code name} to this one (via imports), or null. */
@@ -778,55 +776,40 @@ public final class JsCompiler {
     List<String> fields = recordAliases.get(name);
     if (fields != null) {
       StringBuilder chain = new StringBuilder();
-      StringBuilder body = new StringBuilder("({");
+      List<String> entries = new ArrayList<>(fields.size());
       for (int i = 0; i < fields.size(); i++) {
-        chain.append("a").append(i).append("=>");
-        if (i > 0) {
-          body.append(",");
-        }
-        body.append(jsString(fields.get(i))).append(":a").append(i);
+        chain.append(Js.arrow("a" + i, ""));
+        entries.add(Js.entry(fields.get(i), "a" + i));
       }
-      return "(" + chain + body.append("})") + ")";
+      return Js.paren(chain + Js.object(entries));
     }
     int arity = ctorArity.getOrDefault(name, 0);
     if (arity == 0) {
-      return "$data(" + jsString(name) + ",[])";
+      return Js.data(name, List.of());
     }
-    StringBuilder args = new StringBuilder();
     StringBuilder chain = new StringBuilder();
+    List<String> args = new ArrayList<>(arity);
     for (int i = 0; i < arity; i++) {
-      chain.append("a").append(i).append("=>");
-      if (i > 0) {
-        args.append(",");
-      }
-      args.append("a").append(i);
+      chain.append(Js.arrow("a" + i, ""));
+      args.add("a" + i);
     }
-    return "(" + chain + "$data(" + jsString(name) + ",[" + args + "]))";
+    return Js.paren(chain + Js.data(name, args));
   }
 
   private String compileRecord(Expr.Record r) {
-    StringBuilder sb = new StringBuilder("({");
-    for (int i = 0; i < r.fields().size(); i++) {
-      if (i > 0) {
-        sb.append(",");
-      }
-      Expr.Record.Field f = r.fields().get(i);
-      sb.append(jsString(f.name())).append(":").append(compile(f.value()));
+    List<String> entries = new ArrayList<>(r.fields().size());
+    for (Expr.Record.Field f : r.fields()) {
+      entries.add(Js.entry(f.name(), compile(f.value())));
     }
-    return sb.append("})").toString();
+    return Js.object(entries);
   }
 
   private String compileRecordUpdate(Expr.RecordUpdate u) {
-    StringBuilder sb = new StringBuilder("$update(").append(compileVar(new Expr.Var(null, u.base(), u.pos())));
-    sb.append(",{");
-    for (int i = 0; i < u.fields().size(); i++) {
-      if (i > 0) {
-        sb.append(",");
-      }
-      Expr.Record.Field f = u.fields().get(i);
-      sb.append(jsString(f.name())).append(":").append(compile(f.value()));
+    List<String> entries = new ArrayList<>(u.fields().size());
+    for (Expr.Record.Field f : u.fields()) {
+      entries.add(Js.entry(f.name(), compile(f.value())));
     }
-    return sb.append("})").toString();
+    return Js.update(compileVar(new Expr.Var(null, u.base(), u.pos())), entries);
   }
 
   private String compileLambda(List<Pattern> params, Expr body) {
@@ -836,7 +819,7 @@ public final class JsCompiler {
     for (int i = 0; i < params.size(); i++) {
       Pattern p = params.get(i);
       if (p instanceof Pattern.Var v) {
-        arg[i] = jsVar(v.name());
+        arg[i] = Js.local(v.name());
         names.add(v.name());
       } else if (p instanceof Pattern.Wildcard) {
         arg[i] = "$p" + i;
@@ -877,7 +860,7 @@ public final class JsCompiler {
     for (int i = 0; i < params.size(); i++) {
       Pattern p = params.get(i);
       if (p instanceof Pattern.Var v) {
-        arg[i] = jsVar(v.name());
+        arg[i] = Js.local(v.name());
         names.add(v.name());
       } else if (p instanceof Pattern.Wildcard) {
         arg[i] = "$p" + i;
@@ -1036,7 +1019,7 @@ public final class JsCompiler {
                 v.params().isEmpty()
                     ? compile(v.body())
                     : compileNamedFunction(v.name(), v.params(), v.body());
-            out.append("var ").append(jsVar(v.name())).append("=").append(rhs).append(";");
+            out.append("var ").append(Js.local(v.name())).append("=").append(rhs).append(";");
           } else if (d instanceof Decl.Destructure de) {
             String t = "$d" + (counter++);
             out.append("var ").append(t).append("=").append(compile(de.body())).append(";");
@@ -1070,7 +1053,7 @@ public final class JsCompiler {
             v.params().isEmpty()
                 ? compile(v.body())
                 : compileNamedFunction(v.name(), v.params(), v.body());
-        stmts.append("var ").append(jsVar(v.name())).append("=").append(rhs).append(";");
+        stmts.append("var ").append(Js.local(v.name())).append("=").append(rhs).append(";");
       } else if (d instanceof Decl.Destructure de) {
         String tmp = "$d" + (counter++);
         stmts.append("var ").append(tmp).append("=").append(compile(de.body())).append(";");
@@ -1093,22 +1076,19 @@ public final class JsCompiler {
       return switched;
     }
     String sv = "$s" + (counter++);
-    String scrut = compile(c.scrutinee());
     StringBuilder body = new StringBuilder();
     for (Expr.Case.Branch br : c.branches()) {
       List<String> conds = new ArrayList<>();
       List<String> binds = new ArrayList<>();
       Set<String> names = new HashSet<>();
       matchJs(br.pattern(), sv, conds, binds, names);
-      String cond = conds.isEmpty() ? "true" : String.join(" && ", conds);
       localFrames.push(names);
       String e = compile(br.body());
       localFrames.pop();
-      body.append("if(").append(cond).append("){").append(String.join("", binds))
-          .append("return ").append(e).append(";}");
+      body.append(Js.ifStmt(Js.and(conds), String.join("", binds) + Js.ret(e)));
     }
-    body.append("throw new Error('non-exhaustive pattern');");
-    return "(function(" + sv + "){" + body + "})(" + scrut + ")";
+    body.append(Js.throwError("non-exhaustive pattern"));
+    return Js.iife(sv, body.toString(), compile(c.scrutinee()));
   }
 
   /**
@@ -1184,7 +1164,7 @@ public final class JsCompiler {
       Expr.Case.Branch b = brs.get(i);
       Pattern keyPat = tupleMode ? ((Pattern.Tuple) b.pattern()).items().get(0) : b.pattern();
       String label =
-          intKind ? Long.toString(((Pattern.IntLit) keyPat).value()) : jsString(((Pattern.StrLit) keyPat).value());
+          intKind ? Long.toString(((Pattern.IntLit) keyPat).value()) : Js.str(((Pattern.StrLit) keyPat).value());
       groups.computeIfAbsent(label, k -> new ArrayList<>()).add(b);
     }
 
@@ -1199,19 +1179,14 @@ public final class JsCompiler {
         if (tupleMode) {
           List<Pattern> items = ((Pattern.Tuple) b.pattern()).items();
           for (int j = 1; j < items.size(); j++) {
-            matchJs(items.get(j), sv + ".vs[" + j + "]", conds, binds, names);
+            matchJs(items.get(j), Js.index(Js.dot(sv, "vs"), j), conds, binds, names);
           }
         }
         localFrames.push(names);
         String e = compile(b.body());
         localFrames.pop();
-        String bindStr = String.join("", binds);
-        if (conds.isEmpty()) {
-          body.append(bindStr).append("return ").append(e).append(";");
-        } else {
-          body.append("if(").append(String.join(" && ", conds)).append("){").append(bindStr)
-              .append("return ").append(e).append(";}");
-        }
+        String stmt = String.join("", binds) + Js.ret(e);
+        body.append(conds.isEmpty() ? stmt : Js.ifStmt(Js.and(conds), stmt));
       }
       body.append("break;}");
     }
@@ -1221,17 +1196,17 @@ public final class JsCompiler {
       Set<String> names = new HashSet<>();
       String bind = "";
       if (def.pattern() instanceof Pattern.Var v) {
-        bind = "var " + jsVar(v.name()) + "=" + sv + ";";
+        bind = Js.varDecl(Js.local(v.name()), sv);
         names.add(v.name());
       }
       localFrames.push(names);
       String e = compile(def.body());
       localFrames.pop();
-      body.append(bind).append("return ").append(e).append(";");
+      body.append(bind).append(Js.ret(e));
     } else {
-      body.append("throw new Error('non-exhaustive pattern');");
+      body.append(Js.throwError("non-exhaustive pattern"));
     }
-    return "(function(" + sv + "){" + body + "})(" + compile(c.scrutinee()) + ")";
+    return Js.iife(sv, body.toString(), compile(c.scrutinee()));
   }
 
   // --- pattern compilation ----------------------------------------------
@@ -1242,51 +1217,51 @@ public final class JsCompiler {
       case Pattern.Wildcard ignored -> {}
       case Pattern.Unit ignored -> {}
       case Pattern.Var v -> {
-        binds.add("var " + jsVar(v.name()) + "=" + subj + ";");
+        binds.add(Js.varDecl(Js.local(v.name()), subj));
         names.add(v.name());
       }
-      case Pattern.IntLit i -> conds.add(subj + " === " + i.value());
-      case Pattern.StrLit s -> conds.add(subj + " === " + jsString(s.value()));
-      case Pattern.CharLit c -> conds.add(subj + ".c === " + c.codePoint());
+      case Pattern.IntLit i -> conds.add(Js.strictEq(subj, Long.toString(i.value())));
+      case Pattern.StrLit s -> conds.add(Js.strictEq(subj, Js.str(s.value())));
+      case Pattern.CharLit c -> conds.add(Js.strictEq(Js.dot(subj, "c"), Integer.toString(c.codePoint())));
       case Pattern.Alias a -> {
         matchJs(a.pattern(), subj, conds, binds, names);
-        binds.add("var " + jsVar(a.name()) + "=" + subj + ";");
+        binds.add(Js.varDecl(Js.local(a.name()), subj));
         names.add(a.name());
       }
       case Pattern.Ctor c -> {
         if (c.name().equals("True")) {
-          conds.add(subj + " === true");
+          conds.add(Js.strictEq(subj, "true"));
         } else if (c.name().equals("False")) {
-          conds.add(subj + " === false");
+          conds.add(Js.strictEq(subj, "false"));
         } else {
-          conds.add(subj + ".$ === " + jsString(c.name()));
+          conds.add(Js.strictEq(Js.dot(subj, "$"), Js.str(c.name())));
           for (int i = 0; i < c.args().size(); i++) {
-            matchJs(c.args().get(i), subj + "._[" + i + "]", conds, binds, names);
+            matchJs(c.args().get(i), Js.index(Js.dot(subj, "_"), i), conds, binds, names);
           }
         }
       }
       case Pattern.Tuple t -> {
         for (int i = 0; i < t.items().size(); i++) {
-          matchJs(t.items().get(i), subj + ".vs[" + i + "]", conds, binds, names);
+          matchJs(t.items().get(i), Js.index(Js.dot(subj, "vs"), i), conds, binds, names);
         }
       }
       case Pattern.Cons cons -> {
-        conds.add(subj + ".$ === '::'");
-        matchJs(cons.head(), subj + ".a", conds, binds, names);
-        matchJs(cons.tail(), subj + ".b", conds, binds, names);
+        conds.add(Js.strictEq(Js.dot(subj, "$"), Js.str("::")));
+        matchJs(cons.head(), Js.dot(subj, "a"), conds, binds, names);
+        matchJs(cons.tail(), Js.dot(subj, "b"), conds, binds, names);
       }
       case Pattern.ListPat l -> {
         String cur = subj;
         for (Pattern item : l.items()) {
-          conds.add(cur + ".$ === '::'");
-          matchJs(item, cur + ".a", conds, binds, names);
-          cur = cur + ".b";
+          conds.add(Js.strictEq(Js.dot(cur, "$"), Js.str("::")));
+          matchJs(item, Js.dot(cur, "a"), conds, binds, names);
+          cur = Js.dot(cur, "b");
         }
-        conds.add(cur + ".$ === '[]'");
+        conds.add(Js.strictEq(Js.dot(cur, "$"), Js.str("[]")));
       }
       case Pattern.RecordPat r -> {
         for (String f : r.fields()) {
-          binds.add("var " + jsVar(f) + "=" + subj + "[" + jsString(f) + "];");
+          binds.add(Js.varDecl(Js.local(f), Js.index(subj, Js.str(f))));
           names.add(f);
         }
       }
@@ -1305,32 +1280,6 @@ public final class JsCompiler {
 
   // --- operators & helpers ----------------------------------------------
 
-  private String binJs(String op, String l, String r) {
-    return switch (op) {
-      case "+" -> "(" + l + " + " + r + ")";
-      case "-" -> "(" + l + " - " + r + ")";
-      case "*" -> "(" + l + " * " + r + ")";
-      case "/" -> "(" + l + " / " + r + ")";
-      case "//" -> "Math.trunc(" + l + " / " + r + ")";
-      case "^" -> "Math.pow(" + l + ", " + r + ")";
-      case "==" -> "$eq(" + l + ", " + r + ")";
-      case "/=" -> "(!$eq(" + l + ", " + r + "))";
-      case "<" -> "($cmp(" + l + ", " + r + ") < 0)";
-      case ">" -> "($cmp(" + l + ", " + r + ") > 0)";
-      case "<=" -> "($cmp(" + l + ", " + r + ") <= 0)";
-      case ">=" -> "($cmp(" + l + ", " + r + ") >= 0)";
-      case "&&" -> "(" + l + " && " + r + ")";
-      case "||" -> "(" + l + " || " + r + ")";
-      case "++" -> "$append(" + l + ", " + r + ")";
-      case "::" -> "$cons(" + l + ", " + r + ")";
-      case "|>" -> "(" + r + ")(" + l + ")";
-      case "<|" -> "(" + l + ")(" + r + ")";
-      case "<<" -> "$compose(" + l + ", " + r + ")";
-      case ">>" -> "$compose(" + r + ", " + l + ")";
-      default -> throw new ElmRuntimeError("Unknown operator in JS codegen: " + op);
-    };
-  }
-
   private boolean isLocal(String name) {
     for (Set<String> frame : localFrames) {
       if (frame.contains(name)) {
@@ -1340,30 +1289,4 @@ public final class JsCompiler {
     return false;
   }
 
-  private static String jsVar(String name) {
-    return "_$" + name;
-  }
-
-  /** Produces a JavaScript double-quoted string literal. */
-  static String jsString(String s) {
-    StringBuilder sb = new StringBuilder("\"");
-    for (int i = 0; i < s.length(); i++) {
-      char c = s.charAt(i);
-      switch (c) {
-        case '\\' -> sb.append("\\\\");
-        case '"' -> sb.append("\\\"");
-        case '\n' -> sb.append("\\n");
-        case '\r' -> sb.append("\\r");
-        case '\t' -> sb.append("\\t");
-        default -> {
-          if (c < 0x20) {
-            sb.append(String.format("\\u%04x", (int) c));
-          } else {
-            sb.append(c);
-          }
-        }
-      }
-    }
-    return sb.append("\"").toString();
-  }
 }

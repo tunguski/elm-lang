@@ -98,7 +98,7 @@ public final class JsOptimizer {
    * Drops unused kernel runtime entries. Each {@code $rt} entry is a single line — either an
    * object-literal {@code 'Module.name': …,} or an assignment {@code $rt['Module.name']=…;} — and is
    * always <em>referenced</em> as a double-quoted {@code $g("Module.name")} (definitions use single
-   * quotes; {@code JsCompiler.jsString} emits double). So an entry whose {@code "Module.name"} never
+   * quotes; {@code Js.str} emits double). So an entry whose {@code "Module.name"} never
    * appears is unreachable and removed. Conservative: only self-contained (brace/paren-balanced)
    * lines are dropped, and the double-quoted form never collides with a definition or a longer name.
    */
