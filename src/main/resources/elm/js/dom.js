@@ -293,6 +293,45 @@
   // elm/browser API). The editor uses these to page its code pane with PageUp/PageDown/Home/End.
   $rt['Browser.Dom.getViewportOf']=function(id){ return $task(function(ok,err){ var el=(typeof document!=='undefined')&&document.getElementById(id); if(!el){ err($data('NotFound',[id])); return; } ok({scene:{width:el.scrollWidth,height:el.scrollHeight}, viewport:{x:el.scrollLeft,y:el.scrollTop,width:el.clientWidth,height:el.clientHeight}}); }); };
   $rt['Browser.Dom.setViewportOf']=function(id){ return function(x){ return function(y){ return $task(function(ok,err){ var el=(typeof document!=='undefined')&&document.getElementById(id); if(!el){ err($data('NotFound',[id])); return; } el.scrollLeft=x; el.scrollTop=y; ok($unit); }); }; }; };
+  // pageCaret: an elm-lang extension for the code editor — move a <textarea>'s caret a page up/down
+  // or to the top/bottom of the file, then scroll the caret into view in its nearest scrollable
+  // ancestor. Returns the new caret offset (so the editor can sync its own caret state). `dir` is one
+  // of "pageup" | "pagedown" | "top" | "bottom".
+  $rt['Browser.Dom.pageCaret']=function(id){ return function(dir){ return $task(function(ok,err){
+    var el=(typeof document!=='undefined')&&document.getElementById(id);
+    if(!el){ err($data('NotFound',[id])); return; }
+    var val=el.value||'', start=el.selectionStart||0;
+    // The caret's line and column, and the offset of every line start.
+    var line=0, lineStart=0, lineOffsets=[0];
+    for(var i=0;i<val.length;i++){ if(val.charCodeAt(i)===10){ lineOffsets.push(i+1); if(i<start) lineStart=i+1; } }
+    for(var j=0;j<start;j++){ if(val.charCodeAt(j)===10) line++; }
+    var col=start-lineStart, totalLines=lineOffsets.length;
+    // The nearest scrollable ancestor, and a page measured in lines from its visible height.
+    var sc=el.parentElement; while(sc && sc.scrollHeight<=sc.clientHeight+1) sc=sc.parentElement;
+    var lh=el.scrollHeight/Math.max(totalLines,1);
+    var perPage=sc?Math.max(1,Math.floor(sc.clientHeight/lh)-1):10;
+    var targetLine = dir==='top'?0 : dir==='bottom'?totalLines-1 : dir==='pageup'?line-perPage : line+perPage;
+    targetLine=Math.max(0,Math.min(totalLines-1,targetLine));
+    var pos;
+    if(dir==='top') pos=0;
+    else if(dir==='bottom') pos=val.length;
+    else { var ls=lineOffsets[targetLine], le=(targetLine+1<totalLines)?lineOffsets[targetLine+1]-1:val.length; pos=Math.min(ls+col, le); }
+    try {
+      el.focus({preventScroll:true});
+      el.setSelectionRange(pos,pos);
+      if(sc){
+        if(dir==='top') sc.scrollTop=0;
+        else if(dir==='bottom') sc.scrollTop=sc.scrollHeight;
+        else {
+          var caretInSc=(el.getBoundingClientRect().top - sc.getBoundingClientRect().top) + sc.scrollTop + targetLine*lh;
+          var margin=lh*2;
+          if(caretInSc < sc.scrollTop+margin) sc.scrollTop=caretInSc-margin;
+          else if(caretInSc > sc.scrollTop+sc.clientHeight-margin) sc.scrollTop=caretInSc-sc.clientHeight+margin;
+        }
+      }
+    } catch(e){}
+    ok(pos);
+  }); }; };
   $rt['Browser.Dom.focus']=function(id){ return $task(function(ok,err){ var el=document.getElementById(id); if(el){el.focus(); ok($unit);} else err($data('NotFound',[id])); }); };
   // File: real <input type=file> selection and FileReader-based reads.
   $rt['File.decoder']=$dec(function(j){ return (j&&typeof j==='object')?{ok:1,v:j}:{ok:0,v:'expected a file'}; });
