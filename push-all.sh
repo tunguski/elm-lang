@@ -2,9 +2,13 @@
 #
 # push-all.sh — push every sibling project under projects/ first, then the root elm-lang repo.
 #
-# Order matters: elm-lang's CI clones projects/elm-rts and projects/elm-editor, so those must be
-# pushed before the elm-lang push triggers a CI run. The root is pushed only if every project
-# pushed successfully.
+# Order matters:
+#   * elm-editor is pushed FIRST: the other projects (the CSS theme builder, the Vega editor) vendor
+#     its shell modules from a fresh clone at build time, and elm-lang's gallery CI clones it to build
+#     the editor page — so it must be up to date before anything that depends on it builds.
+#   * The remaining projects (elm-rts, …) follow.
+#   * The root elm-lang repo is pushed LAST, and only if every project pushed cleanly, so we never
+#     trigger elm-lang CI (which clones the projects) before the projects are up to date.
 #
 # Each repo uses its own configured `origin` + branch tracking, so a bare `git push` is enough.
 #
@@ -15,8 +19,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 failed=()
 
-# 1) The sibling project repos (each is its own git repository under projects/).
+# 1) The sibling project repos (each is its own git repository under projects/), elm-editor first
+#    since the others vendor/clone its shell.
+projects=("projects/elm-editor/")
 for d in projects/*/; do
+  [ "$d" = "projects/elm-editor/" ] || projects+=("$d")
+done
+
+for d in "${projects[@]}"; do
   [ -d "$d/.git" ] || continue
   echo "== pushing $d"
   if ! git -C "$d" push "$@"; then
