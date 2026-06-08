@@ -51,6 +51,30 @@ class FourBackendCoreTest {
     assertEquals(expected, runWasmMain(CORE), "WebAssembly backend");
   }
 
+  // A partially applied self-tail-recursive function, mapped over a list: every element must see the
+  // same captured argument (`sumFrom 0`), so the result is 6 + 6 + 6 = 18. Regression for a JS-backend
+  // bug where the self-tail-call loop reassigned the *outer* curried parameters that the partial
+  // application's closure captures, so each element resumed from the previous one's mutated `acc`
+  // (giving 36). The other three backends were always correct — which is exactly why an
+  // interpreter-only differential check missed it, hence this all-four-backends test.
+  private static final String PARTIAL_APP =
+      """
+      sumFrom acc n = if n <= 0 then acc else sumFrom (acc + n) (n - 1)
+      main = List.sum (List.map (sumFrom 0) [ 3, 3, 3 ])
+      """;
+
+  @Test
+  void partialApplicationOfTailRecursiveFunctionAgreesAcrossAllBackends() throws Exception {
+    String expected = Show.plain(Interpreter.load(PARTIAL_APP).value("main")); // the reference
+    assertEquals("18", expected);
+    assertEquals(
+        expected, Show.plain(BytecodeInterpreter.load(PARTIAL_APP).value("main")), "bytecode VM");
+
+    assumeTrue(NODE, "node not available");
+    assertEquals(expected, runNode(JsCompiler.moduleProgram(PARTIAL_APP)).trim(), "JavaScript backend");
+    assertEquals(expected, runWasmMain(PARTIAL_APP), "WebAssembly backend");
+  }
+
   private static String runNode(String program) throws Exception {
     Path file = Files.createTempFile("elm-core-js-", ".js");
     Files.writeString(file, program, StandardCharsets.UTF_8);
