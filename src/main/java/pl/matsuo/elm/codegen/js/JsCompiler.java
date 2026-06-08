@@ -837,9 +837,21 @@ public final class JsCompiler {
     JsBlock loop = new JsBlock();
     emitTail(body, elmName, arg, loop);
     localFrames.pop();
+    // The loop reassigns the parameters each iteration, but in a curried function the outer
+    // parameters are captured by the inner arrows' closures. Reassigning them there would corrupt a
+    // *partial application* that is shared across calls — e.g. `List.map (f x) xs`, where each element
+    // must see the same `x`, not the mutated remnant left by the previous element. So the wrapper
+    // takes fresh parameters and copies them into the body's own parameter locals at the top of the
+    // innermost body (once per call); the loop only ever mutates those locals.
+    String[] outer = new String[arg.length];
+    StringBuilder copies = new StringBuilder();
+    for (int i = 0; i < arg.length; i++) {
+      outer[i] = Js.tmp("$ca", counter++);
+      copies.append(Js.varDecl(arg[i], outer[i]));
+    }
     // Pattern binds re-run at the loop top so they reflect the reassigned parameters each iteration.
-    String inner = Js.block(Js.labeledWhileTrue("$tco", String.join("", binds) + loop));
-    return Js.curried(List.of(arg), inner);
+    String inner = Js.block(copies + Js.labeledWhileTrue("$tco", String.join("", binds) + loop));
+    return Js.curried(List.of(outer), inner);
   }
 
   /** If {@code e} is a saturated application of the function named {@code elmName} (arity args, head

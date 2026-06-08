@@ -363,8 +363,8 @@ public final class Signatures {
         new String[] {
           "width", "height", "viewBox", "preserveAspectRatio", "cx", "cy", "r", "x", "y", "x1", "y1",
           "x2", "y2", "rx", "ry", "fill", "stroke", "strokeWidth", "points", "d", "transform",
-          "opacity", "fillOpacity", "strokeLinecap", "strokeLinejoin", "strokeOpacity", "fontSize",
-          "textAnchor", "fontFamily", "xlinkHref", "dominantBaseline"
+          "opacity", "fillOpacity", "strokeLinecap", "strokeLinejoin", "strokeOpacity",
+          "strokeDasharray", "fontSize", "textAnchor", "fontFamily", "xlinkHref", "dominantBaseline"
         }) {
       g("Svg.Attributes." + attr, "String -> Attribute msg");
     }
