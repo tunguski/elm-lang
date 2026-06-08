@@ -1,6 +1,6 @@
 (function(){
   var SVG = 'http://www.w3.org/2000/svg';
-  var SVG_TAGS = {svg:1,circle:1,rect:1,line:1,polygon:1,polyline:1,ellipse:1,g:1,path:1,image:1};
+  var SVG_TAGS = {svg:1,circle:1,rect:1,line:1,polygon:1,polyline:1,ellipse:1,g:1,path:1,image:1,text:1};
   function node(tag){ return function(attrs){ return function(kids){ return $data('$Node',[tag,attrs,kids]); }; }; }
   var elements = ['div','span','p','h1','h2','h3','h4','h5','h6','ul','ol','li','a','img',
     'button','input','label','form','section','header','footer','nav','br','hr','table','tr',
@@ -66,8 +66,11 @@
   function $forceLazy(v){ var r=v._[0]; v._[1].forEach(function(a){ r=r(a); }); return r; }
   function $sameArgs(a,b){ if(!a||a.length!==b.length) return false; for(var i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; } return true; }
   Object.keys(SVG_TAGS).forEach(function(t){ $rt['Svg.'+t]=node(t); });
+  // `Svg.text` is the text-content node (a string child); `Svg.text_` is the <text> element. The
+  // SVG_TAGS loop above transiently bound `Svg.text` to the element — reclaim both names here.
   $rt['Svg.text']=function(s){ return $data('$Text',[s]); };
-  var svgAttrs=['width','height','viewBox','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
+  $rt['Svg.text_']=node('text');
+  var svgAttrs=['width','height','viewBox','preserveAspectRatio','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
     'fill','stroke','strokeWidth:stroke-width','points','d','transform','opacity',
     'textAnchor:text-anchor','fontSize:font-size','xlinkHref:xlink:href',
     'strokeLinecap:stroke-linecap','strokeLinejoin:stroke-linejoin','fillOpacity:fill-opacity',

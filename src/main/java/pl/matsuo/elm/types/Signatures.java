@@ -361,10 +361,10 @@ public final class Signatures {
     g("Svg.text", "String -> Html msg");
     for (String attr :
         new String[] {
-          "width", "height", "viewBox", "cx", "cy", "r", "x", "y", "x1", "y1", "x2", "y2", "rx",
-          "ry", "fill", "stroke", "strokeWidth", "points", "d", "transform", "opacity",
-          "fillOpacity", "strokeLinecap", "fontSize", "textAnchor", "fontFamily", "xlinkHref",
-          "dominantBaseline"
+          "width", "height", "viewBox", "preserveAspectRatio", "cx", "cy", "r", "x", "y", "x1", "y1",
+          "x2", "y2", "rx", "ry", "fill", "stroke", "strokeWidth", "points", "d", "transform",
+          "opacity", "fillOpacity", "strokeLinecap", "strokeLinejoin", "strokeOpacity", "fontSize",
+          "textAnchor", "fontFamily", "xlinkHref", "dominantBaseline"
         }) {
       g("Svg.Attributes." + attr, "String -> Attribute msg");
     }

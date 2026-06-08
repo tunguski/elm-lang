@@ -61,11 +61,12 @@ public final class Prelude {
   };
 
   private static final String[] SVG_ATTRS = {
-    "width", "height", "viewBox", "cx", "cy", "r", "x", "y", "x1", "y1", "x2", "y2", "rx", "ry",
-    "fill", "stroke", "strokeWidth:stroke-width", "points", "d", "transform", "opacity",
-    "fillOpacity:fill-opacity", "strokeLinecap:stroke-linecap", "fontSize:font-size",
-    "textAnchor:text-anchor", "fontFamily:font-family", "xlinkHref:xlink:href",
-    "dominantBaseline:dominant-baseline"
+    "width", "height", "viewBox", "preserveAspectRatio", "cx", "cy", "r", "x", "y", "x1", "y1", "x2",
+    "y2", "rx", "ry", "fill", "stroke", "strokeWidth:stroke-width", "points", "d", "transform",
+    "opacity", "fillOpacity:fill-opacity", "strokeLinecap:stroke-linecap",
+    "strokeLinejoin:stroke-linejoin", "strokeOpacity:stroke-opacity",
+    "strokeDasharray:stroke-dasharray", "fontSize:font-size", "textAnchor:text-anchor",
+    "fontFamily:font-family", "xlinkHref:xlink:href", "dominantBaseline:dominant-baseline"
   };
 
   public static Map<String, Object> builtins() {
