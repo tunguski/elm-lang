@@ -57,6 +57,16 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void rendersMultilineStringInATopLevelDefinition() {
+    // Regression: a """…""" whose continuation line starts at column 0 must not be split into a new
+    // top-level declaration by the line-chunker before tokenizing (it rendered `text "" "new file
+    // this is "`, dropping the second line). The whole string must survive into the rendered text.
+    String src = "main = text \"\"\"new file this is \nmy text\"\"\"";
+    String rendered = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
+    assertTrue(rendered.contains("new file this is") && rendered.contains("my text"), rendered);
+  }
+
+  @Test
   void interpretsAdditionalStdlibBuiltins() {
     // elm/core parity additions to the editor interpreter.
     assertEquals("[5]", eval("List.singleton 5"));
