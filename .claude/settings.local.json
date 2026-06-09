@@ -1,35 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls -la)",
-      "Bash(node --version)",
-      "Bash(npm --version)",
-      "Bash(git --version)",
-      "Bash(java -version)",
-      "Bash(mvn -version)",
-      "Bash(gradle -version)",
-      "Bash(curl -sI -m 10 https://repo1.maven.org/maven2/org/junit/jupiter/junit-jupiter/5.10.2/junit-jupiter-5.10.2.pom)",
-      "Bash(node -e \"console.log\\('node ok'\\)\")",
-      "WebFetch(domain:elm-lang.org)",
-      "Bash(ls ~/.m2)",
-      "Bash(ls tools *)",
-      "Bash(mkdir -p tools)",
-      "Bash(curl -sL -m 120 -o tools/maven.zip https://dlcdn.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.zip)",
-      "Bash(echo \"exit: $?\")",
-      "Read(//c/Users/marek/.m2/wrapper/**)",
-      "Read(//c/Users/marek/.m2/wrapper/dists/**)",
-      "Bash(javac --release 25 --enable-preview -d /tmp/vcout /tmp/VC.java)",
-      "Bash(command -v mvn)",
-      "PowerShell(Set-Location c:\\\\Users\\\\marek\\\\w\\\\elm-lang\\\\elm-lang; & .\\\\mvnw.cmd -B test 1>build.log; \"EXIT=$LASTEXITCODE\"; Select-String -Path build.log -Pattern \"Tests run|BUILD SUCCESS|BUILD FAILURE|ERROR\" | Select-Object -Last 15 | ForEach-Object { $_.Line })",
-      "Bash(curl -sL -m 30 https://elm-lang.org/examples -o /tmp/examples.html)",
-      "Read(//tmp/**)",
-      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/truffle/truffle-api/maven-metadata.xml)",
-      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/truffle/truffle-dsl-processor/maven-metadata.xml)",
-      "Bash(curl -sL -m 30 https://repo1.maven.org/maven2/org/graalvm/polyglot/polyglot/maven-metadata.xml)",
-      "Bash(rm -f dbg.java dbgo/*)",
-      "Bash(./mvnw -B -ntp test -Dtest=\"EditorInterpreterTest,HeadlessChromeTest#multiFileEditorRendersResultsAndDebugger\" -Dproject.build.directory=target-ci)",
-      "WebFetch(domain:api.github.com)",
-      "WebFetch(domain:matsuo.pl)"
     ]
   }
 }
