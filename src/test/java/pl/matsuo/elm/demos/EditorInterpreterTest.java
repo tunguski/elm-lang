@@ -57,6 +57,26 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void rendersDefinitionListsAndAdvancedElements() {
+    // The editor renderer supports the full Html element set (matching the compiler/interpreter), so
+    // dl/dt/dd, details/summary and the reserved-word alias main_ (-> <main>) render in the preview.
+    String src =
+        """
+        module Main exposing (main)
+        import Html exposing (main_, dl, dt, dd, details, summary, text)
+        main =
+            main_ []
+                [ dl [] [ dt [] [ text "Term" ], dd [] [ details [] [ summary [] [ text "more" ] ] ] ] ]
+        """;
+    String html = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
+    assertTrue(html.contains("<main>"), "main_ renders as <main>: " + html);
+    assertTrue(html.contains("<dl>") && html.contains("<dt>Term</dt>"), "dl/dt render: " + html);
+    assertTrue(
+        html.contains("<details>") && html.contains("<summary>more</summary>"),
+        "details/summary render: " + html);
+  }
+
+  @Test
   void rendersMultilineStringInATopLevelDefinition() {
     // Regression: a """…""" whose continuation line starts at column 0 must not be split into a new
     // top-level declaration by the line-chunker before tokenizing (it rendered `text "" "new file
