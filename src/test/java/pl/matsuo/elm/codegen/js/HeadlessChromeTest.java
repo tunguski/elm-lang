@@ -303,6 +303,31 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void definitionListAndOtherElementsRenderInTheJsBackend() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: many Html elements (dl/dt/dd, details, summary, …) were missing from the JS
+    // backend's element registry, so an app using one threw `Unbound: Html.dl` and blanked the page —
+    // even though the interpreter and type-checker already supported them. HtmlElementParityTest now
+    // keeps the three lists in sync; this proves they render end-to-end through the compiled runtime.
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (dl, dt, dd, details, summary, text)
+        main =
+            dl []
+                [ dt [] [ text "Term" ]
+                , dd [] [ details [] [ summary [] [ text "more" ] ] ]
+                ]
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("<dl>"), "dl rendered (was Unbound: Html.dl before the fix): " + dom);
+    assertTrue(dom.contains("<dt>Term</dt>"), "dt rendered: " + dom);
+    assertTrue(
+        dom.contains("<dd>") && dom.contains("<details>") && dom.contains("<summary>more</summary>"),
+        "dd/details/summary rendered: " + dom);
+  }
+
+  @Test
   void groceriesRendersList() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     String dom = renderInBrowser(example("groceries"), null);

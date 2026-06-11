@@ -2,11 +2,18 @@
   var SVG = 'http://www.w3.org/2000/svg';
   var SVG_TAGS = {svg:1,circle:1,rect:1,line:1,polygon:1,polyline:1,ellipse:1,g:1,path:1,image:1,text:1};
   function node(tag){ return function(attrs){ return function(kids){ return $data('$Node',[tag,attrs,kids]); }; }; }
-  var elements = ['div','span','p','h1','h2','h3','h4','h5','h6','ul','ol','li','a','img',
-    'button','input','label','form','section','header','footer','nav','br','hr','table','tr',
-    'td','th','thead','tbody','pre','code','strong','em','small','select','option','textarea',
-    'blockquote','cite','figure','figcaption','b','i'];
-  elements.forEach(function(t){ $rt['Html.'+t]=node(t); });
+  // Every Html element the interpreter (Prelude.HTML_TAGS) and type-checker (Signatures.HTML_ELEMENTS)
+  // know, so anything that type-checks and runs interpreted also renders when compiled to JS. Entries
+  // are 'elmName:htmlTag' where they differ (main_/var_/object_ avoid reserved words). Kept in
+  // lock-step with Prelude.HTML_TAGS by HtmlElementParityTest.
+  var elements = ['div','span','p','h1','h2','h3','h4','h5','h6','ul','ol','li','a','img','button',
+    'input','label','form','section','header','footer','nav','main_:main','br','hr','table','thead',
+    'tbody','tr','td','th','pre','code','strong','em','i','b','small','select','option','textarea',
+    'canvas','audio','video','fieldset','legend','figure','blockquote','cite','figcaption','caption',
+    'abbr','address','article','aside','details','summary','mark','time','u','s','sub','sup','kbd',
+    'samp','var_:var','dl','dt','dd','menu','progress','meter','output','datalist','iframe','embed',
+    'object_:object'];
+  elements.forEach(function(spec){ var p=spec.split(':'); $rt['Html.'+p[0]]=node(p[1]||p[0]); });
   $rt['Html.text']=function(s){ return $data('$Text',[s]); };
   $rt['Html.node']=function(t){ return node(t); };
   var strAttrs=['class','id','href','src','alt','title','placeholder','value','name',

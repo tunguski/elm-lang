@@ -73,6 +73,20 @@ public final class Prelude {
     return BUILTINS;
   }
 
+  /**
+   * The Elm names of the bound Html element functions (the {@code elmName} of each {@link #HTML_TAGS}
+   * entry, e.g. {@code "div"}, {@code "dl"}, {@code "main_"}). The JS backend's element registry and
+   * the type-checker's element schemes must cover exactly this set — see {@code HtmlElementParityTest}.
+   */
+  public static java.util.List<String> htmlElementNames() {
+    java.util.List<String> names = new java.util.ArrayList<>();
+    for (String spec : HTML_TAGS) {
+      int colon = spec.indexOf(':');
+      names.add(colon < 0 ? spec : spec.substring(0, colon));
+    }
+    return names;
+  }
+
   public static Map<String, String> defaultUnqualified() {
     return new HashMap<>(UNQUALIFIED);
   }
