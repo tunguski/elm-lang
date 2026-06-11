@@ -40,7 +40,9 @@ public final class Prelude {
     "select", "option", "textarea", "canvas", "audio", "video", "fieldset", "legend", "figure",
     "blockquote", "cite", "figcaption", "caption", "abbr", "address", "article", "aside", "details",
     "summary", "mark", "time", "u", "s", "sub", "sup", "kbd", "samp", "var_:var", "dl", "dt", "dd",
-    "ol", "menu", "progress", "meter", "output", "datalist", "iframe", "embed", "object_:object"
+    "menu", "progress", "meter", "output", "datalist", "iframe", "embed", "object_:object",
+    "colgroup", "col", "tfoot", "optgroup", "source", "track", "param", "ins", "del", "dfn", "q",
+    "ruby", "rt", "rp", "bdi", "bdo", "wbr", "menuitem", "math"
   };
 
   // elmName:htmlName pairs; when no colon, the names are identical.

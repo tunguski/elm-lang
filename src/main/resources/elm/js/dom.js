@@ -12,7 +12,8 @@
     'canvas','audio','video','fieldset','legend','figure','blockquote','cite','figcaption','caption',
     'abbr','address','article','aside','details','summary','mark','time','u','s','sub','sup','kbd',
     'samp','var_:var','dl','dt','dd','menu','progress','meter','output','datalist','iframe','embed',
-    'object_:object'];
+    'object_:object','colgroup','col','tfoot','optgroup','source','track','param','ins','del','dfn',
+    'q','ruby','rt','rp','bdi','bdo','wbr','menuitem','math'];
   elements.forEach(function(spec){ var p=spec.split(':'); $rt['Html.'+p[0]]=node(p[1]||p[0]); });
   $rt['Html.text']=function(s){ return $data('$Text',[s]); };
   $rt['Html.node']=function(t){ return node(t); };

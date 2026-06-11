@@ -18,7 +18,9 @@ public final class Signatures {
     "textarea", "canvas", "blockquote", "cite", "figure", "figcaption", "main_", "article", "audio",
     "video", "u", "s", "sup", "sub", "kbd", "samp", "dl", "dt", "dd",
     "abbr", "address", "aside", "caption", "datalist", "details", "embed", "fieldset", "iframe",
-    "legend", "mark", "menu", "meter", "object_", "output", "progress", "summary", "time", "var_"
+    "legend", "mark", "menu", "meter", "object_", "output", "progress", "summary", "time", "var_",
+    "colgroup", "col", "tfoot", "optgroup", "source", "track", "param", "ins", "del", "dfn", "q",
+    "ruby", "rt", "rp", "bdi", "bdo", "wbr", "menuitem", "math"
   };
 
   private static final String[] HTML_STRING_ATTRS = {
