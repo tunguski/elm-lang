@@ -767,11 +767,23 @@ public final class Prelude {
     fn("Html.Lazy.lazy3", 4, a -> Apply.applyAll(a[0], a[1], a[2], a[3]));
     fn("Html.Lazy.lazy4", 5, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4]));
     fn("Html.Lazy.lazy5", 6, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5]));
+    fn("Html.Lazy.lazy6", 7, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5], a[6]));
+    fn("Html.Lazy.lazy7", 8, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]));
+    fn(
+        "Html.Lazy.lazy8",
+        9,
+        a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]));
     fn("Svg.Lazy.lazy", 2, a -> Apply.apply(a[0], a[1]));
     fn("Svg.Lazy.lazy2", 3, a -> Apply.applyAll(a[0], a[1], a[2]));
     fn("Svg.Lazy.lazy3", 4, a -> Apply.applyAll(a[0], a[1], a[2], a[3]));
     fn("Svg.Lazy.lazy4", 5, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4]));
     fn("Svg.Lazy.lazy5", 6, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5]));
+    fn("Svg.Lazy.lazy6", 7, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5], a[6]));
+    fn("Svg.Lazy.lazy7", 8, a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]));
+    fn(
+        "Svg.Lazy.lazy8",
+        9,
+        a -> Apply.applyAll(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]));
     for (String spec : HTML_TAGS) {
       String[] nt = split(spec);
       String tag = nt[1];

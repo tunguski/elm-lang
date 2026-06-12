@@ -303,6 +303,24 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void htmlLazy6Through8ApplyAllTheirArgs() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // lazy6/7/8 must apply all of their (6/7/8) arguments to the view function.
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (div, text)
+        import Html.Lazy exposing (lazy6, lazy8)
+        sum6 a b c d e f = text (String.fromInt (a + b + c + d + e + f))
+        sum8 a b c d e f g h = text (String.fromInt (a + b + c + d + e + f + g + h))
+        main = div [] [ lazy6 sum6 1 2 3 4 5 6, lazy8 sum8 1 2 3 4 5 6 7 8 ]
+        """;
+    String dom = renderPage(JsCompiler.htmlPage(app, null));
+    assertTrue(dom.contains("21"), "lazy6 summed its 6 args: " + dom);
+    assertTrue(dom.contains("36"), "lazy8 summed its 8 args: " + dom);
+  }
+
+  @Test
   void definitionListAndOtherElementsRenderInTheJsBackend() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Regression: many Html elements (dl/dt/dd, details, summary, …) were missing from the JS
