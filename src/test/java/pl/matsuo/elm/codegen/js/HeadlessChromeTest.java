@@ -763,6 +763,33 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void processSpawnAndKillRunInTheJsBackend() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Process.spawn returns a process id immediately; killing it and mapping the result drives the
+    // model. (dom.js: spawn schedules on the next tick, kill cancels it.)
+    String app =
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (text)
+        import Task
+        import Process
+        type Msg = Got Int
+        main =
+            Browser.element
+                { init = \\_ -> ( 0, Task.perform Got (Process.spawn (Task.succeed 1) |> Task.andThen Process.kill |> Task.map (\\_ -> 7)) )
+                , update = \\msg model ->
+                    case msg of
+                        Got n -> ( n, Cmd.none )
+                , view = \\m -> text (String.fromInt m)
+                , subscriptions = \\_ -> Sub.none
+                }
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("7"), "Process.spawn |> kill resolved and drove the model: " + dom);
+  }
+
+  @Test
   void uploadRendersFileInput() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The change-event decoder (Json.Decode.at/list/File.decoder) must build without throwing.

@@ -95,6 +95,14 @@ class BrowserApplicationTest {
         "15");
   }
 
+  @Test
+  void processSpawnAndKillRunHeadlessly() {
+    // Process.spawn runs the task (headlessly, synchronously) and yields a process id; piping that to
+    // Process.kill succeeds with (); the whole chain performs and flips the model.
+    checkTask(
+        "Process.spawn (Task.succeed 1) |> Task.andThen Process.kill |> Task.map (\\_ -> 7)", "7");
+  }
+
   private static void checkTask(String taskExpr, String expected) {
     String src =
         """

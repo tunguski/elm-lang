@@ -484,6 +484,10 @@ public final class Signatures {
     g("Task.onError", "(x -> Task y a) -> Task x a -> Task y a");
     g("Task.sequence", "List (Task x a) -> Task x (List a)");
     g("Process.sleep", "Float -> Task x ()");
+    g("Process.spawn", "Task x a -> Task y ProcessId");
+    g("Process.kill", "ProcessId -> Task x ()");
+    g("Platform.sendToApp", "Router msg a -> msg -> Task x ()");
+    g("Platform.sendToSelf", "Router msg a -> a -> Task x ()");
 
     g("Http.get", "{ url : String, expect : Expect msg } -> Cmd msg");
     g("Http.post", "{ url : String, body : Body, expect : Expect msg } -> Cmd msg");

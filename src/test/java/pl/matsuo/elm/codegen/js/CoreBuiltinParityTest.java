@@ -12,6 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import pl.matsuo.elm.interp.Prelude;
+import pl.matsuo.elm.types.Signatures;
 
 /**
  * Every pure elm/core builtin the interpreter binds (List/Dict/Set/Array/String/Char/Tuple/Maybe/
@@ -40,6 +41,20 @@ class CoreBuiltinParityTest {
         missing.isEmpty(),
         "these pure-stdlib builtins run in the interpreter but are unbound in the JS backend "
             + "(they would crash at runtime when compiled to JS): " + missing);
+  }
+
+  @Test
+  void effectManagerPrimitivesAreBoundAndTypedEverywhere() throws IOException {
+    // Process.spawn/kill and Platform.sendToApp/sendToSelf can't be called from ordinary code (they
+    // need a Router only effect managers receive), so assert by name that they exist in the
+    // interpreter, the type-checker and the JS runtime — present for spec conformance on every path.
+    Set<String> js = jsRegisteredBuiltins();
+    for (String name :
+        new String[] {"Process.spawn", "Process.kill", "Platform.sendToApp", "Platform.sendToSelf"}) {
+      assertTrue(Prelude.builtins().containsKey(name), name + " must be bound in the interpreter");
+      assertTrue(Signatures.globals().containsKey(name), name + " must have a type scheme");
+      assertTrue(js.contains(name), name + " must be registered in the JS runtime");
+    }
   }
 
   private static boolean isPureBuiltin(String name) {

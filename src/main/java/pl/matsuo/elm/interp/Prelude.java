@@ -213,6 +213,15 @@ public final class Prelude {
     fn("Task.onError", 2, a -> d("$Task_OnError", a[0], a[1]));
     // Process.sleep: headlessly there is no real delay; it succeeds immediately with ().
     fn("Process.sleep", 1, a -> d("$Task_Const", pl.matsuo.elm.runtime.ElmUnit.INSTANCE));
+    // Process.spawn: no real concurrency headlessly, so Tea runs the task synchronously and hands back
+    // an opaque process id. Process.kill is then a no-op (the process has already finished).
+    fn("Process.spawn", 1, a -> d("$Task_Spawn", a[0]));
+    fn("Process.kill", 1, a -> d("$Task_Const", pl.matsuo.elm.runtime.ElmUnit.INSTANCE));
+    // Platform.sendToApp / sendToSelf are effect-manager primitives (they need a Router the runtime
+    // only hands to effect managers, which the interpreter does not model). Bound for conformance as
+    // tasks that succeed with (); without an effect manager there is nowhere to route the message.
+    fn("Platform.sendToApp", 2, a -> d("$Task_Const", pl.matsuo.elm.runtime.ElmUnit.INSTANCE));
+    fn("Platform.sendToSelf", 2, a -> d("$Task_Const", pl.matsuo.elm.runtime.ElmUnit.INSTANCE));
 
     // Browser.Events: subscriptions to input/animation. Headlessly, the Tea driver fires
     // animation-frame and keyboard/mouse subs on demand; onResize/onVisibilityChange are inert.

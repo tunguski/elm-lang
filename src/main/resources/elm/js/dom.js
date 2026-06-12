@@ -151,6 +151,14 @@
   $rt['Task.mapError']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](ok, function(e){ err(f(e)); }); }); }; };
   $rt['Task.onError']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](ok, function(e){ f(e)._[0](ok,err); }); }); }; };
   $rt['Process.sleep']=function(ms){ return $task(function(ok,err){ setTimeout(function(){ ok($unit); }, ms); }); };
+  // Process.spawn schedules the task on the next tick and returns its id immediately; kill cancels it
+  // if it hasn't started running yet (best-effort cancellation for the web platform).
+  $rt['Process.spawn']=function(t){ return $task(function(ok,err){ var id={$:'$ProcessId',_:[null]}; id._[0]=setTimeout(function(){ id._[0]=null; try{ t._[0](function(){},function(){}); }catch(e){} },0); ok(id); }); };
+  $rt['Process.kill']=function(id){ return $task(function(ok,err){ if(id&&id._&&id._[0]!=null){ clearTimeout(id._[0]); id._[0]=null; } ok($unit); }); };
+  // Effect-manager primitives: bound for conformance. Without a custom effect manager there is no
+  // Router carrying a real destination, so these succeed with () without routing anywhere.
+  $rt['Platform.sendToApp']=function(router){ return function(msg){ return $task(function(ok,err){ ok($unit); }); }; };
+  $rt['Platform.sendToSelf']=function(router){ return function(msg){ return $task(function(ok,err){ ok($unit); }); }; };
   $rt['Task.sequence']=function(l){ var ts=$listToArray(l); return $task(function(ok,err){ var res=[]; (function go(i){ if(i>=ts.length){ ok($list(res)); return; } ts[i]._[0](function(v){ res.push(v); go(i+1); }, err); })(0); }); };
   $rt['Task.perform']=function(toMsg){ return function(t){ return $cmd(function(d){ t._[0](function(v){ d(toMsg(v)); }, function(e){}); }); }; };
   $rt['Task.attempt']=function(toMsg){ return function(t){ return $cmd(function(d){ t._[0](function(v){ d(toMsg($data('Ok',[v]))); }, function(e){ d(toMsg($data('Err',[e]))); }); }); }; };

@@ -311,6 +311,16 @@ public final class Tea {
               runTask(d.arg(4)),
               runTask(d.arg(5)));
         }
+        case "$Task_Spawn" -> {
+          // Headless has no concurrency: run the spawned task synchronously for its effects, swallow
+          // any failure (Process.spawn : Task x a -> Task y Id never fails), and return a process id.
+          try {
+            runTask(d.arg(0));
+          } catch (TaskFail ignored) {
+            // a failed spawned task does not fail the spawner
+          }
+          return new ElmData("$ProcessId", new Object[] {0L});
+        }
         case "$Task_AndThen" -> {
           return runTask(Apply.apply(d.arg(0), runTask(d.arg(1))));
         }
