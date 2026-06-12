@@ -204,6 +204,10 @@ public final class Prelude {
     fn("Task.succeed", 1, a -> d("$Task_Const", a[0]));
     fn("Task.fail", 1, a -> d("$Task_Fail", a[0]));
     fn("Task.map", 2, a -> d("$Task_Map", a[0], a[1]));
+    fn("Task.map2", 3, a -> d("$Task_Map2", a[0], a[1], a[2]));
+    fn("Task.map3", 4, a -> d("$Task_Map3", a[0], a[1], a[2], a[3]));
+    fn("Task.map4", 5, a -> d("$Task_Map4", a[0], a[1], a[2], a[3], a[4]));
+    fn("Task.map5", 6, a -> d("$Task_Map5", a[0], a[1], a[2], a[3], a[4], a[5]));
     fn("Task.andThen", 2, a -> d("$Task_AndThen", a[0], a[1]));
     fn("Task.mapError", 2, a -> d("$Task_MapError", a[0], a[1]));
     fn("Task.onError", 2, a -> d("$Task_OnError", a[0], a[1]));

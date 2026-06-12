@@ -737,6 +737,32 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void taskMapNCombinesResultsInTheJsBackend() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Task.map3 (dom.js): the init task runs three sub-tasks and applies the function to all three
+    // results; the combined value lands in the model and renders.
+    String app =
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (text)
+        import Task
+        type Msg = Got Int
+        main =
+            Browser.element
+                { init = \\_ -> ( 0, Task.perform Got (Task.map3 (\\a b c -> a + b + c) (Task.succeed 1) (Task.succeed 2) (Task.succeed 39)) )
+                , update = \\msg model ->
+                    case msg of
+                        Got n -> ( n, Cmd.none )
+                , view = \\m -> text (String.fromInt m)
+                , subscriptions = \\_ -> Sub.none
+                }
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("42"), "Task.map3 combined the three task results: " + dom);
+  }
+
+  @Test
   void uploadRendersFileInput() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The change-event decoder (Json.Decode.at/list/File.decoder) must build without throwing.

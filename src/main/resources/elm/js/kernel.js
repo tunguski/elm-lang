@@ -268,6 +268,8 @@ var $rt = {
   'Char.fromCode': function(n){ return $char(n); },
   'Char.toUpper': function(c){ return $char(String.fromCodePoint(c.c).toUpperCase().codePointAt(0)); },
   'Char.toLower': function(c){ return $char(String.fromCodePoint(c.c).toLowerCase().codePointAt(0)); },
+  'Char.toLocaleUpper': function(c){ return $char(String.fromCodePoint(c.c).toLocaleUpperCase().codePointAt(0)); },
+  'Char.toLocaleLower': function(c){ return $char(String.fromCodePoint(c.c).toLocaleLowerCase().codePointAt(0)); },
   'Char.isDigit': function(c){ return c.c>=48 && c.c<=57; },
   'Char.isUpper': function(c){ var s=String.fromCodePoint(c.c); return s!==s.toLowerCase() && s===s.toUpperCase(); },
   'Char.isLower': function(c){ var s=String.fromCodePoint(c.c); return s!==s.toUpperCase() && s===s.toLowerCase(); },

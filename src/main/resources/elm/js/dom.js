@@ -144,6 +144,10 @@
   $rt['Task.fail']=function(e){ return $task(function(ok,err){ err(e); }); };
   $rt['Task.andThen']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](function(v){ f(v)._[0](ok,err); }, err); }); }; };
   $rt['Task.map']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](function(v){ ok(f(v)); }, err); }); }; };
+  $rt['Task.map2']=function(f){ return function(a){ return function(b){ return $task(function(ok,err){ a._[0](function(va){ b._[0](function(vb){ ok(f(va)(vb)); }, err); }, err); }); }; }; };
+  $rt['Task.map3']=function(f){ return function(a){ return function(b){ return function(c){ return $task(function(ok,err){ a._[0](function(va){ b._[0](function(vb){ c._[0](function(vc){ ok(f(va)(vb)(vc)); }, err); }, err); }, err); }); }; }; }; };
+  $rt['Task.map4']=function(f){ return function(a){ return function(b){ return function(c){ return function(d){ return $task(function(ok,err){ a._[0](function(va){ b._[0](function(vb){ c._[0](function(vc){ d._[0](function(vd){ ok(f(va)(vb)(vc)(vd)); }, err); }, err); }, err); }, err); }); }; }; }; }; };
+  $rt['Task.map5']=function(f){ return function(a){ return function(b){ return function(c){ return function(d){ return function(e){ return $task(function(ok,err){ a._[0](function(va){ b._[0](function(vb){ c._[0](function(vc){ d._[0](function(vd){ e._[0](function(ve){ ok(f(va)(vb)(vc)(vd)(ve)); }, err); }, err); }, err); }, err); }, err); }); }; }; }; }; }; };
   $rt['Task.mapError']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](ok, function(e){ err(f(e)); }); }); }; };
   $rt['Task.onError']=function(f){ return function(t){ return $task(function(ok,err){ t._[0](ok, function(e){ f(e)._[0](ok,err); }); }); }; };
   $rt['Process.sleep']=function(ms){ return $task(function(ok,err){ setTimeout(function(){ ok($unit); }, ms); }); };

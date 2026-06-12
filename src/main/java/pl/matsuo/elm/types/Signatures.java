@@ -256,6 +256,8 @@ public final class Signatures {
     g("Char.fromCode", "Int -> Char");
     g("Char.toUpper", "Char -> Char");
     g("Char.toLower", "Char -> Char");
+    g("Char.toLocaleUpper", "Char -> Char");
+    g("Char.toLocaleLower", "Char -> Char");
     g("Char.isDigit", "Char -> Bool");
     g("Char.isAlpha", "Char -> Bool");
     g("Char.isHexDigit", "Char -> Bool");
@@ -471,6 +473,12 @@ public final class Signatures {
     g("Task.succeed", "a -> Task x a");
     g("Task.fail", "x -> Task x a");
     g("Task.map", "(a -> b) -> Task x a -> Task x b");
+    g("Task.map2", "(a -> b -> r) -> Task x a -> Task x b -> Task x r");
+    g("Task.map3", "(a -> b -> c -> r) -> Task x a -> Task x b -> Task x c -> Task x r");
+    g("Task.map4", "(a -> b -> c -> d -> r) -> Task x a -> Task x b -> Task x c -> Task x d -> Task x r");
+    g(
+        "Task.map5",
+        "(a -> b -> c -> d -> e -> r) -> Task x a -> Task x b -> Task x c -> Task x d -> Task x e -> Task x r");
     g("Task.andThen", "(a -> Task x b) -> Task x a -> Task x b");
     g("Task.mapError", "(x -> y) -> Task x a -> Task y a");
     g("Task.onError", "(x -> Task y a) -> Task x a -> Task y a");

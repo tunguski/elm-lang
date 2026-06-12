@@ -78,4 +78,47 @@ class BrowserApplicationTest {
     Tea app = Tea.start(interp.value("main"));
     assertTrue(app.html().contains("100"), app.html()); // the stub element box is 100 wide
   }
+
+  @Test
+  void taskMap2Through5CombineTaskResults() {
+    // Task.map2..map5 run each task (left to right) and apply the function to the results. Each app's
+    // init performs the combined task; the resolved sum lands in the model and renders.
+    checkTask("Task.map2 (\\a b -> a + b) (Task.succeed 1) (Task.succeed 2)", "3");
+    checkTask("Task.map3 (\\a b c -> a + b + c) (Task.succeed 1) (Task.succeed 2) (Task.succeed 3)", "6");
+    checkTask(
+        "Task.map4 (\\a b c d -> a + b + c + d) "
+            + "(Task.succeed 1) (Task.succeed 2) (Task.succeed 3) (Task.succeed 4)",
+        "10");
+    checkTask(
+        "Task.map5 (\\a b c d e -> a + b + c + d + e) "
+            + "(Task.succeed 1) (Task.succeed 2) (Task.succeed 3) (Task.succeed 4) (Task.succeed 5)",
+        "15");
+  }
+
+  private static void checkTask(String taskExpr, String expected) {
+    String src =
+        """
+        module Main exposing (main)
+
+        import Browser
+        import Html exposing (text)
+        import Task
+
+        type Msg = Got Int
+
+        main =
+            Browser.element
+                { init = \\_ -> ( 0, Task.perform Got (%s) )
+                , update = \\msg model ->
+                    case msg of
+                        Got n -> ( n, Cmd.none )
+                , view = \\m -> text (String.fromInt m)
+                , subscriptions = \\_ -> Sub.none
+                }
+        """
+            .formatted(taskExpr);
+    Interpreter interp = Interpreter.load(src);
+    Tea app = Tea.start(interp.value("main"));
+    assertTrue(app.html().contains(expected), "expected " + expected + " in: " + app.html());
+  }
 }

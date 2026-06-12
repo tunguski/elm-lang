@@ -292,6 +292,25 @@ public final class Tea {
         case "$Task_Map" -> {
           return Apply.apply(d.arg(0), runTask(d.arg(1)));
         }
+        case "$Task_Map2" -> {
+          return Apply.applyAll(d.arg(0), runTask(d.arg(1)), runTask(d.arg(2)));
+        }
+        case "$Task_Map3" -> {
+          return Apply.applyAll(d.arg(0), runTask(d.arg(1)), runTask(d.arg(2)), runTask(d.arg(3)));
+        }
+        case "$Task_Map4" -> {
+          return Apply.applyAll(
+              d.arg(0), runTask(d.arg(1)), runTask(d.arg(2)), runTask(d.arg(3)), runTask(d.arg(4)));
+        }
+        case "$Task_Map5" -> {
+          return Apply.applyAll(
+              d.arg(0),
+              runTask(d.arg(1)),
+              runTask(d.arg(2)),
+              runTask(d.arg(3)),
+              runTask(d.arg(4)),
+              runTask(d.arg(5)));
+        }
         case "$Task_AndThen" -> {
           return runTask(Apply.apply(d.arg(0), runTask(d.arg(1))));
         }

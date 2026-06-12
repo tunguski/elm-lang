@@ -281,6 +281,10 @@ class JsBackendTest {
     same("Array.toList (Array.slice 1 3 (Array.fromList [ 0, 1, 2, 3, 4 ]))");
     same("Array.foldl (\\x acc -> x + acc) 0 (Array.fromList [ 1, 2, 3 ])");
     same("List.map (\\c -> Char.isUpper c) (String.toList \"aBcD\")");
+    // Char.toLocaleUpper/toLocaleLower (ASCII, so the default locale doesn't diverge interp-vs-JS).
+    same("String.fromChar (Char.toLocaleUpper 'a')");
+    same("String.fromChar (Char.toLocaleLower 'A')");
+    same("String.map Char.toLocaleUpper \"abc\"");
   }
 
   @Test

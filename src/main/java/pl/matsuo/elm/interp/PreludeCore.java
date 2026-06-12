@@ -582,6 +582,9 @@ final class PreludeCore {
     fn("Char.fromCode", 1, a -> new ElmChar((int) Operators.asLong(a[0])));
     fn("Char.toUpper", 1, a -> new ElmChar(Character.toUpperCase(((ElmChar) a[0]).codePoint())));
     fn("Char.toLower", 1, a -> new ElmChar(Character.toLowerCase(((ElmChar) a[0]).codePoint())));
+    // toLocale* are locale-aware in the browser; the interpreter approximates with the default locale.
+    fn("Char.toLocaleUpper", 1, a -> new ElmChar(Character.toUpperCase(((ElmChar) a[0]).codePoint())));
+    fn("Char.toLocaleLower", 1, a -> new ElmChar(Character.toLowerCase(((ElmChar) a[0]).codePoint())));
     fn("Char.isDigit", 1, a -> {
       int c = ((ElmChar) a[0]).codePoint();
       return c >= '0' && c <= '9';

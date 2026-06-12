@@ -95,6 +95,8 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     assertEquals("False", eval("Char.isControl 'a'"));
     assertEquals("True", eval("Char.isPunctuation '!'"));
     assertEquals("False", eval("Char.isPunctuation 'a'"));
+    assertEquals("'A'", eval("Char.toLocaleUpper 'a'"));
+    assertEquals("'z'", eval("Char.toLocaleLower 'Z'"));
   }
 
   @Test
