@@ -57,6 +57,29 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void rendersTheFullSvgElementSet() {
+    // The editor preview renders the full elm/svg element set (gradients, filters, …), with the
+    // text_ element aliased to <text>.
+    String src =
+        """
+        module Main exposing (main)
+        import Svg exposing (svg, defs, linearGradient, stop, filter, feGaussianBlur, text_)
+        main =
+            svg []
+                [ defs []
+                    [ linearGradient [] [ stop [] [] ]
+                    , filter [] [ feGaussianBlur [] [] ]
+                    ]
+                , text_ [] []
+                ]
+        """;
+    String html = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
+    assertTrue(html.contains("<linearGradient"), "linearGradient rendered: " + html);
+    assertTrue(html.contains("<feGaussianBlur"), "feGaussianBlur rendered: " + html);
+    assertTrue(html.contains("<text>"), "text_ renders as <text>: " + html);
+  }
+
+  @Test
   void rendersDefinitionListsAndAdvancedElements() {
     // The editor renderer supports the full Html element set (matching the compiler/interpreter), so
     // dl/dt/dd, details/summary and the reserved-word alias main_ (-> <main>) render in the preview.
