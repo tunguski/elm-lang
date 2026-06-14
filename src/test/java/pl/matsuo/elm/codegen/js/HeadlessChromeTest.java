@@ -425,6 +425,31 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void decoderIntoRecordAliasWithListFieldRenders() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Repro candidate for the reported $listToArray(undefined) blank: a positional record-alias
+    // constructor applied by Decode.mapN with a Decode.list field, decoded at load and rendered.
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (text, ul, li)
+        import Json.Decode as D
+        type alias StatusInfo = { status : String, code : Int, items : List Int }
+        decoder : D.Decoder StatusInfo
+        decoder = D.map3 StatusInfo (D.field "status" D.string) (D.field "code" D.int) (D.field "items" (D.list D.int))
+        info : StatusInfo
+        info =
+            case D.decodeString decoder "{\\"status\\":\\"NEW\\",\\"code\\":7,\\"items\\":[1,2,3]}" of
+                Ok x -> x
+                Err _ -> StatusInfo "ERR" 0 []
+        main = ul [] (List.map (\\n -> li [] [ text (String.fromInt n) ]) info.items)
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("<li>1</li>") && dom.contains("<li>3</li>"),
+        "decoder-built record-alias List field rendered: " + dom);
+  }
+
+  @Test
   void crossModuleRecordAliasCtorWithListFieldRenders() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Repro for a reported page-blank ($listToArray(undefined)): a record type-alias defined in one
