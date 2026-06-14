@@ -57,6 +57,20 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void decodesViaDecodeStringWithTheNewCombinators() {
+    // decodeString/decodeValue run a decoder; maybe/index/null are now supported in the editor.
+    assertEquals("42", eval("Result.withDefault 0 (Json.Decode.decodeString Json.Decode.int \"42\")"));
+    assertEquals(
+        "20",
+        eval(
+            "Result.withDefault 0 (Json.Decode.decodeString (Json.Decode.index 1 Json.Decode.int) \"[10, 20, 30]\")"));
+    assertEquals(
+        "Just 5",
+        eval(
+            "Result.withDefault Nothing (Json.Decode.decodeString (Json.Decode.maybe Json.Decode.int) \"5\")"));
+  }
+
+  @Test
   void rendersAdditionalHtmlEvents() {
     // The editor renders the full Html.Events set as (inert) on<event> handlers.
     String src =
