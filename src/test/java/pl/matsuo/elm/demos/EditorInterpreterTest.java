@@ -91,6 +91,14 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void encodesArray() {
+    // Encode.array serialises an Array's elements like Encode.list does for a List.
+    assertEquals(
+        "\"[1,2,3]\"",
+        eval("Encode.encode 0 (Encode.array Encode.int (Array.fromList [1, 2, 3]))"));
+  }
+
+  @Test
   void encodesSetAndDict() {
     // Encode.set/dict serialise to a JSON array / object via the element/key-value encoders.
     // (The editor resolves `Json.Encode` under the bare `Encode.` module, as the gallery aliases it.)
