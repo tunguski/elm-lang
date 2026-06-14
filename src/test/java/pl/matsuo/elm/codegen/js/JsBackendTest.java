@@ -300,6 +300,25 @@ class JsBackendTest {
                     + "(Json.Decode.decodeString (Json.Decode.array Json.Decode.int) \"[1,2,3]\")))")));
   }
 
+  /** A positional record-alias constructor whose fields include a List (even a List of records, with
+   * inner commas/braces) must build the record with every field set — not leave the List field
+   * undefined (which surfaced elsewhere as $listToArray(undefined)). */
+  @Test
+  void positionalRecordAliasConstructorWithListFieldBuildsEveryField() {
+    String src =
+        """
+        module M exposing (run)
+        type alias StatusInfo =
+            { status : String, items : List { id : Int, name : String }, code : Int }
+        build : StatusInfo
+        build = StatusInfo "NEW" [ { id = 1, name = "a" }, { id = 2, name = "b" } ] 7
+        run : Int
+        run = List.length build.items + build.code
+        """;
+    String program = JsCompiler.declarationsScript(src) + "\nprocess.stdout.write(String(_$run));\n";
+    assertEquals("9", runNode(program));
+  }
+
   @Test
   void arrayAndListAdditionsAgreeAcrossBackends() {
     same("Array.toList (Array.filter (\\x -> x > 2) (Array.fromList [ 1, 2, 3, 4 ]))");

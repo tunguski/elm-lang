@@ -425,6 +425,30 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void crossModuleRecordAliasCtorWithListFieldRenders() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Repro for a reported page-blank ($listToArray(undefined)): a record type-alias defined in one
+    // module, constructed positionally in another with a List field, then that List rendered at load.
+    String data =
+        """
+        module Data exposing (StatusInfo)
+        type alias StatusInfo = { status : String, code : Int, items : List Int }
+        """;
+    String main =
+        """
+        module Main exposing (main)
+        import Data exposing (StatusInfo)
+        import Html exposing (text, ul, li)
+        info : StatusInfo
+        info = StatusInfo "NEW" 7 [ 1, 2, 3 ]
+        main = ul [] (List.map (\\n -> li [] [ text (String.fromInt n) ]) info.items)
+        """;
+    String dom = renderPage(JsCompiler.htmlPageProject(null, main, data));
+    assertTrue(dom.contains("<li>1</li>"), "the cross-module ctor's List field rendered: " + dom);
+    assertTrue(dom.contains("<li>3</li>"), dom);
+  }
+
+  @Test
   void backOrGoesBackWhenSameSiteElseLoadsFallback() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // A back link that uses Browser.Navigation.backOr: history.back() when the visitor came from
