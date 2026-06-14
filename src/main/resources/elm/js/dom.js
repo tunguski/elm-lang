@@ -222,7 +222,7 @@
   $rt['Json.Decode.null']=function(v){ return $dec(function(j){ return j==null?{ok:1,v:v}:{ok:0,v:'expected null'}; }); };
   $rt['Json.Decode.index']=function(i){ return function(dec){ return $dec(function(j){ var a=$arr(j); if(!a||i<0||i>=a.length) return {ok:0,v:'expected index '+i}; return dec._[0](a[i]); }); }; };
   $rt['Json.Decode.lazy']=function(thunk){ return $dec(function(j){ return thunk(null)._[0](j); }); };
-  $rt['Json.Decode.dict']=function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||Array.isArray(j)) return {ok:0,v:'expected an object'}; var d={$:'Dict',a:[]}; var ks=Object.keys(j); for(var i=0;i<ks.length;i++){ var x=dec._[0](j[ks[i]]); if(!x.ok) return x; d=$dictInsert(d,ks[i],x.v); } return {ok:1,v:d}; }); };
+  $rt['Json.Decode.dict']=function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||Array.isArray(j)) return {ok:0,v:'expected an object'}; var pairs=[]; var ks=Object.keys(j); for(var i=0;i<ks.length;i++){ var x=dec._[0](j[ks[i]]); if(!x.ok) return x; pairs.push($tuple([ks[i], x.v])); } return {ok:1,v:$rt['Dict.fromList']($list(pairs))}; }); };
   $rt['Json.Decode.keyValuePairs']=function(dec){ return $dec(function(j){ if(j==null||typeof j!=='object'||Array.isArray(j)) return {ok:0,v:'expected an object'}; var ks=Object.keys(j),r=[]; for(var i=0;i<ks.length;i++){ var x=dec._[0](j[ks[i]]); if(!x.ok) return x; r.push($tuple([ks[i],x.v])); } return {ok:1,v:$list(r)}; }); };
   // Url / Browser.Navigation: an elm/url-shaped record { protocol, host, port_, path, query, fragment }.
   function $url(href){ var u; try{ u=new URL(href, (typeof location!=='undefined'?location.href:'http://localhost/')); }catch(e){ return null; }

@@ -450,6 +450,34 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void jsonDecodeDictProducesAUsableDict() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: Json.Decode.dict built a Dict in the kernel representation, incompatible with the
+    // DOM runtime's Dict functions, so Dict.get/toList on a decoded dict returned nothing/blanked.
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (text)
+        import Dict
+        import Json.Decode as D
+        decoded : Dict.Dict String Int
+        decoded =
+            Result.withDefault Dict.empty (D.decodeString (D.dict D.int) "{\\"a\\":1,\\"b\\":2}")
+        main =
+            text
+                (String.fromInt (Dict.size decoded)
+                    ++ "/"
+                    ++ (case Dict.get "b" decoded of
+                            Just n -> String.fromInt n
+                            Nothing -> "MISSING"
+                       )
+                )
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("2/2"), "decoded dict is usable (size 2, get b = 2): " + dom);
+  }
+
+  @Test
   void htmlAttributesAttributeAndPropertySetValues() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The generic escape hatches: Html.Attributes.attribute sets any attribute; property sets a DOM

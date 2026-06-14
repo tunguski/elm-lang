@@ -300,6 +300,17 @@ class JsBackendTest {
                     + "(Json.Decode.decodeString (Json.Decode.array Json.Decode.int) \"[1,2,3]\")))")));
   }
 
+  /** The interpreter's Json.Decode.dict must also yield a usable Dict (single Dict rep there). */
+  @Test
+  void interpreterDecodesDictUsably() {
+    assertEquals(
+        "2",
+        Show.plain(
+            Interpreter.eval(
+                "Dict.size (Result.withDefault Dict.empty "
+                    + "(Json.Decode.decodeString (Json.Decode.dict Json.Decode.int) \"{\\\"a\\\":1,\\\"b\\\":2}\"))")));
+  }
+
   /** A parameterless top-level value that uses a List binding declared LATER must still see it
    * initialised — top-level values are emitted in dependency order, not source order. (Source-order
    * eager `var` initialisers would read a hoisted-undefined list and hit $listToArray(undefined).) */
