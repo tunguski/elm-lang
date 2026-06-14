@@ -52,6 +52,36 @@ jobs:
             target/site \
             docs
 
+      # Stamp the short commit hash + UTC build time into a tiny fixed-position badge on every page of
+      # the gallery (including editor.html and rts.html), so anyone can glance at the live site and
+      # confirm which commit is deployed and when it was built. The badge is appended to <html> (not
+      # <body>) by a small script, so it survives any Elm app on the page taking over the body.
+      # NOTE: perl uses -0777 (slurp the whole file as one record), NOT -0: compiled HTML can contain a
+      # NUL byte, and -0 treats NUL as the record separator — which would split the file and double the
+      # injection (once mid-runtime, corrupting it).
+      - name: Stamp commit hash + build time into the footer
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          WHEN=$(date -u '+%Y-%m-%d %H:%M UTC')
+          export STAMP="built $WHEN · $SHA"
+          echo "Stamping: $STAMP"
+          find target/site -name '*.html' -print0 | xargs -0 -r perl -0777 -pi -e '
+            my $t = $ENV{STAMP};
+            my $s = "<script>(function(){function a(){"
+                  . "if(document.getElementById(\"build-stamp\"))return;"
+                  . "var d=document.createElement(\"div\");d.id=\"build-stamp\";d.textContent=\"$t\";"
+                  . "d.title=\"deployed build\";"
+                  . "d.style.cssText=\"position:fixed;bottom:4px;right:6px;z-index:2147483647;"
+                  . "font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:rgba(150,165,190,.72);"
+                  . "background:rgba(8,12,18,.55);padding:2px 7px;border-radius:6px;pointer-events:none;"
+                  . "letter-spacing:.02em\";(document.documentElement||document.body).appendChild(d);}"
+                  . "if(document.readyState!=\"loading\")a();"
+                  . "else document.addEventListener(\"DOMContentLoaded\",a);})();<\/script>";
+            if    (s#</body>#$s</body>#) {}
+            elsif (s#</html>#$s</html>#) {}
+            else  { $_ .= $s }
+          '
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
