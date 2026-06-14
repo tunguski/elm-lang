@@ -659,7 +659,9 @@
     if (v.$==='$Keyed') return $keyedToDom(v);
     var tag=v._[0];
     var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
-    $listToArray(v._[1]).forEach(function(a){ setAttr(el,a); });
+    // Apply via applyProps (not a raw setAttr loop) so el.$at/$st are recorded at creation — else the
+    // first diff into a node lacking one of these attrs/styles can't remove it (it has no record of it).
+    applyProps(el, $listToArray(v._[1]));
     $listToArray(v._[2]).forEach(function(k){ el.appendChild(window.$toDom(k)); });
     return el;
   };
@@ -688,7 +690,7 @@
   function $keyedToDom(v){
     var tag=v._[0];
     var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
-    $listToArray(v._[1]).forEach(function(a){ setAttr(el,a); });
+    applyProps(el, $listToArray(v._[1])); // record el.$at/$st at creation (see $toDom)
     el.$keyed=[];
     $listToArray(v._[2]).forEach(function(p){ var c=window.$toDom(p.vs[1]); el.appendChild(c); el.$keyed.push([p.vs[0], p.vs[1], c]); });
     return el;

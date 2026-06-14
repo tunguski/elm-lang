@@ -1,5 +1,6 @@
 package pl.matsuo.elm.codegen.js;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -255,6 +256,35 @@ class HeadlessChromeTest {
     String dom = renderPage(JsCompiler.htmlPage(app, "document.querySelector('.off').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));"));
     assertTrue(dom.contains("ACTIVE"), "double-click updated the model: " + dom);
     assertTrue(dom.contains("class=\"on\""), "classList rendered the active class only: " + dom);
+  }
+
+  @Test
+  void diffRemovesAClassWhenTheNewNodeHasNone() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: a classed root div diffed into a class-less one must lose its class. The class is
+    // applied at creation by $toDom, which (before the fix) didn't record el.$at — so the first diff
+    // had no record of the class and couldn't remove it, leaving it stuck (e.g. a login-wrapper class
+    // surviving onto a class-less app shell).
+    String app =
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (div, text)
+        import Html.Attributes exposing (class)
+        type Msg = Enter
+        main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }
+        view entered =
+            if entered then
+                div [] [ text "shell" ]
+            else
+                div [ class "login-wrapper" ] [ text "login" ]
+        """;
+    String dom = renderPage(JsCompiler.htmlPage(app, "window.$app.dispatch($data('Enter',[]));"));
+    // (assert on the rendered `class="..."` attribute form, not the bare string — the latter also
+    // appears as a literal in the embedded JS bundle the page serialization includes.)
+    assertTrue(dom.contains(">shell<"), "the update was applied (text re-rendered): " + dom);
+    assertFalse(
+        dom.contains("class=\"login-wrapper\""), "the stale class was removed on diff: " + dom);
   }
 
   @Test
