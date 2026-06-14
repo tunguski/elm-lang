@@ -237,6 +237,8 @@
   $rt['Url.percentEncode']=function(s){ return encodeURIComponent(s); };
   $rt['Url.percentDecode']=function(s){ try{ return $data('Just',[decodeURIComponent(s)]); }catch(e){ return $data('Nothing',[]); } };
   $rt['Browser.Navigation.load']=function(url){ return $cmd(function(d){ try{ location.href=url; }catch(e){} }); };
+  $rt['Browser.Navigation.reload']=$cmd(function(d){ try{ location.reload(); }catch(e){} });
+  $rt['Browser.Navigation.reloadAndSkipCache']=$cmd(function(d){ try{ location.reload(); }catch(e){} });
   // pushUrl/replaceUrl change history and then notify a Browser.application's onUrlChange (if mounted).
   $rt['Browser.Navigation.pushUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.pushState({},'',url); if(window.$onUrlChange) window.$onUrlChange(); }catch(e){} }); }; };
   $rt['Browser.Navigation.replaceUrl']=function(key){ return function(url){ return $cmd(function(d){ try{ history.replaceState({},'',url); if(window.$onUrlChange) window.$onUrlChange(); }catch(e){} }); }; };
@@ -288,6 +290,7 @@
   $rt['Time.now']=$task(function(ok,err){ ok(Date.now()); });
   $rt['Time.utc']=$data('$Zone',[0]);
   $rt['Time.here']=$task(function(ok,err){ ok($data('$Zone',[-new Date().getTimezoneOffset()])); });
+  $rt['Time.getZoneName']=$task(function(ok,err){ ok($data('Offset',[-new Date().getTimezoneOffset()])); });
   function zoned(p, zone){ return p + (zone&&zone._?zone._[0]:0)*60000; }
   $rt['Time.toHour']=function(z){ return function(p){ return Math.floor(zoned(p,z)/3600000)%24; }; };
   $rt['Time.toMinute']=function(z){ return function(p){ return Math.floor(zoned(p,z)/60000)%60; }; };
@@ -368,6 +371,7 @@
   $rt['File.name']=function(f){ return f.name||''; };
   $rt['File.mime']=function(f){ return f.type||''; };
   $rt['File.size']=function(f){ return f.size||0; };
+  $rt['File.lastModified']=function(f){ return f.lastModified||0; };
   $rt['File.toUrl']=function(file){ return $task(function(ok,err){ var r=new FileReader(); r.onload=function(){ ok(r.result); }; r.onerror=function(){ err($data('$FileErr',[])); }; r.readAsDataURL(file); }); };
   $rt['File.toString']=function(file){ return $task(function(ok,err){ var r=new FileReader(); r.onload=function(){ ok(r.result); }; r.onerror=function(){ err($data('$FileErr',[])); }; r.readAsText(file); }); };
   function selectInput(multiple, mimes){ var inp=document.createElement('input'); inp.type='file'; inp.accept=$listToArray(mimes).join(','); if(multiple) inp.multiple=true; return inp; }

@@ -57,6 +57,38 @@ class CoreBuiltinParityTest {
     }
   }
 
+  @Test
+  void smallStdlibAdditionsAreBoundAndTyped() throws IOException {
+    // Effect/opaque-value functions added for elm-package conformance: assert by name across the
+    // interpreter, the type-checker and (where they have a JS runtime) the JS backend.
+    for (String n :
+        new String[] {
+          "Time.getZoneName",
+          "Browser.Navigation.reload",
+          "Browser.Navigation.reloadAndSkipCache",
+          "File.lastModified",
+          "WebGL.preserveDrawingBuffer",
+          "WebGL.Texture.defaultOptions"
+        }) {
+      assertTrue(Prelude.builtins().containsKey(n), n + " must be bound in the interpreter");
+      assertTrue(Signatures.globals().containsKey(n), n + " must have a type scheme");
+    }
+    // WebGL has no JS code-gen; the rest must be registered in the JS runtime.
+    String dom;
+    try (InputStream in = CoreBuiltinParityTest.class.getResourceAsStream("/elm/js/dom.js")) {
+      dom = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    }
+    for (String n :
+        new String[] {
+          "Time.getZoneName",
+          "Browser.Navigation.reload",
+          "Browser.Navigation.reloadAndSkipCache",
+          "File.lastModified"
+        }) {
+      assertTrue(dom.contains("'" + n + "'"), n + " must be registered in the JS runtime");
+    }
+  }
+
   private static boolean isPureBuiltin(String name) {
     int dot = name.indexOf('.');
     return dot > 0 && PURE_MODULES.contains(name.substring(0, dot));

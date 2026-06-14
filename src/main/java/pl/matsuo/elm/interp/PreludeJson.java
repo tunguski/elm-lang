@@ -133,6 +133,9 @@ final class PreludeJson {
       return r == null ? d("Nothing") : d("Just", r);
     });
     fn("Browser.Navigation.load", 1, a -> d("$CmdNone"));
+    // reload / reloadAndSkipCache: headlessly there is no page to reload, so a no-op command.
+    BUILTINS.put("Browser.Navigation.reload", d("$CmdNone"));
+    BUILTINS.put("Browser.Navigation.reloadAndSkipCache", d("$CmdNone"));
     fn("Browser.Navigation.pushUrl", 2, a -> d("$CmdNone"));
     fn("Browser.Navigation.replaceUrl", 2, a -> d("$CmdNone"));
     fn("Browser.Navigation.back", 2, a -> d("$CmdNone"));

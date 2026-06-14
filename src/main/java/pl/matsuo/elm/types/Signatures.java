@@ -446,6 +446,7 @@ public final class Signatures {
     g("Time.customZone", "Int -> List Era -> Zone");
     g("Time.utc", "Zone");
     g("Time.here", "Task x Zone");
+    g("Time.getZoneName", "Task x ZoneName");
     g("Time.now", "Task x Posix");
     // Month and Weekday constructors (built-in unions, like Order's LT/EQ/GT).
     for (String m : new String[] {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"}) {
@@ -577,6 +578,8 @@ public final class Signatures {
     g("Url.percentEncode", "String -> String");
     g("Url.percentDecode", "String -> Maybe String");
     g("Browser.Navigation.load", "String -> Cmd msg");
+    g("Browser.Navigation.reload", "Cmd msg");
+    g("Browser.Navigation.reloadAndSkipCache", "Cmd msg");
     g("Browser.Navigation.pushUrl", "Key -> String -> Cmd msg");
     g("Browser.Navigation.replaceUrl", "Key -> String -> Cmd msg");
     g("Browser.Navigation.back", "Key -> Int -> Cmd msg");
@@ -593,6 +596,7 @@ public final class Signatures {
     g("File.name", "File -> String");
     g("File.mime", "File -> String");
     g("File.size", "File -> Int");
+    g("File.lastModified", "File -> Posix");
     g("File.Select.file", "List String -> (File -> msg) -> Cmd msg");
     g("File.Select.files", "List String -> (File -> List File -> msg) -> Cmd msg");
     // A kernel command used by the in-browser editor: open a file picker and hand the chosen file's
@@ -725,6 +729,7 @@ public final class Signatures {
     g("WebGL.alpha", "Bool -> Option");
     g("WebGL.antialias", "Option");
     g("WebGL.stencil", "Int -> Option");
+    g("WebGL.preserveDrawingBuffer", "Bool -> Option");
     g("WebGL.clearColor", "Float -> Float -> Float -> Float -> Option");
 
     // elm-explorations/webgl WebGL.Texture. `Options` is a record alias (see Infer's builtin
@@ -745,6 +750,7 @@ public final class Signatures {
     g("WebGL.Texture.clampToEdge", "Wrap");
     g("WebGL.Texture.mirroredRepeat", "Wrap");
     g("WebGL.Texture.nonPowerOfTwoOptions", texOptions);
+    g("WebGL.Texture.defaultOptions", texOptions);
     g("WebGL.Settings.DepthTest.default", "Setting");
   }
 }

@@ -185,6 +185,8 @@ public final class Prelude {
 
     BUILTINS.put("Time.utc", d("$Zone", 0L));
     BUILTINS.put("Time.here", d("$Task_Const", d("$Zone", 0L)));
+    // getZoneName: headlessly we can't read the host zone name, so report a UTC offset of 0.
+    BUILTINS.put("Time.getZoneName", d("$Task_Const", d("Offset", 0L)));
     BUILTINS.put("Time.now", d("$Task_Const", d("$Posix", 0L)));
     fn("Time.millisToPosix", 1, a -> d("$Posix", Operators.asLong(a[0])));
     fn("Time.posixToMillis", 1, a -> ((ElmData) a[0]).arg(0));
@@ -414,6 +416,7 @@ public final class Prelude {
     fn("WebGL.alpha", 1, a -> d("$Option"));
     fn("WebGL.depth", 1, a -> d("$Option"));
     fn("WebGL.stencil", 1, a -> d("$Option"));
+    fn("WebGL.preserveDrawingBuffer", 1, a -> d("$Option"));
     BUILTINS.put("WebGL.antialias", d("$Option"));
     fn("WebGL.entity", 4, a -> d("$Entity", a[0], a[1], a[2], a[3]));
     fn("WebGL.entityWith", 5, a -> d("$Entity", a[1], a[2], a[3], a[4]));
@@ -438,6 +441,7 @@ public final class Prelude {
       BUILTINS.put("WebGL.Texture." + opt, d("$TexOpt", opt));
     }
     BUILTINS.put("WebGL.Texture.nonPowerOfTwoOptions", d("$TexOptions"));
+    BUILTINS.put("WebGL.Texture.defaultOptions", d("$TexOptions"));
     // WebGL.Settings enums/values used by some examples (opaque; ignored headlessly).
     BUILTINS.put("WebGL.Settings.DepthTest.default", d("$Setting"));
   }
@@ -448,6 +452,7 @@ public final class Prelude {
     fn("File.name", 1, a -> ((ElmData) a[0]).arg(0));
     fn("File.mime", 1, a -> ((ElmData) a[0]).arg(1));
     fn("File.size", 1, a -> 0L);
+    fn("File.lastModified", 1, a -> d("$Posix", 0L)); // headless: no real timestamp, epoch 0
     fn("File.toUrl", 1, a -> d("$Task_Const", ((ElmData) a[0]).arg(2)));
     fn("File.toString", 1, a -> d("$Task_Const", ((ElmData) a[0]).arg(2)));
     // File.Select (often imported `as Select`): commands the Tea driver fulfils with stub files.
