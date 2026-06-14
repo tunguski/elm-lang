@@ -377,12 +377,22 @@ public final class Signatures {
     String elem = "List (Attribute msg) -> List (Html msg) -> Html msg";
     for (String tag :
         new String[] {
-          "svg", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "path", "image",
-          "text_"
+          "svg", "foreignObject", "circle", "ellipse", "image", "line", "path", "polygon",
+          "polyline", "rect", "use", "a", "defs", "g", "marker", "mask", "pattern", "switch",
+          "symbol", "clipPath", "cursor", "filter", "style", "view", "desc", "metadata", "title",
+          "linearGradient", "radialGradient", "stop", "text_", "textPath", "tref", "tspan",
+          "altGlyph", "altGlyphDef", "altGlyphItem", "glyph", "glyphRef", "font", "colorProfile",
+          "animate", "animateColor", "animateMotion", "animateTransform", "mpath", "set", "feBlend",
+          "feColorMatrix", "feComponentTransfer", "feComposite", "feConvolveMatrix",
+          "feDiffuseLighting", "feDisplacementMap", "feFlood", "feFuncA", "feFuncB", "feFuncG",
+          "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology",
+          "feOffset", "feSpecularLighting", "feTile", "feTurbulence", "feDistantLight",
+          "fePointLight", "feSpotLight"
         }) {
       g("Svg." + tag, elem);
     }
     g("Svg.text", "String -> Html msg");
+    g("Svg.node", "String -> " + elem);
     for (String attr :
         new String[] {
           "width", "height", "viewBox", "preserveAspectRatio", "cx", "cy", "r", "x", "y", "x1", "y1",

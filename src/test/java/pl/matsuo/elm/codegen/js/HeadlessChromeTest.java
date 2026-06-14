@@ -450,6 +450,29 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void svgGradientAndFilterElementsRenderInTheSvgNamespace() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Newly-added SVG elements must render and keep their case-sensitive camelCase tag names, which
+    // only happens under the SVG namespace (createElementNS) — i.e. they're in the namespace set.
+    String app =
+        """
+        module Main exposing (main)
+        import Svg exposing (svg, defs, linearGradient, stop, rect, filter, feGaussianBlur)
+        main =
+            svg []
+                [ defs []
+                    [ linearGradient [] [ stop [] [] ]
+                    , filter [] [ feGaussianBlur [] [] ]
+                    ]
+                , rect [] []
+                ]
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("<linearGradient"), "linearGradient rendered (SVG namespace): " + dom);
+    assertTrue(dom.contains("<feGaussianBlur"), "feGaussianBlur rendered (SVG namespace): " + dom);
+  }
+
+  @Test
   void jsonDecodeDictProducesAUsableDict() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Regression: Json.Decode.dict built a Dict in the kernel representation, incompatible with the

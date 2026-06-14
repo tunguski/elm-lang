@@ -57,9 +57,19 @@ public final class Prelude {
     "multiple"
   };
 
+  // The full elm/svg element set (elmName:tag where they differ). SVG tags are case-sensitive and
+  // mostly verbatim; only text_ -> text and colorProfile -> color-profile are aliased.
   private static final String[] SVG_TAGS = {
-    "svg", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "path", "image",
-    "text_:text"
+    "svg", "foreignObject", "circle", "ellipse", "image", "line", "path", "polygon", "polyline",
+    "rect", "use", "a", "defs", "g", "marker", "mask", "pattern", "switch", "symbol", "clipPath",
+    "cursor", "filter", "style", "view", "desc", "metadata", "title", "linearGradient",
+    "radialGradient", "stop", "text_:text", "textPath", "tref", "tspan", "altGlyph", "altGlyphDef",
+    "altGlyphItem", "glyph", "glyphRef", "font", "colorProfile:color-profile", "animate",
+    "animateColor", "animateMotion", "animateTransform", "mpath", "set", "feBlend", "feColorMatrix",
+    "feComponentTransfer", "feComposite", "feConvolveMatrix", "feDiffuseLighting",
+    "feDisplacementMap", "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur",
+    "feImage", "feMerge", "feMergeNode", "feMorphology", "feOffset", "feSpecularLighting", "feTile",
+    "feTurbulence", "feDistantLight", "fePointLight", "feSpotLight"
   };
 
   private static final String[] SVG_ATTRS = {
@@ -83,6 +93,17 @@ public final class Prelude {
   public static java.util.List<String> htmlElementNames() {
     java.util.List<String> names = new java.util.ArrayList<>();
     for (String spec : HTML_TAGS) {
+      int colon = spec.indexOf(':');
+      names.add(colon < 0 ? spec : spec.substring(0, colon));
+    }
+    return names;
+  }
+
+  /** The Elm names of the bound Svg element functions (the {@code elmName} of each {@link #SVG_TAGS}
+   * entry). Kept in lock-step with the JS runtime and the type-checker by {@code SvgElementParityTest}. */
+  public static java.util.List<String> svgElementNames() {
+    java.util.List<String> names = new java.util.ArrayList<>();
+    for (String spec : SVG_TAGS) {
       int colon = spec.indexOf(':');
       names.add(colon < 0 ? spec : spec.substring(0, colon));
     }
@@ -860,6 +881,7 @@ public final class Prelude {
       fn("Svg." + nt[0], 2, a -> node(tag, a[0], a[1]));
     }
     fn("Svg.text", 1, a -> new ElmData("$Text", new Object[] {a[0]}));
+    fn("Svg.node", 3, a -> node((String) a[0], a[1], a[2])); // generic SVG element builder
     for (String spec : SVG_ATTRS) {
       String[] nt = split(spec);
       String svgName = nt[1];

@@ -1,6 +1,18 @@
 (function(){
   var SVG = 'http://www.w3.org/2000/svg';
-  var SVG_TAGS = {svg:1,circle:1,rect:1,line:1,polygon:1,polyline:1,ellipse:1,g:1,path:1,image:1,text:1};
+  // Full elm/svg element set ('elmName:tag' where they differ). SVG tags are case-sensitive (verbatim)
+  // except text_->text and colorProfile->color-profile. SVG_TAGS (by tag) drives the createElementNS
+  // namespace choice below; Svg.<elmName> functions are registered from the same list.
+  var svgEls = ['svg','foreignObject','circle','ellipse','image','line','path','polygon','polyline',
+    'rect','use','a','defs','g','marker','mask','pattern','switch','symbol','clipPath','cursor',
+    'filter','style','view','desc','metadata','title','linearGradient','radialGradient','stop',
+    'text_:text','textPath','tref','tspan','altGlyph','altGlyphDef','altGlyphItem','glyph','glyphRef',
+    'font','colorProfile:color-profile','animate','animateColor','animateMotion','animateTransform',
+    'mpath','set','feBlend','feColorMatrix','feComponentTransfer','feComposite','feConvolveMatrix',
+    'feDiffuseLighting','feDisplacementMap','feFlood','feFuncA','feFuncB','feFuncG','feFuncR',
+    'feGaussianBlur','feImage','feMerge','feMergeNode','feMorphology','feOffset','feSpecularLighting',
+    'feTile','feTurbulence','feDistantLight','fePointLight','feSpotLight'];
+  var SVG_TAGS = {}; svgEls.forEach(function(s){ var p=s.split(':'); SVG_TAGS[p[1]||p[0]]=1; });
   function node(tag){ return function(attrs){ return function(kids){ return $data('$Node',[tag,attrs,kids]); }; }; }
   // Every Html element the interpreter (Prelude.HTML_TAGS) and type-checker (Signatures.HTML_ELEMENTS)
   // know, so anything that type-checks and runs interpreted also renders when compiled to JS. Entries
@@ -80,11 +92,10 @@
   $rt['Svg.Lazy.lazy8']=$rt['Html.Lazy.lazy8'];
   function $forceLazy(v){ var r=v._[0]; v._[1].forEach(function(a){ r=r(a); }); return r; }
   function $sameArgs(a,b){ if(!a||a.length!==b.length) return false; for(var i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; } return true; }
-  Object.keys(SVG_TAGS).forEach(function(t){ $rt['Svg.'+t]=node(t); });
-  // `Svg.text` is the text-content node (a string child); `Svg.text_` is the <text> element. The
-  // SVG_TAGS loop above transiently bound `Svg.text` to the element — reclaim both names here.
+  svgEls.forEach(function(s){ var p=s.split(':'); $rt['Svg.'+p[0]]=node(p[1]||p[0]); });
+  // `Svg.text` is the text-content node (a string child), not the <text> element (that is Svg.text_).
   $rt['Svg.text']=function(s){ return $data('$Text',[s]); };
-  $rt['Svg.text_']=node('text');
+  $rt['Svg.node']=function(t){ return node(t); }; // generic SVG element builder
   var svgAttrs=['width','height','viewBox','preserveAspectRatio','cx','cy','r','x','y','x1','y1','x2','y2','rx','ry',
     'fill','stroke','strokeWidth:stroke-width','points','d','transform','opacity',
     'textAnchor:text-anchor','fontSize:font-size','xlinkHref:xlink:href',
