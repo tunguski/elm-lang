@@ -175,6 +175,7 @@ class EditorToolingInterpreterTest extends EditorInterpreterTestSupport {
       "projects/elm-editor/src/Eval/Task.elm",
       "projects/elm-editor/src/Eval/Browser.elm",
       "projects/elm-editor/src/Eval/Encode.elm",
+      "projects/elm-editor/src/Eval/Url.elm",
       "projects/elm-editor/src/Eval/Basics.elm",
       "projects/elm-editor/src/Eval/Math.elm",
       "projects/elm-editor/src/Eval/Lazy.elm",

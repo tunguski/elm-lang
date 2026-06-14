@@ -104,6 +104,24 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void parsesEncodesAndRebuildsUrls() {
+    // fromString parses an absolute http(s) URL; toString rebuilds it (round-trips).
+    assertEquals(
+        "Just \"www.example.com\"",
+        eval("Maybe.map (\\u -> u.host) (Url.fromString \"https://www.example.com/path?q=1#frag\")"));
+    assertEquals(
+        "Just \"https://example.com:8080/a?x=1#f\"",
+        eval("Maybe.map Url.toString (Url.fromString \"https://example.com:8080/a?x=1#f\")"));
+    // a non-http(s) scheme is not a Url.
+    assertEquals("Nothing", eval("Url.fromString \"ftp://x/y\""));
+    // percentEncode / percentDecode over UTF-8 (space, then é = U+00E9 -> %C3%A9).
+    assertEquals("\"a%20b\"", eval("Url.percentEncode \"a b\""));
+    assertEquals("\"%C3%A9\"", eval("Url.percentEncode \"é\""));
+    assertEquals("Just \"a b\"", eval("Url.percentDecode \"a%20b\""));
+    assertEquals("Just \"é\"", eval("Url.percentDecode \"%C3%A9\""));
+  }
+
+  @Test
   void convertsPosixToCalendarFields() {
     // 2021-01-01T00:00:00Z = 1609459200000 ms, a Friday. Zones read as UTC.
     assertEquals("2021", eval("Time.toYear Time.utc (Time.millisToPosix 1609459200000)"));
