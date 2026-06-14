@@ -351,6 +351,8 @@ public final class Signatures {
     }
     g("Html.Attributes.style", "String -> String -> Attribute msg");
     g("Html.Attributes.classList", "List ( String, Bool ) -> Attribute msg");
+    g("Html.Attributes.attribute", "String -> String -> Attribute msg");
+    g("Html.Attributes.property", "String -> Value -> Attribute msg");
     g("Html.Events.onClick", "msg -> Attribute msg");
     g("Html.Events.onInput", "(String -> msg) -> Attribute msg");
     g("Html.Events.onCheck", "(Bool -> msg) -> Attribute msg");

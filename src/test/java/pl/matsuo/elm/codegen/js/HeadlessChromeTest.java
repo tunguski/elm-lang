@@ -450,6 +450,24 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void htmlAttributesAttributeAndPropertySetValues() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The generic escape hatches: Html.Attributes.attribute sets any attribute; property sets a DOM
+    // property (here `id`, which serializes as an attribute).
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (div, text)
+        import Html.Attributes exposing (attribute, property)
+        import Json.Encode as E
+        main = div [ attribute "data-foo" "bar", property "id" (E.string "z") ] [ text "x" ]
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("data-foo=\"bar\""), "attribute set a custom attribute: " + dom);
+    assertTrue(dom.contains("id=\"z\""), "property set the id: " + dom);
+  }
+
+  @Test
   void crossModuleRecordAliasCtorWithListFieldRenders() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Repro for a reported page-blank ($listToArray(undefined)): a record type-alias defined in one

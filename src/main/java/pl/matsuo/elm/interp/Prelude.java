@@ -805,6 +805,9 @@ public final class Prelude {
       fn("Html.Attributes." + nt[0], 1, a -> new ElmData("$Prop", new Object[] {htmlName, a[0]}));
     }
     fn("Html.Attributes.style", 2, a -> new ElmData("$Style", new Object[] {a[0], a[1]}));
+    // The generic escape hatches: any attribute / any DOM property.
+    fn("Html.Attributes.attribute", 2, a -> new ElmData("$Att", new Object[] {a[0], a[1]}));
+    fn("Html.Attributes.property", 2, a -> new ElmData("$Prop", new Object[] {a[0], a[1]}));
     fn("Html.Attributes.classList", 1, a -> {
       StringBuilder sb = new StringBuilder();
       for (Object pair : ((ElmList) a[0]).toJava()) {
