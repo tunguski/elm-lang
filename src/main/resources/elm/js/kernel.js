@@ -336,6 +336,7 @@ $rt['Json.Encode.string']=function(s){ return s; };
 $rt['Json.Encode.bool']=function(b){ return b; };
 $rt['Json.Encode.null']=null;
 $rt['Json.Encode.list']=function(f){ return function(xs){ return $listToArray(xs).map(function(x){ return f(x); }); }; };
+$rt['Json.Encode.array']=function(f){ return function(arr){ return $rt['Json.Encode.list'](f)($rt['Array.toList'](arr)); }; };
 $rt['Json.Encode.object']=function(pairs){ var o={}; $listToArray(pairs).forEach(function(p){ o[p.vs[0]]=p.vs[1]; }); return o; };
 $rt['Json.Encode.dict']=function(toKey){ return function(toVal){ return function(d){ var o={}; d.a.forEach(function(e){ o[toKey(e[0])]=toVal(e[1]); }); return o; }; }; };
 $rt['Json.Encode.set']=function(toVal){ return function(s){ return s.a.map(function(x){ return toVal(x); }); }; };

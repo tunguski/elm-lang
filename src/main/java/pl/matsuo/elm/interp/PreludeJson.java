@@ -36,6 +36,11 @@ final class PreludeJson {
     fn("Json.Decode.oneOrMore", 2, a -> d("$Dec_OneOrMore", a[0], a[1]));
     BUILTINS.put("Json.Decode.value", d("$Dec_Value"));
     fn("Json.Decode.list", 1, a -> d("$Dec_List", a[0]));
+    // array = map Array.fromList over the list decoder (reuses the existing decoder combinators).
+    fn(
+        "Json.Decode.array",
+        1,
+        a -> d("$Dec_MapN", BUILTINS.get("Array.fromList"), d("$Dec_List", a[0])));
     fn("Json.Decode.map", 2, a -> d("$Dec_MapN", a[0], a[1]));
     fn("Json.Decode.map2", 3, a -> d("$Dec_MapN", a[0], a[1], a[2]));
     fn("Json.Decode.map3", 4, a -> d("$Dec_MapN", a[0], a[1], a[2], a[3]));
@@ -82,6 +87,13 @@ final class PreludeJson {
       }
       return d("$Json", out);
     });
+    // array f arr = list f (Array.toList arr) — reuses the list encoder.
+    fn(
+        "Json.Encode.array",
+        2,
+        a ->
+            Apply.applyAll(
+                BUILTINS.get("Json.Encode.list"), a[0], Apply.apply(BUILTINS.get("Array.toList"), a[1])));
     fn("Json.Encode.object", 1, a -> {
       java.util.LinkedHashMap<String, Object> map = new java.util.LinkedHashMap<>();
       for (Object pair : ((ElmList) a[0]).toJava()) {

@@ -533,6 +533,7 @@ public final class Signatures {
     g("Json.Decode.field", "String -> Decoder a -> Decoder a");
     g("Json.Decode.at", "List String -> Decoder a -> Decoder a");
     g("Json.Decode.list", "Decoder a -> Decoder (List a)");
+    g("Json.Decode.array", "Decoder a -> Decoder (Array a)");
     g("Json.Decode.map", "(a -> b) -> Decoder a -> Decoder b");
     g("Json.Decode.map2", "(a -> b -> v) -> Decoder a -> Decoder b -> Decoder v");
     g("Json.Decode.map3", "(a -> b -> c -> v) -> Decoder a -> Decoder b -> Decoder c -> Decoder v");
@@ -564,6 +565,7 @@ public final class Signatures {
     g("Json.Encode.bool", "Bool -> Value");
     g("Json.Encode.null", "Value");
     g("Json.Encode.list", "(a -> Value) -> List a -> Value");
+    g("Json.Encode.array", "(a -> Value) -> Array a -> Value");
     g("Json.Encode.object", "List ( String, Value ) -> Value");
     g("Json.Encode.dict", "(k -> String) -> (v -> Value) -> Dict k v -> Value");
     g("Json.Encode.set", "(a -> Value) -> Set a -> Value");

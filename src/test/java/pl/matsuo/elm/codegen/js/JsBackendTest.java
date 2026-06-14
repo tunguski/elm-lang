@@ -285,6 +285,19 @@ class JsBackendTest {
     same("String.fromChar (Char.toLocaleUpper 'a')");
     same("String.fromChar (Char.toLocaleLower 'A')");
     same("String.map Char.toLocaleUpper \"abc\"");
+    // Json.Encode.array f arr must encode identically to Json.Encode.list f over the same elements
+    // (compared within each backend, so the interp-vs-JS JSON spacing difference doesn't matter).
+    same(
+        "Json.Encode.encode 0 (Json.Encode.array Json.Encode.int (Array.fromList [ 1, 2, 3 ])) "
+            + "== Json.Encode.encode 0 (Json.Encode.list Json.Encode.int [ 1, 2, 3 ])");
+    // Json.Decode.array: decoders run in the DOM runtime, not the pure-expression bundle `same`
+    // compiles, so check the interpreter directly (the JS derive reuses the tested list/map path).
+    assertEquals(
+        "6",
+        Show.plain(
+            Interpreter.eval(
+                "List.sum (Array.toList (Result.withDefault Array.empty "
+                    + "(Json.Decode.decodeString (Json.Decode.array Json.Decode.int) \"[1,2,3]\")))")));
   }
 
   @Test
