@@ -71,6 +71,39 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void decodesDictAndKeyValuePairs() {
+    // dict/keyValuePairs turn a JSON object into a Dict / assoc-list; the Dict is sorted by key.
+    assertEquals(
+        "3",
+        eval(
+            "Result.withDefault 0 (Result.map (\\d -> Dict.size d)"
+                + " (Json.Decode.decodeString (Json.Decode.dict Json.Decode.int) \"{\\\"a\\\":1,\\\"b\\\":2,\\\"c\\\":3}\"))"));
+    assertEquals(
+        "Just 2",
+        eval(
+            "Result.withDefault Nothing (Result.map (\\d -> Dict.get \"b\" d)"
+                + " (Json.Decode.decodeString (Json.Decode.dict Json.Decode.int) \"{\\\"a\\\":1,\\\"b\\\":2}\"))"));
+    assertEquals(
+        "2",
+        eval(
+            "Result.withDefault 0 (Result.map List.length"
+                + " (Json.Decode.decodeString (Json.Decode.keyValuePairs Json.Decode.int) \"{\\\"a\\\":1,\\\"b\\\":2}\"))"));
+  }
+
+  @Test
+  void encodesSetAndDict() {
+    // Encode.set/dict serialise to a JSON array / object via the element/key-value encoders.
+    // (The editor resolves `Json.Encode` under the bare `Encode.` module, as the gallery aliases it.)
+    assertEquals(
+        "\"[1,2,3]\"",
+        eval("Encode.encode 0 (Encode.set Encode.int (Set.fromList [3, 1, 2, 1]))"));
+    assertEquals(
+        "\"{\"a\":1,\"b\":2}\"",
+        eval(
+            "Encode.encode 0 (Encode.dict identity Encode.int (Dict.fromList [(\"a\", 1), (\"b\", 2)]))"));
+  }
+
+  @Test
   void rendersAdditionalHtmlEvents() {
     // The editor renders the full Html.Events set as (inert) on<event> handlers.
     String src =
