@@ -104,6 +104,17 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void convertsPosixToCalendarFields() {
+    // 2021-01-01T00:00:00Z = 1609459200000 ms, a Friday. Zones read as UTC.
+    assertEquals("2021", eval("Time.toYear Time.utc (Time.millisToPosix 1609459200000)"));
+    assertEquals("Jan", eval("Time.toMonth Time.utc (Time.millisToPosix 1609459200000)"));
+    assertEquals("1", eval("Time.toDay Time.utc (Time.millisToPosix 1609459200000)"));
+    assertEquals("Fri", eval("Time.toWeekday Time.utc (Time.millisToPosix 1609459200000)"));
+    // ms within the second.
+    assertEquals("123", eval("Time.toMillis Time.utc (Time.millisToPosix 1609459200123)"));
+  }
+
+  @Test
   void rendersAdditionalHtmlEvents() {
     // The editor renders the full Html.Events set as (inert) on<event> handlers.
     String src =
