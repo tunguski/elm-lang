@@ -300,6 +300,45 @@ class JsBackendTest {
                     + "(Json.Decode.decodeString (Json.Decode.array Json.Decode.int) \"[1,2,3]\")))")));
   }
 
+  /** A parameterless top-level value that uses a List binding declared LATER must still see it
+   * initialised — top-level values are emitted in dependency order, not source order. (Source-order
+   * eager `var` initialisers would read a hoisted-undefined list and hit $listToArray(undefined).) */
+  @Test
+  void forwardReferencedTopLevelListBindingIsInitialisedFirst() {
+    String src =
+        """
+        module M exposing (run)
+        run : Int
+        run = List.sum items
+        items : List Int
+        items = [ 1, 2, 3 ]
+        """;
+    String program = JsCompiler.declarationsScript(src) + "\nprocess.stdout.write(String(_$run));\n";
+    assertEquals("6", runNode(program));
+  }
+
+  /** The dependency order must be followed THROUGH helper functions: a value whose initialiser calls
+   * a helper that references a data list declared later must still see the list initialised. This is
+   * the shape behind a reported page-blank ($listToArray(undefined)) in a module of mutually-
+   * referencing top-level values + data lists. */
+  @Test
+  void topLevelValueUsingAListViaAHelperDefinedLaterWorks() {
+    String src =
+        """
+        module M exposing (run)
+        run : Int
+        run = sectionValue
+        sectionValue : Int
+        sectionValue = helper 10
+        helper : Int -> Int
+        helper n = n + List.sum items
+        items : List Int
+        items = [ 1, 2, 3 ]
+        """;
+    String program = JsCompiler.declarationsScript(src) + "\nprocess.stdout.write(String(_$run));\n";
+    assertEquals("16", runNode(program));
+  }
+
   /** A positional record-alias constructor whose fields include a List (even a List of records, with
    * inner commas/braces) must build the record with every field set — not leave the List field
    * undefined (which surfaced elsewhere as $listToArray(undefined)). */

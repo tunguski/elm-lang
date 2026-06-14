@@ -8,7 +8,7 @@ function $tuple(vs){ return {$:'#', vs:vs}; }
 function $char(c){ return {$:'Char', c:c}; }
 function $data(name, args){ return {$:name, _:args}; }
 function $update(rec, upd){ return Object.assign({}, rec, upd); }
-function $listToArray(v){ var a=[]; while(v.$==='::'){a.push(v.a); v=v.b;} return a; }
+function $listToArray(v){ if(v==null){throw new Error('$listToArray: got '+v+' — a non-List (likely an uninitialised top-level binding) reached a List operation');} var a=[]; while(v.$==='::'){a.push(v.a); v=v.b;} return a; }
 
 // ---- equality & comparison ----
 function $eq(x, y){
