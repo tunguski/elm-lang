@@ -57,6 +57,23 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
   }
 
   @Test
+  void rendersAdditionalHtmlEvents() {
+    // The editor renders the full Html.Events set as (inert) on<event> handlers.
+    String src =
+        """
+        module Main exposing (main)
+        import Html exposing (div, text)
+        import Html.Events exposing (onDoubleClick, onMouseDown, onFocus)
+        type Msg = A | B | C
+        main = div [ onDoubleClick A, onMouseDown B, onFocus C ] [ text "x" ]
+        """;
+    String html = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
+    assertTrue(html.contains("ondblclick=A"), "onDoubleClick: " + html);
+    assertTrue(html.contains("onmousedown=B"), "onMouseDown: " + html);
+    assertTrue(html.contains("onfocus=C"), "onFocus: " + html);
+  }
+
+  @Test
   void rendersTheFullSvgElementSet() {
     // The editor preview renders the full elm/svg element set (gradients, filters, …), with the
     // text_ element aliased to <text>.
