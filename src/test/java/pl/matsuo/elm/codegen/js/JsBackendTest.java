@@ -1,6 +1,7 @@
 package pl.matsuo.elm.codegen.js;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -78,6 +79,20 @@ class JsBackendTest {
     assertTrue(program.contains("while(true)") && program.contains("continue $tco"),
         "tail-recursive function compiled to a loop");
     assertEquals("500000500000", runNode(program));
+  }
+
+  /** A constructor applied to its full arity is built directly, not via a curried closure chain. */
+  @Test
+  void saturatedConstructorCompilesToDirectData() {
+    String src =
+        """
+        module M exposing (mk)
+        type Box a = Box a a
+        mk x = Box x x
+        """;
+    String js = JsCompiler.declarationsScript(src);
+    assertTrue(js.contains("$data(\"Box\", [_$x, _$x])"), "saturated ctor built directly: " + js);
+    assertFalse(js.contains("a0=>"), "no curried ctor closure chain emitted for a saturated call: " + js);
   }
 
   /** Tail recursion through a `case` (the common list-walk shape) is also looped, not stacked. */

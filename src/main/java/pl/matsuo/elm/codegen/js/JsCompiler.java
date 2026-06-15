@@ -646,7 +646,7 @@ public final class JsCompiler {
       case Expr.RecordUpdate u -> compileRecordUpdate(u);
       case Expr.RecordAccess a -> Js.index(Js.paren(compile(a.target())), Js.str(a.field()));
       case Expr.Accessor a -> Js.paren(Js.arrow("r", Js.index("r", Js.str(a.field()))));
-      case Expr.App app -> Js.apply(compile(app.fn()), compile(app.arg()));
+      case Expr.App app -> compileApp(app);
       case Expr.BinOp b ->
           pl.matsuo.elm.interp.Operators.isBuiltin(b.op())
               ? Js.binOp(b.op(), compile(b.left()), compile(b.right()))
@@ -663,6 +663,53 @@ public final class JsCompiler {
   }
 
   /** Each expression compiled to JS source, in order — for argument and element lists. */
+  /**
+   * Compiles an application. A constructor applied to exactly its arity (the common case: {@code
+   * Just x}, a custom-type or record-alias constructor) is built directly as its {@code $data}/object
+   * value, skipping the curried arrow chain and the intermediate closures each partial application
+   * would otherwise allocate. Anything else (partial application, or a function/builtin head) falls
+   * back to one-argument-at-a-time currying.
+   */
+  private String compileApp(Expr.App app) {
+    List<Expr> args = new ArrayList<>();
+    Expr cur = app;
+    while (cur instanceof Expr.App a) {
+      args.add(0, a.arg());
+      cur = a.fn();
+    }
+    if (cur instanceof Expr.Ctor c) {
+      String direct = compileSaturatedCtor(c.name(), args);
+      if (direct != null) {
+        return direct;
+      }
+    }
+    String out = compile(cur);
+    for (Expr arg : args) {
+      out = Js.apply(out, compile(arg));
+    }
+    return out;
+  }
+
+  /** The directly-built value for a constructor applied to exactly its arity, or null otherwise. */
+  private String compileSaturatedCtor(String name, List<Expr> args) {
+    List<String> fields = recordAliases.get(name);
+    if (fields != null) {
+      if (args.size() != fields.size()) {
+        return null;
+      }
+      List<String> entries = new ArrayList<>(fields.size());
+      for (int i = 0; i < fields.size(); i++) {
+        entries.add(Js.entry(fields.get(i), compile(args.get(i))));
+      }
+      return Js.object(entries);
+    }
+    int arity = ctorArity.getOrDefault(name, 0);
+    if (arity == 0 || args.size() != arity) {
+      return null; // 0-arity ctors (incl. True/False) and partial applications stay on the curried path
+    }
+    return Js.data(name, compileEach(args));
+  }
+
   private List<String> compileEach(List<Expr> items) {
     List<String> out = new ArrayList<>(items.size());
     for (Expr item : items) {
