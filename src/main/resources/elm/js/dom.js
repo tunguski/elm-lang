@@ -1,8 +1,9 @@
 (function(){
   var SVG = 'http://www.w3.org/2000/svg';
   // Full elm/svg element set ('elmName:tag' where they differ). SVG tags are case-sensitive (verbatim)
-  // except text_->text and colorProfile->color-profile. SVG_TAGS (by tag) drives the createElementNS
-  // namespace choice below; Svg.<elmName> functions are registered from the same list.
+  // except text_->text and colorProfile->color-profile. Svg.<elmName> functions are registered from
+  // this list; the createElementNS namespace is decided contextually (see elemNs/kidNs), NOT by tag —
+  // tags shared with HTML ('a','style','title','font',...) must follow their ancestor's namespace.
   var svgEls = ['svg','foreignObject','circle','ellipse','image','line','path','polygon','polyline',
     'rect','use','a','defs','g','marker','mask','pattern','switch','symbol','clipPath','cursor',
     'filter','style','view','desc','metadata','title','linearGradient','radialGradient','stop',
@@ -12,7 +13,12 @@
     'feDiffuseLighting','feDisplacementMap','feFlood','feFuncA','feFuncB','feFuncG','feFuncR',
     'feGaussianBlur','feImage','feMerge','feMergeNode','feMorphology','feOffset','feSpecularLighting',
     'feTile','feTurbulence','feDistantLight','fePointLight','feSpotLight'];
-  var SVG_TAGS = {}; svgEls.forEach(function(s){ var p=s.split(':'); SVG_TAGS[p[1]||p[0]]=1; });
+  // An element's own namespace inside namespace `ns` ('svg' or undefined=HTML): <svg> opens SVG and
+  // descendants inherit it. kidNs is the namespace for *children*: a <foreignObject> is itself SVG but
+  // hands its children back to HTML.
+  function elemNs(tag, ns){ return (tag==='svg' || ns==='svg') ? 'svg' : undefined; }
+  function kidNs(tag, ns){ return tag==='foreignObject' ? undefined : elemNs(tag, ns); }
+  function makeEl(tag, ns){ return elemNs(tag,ns) ? document.createElementNS(SVG,tag) : document.createElement(tag); }
   function node(tag){ return function(attrs){ return function(kids){ return $data('$Node',[tag,attrs,kids]); }; }; }
   // Every Html element the interpreter (Prelude.HTML_TAGS) and type-checker (Signatures.HTML_ELEMENTS)
   // know, so anything that type-checks and runs interpreted also renders when compiled to JS. Entries
@@ -653,58 +659,60 @@
     (el.$st||[]).forEach(function(nm){ if(!styled[nm]) el.style.removeProperty(nm); });
     el.$at=Object.keys(seen); el.$st=Object.keys(styled);
   }
-  window.$toDom = function(v){
+  window.$toDom = function(v, ns){
     if (v.$==='$Text') return document.createTextNode(String(v._[0]));
-    if (v.$==='$Lazy'){ var inner=$forceLazy(v); var el=window.$toDom(inner); el.$lazyArgs=v._[1]; el.$lazyInner=inner; return el; }
-    if (v.$==='$Keyed') return $keyedToDom(v);
+    if (v.$==='$Lazy'){ var inner=$forceLazy(v); var el=window.$toDom(inner, ns); el.$lazyArgs=v._[1]; el.$lazyInner=inner; return el; }
+    if (v.$==='$Keyed') return $keyedToDom(v, ns);
     var tag=v._[0];
-    var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
+    var el = makeEl(tag, ns), childNs = kidNs(tag, ns);
     // Apply via applyProps (not a raw setAttr loop) so el.$at/$st are recorded at creation — else the
     // first diff into a node lacking one of these attrs/styles can't remove it (it has no record of it).
     applyProps(el, $listToArray(v._[1]));
-    $listToArray(v._[2]).forEach(function(k){ el.appendChild(window.$toDom(k)); });
+    $listToArray(v._[2]).forEach(function(k){ el.appendChild(window.$toDom(k, childNs)); });
     return el;
   };
   // Same virtual node kind? Text vs element, and matching element tag (for $Node and $Keyed).
   function $sameType(a,b){ return a.$===b.$ && ((a.$!=='$Node' && a.$!=='$Keyed') || a._[0]===b._[0]); }
   // Diff old/new virtual nodes and patch the real DOM in place, preserving element identity
   // (and thus focus/selection on inputs) instead of rebuilding the subtree every render.
-  function $patch(parent, dom, oldV, newV){
-    if (oldV==null){ var n=window.$toDom(newV); parent.appendChild(n); return n; }
+  function $patch(parent, dom, oldV, newV, ns){
+    if (oldV==null){ var n=window.$toDom(newV, ns); parent.appendChild(n); return n; }
     if (newV==null){ if(dom) parent.removeChild(dom); return null; }
-    if (!$sameType(oldV,newV)){ var n=window.$toDom(newV); parent.replaceChild(n,dom); return n; }
+    if (!$sameType(oldV,newV)){ var n=window.$toDom(newV, ns); parent.replaceChild(n,dom); return n; }
     if (newV.$==='$Text'){ var s=String(newV._[0]); if(dom.nodeValue!==s) dom.nodeValue=s; return dom; }
     if (newV.$==='$Lazy'){
       if ($sameArgs(dom.$lazyArgs, newV._[1])) return dom; // args unchanged: skip the view + diff
-      var inner=$forceLazy(newV); var p=$patch(parent, dom, dom.$lazyInner, inner);
+      var inner=$forceLazy(newV); var p=$patch(parent, dom, dom.$lazyInner, inner, ns);
       p.$lazyArgs=newV._[1]; p.$lazyInner=inner; return p;
     }
-    if (newV.$==='$Keyed'){ return $patchKeyed(dom, newV); }
+    if (newV.$==='$Keyed'){ return $patchKeyed(dom, newV, ns); }
     applyProps(dom, $listToArray(newV._[1]));
+    var childNs = kidNs(newV._[0], ns);
     var oldKids=$listToArray(oldV._[2]), newKids=$listToArray(newV._[2]);
-    for (var i=0;i<newKids.length;i++){ $patch(dom, dom.childNodes[i]||null, oldKids[i]||null, newKids[i]); }
+    for (var i=0;i<newKids.length;i++){ $patch(dom, dom.childNodes[i]||null, oldKids[i]||null, newKids[i], childNs); }
     for (var j=oldKids.length-1;j>=newKids.length;j--){ if(dom.childNodes[j]) dom.removeChild(dom.childNodes[j]); }
     return dom;
   }
   // Builds a keyed element: children are (key, vnode) tuples; the key->dom map is stashed for diffing.
-  function $keyedToDom(v){
+  function $keyedToDom(v, ns){
     var tag=v._[0];
-    var el = SVG_TAGS[tag] ? document.createElementNS(SVG,tag) : document.createElement(tag);
+    var el = makeEl(tag, ns), childNs = kidNs(tag, ns);
     applyProps(el, $listToArray(v._[1])); // record el.$at/$st at creation (see $toDom)
     el.$keyed=[];
-    $listToArray(v._[2]).forEach(function(p){ var c=window.$toDom(p.vs[1]); el.appendChild(c); el.$keyed.push([p.vs[0], p.vs[1], c]); });
+    $listToArray(v._[2]).forEach(function(p){ var c=window.$toDom(p.vs[1], childNs); el.appendChild(c); el.$keyed.push([p.vs[0], p.vs[1], c]); });
     return el;
   }
   // Patches a keyed element by matching children to the previous render by key, so reordered or
   // removed items keep their DOM node (and its focus/scroll/input state) instead of being rebuilt.
-  function $patchKeyed(dom, newV){
+  function $patchKeyed(dom, newV, ns){
     applyProps(dom, $listToArray(newV._[1]));
+    var childNs = kidNs(newV._[0], ns);
     var oldMap={}; (dom.$keyed||[]).forEach(function(e){ oldMap[e[0]]=e; });
     var pairs=$listToArray(newV._[2]); var next=[];
     pairs.forEach(function(p, i){
       var key=p.vs[0], cv=p.vs[1], old=oldMap[key], childDom;
-      if (old){ childDom=$patch(dom, old[2], old[1], cv); delete oldMap[key]; }
-      else { childDom=window.$toDom(cv); }
+      if (old){ childDom=$patch(dom, old[2], old[1], cv, childNs); delete oldMap[key]; }
+      else { childDom=window.$toDom(cv, childNs); }
       if (dom.childNodes[i] !== childDom){ dom.insertBefore(childDom, dom.childNodes[i] || null); }
       next.push([key, cv, childDom]);
     });

@@ -259,6 +259,28 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void topLevelAnchorRendersInTheHtmlNamespaceNotSvg() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: 'a' is in both the HTML and SVG element sets, so a tag-only namespace choice made
+    // every <a> an SVG anchor — a 0x0 invisible box that silently broke every HTML link. Namespace
+    // must come from context: a top-level Html.a is an HTML <a> (xhtml namespace), an SVG <a> only
+    // inside an <svg>.
+    String app =
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (a, text)
+        import Html.Attributes exposing (href)
+        main = Browser.sandbox { init = (), update = \\_ m -> m, view = \\_ -> a [ href "/x" ] [ text "link" ] }
+        """;
+    String driver = "var a=document.querySelector('a'); a.setAttribute('data-ns', a.namespaceURI);";
+    String dom = renderPage(JsCompiler.htmlPage(app, driver));
+    assertTrue(
+        dom.contains("data-ns=\"http://www.w3.org/1999/xhtml\""),
+        "a top-level <a> must be in the HTML namespace, not SVG: " + dom);
+  }
+
+  @Test
   void diffRemovesAClassWhenTheNewNodeHasNone() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Regression: a classed root div diffed into a class-less one must lose its class. The class is
