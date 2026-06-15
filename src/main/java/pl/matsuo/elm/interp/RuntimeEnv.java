@@ -87,6 +87,16 @@ public final class RuntimeEnv {
     throw new ElmRuntimeError("Unbound qualified name: " + module + "." + name);
   }
 
+  /** The field names of a record-type-alias constructor, or null if {@code name} isn't one. */
+  public List<String> recordConstructorFields(String name) {
+    return recordConstructors.get(name);
+  }
+
+  /** A union constructor's arity, or -1 if {@code name} isn't a known (non-record) constructor. */
+  public int unionConstructorArity(String name) {
+    return ctorArity.containsKey(name) ? ctorArity.get(name) : -1;
+  }
+
   public Object constructorValue(String name) {
     if (name.equals("True")) {
       return Boolean.TRUE;

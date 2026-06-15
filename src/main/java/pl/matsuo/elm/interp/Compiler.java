@@ -50,7 +50,7 @@ public final class Compiler {
       case Expr.RecordUpdate u -> compileRecordUpdate(u);
       case Expr.RecordAccess a -> new Nodes.Access(compile(a.target()), a.field());
       case Expr.Accessor a -> new Nodes.Accessor(a.field());
-      case Expr.App app -> new Nodes.App(compile(app.fn()), compile(app.arg()));
+      case Expr.App app -> compileApp(app);
       case Expr.BinOp b ->
           Operators.isBuiltin(b.op())
               ? new Nodes.BinOp(b.op(), compile(b.left()), compile(b.right()))
@@ -65,6 +65,44 @@ public final class Compiler {
       case Expr.Let let -> compileLet(let);
       case Expr.Case c -> compileCase(c);
     };
+  }
+
+  /**
+   * Compiles an application. A constructor applied to exactly its arity builds its value directly
+   * (a {@link Nodes.CtorApp} for a union constructor, a {@link Nodes.RecordLit} for a record-alias
+   * one), skipping the curried {@link pl.matsuo.elm.runtime.PartialApp} chain. Anything else falls
+   * back to one-argument-at-a-time application.
+   */
+  private ElmNode compileApp(Expr.App app) {
+    List<Expr> args = new java.util.ArrayList<>();
+    Expr cur = app;
+    while (cur instanceof Expr.App a) {
+      args.add(0, a.arg());
+      cur = a.fn();
+    }
+    if (cur instanceof Expr.Ctor c) {
+      ElmNode direct = compileSaturatedCtor(c.name(), args);
+      if (direct != null) {
+        return direct;
+      }
+    }
+    ElmNode out = compile(cur);
+    for (Expr arg : args) {
+      out = new Nodes.App(out, compile(arg));
+    }
+    return out;
+  }
+
+  /** The direct-build node for a constructor applied to exactly its arity, or null otherwise. */
+  private ElmNode compileSaturatedCtor(String name, List<Expr> args) {
+    List<String> fields = env.recordConstructorFields(name);
+    if (fields != null) {
+      return args.size() == fields.size()
+          ? new Nodes.RecordLit(fields.toArray(new String[0]), compileAll(args))
+          : null;
+    }
+    int arity = env.unionConstructorArity(name);
+    return arity >= 1 && args.size() == arity ? new Nodes.CtorApp(name, compileAll(args)) : null;
   }
 
   private ElmNode[] compileAll(List<Expr> exprs) {

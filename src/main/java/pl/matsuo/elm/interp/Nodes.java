@@ -206,6 +206,31 @@ public final class Nodes {
     }
   }
 
+  /**
+   * A constructor applied to exactly its arity, built directly as an {@link ElmData} — skipping the
+   * curried {@link Builtin} and the {@link Apply}/{@link pl.matsuo.elm.runtime.PartialApp} chain a
+   * one-argument-at-a-time application would allocate. (Saturated record-alias constructors compile
+   * to a {@link RecordLit} instead.)
+   */
+  public static final class CtorApp extends ElmNode {
+    private final String name;
+    @Children private final ElmNode[] args;
+
+    public CtorApp(String name, ElmNode[] args) {
+      this.name = name;
+      this.args = args;
+    }
+
+    @Override
+    public Object execute(Scope scope) {
+      Object[] values = new Object[args.length];
+      for (int i = 0; i < args.length; i++) {
+        values[i] = args[i].execute(scope);
+      }
+      return new pl.matsuo.elm.runtime.ElmData(name, values);
+    }
+  }
+
   public static final class App extends ElmNode {
     @Child private ElmNode fn;
     @Child private ElmNode arg;
