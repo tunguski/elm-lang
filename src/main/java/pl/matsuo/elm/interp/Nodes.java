@@ -421,8 +421,11 @@ public final class Nodes {
     @Override
     public Object execute(Scope scope) {
       Object value = scrutinee.execute(scope);
+      // One child frame reused across attempts: a failed branch runs no body, so nothing captures
+      // its (reset) bindings; the matching branch keeps the frame and is never reset afterwards.
+      Scope branch = scope.child();
       for (int i = 0; i < patterns.length; i++) {
-        Scope branch = scope.child();
+        branch.reset();
         if (PatternMatcher.match(patterns[i], value, branch)) {
           return bodies[i].execute(branch);
         }
