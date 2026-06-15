@@ -553,6 +553,26 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void browserDictOrdersByComparableKeyAndComparesStructurally() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: the DOM runtime used to key Dicts by $show(key) and order them with
+    // Object.keys().sort() — lexicographically, so Int keys iterated 1,10,2 instead of 1,2,10 — and
+    // that object shape was invisible to kernel $eq, so structural Dict equality was broken in the
+    // browser. Both must now match the interpreter (single sorted-array representation).
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (text)
+        import Dict
+        keys = Dict.fromList [ ( 10, "x" ), ( 2, "y" ), ( 1, "z" ) ] |> Dict.keys |> List.map String.fromInt |> String.join ","
+        eq = Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ] == Dict.fromList [ ( 2, 2 ), ( 1, 1 ) ]
+        main = text (keys ++ " " ++ (if eq then "EQ" else "NE"))
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("1,2,10 EQ"), "Int keys sort numerically and Dicts compare equal: " + dom);
+  }
+
+  @Test
   void htmlAttributesAttributeAndPropertySetValues() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The generic escape hatches: Html.Attributes.attribute sets any attribute; property sets a DOM

@@ -397,42 +397,13 @@
   $rt['File.Select.files']=function(mimes){ return function(toMsg){ return $cmd(function(d){ var inp=selectInput(true,mimes); inp.onchange=function(){ var fs=[].slice.call(inp.files); if(fs.length) d(toMsg(fs[0])($list(fs.slice(1)))); }; inp.click(); }); }; };
   // Editor bridge: open a picker and hand the chosen file's name and text content to `toMsg`.
   $rt['File.openPicker']=function(toMsg){ return $cmd(function(d){ var inp=selectInput(false,$nil); inp.onchange=function(){ var f=inp.files&&inp.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ d(toMsg(f.name)(String(r.result))); }; r.readAsText(f); }; inp.click(); }); };
-  // Set / Dict: backed by a plain object keyed by $show(key) (a canonical key for comparables).
-  function $k(x){ return $show(x); }
-  $rt['Set.empty']=$data('$Set',[{}]);
-  $rt['Set.singleton']=function(x){ var o={}; o[$k(x)]=x; return $data('$Set',[o]); };
-  $rt['Set.insert']=function(x){ return function(s){ var o=Object.assign({},s._[0]); o[$k(x)]=x; return $data('$Set',[o]); }; };
-  $rt['Set.remove']=function(x){ return function(s){ var o=Object.assign({},s._[0]); delete o[$k(x)]; return $data('$Set',[o]); }; };
-  $rt['Set.member']=function(x){ return function(s){ return Object.prototype.hasOwnProperty.call(s._[0],$k(x)); }; };
-  $rt['Set.size']=function(s){ return Object.keys(s._[0]).length; };
-  $rt['Set.isEmpty']=function(s){ return Object.keys(s._[0]).length===0; };
-  $rt['Set.toList']=function(s){ var o=s._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k]; })); };
-  $rt['Set.fromList']=function(l){ var o={}; $listToArray(l).forEach(function(x){ o[$k(x)]=x; }); return $data('$Set',[o]); };
-  $rt['Set.union']=function(a){ return function(b){ return $data('$Set',[Object.assign({},b._[0],a._[0])]); }; };
-  $rt['Set.foldl']=function(f){ return function(acc){ return function(s){ var o=s._[0]; Object.keys(o).sort().forEach(function(k){ acc=f(o[k])(acc); }); return acc; }; }; };
-  $rt['Set.map']=function(f){ return function(s){ var o={}; var src=s._[0]; Object.keys(src).forEach(function(k){ var y=f(src[k]); o[$k(y)]=y; }); return $data('$Set',[o]); }; };
-  $rt['Set.filter']=function(f){ return function(s){ var o={}; var src=s._[0]; Object.keys(src).forEach(function(k){ if(f(src[k])) o[k]=src[k]; }); return $data('$Set',[o]); }; };
-  $rt['Set.partition']=function(f){ return function(s){ var yes={},no={}; var src=s._[0]; Object.keys(src).forEach(function(k){ (f(src[k])?yes:no)[k]=src[k]; }); return $tuple([$data('$Set',[yes]),$data('$Set',[no])]); }; };
-  $rt['Dict.empty']=$data('$Dict',[{}]);
-  $rt['Dict.singleton']=function(k){ return function(v){ var o={}; o[$k(k)]=$tuple([k,v]); return $data('$Dict',[o]); }; };
-  $rt['Dict.insert']=function(k){ return function(v){ return function(d){ var o=Object.assign({},d._[0]); o[$k(k)]=$tuple([k,v]); return $data('$Dict',[o]); }; }; };
-  $rt['Dict.remove']=function(k){ return function(d){ var o=Object.assign({},d._[0]); delete o[$k(k)]; return $data('$Dict',[o]); }; };
-  $rt['Dict.get']=function(k){ return function(d){ var e=d._[0][$k(k)]; return e?$data('Just',[e.vs[1]]):$data('Nothing',[]); }; };
-  $rt['Dict.member']=function(k){ return function(d){ return Object.prototype.hasOwnProperty.call(d._[0],$k(k)); }; };
-  $rt['Dict.size']=function(d){ return Object.keys(d._[0]).length; };
-  $rt['Dict.isEmpty']=function(d){ return Object.keys(d._[0]).length===0; };
-  $rt['Dict.keys']=function(d){ var o=d._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k].vs[0]; })); };
-  $rt['Dict.values']=function(d){ var o=d._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k].vs[1]; })); };
-  $rt['Dict.toList']=function(d){ var o=d._[0]; return $list(Object.keys(o).sort().map(function(k){ return o[k]; })); };
-  $rt['Dict.fromList']=function(l){ var o={}; $listToArray(l).forEach(function(p){ o[$k(p.vs[0])]=p; }); return $data('$Dict',[o]); };
-  $rt['Dict.update']=function(k){ return function(f){ return function(d){ var o=Object.assign({},d._[0]); var cur=o[$k(k)]; var mb=f(cur?$data('Just',[cur.vs[1]]):$data('Nothing',[])); if(mb.$==='Just'){ o[$k(k)]=$tuple([k,mb._[0]]); } else { delete o[$k(k)]; } return $data('$Dict',[o]); }; }; };
-  $rt['Dict.map']=function(f){ return function(d){ var o={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; o[kk]=$tuple([p.vs[0], f(p.vs[0])(p.vs[1])]); }); return $data('$Dict',[o]); }; };
-  $rt['Dict.foldl']=function(f){ return function(acc){ return function(d){ var o=d._[0]; Object.keys(o).sort().forEach(function(kk){ acc=f(o[kk].vs[0])(o[kk].vs[1])(acc); }); return acc; }; }; };
-  $rt['Dict.filter']=function(f){ return function(d){ var o={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; if(f(p.vs[0])(p.vs[1])) o[kk]=p; }); return $data('$Dict',[o]); }; };
-  $rt['Dict.partition']=function(f){ return function(d){ var yes={},no={}; var src=d._[0]; Object.keys(src).forEach(function(kk){ var p=src[kk]; (f(p.vs[0])(p.vs[1])?yes:no)[kk]=p; }); return $tuple([$data('$Dict',[yes]),$data('$Dict',[no])]); }; };
-  // Json.Encode.dict/set over dom's Dict/Set representation (kernel.js's versions assume the other one).
-  $rt['Json.Encode.dict']=function(toKey){ return function(toVal){ return function(d){ var o={},src=d._[0]; Object.keys(src).sort().forEach(function(kk){ o[toKey(src[kk].vs[0])]=toVal(src[kk].vs[1]); }); return o; }; }; };
-  $rt['Json.Encode.set']=function(toVal){ return function(s){ var o=s._[0]; return Object.keys(o).sort().map(function(kk){ return toVal(o[kk]); }); }; };
+  // Dict / Set / Json.Encode.dict|set use kernel.js's single sorted-entry-array representation
+  // ({$:'Dict',a:[[k,v],...]} / {$:'Set',a:[...]}, key-sorted by $cmp with O(log n) lookup). dom.js
+  // formerly overrode them with an object keyed by $show(key): that meant a full key serialization
+  // per op, an O(n) Object.assign copy per insert, and — worst — Object.keys().sort() ordered keys
+  // *lexicographically* (so an Int-keyed dict iterated 1,10,2,...). kernel.js's $eq/$cmp/$show only
+  // understand the sorted-array shape too, so the override also broke equality/compare/show in the
+  // browser. Keeping one representation everywhere fixes all of that.
 
   // ---- Math.Vector2/3/4 (plain JS arrays) and Math.Matrix4 (column-major Float32Array) ----
   function v3(x,y,z){ return [x,y,z]; }
