@@ -594,30 +594,37 @@
       requestAnimationFrame(function(){ drawGL(el); });
     }
     else if (t==='$On'){
-      var ev=nm, h=a._[1], pd=(a._[2]==='pd');
-      var domEvent = ev==='check'?'change':ev;
-      var fn = function(e){
-        var msg;
-        if (h && h.$==='$Dec'){
-          var r=h._[0](e); if(!r.ok) return; // decoder declined: ignore the event (default still happens)
-          // preventDefaultOn's decoder yields a (msg, Bool) tuple — unwrap it and honour the flag.
-          if (pd){ msg=r.v.vs[0]; if(r.v.vs[1]) e.preventDefault(); } else { msg=r.v; } // on/preventDefaultOn decoder
-        }
-        else if (ev==='input') msg = h(e.target.value); // onInput tagger (String -> msg)
-        else if (ev==='check') msg = h(e.target.checked); // onCheck tagger (Bool -> msg)
-        else msg = h;
-        if (msg!==undefined){ window.$dispatch(msg); }
-        e.stopPropagation();
-      };
-      el.addEventListener(domEvent, fn);
-      (el.$ls=el.$ls||[]).push([domEvent, fn]);
+      // The handler closure changes identity every render, but add/removeEventListener on every
+      // frame is costly. Instead attach ONE stable dispatcher per (element,event) that reads the
+      // current handler from el.$handlers, which applyProps repopulates each render. Events absent
+      // this render leave no entry, so the dispatcher is inert (no stale dispatch).
+      var ev=nm, domEvent = ev==='check'?'change':ev;
+      (el.$handlers || (el.$handlers={}))[domEvent] = { h:a._[1], ev:ev, pd:(a._[2]==='pd') };
+      var listeners = el.$listeners || (el.$listeners={});
+      if (!listeners[domEvent]){
+        listeners[domEvent] = function(e){
+          var spec = el.$handlers[domEvent]; if (!spec) return; // handler not present this render
+          var h=spec.h, msg;
+          if (h && h.$==='$Dec'){
+            var r=h._[0](e); if(!r.ok) return; // decoder declined: ignore the event (default still happens)
+            // preventDefaultOn's decoder yields a (msg, Bool) tuple — unwrap it and honour the flag.
+            if (spec.pd){ msg=r.v.vs[0]; if(r.v.vs[1]) e.preventDefault(); } else { msg=r.v; }
+          }
+          else if (spec.ev==='input') msg = h(e.target.value); // onInput tagger (String -> msg)
+          else if (spec.ev==='check') msg = h(e.target.checked); // onCheck tagger (Bool -> msg)
+          else msg = h;
+          if (msg!==undefined){ window.$dispatch(msg); }
+          e.stopPropagation();
+        };
+        el.addEventListener(domEvent, listeners[domEvent]);
+      }
     }
   }
-  // (Re)apply a node's attribute list, clearing the previous render's listeners, styles and
-  // any attributes no longer present, so an element can be reused across renders.
+  // (Re)apply a node's attribute list: refresh this render's event handlers (the stable per-event
+  // dispatchers added by setAttr persist), and drop styles/attributes that were set last render but
+  // are absent now, so an element can be reused across renders.
   function applyProps(el, attrs){
-    (el.$ls||[]).forEach(function(l){ el.removeEventListener(l[0], l[1]); });
-    el.$ls=[];
+    el.$handlers = {}; // reset; setAttr's $On repopulates, so dropped events become inert dispatchers
     var seen={}, styled={};
     attrs.forEach(function(a){
       if (a.$==='$Att'||a.$==='$Prop') seen[a._[0]]=1;

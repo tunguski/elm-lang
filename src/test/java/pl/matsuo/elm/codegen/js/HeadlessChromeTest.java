@@ -259,6 +259,36 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void eventHandlerSwapsAcrossRendersViaPersistentListener() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // The per-event listener is attached once and reads the current render's handler from
+    // el.$handlers (refreshed each render), instead of being removed and re-added every frame. So
+    // after the model changes the handler closure, a click dispatches the *new* handler.
+    String app =
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (button, div, text)
+        import Html.Events exposing (onClick)
+        import Html.Attributes exposing (id)
+        type Msg = Set Int
+        update msg _ = case msg of
+            Set v -> v
+        view n =
+            div []
+                [ button [ id "b", onClick (Set (n + 100)) ] [ text "+" ]
+                , div [ id "c" ] [ text (String.fromInt n) ]
+                ]
+        main = Browser.sandbox { init = 0, update = update, view = view }
+        """;
+    // Dispatch Set 5 (n -> 5, re-render so the button's handler becomes Set 105), then click once.
+    String driver =
+        "window.$app.dispatch($data('Set',[5]));document.getElementById('b').click();";
+    String dom = renderPage(JsCompiler.htmlPage(app, driver));
+    assertTrue(dom.contains(">105<"), "click used the current render's handler (Set (5+100)): " + dom);
+  }
+
+  @Test
   void topLevelAnchorRendersInTheHtmlNamespaceNotSvg() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Regression: 'a' is in both the HTML and SVG element sets, so a tag-only namespace choice made
