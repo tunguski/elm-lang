@@ -585,9 +585,14 @@
       // `value`/`checked` are controlled by the model; set the live property (and only when it
       // changed) so we don't fight the cursor, rather than the inert default-value attribute.
       if (nm==='value'){ var s=String(val); if(el.value!==s) el.value=s; }
-      else if (nm==='xlink:href' || nm==='href'){
-        // SVG <image>/<use> hrefs must be set in the xlink namespace (and SVG2 `href`) to
-        // actually load — a plain setAttribute('xlink:href',...) is ignored by browsers.
+      else if (nm==='xlink:href'){
+        // An explicit xlink:href always goes in the xlink namespace.
+        el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', String(val));
+      }
+      else if (nm==='href' && el.namespaceURI===SVG){
+        // In SVG, an <image>/<use> href must be set in the xlink namespace (and the SVG2 plain
+        // `href`) to actually load. On an HTML element (e.g. an anchor) plain href is correct —
+        // adding xlink:href there is spurious.
         el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', String(val));
         el.setAttribute('href', String(val));
       }
