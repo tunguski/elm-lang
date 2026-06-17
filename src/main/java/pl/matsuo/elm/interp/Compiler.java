@@ -39,7 +39,7 @@ public final class Compiler {
           new Nodes.Const(new pl.matsuo.elm.runtime.ElmData("$Shader", new Object[] {s.source()}));
       case Expr.Unit ignored -> new Nodes.Const(ElmUnit.INSTANCE);
       case Expr.Var v -> new Nodes.Var(v.module(), v.name(), env, v.pos());
-      case Expr.Ctor c -> new Nodes.Ctor(c.name(), env);
+      case Expr.Ctor c -> new Nodes.Ctor(c.module(), c.name(), env);
       case Expr.OpFunc o ->
           Operators.isBuiltin(o.op())
               ? new Nodes.OpFunc(o.op())
@@ -81,7 +81,7 @@ public final class Compiler {
       cur = a.fn();
     }
     if (cur instanceof Expr.Ctor c) {
-      ElmNode direct = compileSaturatedCtor(c.name(), args);
+      ElmNode direct = compileSaturatedCtor(c.module(), c.name(), args);
       if (direct != null) {
         return direct;
       }
@@ -93,15 +93,17 @@ public final class Compiler {
     return out;
   }
 
-  /** The direct-build node for a constructor applied to exactly its arity, or null otherwise. */
-  private ElmNode compileSaturatedCtor(String name, List<Expr> args) {
-    List<String> fields = env.recordConstructorFields(name);
+  /** The direct-build node for a constructor applied to exactly its arity, or null otherwise. The
+   * constructor is resolved against its defining {@code module} so a name reused across modules
+   * (a record alias in one, a union constructor in another) isn't confused. */
+  private ElmNode compileSaturatedCtor(String module, String name, List<Expr> args) {
+    List<String> fields = env.recordConstructorFields(module, name);
     if (fields != null) {
       return args.size() == fields.size()
           ? new Nodes.RecordLit(fields.toArray(new String[0]), compileAll(args))
           : null;
     }
-    int arity = env.unionConstructorArity(name);
+    int arity = env.unionConstructorArity(module, name);
     return arity >= 1 && args.size() == arity ? new Nodes.CtorApp(name, compileAll(args)) : null;
   }
 

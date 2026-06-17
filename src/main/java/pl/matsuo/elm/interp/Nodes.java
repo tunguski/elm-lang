@@ -68,17 +68,19 @@ public final class Nodes {
 
   /** A constructor used as a value, e.g. {@code Nothing} or {@code Just}. */
   public static final class Ctor extends ElmNode {
+    private final String module;
     private final String name;
     private final RuntimeEnv env;
 
-    public Ctor(String name, RuntimeEnv env) {
+    public Ctor(String module, String name, RuntimeEnv env) {
+      this.module = module;
       this.name = name;
       this.env = env;
     }
 
     @Override
     public Object execute(Scope scope) {
-      return env.constructorValue(name);
+      return env.constructorValue(module, name);
     }
   }
 

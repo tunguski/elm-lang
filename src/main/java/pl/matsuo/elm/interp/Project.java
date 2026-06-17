@@ -50,14 +50,25 @@ public final class Project {
 
     Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
     Map<String, List<String>> recordCtors = new HashMap<>();
+    // Per-module constructor tables (each module's OWN types), so a qualified `Game.Move` resolves to
+    // Game's union constructor rather than another module's record-alias `Move` — the simple-name
+    // flat tables above can't tell them apart. Resolution falls back to the flat tables for
+    // unqualified / Prelude constructors.
+    Map<String, RuntimeEnv.ModuleCtors> moduleCtors = new HashMap<>();
     for (Module m : modules.values()) {
       TypeDecls.scanModule(m, ctorArity, recordCtors);
+      Map<String, Integer> unions = new HashMap<>();
+      Map<String, List<String>> records = new HashMap<>();
+      TypeDecls.scanModule(m, unions, records);
+      moduleCtors.put(m.name(), new RuntimeEnv.ModuleCtors(records, unions));
     }
 
     globals = new HashMap<>(Prelude.builtins());
 
     for (Module m : modules.values()) {
-      envs.put(m.name(), buildEnv(m, ctorArity, recordCtors));
+      RuntimeEnv env = buildEnv(m, ctorArity, recordCtors);
+      env.setModuleCtors(moduleCtors);
+      envs.put(m.name(), env);
     }
     for (Module m : modules.values()) {
       loadModule(m);

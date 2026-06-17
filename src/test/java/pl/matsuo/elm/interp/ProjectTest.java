@@ -48,6 +48,29 @@ class ProjectTest {
   }
 
   @Test
+  void qualifiedConstructorResolvesByDefiningModuleNotBareName() {
+    // Regression: a union constructor `Move` (in Game) and a record-type-alias constructor `Move`
+    // (in Render) share a simple name across modules. They must not collide — a qualified
+    // `Game.Move 7` is Game's union constructor, not Render's {from,to} record builder, so it
+    // matches the `Move n ->` branch rather than silently building a record that matches nothing.
+    String game = "module Game exposing (Msg(..))\ntype Msg = Move Int | Wait\n";
+    String render = "module Render exposing (Move)\ntype alias Move = { from : Int, to : Int }\n";
+    String main =
+        """
+        module Main exposing (run)
+        import Game exposing (Msg(..))
+        import Render
+        describe m =
+            case m of
+                Move n -> n
+                Wait -> -1
+        run = describe (Game.Move 7)
+        """;
+    Project p = Project.load(game, render, main);
+    assertEquals(7L, p.value("Main", "run"));
+  }
+
+  @Test
   void mutualReferenceAcrossModulesAndLazyValues() {
     String constants =
         """
