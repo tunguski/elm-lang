@@ -1,5 +1,6 @@
 package pl.matsuo.elm.codegen.js;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -68,6 +69,38 @@ class JsKernelSignatureCoverageTest {
           "WebGL.Texture.linearMipmapNearest",
           "WebGL.Texture.nearestMipmapLinear",
           "WebGL.Texture.nonPowerOfTwoOptions");
+
+  /**
+   * The Html.Attributes and Html.Events surfaces must agree exactly between the JS runtime and the
+   * type-checker — in BOTH directions. A binding in dom.js with no scheme can't be used (type
+   * error); a scheme with no binding throws {@code Unbound} at render. These lists live in separate
+   * places (dom.js, Prelude, Signatures) and have drifted before (e.g. {@code readonly} was in
+   * Prelude/Signatures but not dom.js), so pin them together here.
+   */
+  @Test
+  void htmlAttributeAndEventBindingsAgreeWithSignatures() {
+    Set<String> js = jsRuntimeKeys();
+    Set<String> sig = Signatures.globals().keySet();
+    for (String prefix : List.of("Html.Attributes.", "Html.Events.")) {
+      Set<String> jsNames = namesUnder(js, prefix);
+      Set<String> sigNames = namesUnder(sig, prefix);
+      assertEquals(
+          sigNames,
+          jsNames,
+          prefix
+              + "* bindings must match between Signatures and the JS runtime (dom.js). Left-only ="
+              + " typed but unbound (would throw Unbound); right-only = bound but untyped (would not"
+              + " type-check).");
+    }
+  }
+
+  /** The lowercase-final-segment (function) names under {@code prefix} in {@code names}. */
+  private static Set<String> namesUnder(Set<String> names, String prefix) {
+    return names.stream()
+        .filter(n -> n.startsWith(prefix))
+        .filter(JsKernelSignatureCoverageTest::isLowercaseValue)
+        .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+  }
 
   /** Loads the JS runtime (kernel + DOM) under Node and returns every {@code $rt} key. */
   private static Set<String> jsRuntimeKeys() {
