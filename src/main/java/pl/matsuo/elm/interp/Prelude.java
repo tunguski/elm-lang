@@ -49,7 +49,7 @@ public final class Prelude {
   private static final String[] HTML_STRING_ATTRS = {
     "class", "id", "href", "src", "alt", "title", "placeholder", "value", "name", "type_:type",
     "for_:for", "rel", "target", "action", "method", "accept", "autocomplete", "min", "max", "step",
-    "cols", "rows", "colspan:colspan", "tabindex", "width", "height"
+    "cols", "rows", "colspan:colspan", "rowspan:rowspan", "tabindex", "width", "height"
   };
 
   private static final String[] HTML_BOOL_ATTRS = {

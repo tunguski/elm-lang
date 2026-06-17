@@ -36,12 +36,13 @@
   $rt['Html.text']=function(s){ return $data('$Text',[s]); };
   $rt['Html.node']=function(t){ return node(t); };
   var strAttrs=['class','id','href','src','alt','title','placeholder','value','name',
-    'type_:type','for_:for','rel','target','min','max','step','cols','rows'];
+    'type_:type','for_:for','rel','target','min','max','step','cols','rows',
+    'accept','action','autocomplete','method','colspan','rowspan','tabindex'];
   strAttrs.forEach(function(spec){ var p=spec.split(':'); var nm=p[1]||p[0];
     $rt['Html.Attributes.'+p[0]]=function(v){ return $data('$Att',[nm,v]); }; });
   $rt['Html.Attributes.width']=function(v){ return $data('$Att',['width',v]); };
   $rt['Html.Attributes.height']=function(v){ return $data('$Att',['height',v]); };
-  ['disabled','checked','selected','required','autofocus','hidden','multiple','spellcheck'].forEach(function(nm){
+  ['disabled','checked','selected','required','autofocus','hidden','multiple','spellcheck','readonly'].forEach(function(nm){
     $rt['Html.Attributes.'+nm]=function(v){ return $data('$Prop',[nm,v]); }; });
   $rt['Html.Attributes.style']=function(k){ return function(v){ return $data('$Style',[k,v]); }; };
   $rt['Html.Attributes.attribute']=function(k){ return function(v){ return $data('$Att',[k,v]); }; };
@@ -387,6 +388,7 @@
     ok(pos);
   }); }; };
   $rt['Browser.Dom.focus']=function(id){ return $task(function(ok,err){ var el=document.getElementById(id); if(el){el.focus(); ok($unit);} else err($data('NotFound',[id])); }); };
+  $rt['Browser.Dom.blur']=function(id){ return $task(function(ok,err){ var el=document.getElementById(id); if(el){el.blur(); ok($unit);} else err($data('NotFound',[id])); }); };
   // File: real <input type=file> selection and FileReader-based reads.
   $rt['File.decoder']=$dec(function(j){ return (j&&typeof j==='object')?{ok:1,v:j}:{ok:0,v:'expected a file'}; });
   $rt['File.name']=function(f){ return f.name||''; };
@@ -420,6 +422,7 @@
   $rt['Math.Vector3.add']=function(a){ return function(b){ return [a[0]+b[0],a[1]+b[1],a[2]+b[2]]; }; };
   $rt['Math.Vector3.sub']=function(a){ return function(b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }; };
   $rt['Math.Vector3.scale']=function(s){ return function(v){ return [v[0]*s,v[1]*s,v[2]*s]; }; };
+  $rt['Math.Vector3.negate']=function(v){ return [-v[0],-v[1],-v[2]]; };
   $rt['Math.Vector3.dot']=function(a){ return function(b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }; };
   $rt['Math.Vector3.cross']=function(a){ return function(b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }; };
   $rt['Math.Vector3.length']=function(v){ return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); };
@@ -440,6 +443,8 @@
   $rt['Math.Matrix4.makeScale']=function(v){ var m=m4id(); m[0]=v[0]; m[5]=v[1]; m[10]=v[2]; return m; };
   $rt['Math.Matrix4.makeScale3']=function(x){ return function(y){ return function(z){ var m=m4id(); m[0]=x; m[5]=y; m[10]=z; return m; }; }; };
   $rt['Math.Matrix4.makeRotate']=function(angle){ return function(axis){ var a=norm3(axis), x=a[0],y=a[1],z=a[2], c=Math.cos(angle), s=Math.sin(angle), t=1-c; return new Float32Array([ t*x*x+c, t*x*y+s*z, t*x*z-s*y, 0, t*x*y-s*z, t*y*y+c, t*y*z+s*x, 0, t*x*z+s*y, t*y*z-s*x, t*z*z+c, 0, 0,0,0,1 ]); }; };
+  // rotate angle axis m = m * makeRotate angle axis (post-multiply), matching the interpreter.
+  $rt['Math.Matrix4.rotate']=function(angle){ return function(axis){ return function(m){ return m4mul(m, $rt['Math.Matrix4.makeRotate'](angle)(axis)); }; }; };
   $rt['Math.Matrix4.makePerspective']=function(fovy){ return function(aspect){ return function(near){ return function(far){ var f=1/Math.tan(fovy*Math.PI/360), nf=1/(near-far); return new Float32Array([ f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0 ]); }; }; }; };
   $rt['Math.Matrix4.makeOrtho']=function(l){ return function(r){ return function(b){ return function(t){ return function(n){ return function(fa){ return new Float32Array([ 2/(r-l),0,0,0, 0,2/(t-b),0,0, 0,0,-2/(fa-n),0, -(r+l)/(r-l),-(t+b)/(t-b),-(fa+n)/(fa-n),1 ]); }; }; }; }; }; };
   $rt['Math.Matrix4.makeLookAt']=function(eye){ return function(center){ return function(up){ var z=norm3([eye[0]-center[0],eye[1]-center[1],eye[2]-center[2]]); var x=norm3(cross3(up,z)); var y=cross3(z,x); return new Float32Array([ x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot3(x,eye),-dot3(y,eye),-dot3(z,eye),1 ]); }; }; };

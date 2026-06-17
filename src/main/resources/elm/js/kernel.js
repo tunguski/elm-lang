@@ -325,6 +325,7 @@ var $rt = {
   'Tuple.mapSecond': function(f){ return function(t){ return $tuple([t.vs[0], f(t.vs[1])]); }; },
   'Tuple.mapBoth': function(f){ return function(g){ return function(t){ return $tuple([f(t.vs[0]), g(t.vs[1])]); }; }; },
   'Debug.toString': function(v){ return $show(v,true); },
+  'Debug.todo': function(m){ throw new Error('TODO: ' + m); },
   'Debug.log': function(m){ return function(v){ console.log(m + ': ' + $show(v,true)); return v; }; }
 };
 function $g(name){ var v=$rt[name]; if (v===undefined) throw new Error('Unbound: '+name); return v; }

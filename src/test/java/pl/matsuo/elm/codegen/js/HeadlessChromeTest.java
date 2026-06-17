@@ -621,6 +621,34 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void newlyBoundAttributesAndMathFunctionsRender() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Coverage-test-driven batch (previously unbound in the JS runtime → crashed at render): the
+    // colspan/readonly/accept attributes and Math.Vector3.negate / Math.Matrix4.rotate.
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (table, tr, td, input, text)
+        import Html.Attributes exposing (colspan, readonly, accept)
+        import Math.Vector3 as V3 exposing (vec3)
+        import Math.Matrix4 as M4
+        main =
+            table []
+                [ tr [] [ td [ colspan 2 ] [ text "wide" ] ]
+                , tr [] [ td [] [ input [ readonly True, accept ".png" ] [] ] ]
+                , tr [] [ td [] [ text (String.fromFloat (V3.getX (V3.negate (vec3 7 8 9)))) ] ]
+                , tr [] [ td [] [ text (String.fromFloat (V3.getX (M4.transform (M4.rotate 0 (vec3 0 0 1) M4.identity) (vec3 3 4 5)))) ] ]
+                ]
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains("colspan=\"2\""), "colspan rendered: " + dom);
+    assertTrue(dom.contains("readonly"), "readonly rendered: " + dom);
+    assertTrue(dom.contains("accept=\".png\""), "accept rendered: " + dom);
+    assertTrue(dom.contains(">-7<"), "Vector3.negate applied (getX -7): " + dom);
+    assertTrue(dom.contains(">3<"), "Matrix4.rotate 0 is identity (getX 3): " + dom);
+  }
+
+  @Test
   void spellcheckAttributeAndStopPropagationOnAreBound() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Regression: Html.Attributes.spellcheck and Html.Events.stopPropagationOn were unbound in the JS

@@ -90,7 +90,6 @@ class BuiltinSignatureCoverageTest {
           "Browser.Dom.setViewport",
           "Browser.Events.onKeyPress",
           "File.openPicker",
-          "Html.Attributes.rowspan",
           "Math.Matrix4.makeOrtho",
           "Math.Vector3.fromRecord",
           "Math.Vector3.setX",
