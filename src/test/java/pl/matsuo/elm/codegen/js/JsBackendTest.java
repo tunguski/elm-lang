@@ -95,6 +95,29 @@ class JsBackendTest {
     assertFalse(js.contains("a0=>"), "no curried ctor closure chain emitted for a saturated call: " + js);
   }
 
+  /**
+   * A union constructor and a record-type-alias constructor that share a simple name across modules
+   * must not collide: a qualified {@code Game.Move} is Game's union constructor, not Render's
+   * record-alias {@code Move}. (Regression: the codegen keyed constructors by bare name, so
+   * {@code Game.Move 7} miscompiled to the {from,to} record builder and matched no message branch.)
+   */
+  @Test
+  void qualifiedConstructorResolvesByDefiningModuleNotBareName() {
+    String game = "module Game exposing (Msg(..))\ntype Msg = Move Int | Wait\n";
+    String render = "module Render exposing (Move)\ntype alias Move = { from : Int, to : Int }\n";
+    String main =
+        "module Main exposing (run)\n"
+            + "import Game exposing (Msg(..))\n"
+            + "import Render\n"
+            + "describe m = case m of\n    Move n -> n\n    Wait -> -1\n"
+            + "run = describe (Game.Move 7)\n";
+    String program =
+        "globalThis.window = globalThis;\n"
+            + JsCompiler.declarationsScriptWithDomProject(game, render, main)
+            + "\nprocess.stdout.write(String(_$Main$run));\n";
+    assertEquals("7", runNode(program));
+  }
+
   /** Tail recursion through a `case` (the common list-walk shape) is also looped, not stacked. */
   @Test
   void caseTailRecursionRunsAsALoop() {

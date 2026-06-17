@@ -33,6 +33,11 @@ public final class JsCompiler {
   private final Map<String, Integer> ctorArity;
   /** Record type aliases: alias name -> ordered field names (they double as record constructors). */
   private final Map<String, List<String>> recordAliases = new HashMap<>();
+  /** This module's OWN constructors, before the bundle-wide tables are merged in, so a constructor
+   * reference can be resolved against its defining module — a name that is a record alias in one
+   * module and a union constructor in another must not collide on its bare simple name. */
+  private final Map<String, List<String>> ownRecordAliases = new HashMap<>();
+  private final Map<String, Integer> ownCtorArity = new HashMap<>();
   private final Set<String> topLevelNames = new HashSet<>();
   private final String currentModule;
   private final Module module;
@@ -74,6 +79,7 @@ public final class JsCompiler {
       if (d instanceof Decl.Union u) {
         for (Decl.Union.Variant v : u.variants()) {
           ctorArity.put(v.name(), v.args().size());
+          ownCtorArity.put(v.name(), v.args().size());
         }
       }
       if (d instanceof Decl.Value v) {
@@ -83,7 +89,9 @@ public final class JsCompiler {
         topLevelNames.add(p.name()); // a port is referenced by name like any top-level value
       }
       if (d instanceof Decl.TypeAlias ta && ta.type() instanceof Type.Record rec) {
-        recordAliases.put(ta.name(), rec.fields().stream().map(Type.Record.Field::name).toList());
+        List<String> fields = rec.fields().stream().map(Type.Record.Field::name).toList();
+        recordAliases.put(ta.name(), fields);
+        ownRecordAliases.put(ta.name(), fields);
       }
     }
     // In a bundle, other modules' constructors are referenced by name, so merge their record-alias
@@ -635,7 +643,7 @@ public final class JsCompiler {
       case Expr.Shader s -> Js.data("$Shader", List.of(Js.str(s.source())));
       case Expr.Unit ignored -> "$unit";
       case Expr.Var v -> compileVar(v);
-      case Expr.Ctor c -> compileCtor(c.name());
+      case Expr.Ctor c -> compileCtor(c.module(), c.name());
       case Expr.OpFunc o ->
           pl.matsuo.elm.interp.Operators.isBuiltin(o.op())
               ? Js.paren(Js.arrow("a", Js.arrow("b", Js.binOp(o.op(), "a", "b"))))
@@ -678,7 +686,7 @@ public final class JsCompiler {
       cur = a.fn();
     }
     if (cur instanceof Expr.Ctor c) {
-      String direct = compileSaturatedCtor(c.name(), args);
+      String direct = compileSaturatedCtor(c.module(), c.name(), args);
       if (direct != null) {
         return direct;
       }
@@ -691,8 +699,9 @@ public final class JsCompiler {
   }
 
   /** The directly-built value for a constructor applied to exactly its arity, or null otherwise. */
-  private String compileSaturatedCtor(String name, List<Expr> args) {
-    List<String> fields = recordAliases.get(name);
+  private String compileSaturatedCtor(String module, String name, List<Expr> args) {
+    CtorRes r = resolveCtor(module, name);
+    List<String> fields = r.recordFields() != null ? r.recordFields() : (r.known() ? null : recordAliases.get(name));
     if (fields != null) {
       if (args.size() != fields.size()) {
         return null;
@@ -703,11 +712,62 @@ public final class JsCompiler {
       }
       return Js.object(entries);
     }
-    int arity = ctorArity.getOrDefault(name, 0);
+    int arity = r.unionArity() >= 0 ? r.unionArity() : ctorArity.getOrDefault(name, 0);
     if (arity == 0 || args.size() != arity) {
       return null; // 0-arity ctors (incl. True/False) and partial applications stay on the curried path
     }
     return Js.data(name, compileEach(args));
+  }
+
+  /** A constructor resolved against its defining module: a record alias (its field names) or a union
+   * tag (its arity). {@link #UNKNOWN} when the module can't be determined, so the caller falls back
+   * to the flat bundle-wide tables. */
+  private record CtorRes(List<String> recordFields, int unionArity) {
+    boolean known() {
+      return recordFields != null || unionArity >= 0;
+    }
+  }
+
+  private static final CtorRes UNKNOWN = new CtorRes(null, -1);
+
+  /**
+   * Resolves a constructor reference to the kind it has in its DEFINING module, so a name that is a
+   * record alias in one module and a union constructor in another is disambiguated by its module
+   * qualifier — qualified {@code Game.Move} is Game's union constructor, not Render's record-alias
+   * {@code Move}, even though both share the simple name {@code Move}. Returns {@link #UNKNOWN} when
+   * the defining module isn't known (e.g. an unqualified constructor imported from another module),
+   * so the caller falls back to the flat, bundle-wide tables (prior behaviour).
+   */
+  private CtorRes resolveCtor(String qualifier, String name) {
+    if (qualifier != null) {
+      String real = aliases.getOrDefault(qualifier, qualifier);
+      if (real.equals(currentModule)) {
+        return ownCtor(name);
+      }
+      if (project != null && project.containsKey(real)) {
+        ModuleInfo mi = project.get(real);
+        if (mi.recordAliases().containsKey(name)) {
+          return new CtorRes(mi.recordAliases().get(name), -1);
+        }
+        if (mi.ctorArity().containsKey(name)) {
+          return new CtorRes(null, mi.ctorArity().get(name));
+        }
+      }
+      return UNKNOWN;
+    }
+    // Unqualified: this module's own definition wins; otherwise leave it to the flat tables.
+    return ownCtor(name);
+  }
+
+  /** The constructor `name` as defined in THIS module, or {@link #UNKNOWN}. */
+  private CtorRes ownCtor(String name) {
+    if (ownRecordAliases.containsKey(name)) {
+      return new CtorRes(ownRecordAliases.get(name), -1);
+    }
+    if (ownCtorArity.containsKey(name)) {
+      return new CtorRes(null, ownCtorArity.get(name));
+    }
+    return UNKNOWN;
   }
 
   private List<String> compileEach(List<Expr> items) {
@@ -779,15 +839,16 @@ public final class JsCompiler {
     return "_$" + project.get(moduleName).tag() + "$" + name;
   }
 
-  private String compileCtor(String name) {
+  private String compileCtor(String module, String name) {
     if (name.equals("True")) {
       return "true";
     }
     if (name.equals("False")) {
       return "false";
     }
+    CtorRes r = resolveCtor(module, name);
     // A record type alias is also a constructor: positional args build the record, curried.
-    List<String> fields = recordAliases.get(name);
+    List<String> fields = r.recordFields() != null ? r.recordFields() : (r.known() ? null : recordAliases.get(name));
     if (fields != null) {
       List<String> params = argNames(fields.size());
       List<String> entries = new ArrayList<>(fields.size());
@@ -796,7 +857,7 @@ public final class JsCompiler {
       }
       return Js.curried(params, Js.object(entries));
     }
-    int arity = ctorArity.getOrDefault(name, 0);
+    int arity = r.unionArity() >= 0 ? r.unionArity() : ctorArity.getOrDefault(name, 0);
     if (arity == 0) {
       return Js.data(name, List.of());
     }
