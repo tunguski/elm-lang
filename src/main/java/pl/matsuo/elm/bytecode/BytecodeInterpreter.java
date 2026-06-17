@@ -64,6 +64,16 @@ public final class BytecodeInterpreter {
     }
     this.moduleName = primary.name();
     this.env = new RuntimeEnv(Prelude.builtins(), unqualified, aliases, ctorArity, recordCtors, moduleName);
+    // Per-module constructor tables so a qualified `Mod.Ctor` resolves to its defining module, not
+    // a same-named constructor from another module merged into the flat tables above.
+    java.util.Map<String, RuntimeEnv.ModuleCtors> moduleCtors = new HashMap<>();
+    for (Module module : modules) {
+      java.util.Map<String, Integer> unions = new HashMap<>();
+      java.util.Map<String, List<String>> records = new HashMap<>();
+      pl.matsuo.elm.interp.TypeDecls.scanModule(module, unions, records);
+      moduleCtors.put(module.name(), new RuntimeEnv.ModuleCtors(records, unions));
+    }
+    env.setModuleCtors(moduleCtors);
     // All functions (closures) first, then all values (thunks) — across every module, so any
     // definition can reference any other regardless of file or declaration order.
     for (Module module : modules) {

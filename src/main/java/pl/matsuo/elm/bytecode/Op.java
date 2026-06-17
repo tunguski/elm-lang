@@ -5,7 +5,7 @@ public enum Op {
   PUSH_CONST, // operand: the constant value
   PUSH_VAR, // operand: unqualified name (local scope, else global)
   PUSH_QUAL, // operand: String[]{module, name}
-  PUSH_CTOR, // operand: constructor name
+  PUSH_CTOR, // operand: String[]{module, name} — module (may be null) resolves the defining module
   PUSH_OPFUNC, // operand: operator symbol
   PUSH_ACCESSOR, // operand: field name (.field as a function)
   MAKE_LIST, // arg: element count

@@ -50,7 +50,10 @@ public final class VM {
           String[] q = (String[]) in.operand();
           stack[sp++] = env.resolveQualified(q[0], q[1]);
         }
-        case PUSH_CTOR -> stack[sp++] = env.constructorValue((String) in.operand());
+        case PUSH_CTOR -> {
+          String[] ct = (String[]) in.operand();
+          stack[sp++] = env.constructorValue(ct[0].isEmpty() ? null : ct[0], ct[1]);
+        }
         case PUSH_OPFUNC -> stack[sp++] = Operators.asFunction((String) in.operand());
         case PUSH_ACCESSOR -> {
           String f = (String) in.operand();

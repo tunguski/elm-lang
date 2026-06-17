@@ -267,6 +267,75 @@ class DifferentialPropertyTest {
   }
 
   @Test
+  void crossModuleConstructorCollisionsAgree() throws Exception {
+    // A constructor name reused across modules (a record alias in one, a union in another; two
+    // unions; or two record aliases with different fields) must resolve to its DEFINING module on
+    // every backend. Keying constructors by bare simple name silently miscompiled these — caught
+    // here across the interpreter, the bytecode VM and the JS compiler.
+    record Scenario(String name, List<String> modules, String value, String expected) {}
+    List<Scenario> scenarios =
+        List.of(
+            new Scenario(
+                "record-alias Move vs union Move",
+                List.of(
+                    "module Game exposing (Msg(..))\ntype Msg = Move Int | Wait\n",
+                    "module Render exposing (Move)\ntype alias Move = { from : Int, to : Int }\n",
+                    "module Main exposing (run)\nimport Game exposing (Msg(..))\nimport Render\n"
+                        + "expand m =\n    case m of\n        Move n -> n\n        Wait -> 0\n"
+                        + "run = expand (Game.Move 7) + (Render.Move 3 4).from\n"),
+                "run",
+                "10"),
+            new Scenario(
+                "same union ctor name in two modules",
+                List.of(
+                    "module A exposing (TA(..), unA)\ntype TA = Tag Int\n"
+                        + "unA t =\n    case t of\n        Tag n -> n\n",
+                    "module B exposing (TB(..), unB)\ntype TB = Tag Int\n"
+                        + "unB t =\n    case t of\n        Tag n -> n + 100\n",
+                    // unA/unB imported unqualified (the bytecode VM's flat merge doesn't resolve
+                    // qualified cross-module *values*); the qualified A.Tag / B.Tag *constructors*
+                    // are the collision under test.
+                    "module Main exposing (run)\nimport A exposing (unA)\nimport B exposing (unB)\n"
+                        + "run = unA (A.Tag 5) + unB (B.Tag 9)\n"),
+                "run",
+                "114"),
+            new Scenario(
+                "same record-alias name, different fields",
+                List.of(
+                    "module A exposing (R)\ntype alias R = { a : Int, b : Int }\n",
+                    "module B exposing (R)\ntype alias R = { a : Int, c : Int }\n",
+                    "module Main exposing (run)\nimport A\nimport B\n"
+                        + "run = (A.R 1 2).b + (B.R 3 4).c\n"),
+                "run",
+                "6"));
+
+    for (Scenario s : scenarios) {
+      String interpVal =
+          Show.plain(
+              pl.matsuo.elm.interp.Project.load(s.modules().toArray(new String[0]))
+                  .value("Main", s.value()));
+      assertEquals(s.expected(), interpVal, "interpreter: " + s.name());
+      assertEquals(
+          s.expected(),
+          Show.plain(BytecodeInterpreter.loadAll(s.modules()).value(s.value())),
+          "bytecode: " + s.name());
+      String js = runNodeMultiModule(s.modules(), s.value());
+      if (js != null) {
+        assertEquals(s.expected(), js, "JS: " + s.name());
+      }
+    }
+  }
+
+  /** Bundles several modules with the DOM runtime and prints {@code $show(Main.<value>)}. */
+  private static String runNodeMultiModule(List<String> modules, String value) {
+    String program =
+        "globalThis.window = globalThis;\n"
+            + JsCompiler.declarationsScriptWithDomProject(modules.toArray(new String[0]))
+            + "\nprocess.stdout.write($show(_$Main$" + value + "));\n";
+    return runNode(program);
+  }
+
+  @Test
   void richPatternsAndPartialCtorsAgreeOnInterpreterAndVm() throws Exception {
     // Nested constructor/tuple patterns, scalar-literal case and partially-applied constructors must
     // agree on the Truffle interpreter and the bytecode VM. (Linear-memory WASM coverage of these

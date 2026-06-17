@@ -153,7 +153,10 @@ public final class BytecodeCompiler {
           c.add(Instr.of(Op.PUSH_QUAL, new String[] {v.module(), v.name()}));
         }
       }
-      case Expr.Ctor ct -> c.add(Instr.of(Op.PUSH_CTOR, ct.name()));
+          // "" stands in for "no module qualifier" (the operand serializer can't write a null
+          // String[] element); the VM maps it back to null.
+      case Expr.Ctor ct ->
+          c.add(Instr.of(Op.PUSH_CTOR, new String[] {ct.module() == null ? "" : ct.module(), ct.name()}));
       case Expr.OpFunc o -> {
         if (pl.matsuo.elm.interp.Operators.isBuiltin(o.op())) {
           c.add(Instr.of(Op.PUSH_OPFUNC, o.op()));
