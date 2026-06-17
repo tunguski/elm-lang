@@ -71,6 +71,39 @@ class ProjectTest {
   }
 
   @Test
+  void aliasedImportWithExposingResolvesBothForms() {
+    // `import Lib as L exposing (foo)`: the exposed `foo` resolves unqualified, and other members
+    // resolve through the alias `L.bar`. (Both were reported as Unbound in the interpreter.)
+    String lib = "module Lib exposing (foo, bar)\nfoo = 1\nbar = 2\n";
+    String main =
+        """
+        module Main exposing (run)
+        import Lib as L exposing (foo)
+        run = foo + L.bar
+        """;
+    Project p = Project.load(lib, main);
+    assertEquals(3L, p.value("Main", "run"));
+  }
+
+  @Test
+  void qualifiedConstructorApplicationFromAnotherModule() {
+    // `Mod.Ctor x` (a qualified constructor application) was reported to throw in the interpreter.
+    String types = "module Types exposing (Color(..))\ntype Color = Red | Green Int\n";
+    String main =
+        """
+        module Main exposing (run)
+        import Types exposing (Color(..))
+        toInt c =
+            case c of
+                Green n -> n
+                Red -> 0
+        run = toInt (Types.Green 5)
+        """;
+    Project p = Project.load(types, main);
+    assertEquals(5L, p.value("Main", "run"));
+  }
+
+  @Test
   void mutualReferenceAcrossModulesAndLazyValues() {
     String constants =
         """
