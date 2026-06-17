@@ -30,7 +30,8 @@ public final class Signatures {
   };
 
   private static final String[] HTML_BOOL_ATTRS = {
-    "disabled", "checked", "selected", "required", "autofocus", "hidden", "multiple", "readonly"
+    "disabled", "checked", "selected", "required", "autofocus", "hidden", "multiple", "readonly",
+    "spellcheck"
   };
 
   public static Map<String, Scheme> globals() {

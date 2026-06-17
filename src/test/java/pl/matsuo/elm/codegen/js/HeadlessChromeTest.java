@@ -621,6 +621,34 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void spellcheckAttributeAndStopPropagationOnAreBound() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: Html.Attributes.spellcheck and Html.Events.stopPropagationOn were unbound in the JS
+    // backend, throwing "Unbound: ..." and blanking the page when their branch rendered. spellcheck
+    // True must set the property; stopPropagationOn must dispatch its decoded message.
+    String app =
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (div, input, text)
+        import Html.Attributes exposing (id, spellcheck)
+        import Html.Events exposing (stopPropagationOn)
+        import Json.Decode as D
+        type Msg = Hit
+        view active =
+            div []
+                [ input [ id "f", spellcheck True ] []
+                , div [ id "b", stopPropagationOn "click" (D.succeed ( Hit, True )) ]
+                    [ text (if active then "ON" else "off") ]
+                ]
+        main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }
+        """;
+    String dom = renderPage(JsCompiler.htmlPage(app, "document.getElementById('b').click();"));
+    assertTrue(dom.contains("spellcheck"), "spellcheck True rendered the property: " + dom);
+    assertTrue(dom.contains("ON"), "stopPropagationOn dispatched its message on click: " + dom);
+  }
+
+  @Test
   void htmlAttributesAttributeAndPropertySetValues() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The generic escape hatches: Html.Attributes.attribute sets any attribute; property sets a DOM

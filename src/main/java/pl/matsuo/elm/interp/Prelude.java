@@ -54,7 +54,7 @@ public final class Prelude {
 
   private static final String[] HTML_BOOL_ATTRS = {
     "disabled", "checked", "selected", "readonly:readonly", "required", "autofocus", "hidden",
-    "multiple"
+    "multiple", "spellcheck"
   };
 
   // The full elm/svg element set (elmName:tag where they differ). SVG tags are case-sensitive and

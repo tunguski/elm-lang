@@ -41,7 +41,7 @@
     $rt['Html.Attributes.'+p[0]]=function(v){ return $data('$Att',[nm,v]); }; });
   $rt['Html.Attributes.width']=function(v){ return $data('$Att',['width',v]); };
   $rt['Html.Attributes.height']=function(v){ return $data('$Att',['height',v]); };
-  ['disabled','checked','selected','required','autofocus','hidden','multiple'].forEach(function(nm){
+  ['disabled','checked','selected','required','autofocus','hidden','multiple','spellcheck'].forEach(function(nm){
     $rt['Html.Attributes.'+nm]=function(v){ return $data('$Prop',[nm,v]); }; });
   $rt['Html.Attributes.style']=function(k){ return function(v){ return $data('$Style',[k,v]); }; };
   $rt['Html.Attributes.attribute']=function(k){ return function(v){ return $data('$Att',[k,v]); }; };
@@ -54,6 +54,9 @@
   // preventDefaultOn carries a `(msg, Bool)` decoder; the 'pd' marker tells the dispatcher to unwrap
   // the tuple and call e.preventDefault() when the Bool is True.
   $rt['Html.Events.preventDefaultOn']=function(e){ return function(d){ return $data('$On',[e,d,'pd']); }; };
+  // stopPropagationOn carries a `(msg, Bool)` decoder; the 'sp' marker tells the dispatcher to unwrap
+  // the tuple and call e.stopPropagation() when (and only when) the Bool is True.
+  $rt['Html.Events.stopPropagationOn']=function(e){ return function(d){ return $data('$On',[e,d,'sp']); }; };
   // More plain-message event handlers ($On[domEvent, msg]).
   ['onDoubleClick:dblclick','onMouseDown:mousedown','onMouseUp:mouseup','onMouseEnter:mouseenter',
    'onMouseLeave:mouseleave','onMouseOver:mouseover','onMouseOut:mouseout','onFocus:focus','onBlur:blur'
@@ -600,7 +603,7 @@
       // current handler from el.$handlers, which applyProps repopulates each render. Events absent
       // this render leave no entry, so the dispatcher is inert (no stale dispatch).
       var ev=nm, domEvent = ev==='check'?'change':ev;
-      (el.$handlers || (el.$handlers={}))[domEvent] = { h:a._[1], ev:ev, pd:(a._[2]==='pd') };
+      (el.$handlers || (el.$handlers={}))[domEvent] = { h:a._[1], ev:ev, pd:(a._[2]==='pd'), sp:(a._[2]==='sp') };
       var listeners = el.$listeners || (el.$listeners={});
       if (!listeners[domEvent]){
         listeners[domEvent] = function(e){
@@ -608,14 +611,17 @@
           var h=spec.h, msg;
           if (h && h.$==='$Dec'){
             var r=h._[0](e); if(!r.ok) return; // decoder declined: ignore the event (default still happens)
-            // preventDefaultOn's decoder yields a (msg, Bool) tuple — unwrap it and honour the flag.
-            if (spec.pd){ msg=r.v.vs[0]; if(r.v.vs[1]) e.preventDefault(); } else { msg=r.v; }
+            // preventDefaultOn / stopPropagationOn decoders yield a (msg, Bool) tuple — unwrap it and
+            // honour the flag (preventDefault / stopPropagation respectively).
+            if (spec.pd){ msg=r.v.vs[0]; if(r.v.vs[1]) e.preventDefault(); }
+            else if (spec.sp){ msg=r.v.vs[0]; if(r.v.vs[1]) e.stopPropagation(); }
+            else { msg=r.v; }
           }
           else if (spec.ev==='input') msg = h(e.target.value); // onInput tagger (String -> msg)
           else if (spec.ev==='check') msg = h(e.target.checked); // onCheck tagger (Bool -> msg)
           else msg = h;
           if (msg!==undefined){ window.$dispatch(msg); }
-          e.stopPropagation();
+          if (!spec.sp){ e.stopPropagation(); } // stopPropagationOn controls propagation itself
         };
         el.addEventListener(domEvent, listeners[domEvent]);
       }
