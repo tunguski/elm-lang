@@ -702,6 +702,7 @@ public final class Signatures {
     g("Math.Matrix4.makeRotate", "Float -> Vec3 -> Mat4");
     g("Math.Matrix4.makeTranslate", "Vec3 -> Mat4");
     g("Math.Matrix4.makeTranslate3", "Float -> Float -> Float -> Mat4");
+    g("Math.Matrix4.makeScale", "Vec3 -> Mat4");
     g("Math.Matrix4.makeScale3", "Float -> Float -> Float -> Mat4");
     g("Math.Matrix4.rotate", "Float -> Vec3 -> Mat4 -> Mat4");
     g("Math.Vector3.normalize", "Vec3 -> Vec3");

@@ -434,6 +434,7 @@
   $rt['Math.Matrix4.mul']=function(a){ return function(b){ return m4mul(a,b); }; };
   $rt['Math.Matrix4.makeTranslate']=function(v){ var m=m4id(); m[12]=v[0]; m[13]=v[1]; m[14]=v[2]; return m; };
   $rt['Math.Matrix4.makeTranslate3']=function(x){ return function(y){ return function(z){ var m=m4id(); m[12]=x; m[13]=y; m[14]=z; return m; }; }; };
+  $rt['Math.Matrix4.makeScale']=function(v){ var m=m4id(); m[0]=v[0]; m[5]=v[1]; m[10]=v[2]; return m; };
   $rt['Math.Matrix4.makeScale3']=function(x){ return function(y){ return function(z){ var m=m4id(); m[0]=x; m[5]=y; m[10]=z; return m; }; }; };
   $rt['Math.Matrix4.makeRotate']=function(angle){ return function(axis){ var a=norm3(axis), x=a[0],y=a[1],z=a[2], c=Math.cos(angle), s=Math.sin(angle), t=1-c; return new Float32Array([ t*x*x+c, t*x*y+s*z, t*x*z-s*y, 0, t*x*y-s*z, t*y*y+c, t*y*z+s*x, 0, t*x*z+s*y, t*y*z-s*x, t*z*z+c, 0, 0,0,0,1 ]); }; };
   $rt['Math.Matrix4.makePerspective']=function(fovy){ return function(aspect){ return function(near){ return function(far){ var f=1/Math.tan(fovy*Math.PI/360), nf=1/(near-far); return new Float32Array([ f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0 ]); }; }; }; };

@@ -408,6 +408,7 @@ public final class Prelude {
     fn("Math.Matrix4.makeTranslate", 1, a -> mat4(GL.makeTranslate(v3(a[0], 0), v3(a[0], 1), v3(a[0], 2))));
     fn("Math.Matrix4.makeTranslate3", 3,
         a -> mat4(GL.makeTranslate(Operators.toDouble(a[0]), Operators.toDouble(a[1]), Operators.toDouble(a[2]))));
+    fn("Math.Matrix4.makeScale", 1, a -> mat4(GL.makeScale(v3(a[0], 0), v3(a[0], 1), v3(a[0], 2))));
     fn("Math.Matrix4.makeScale3", 3,
         a -> mat4(GL.makeScale(Operators.toDouble(a[0]), Operators.toDouble(a[1]), Operators.toDouble(a[2]))));
     fn("Math.Matrix4.transform", 2, a -> {

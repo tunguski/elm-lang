@@ -259,6 +259,24 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void mathMatrix4MakeScaleIsBound() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // Regression: Math.Matrix4.makeScale (the Vec3 form, distinct from makeScale3) was unbound in the
+    // JS backend, so referencing it threw $g("...") and blanked the page. Scaling (5,6,7) by (2,3,4)
+    // gives x = 10.
+    String app =
+        """
+        module Main exposing (main)
+        import Html exposing (text)
+        import Math.Vector3 as V3 exposing (vec3)
+        import Math.Matrix4 as M4
+        main = text (String.fromFloat (V3.getX (M4.transform (M4.makeScale (vec3 2 3 4)) (vec3 5 6 7))))
+        """;
+    String dom = renderInBrowser(app, null);
+    assertTrue(dom.contains(">10<") || dom.contains("10"), "makeScale is bound and applied (2*5=10): " + dom);
+  }
+
+  @Test
   void eventHandlerSwapsAcrossRendersViaPersistentListener() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // The per-event listener is attached once and reads the current render's handler from
