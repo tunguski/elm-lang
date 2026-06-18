@@ -546,88 +546,145 @@ public final class JsCompiler {
     if (emitted.contains(name) || !values.containsKey(name) || !visiting.add(name)) {
       return; // already emitted, not a value, or a cycle — emit in whatever order we reach it
     }
-    // A value must be initialised after every value it depends on — including values reached
-    // transitively through the top-level functions it calls (those run eagerly when this value's
-    // initialiser does), so follow references through functions too.
-    java.util.Set<String> deps = new java.util.HashSet<>();
-    valueDeps(values.get(name).body(), byName, deps, new java.util.HashSet<>());
-    for (String dep : deps) {
+    // A value must be initialised after every value it reads EAGERLY — while its own initialiser
+    // runs, directly or through the top-level functions that initialiser calls. References that
+    // occur only inside a lambda are DEFERRED: that lambda body runs when the lambda is later
+    // invoked (an event handler, a stored callback, init/update/view), by which time every
+    // top-level binding is already assigned. So a deferred reference imposes no ordering constraint
+    // and — crucially — must not manufacture a false dependency cycle. Treating deferred references
+    // as eager is what left a later-defined `List` binding read as `undefined` and then handed to a
+    // List operation as `$listToArray(undefined)` (a cycle the topological sort could only break by
+    // emitting one participant before the other, reading the unassigned `var`).
+    java.util.Set<String> eager = new java.util.LinkedHashSet<>();
+    java.util.Set<String> deferred = new java.util.LinkedHashSet<>();
+    collectDeps(values.get(name).body(), byName, eager, deferred, false, new java.util.HashSet<>());
+    for (String dep : eager) {
       emitValue(dep, values, byName, emitted, visiting, out);
+    }
+    // A deferred dependency is read only when this value's lambda is later invoked. Emit it BEFORE
+    // this value when it can be — so an eagerly invoked lambda (`List.map (\x -> … d …) [literal]`)
+    // still sees `d` initialised. But when the deferred dependency itself depends EAGERLY back on
+    // this value (an event handler that captures a sibling which, in turn, lists this value), that
+    // is a false cycle: forcing it first would read this still-unassigned `var`. Emit those AFTER
+    // this value instead — safe, because the capturing lambda only runs once every initialiser has.
+    java.util.List<String> afterSelf = new java.util.ArrayList<>();
+    for (String dep : deferred) {
+      if (eagerlyReaches(dep, name, byName, new java.util.HashSet<>())) {
+        afterSelf.add(dep);
+      } else {
+        emitValue(dep, values, byName, emitted, visiting, out);
+      }
     }
     if (emitted.add(name)) {
       out.add(Js.topLevelVar(topLevelId(name), compile(values.get(name).body())));
       recordMapping(name, values.get(name).pos(), values.get(name).body());
     }
-  }
-
-  /** Collects the parameterless-value names {@code body} depends on, following calls into functions. */
-  private void valueDeps(
-      Expr body,
-      java.util.Map<String, Decl.Value> byName,
-      java.util.Set<String> outValues,
-      java.util.Set<String> visitedFns) {
-    java.util.Set<String> refs = new java.util.HashSet<>();
-    collectRefs(body, byName.keySet(), refs);
-    for (String r : refs) {
-      Decl.Value rv = byName.get(r);
-      if (rv == null) {
-        continue;
-      }
-      if (rv.params().isEmpty()) {
-        outValues.add(r); // a value dependency
-      } else if (visitedFns.add(r)) {
-        valueDeps(rv.body(), byName, outValues, visitedFns); // a called function — follow its refs
-      }
+    for (String dep : afterSelf) {
+      emitValue(dep, values, byName, emitted, visiting, out);
     }
   }
 
-  /** Collects the names of top-level values referenced (unqualified) within {@code e}. */
-  private void collectRefs(Expr e, java.util.Set<String> names, java.util.Set<String> out) {
+  /** Whether {@code from} reaches {@code target} following EAGER dependency edges only — i.e. {@code
+   * target} is read while {@code from}'s initialiser runs. Used to decide whether a deferred
+   * dependency must wait until after this value (it lists this value) or may precede it. */
+  private boolean eagerlyReaches(
+      String from, String target, java.util.Map<String, Decl.Value> byName, java.util.Set<String> seen) {
+    if (!seen.add(from)) {
+      return false;
+    }
+    Decl.Value v = byName.get(from);
+    if (v == null || !v.params().isEmpty()) {
+      return false;
+    }
+    java.util.Set<String> eager = new java.util.LinkedHashSet<>();
+    java.util.Set<String> deferred = new java.util.LinkedHashSet<>();
+    collectDeps(v.body(), byName, eager, deferred, false, new java.util.HashSet<>());
+    if (eager.contains(target)) {
+      return true;
+    }
+    for (String e : eager) {
+      if (eagerlyReaches(e, target, byName, seen)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Collects the parameterless top-level values {@code e} depends on, split into {@code eager} (read
+   * while {@code e}'s initialiser runs — directly, or through a top-level function that initialiser
+   * calls) and {@code deferred} (read only inside a lambda, i.e. when that lambda is later invoked).
+   * Following references into called functions keeps the eager set a safe over-approximation;
+   * descending into a lambda flips every reference beneath it to deferred.
+   */
+  private void collectDeps(
+      Expr e,
+      java.util.Map<String, Decl.Value> byName,
+      java.util.Set<String> eager,
+      java.util.Set<String> deferred,
+      boolean inLambda,
+      java.util.Set<String> visitedFns) {
     switch (e) {
       case Expr.Var v -> {
-        if (v.module() == null && names.contains(v.name())) {
-          out.add(v.name());
+        if (v.module() != null) {
+          return;
+        }
+        Decl.Value rv = byName.get(v.name());
+        if (rv == null) {
+          return;
+        }
+        if (rv.params().isEmpty()) {
+          (inLambda ? deferred : eager).add(v.name()); // a value dependency
+        } else if (visitedFns.add(v.name())) {
+          // A called top-level function: its body runs when this reference is reached, so follow it
+          // (eagerly, unless we are already under a lambda).
+          collectDeps(rv.body(), byName, eager, deferred, inLambda, visitedFns);
         }
       }
       case Expr.App a -> {
-        collectRefs(a.fn(), names, out);
-        collectRefs(a.arg(), names, out);
+        collectDeps(a.fn(), byName, eager, deferred, inLambda, visitedFns);
+        collectDeps(a.arg(), byName, eager, deferred, inLambda, visitedFns);
       }
       case Expr.BinOp b -> {
-        collectRefs(b.left(), names, out);
-        collectRefs(b.right(), names, out);
+        collectDeps(b.left(), byName, eager, deferred, inLambda, visitedFns);
+        collectDeps(b.right(), byName, eager, deferred, inLambda, visitedFns);
       }
-      case Expr.Negate n -> collectRefs(n.operand(), names, out);
+      case Expr.Negate n -> collectDeps(n.operand(), byName, eager, deferred, inLambda, visitedFns);
       case Expr.If i -> {
-        collectRefs(i.cond(), names, out);
-        collectRefs(i.thenBranch(), names, out);
-        collectRefs(i.elseBranch(), names, out);
+        collectDeps(i.cond(), byName, eager, deferred, inLambda, visitedFns);
+        collectDeps(i.thenBranch(), byName, eager, deferred, inLambda, visitedFns);
+        collectDeps(i.elseBranch(), byName, eager, deferred, inLambda, visitedFns);
       }
-      case Expr.Lambda l -> collectRefs(l.body(), names, out);
+      // A lambda's body is not evaluated where it is defined, only when later applied — defer it.
+      case Expr.Lambda l -> collectDeps(l.body(), byName, eager, deferred, true, visitedFns);
       case Expr.Let let -> {
         for (Decl d : let.defs()) {
           if (d instanceof Decl.Value dv) {
-            collectRefs(dv.body(), names, out);
+            collectDeps(dv.body(), byName, eager, deferred, inLambda, visitedFns);
           } else if (d instanceof Decl.Destructure dd) {
-            collectRefs(dd.body(), names, out);
+            collectDeps(dd.body(), byName, eager, deferred, inLambda, visitedFns);
           }
         }
-        collectRefs(let.body(), names, out);
+        collectDeps(let.body(), byName, eager, deferred, inLambda, visitedFns);
       }
       case Expr.Case c -> {
-        collectRefs(c.scrutinee(), names, out);
-        c.branches().forEach(br -> collectRefs(br.body(), names, out));
+        collectDeps(c.scrutinee(), byName, eager, deferred, inLambda, visitedFns);
+        c.branches().forEach(br -> collectDeps(br.body(), byName, eager, deferred, inLambda, visitedFns));
       }
-      case Expr.ListLit l -> l.items().forEach(i -> collectRefs(i, names, out));
-      case Expr.Tuple t -> t.items().forEach(i -> collectRefs(i, names, out));
-      case Expr.Record r -> r.fields().forEach(f -> collectRefs(f.value(), names, out));
+      case Expr.ListLit l ->
+          l.items().forEach(i -> collectDeps(i, byName, eager, deferred, inLambda, visitedFns));
+      case Expr.Tuple t ->
+          t.items().forEach(i -> collectDeps(i, byName, eager, deferred, inLambda, visitedFns));
+      case Expr.Record r ->
+          r.fields().forEach(f -> collectDeps(f.value(), byName, eager, deferred, inLambda, visitedFns));
       case Expr.RecordUpdate u -> {
-        if (names.contains(u.base())) {
-          out.add(u.base());
+        Decl.Value bv = byName.get(u.base()); // the record being updated is read eagerly here
+        if (bv != null && bv.params().isEmpty()) {
+          (inLambda ? deferred : eager).add(u.base());
         }
-        u.fields().forEach(f -> collectRefs(f.value(), names, out));
+        u.fields().forEach(f -> collectDeps(f.value(), byName, eager, deferred, inLambda, visitedFns));
       }
-      case Expr.RecordAccess a -> collectRefs(a.target(), names, out);
+      case Expr.RecordAccess a -> collectDeps(a.target(), byName, eager, deferred, inLambda, visitedFns);
       default -> {}
     }
   }
