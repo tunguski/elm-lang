@@ -14,17 +14,19 @@ import org.junit.jupiter.api.io.TempDir;
 class SiteGenTest {
 
   private static final String SITE =
-      "module Main exposing (site)\n"
-          + "import Site exposing (..)\n"
-          + "site =\n"
-          + "    [ page \"index.html\" \"Home\"\n"
-          + "        [ h1 \"Hi\"\n"
-          + "        , text \"<b>unsafe</b> & risky\"\n"
-          + "        , codeBlock \"x = 1\"\n"
-          + "        , links [ ( \"about.html\", \"About\" ) ]\n"
-          + "        ]\n"
-          + "    , page \"about.html\" \"About\" [ h1 \"About\" ]\n"
-          + "    ]\n";
+      """
+      module Main exposing (site)
+      import Site exposing (..)
+      site =
+          [ page "index.html" "Home"
+              [ h1 "Hi"
+              , text "<b>unsafe</b> & risky"
+              , codeBlock "x = 1"
+              , links [ ( "about.html", "About" ) ]
+              ]
+          , page "about.html" "About" [ h1 "About" ]
+          ]
+      """;
 
   @Test
   void rendersPagesToFilesWithEscaping(@TempDir Path out) throws IOException {
@@ -97,8 +99,11 @@ class SiteGenTest {
   void autoGeneratesAnIndexWhenTheSiteHasNone(@TempDir Path out) throws IOException {
     // A site with no index.html of its own gets an auto table-of-contents index.
     String src =
-        "module Main exposing (site)\nimport Site exposing (..)\n"
-            + "site = [ page \"a.html\" \"Alpha\" [], page \"b.html\" \"Beta\" [] ]\n";
+        """
+        module Main exposing (site)
+        import Site exposing (..)
+        site = [ page "a.html" "Alpha" [], page "b.html" "Beta" [] ]
+        """;
     SiteGen.generate(src, out, List.of(), "");
     assertTrue(Files.exists(out.resolve("index.html")), "auto index generated");
     String index = Files.readString(out.resolve("index.html"), StandardCharsets.UTF_8);
@@ -110,10 +115,12 @@ class SiteGenTest {
   void markdownBlocksRenderToHtml(@TempDir Path out) throws IOException {
     // A page built from a Markdown string via Site.markdown.
     String src =
-        "module Main exposing (site)\n"
-            + "import Site exposing (..)\n"
-            + "doc = \"# Title\\n\\nA paragraph.\\n\\n- one\\n- two\\n\\n```\\ncode line\\n```\"\n"
-            + "site = [ page \"doc.html\" \"Doc\" (markdown doc) ]\n";
+        """
+        module Main exposing (site)
+        import Site exposing (..)
+        doc = "# Title\\n\\nA paragraph.\\n\\n- one\\n- two\\n\\n```\\ncode line\\n```"
+        site = [ page "doc.html" "Doc" (markdown doc) ]
+        """;
     SiteGen.generate(src, out, List.of(), "");
     String html = Files.readString(out.resolve("doc.html"), StandardCharsets.UTF_8);
     assertTrue(html.contains("<h1>Title</h1>"), html);

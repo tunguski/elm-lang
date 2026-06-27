@@ -33,12 +33,15 @@ class CustomOperatorTest {
     assertEquals("number", TypeChecker.checkModule(src).get("main"));
   }
 
+  // with the declared precedence: 1 ^^ (2 ~~ 3) = 1 + 6 = 7
   private static final String INFIX_MODULE =
-      "add a b = a + b\n"
-          + "mul a b = a * b\n"
-          + "infix left 6 (^^) = add\n"
-          + "infix left 7 (~~) = mul\n"
-          + "main = 1 ^^ 2 ~~ 3\n"; // with the declared precedence: 1 ^^ (2 ~~ 3) = 1 + 6 = 7
+      """
+      add a b = a + b
+      mul a b = a * b
+      infix left 6 (^^) = add
+      infix left 7 (~~) = mul
+      main = 1 ^^ 2 ~~ 3
+      """;
 
   @Test
   void infixDeclarationGivesOperatorItsDeclaredPrecedence() {
@@ -53,15 +56,19 @@ class CustomOperatorTest {
     // (^^) is declared infix 6 in module Ops and (~~) infix 7; used in module Main they must bind by
     // those declarations (1 ^^ (2 ~~ 3) = 7), even though Main never declares them itself.
     String ops =
-        "module Ops exposing (..)\n"
-            + "add a b = a + b\n"
-            + "mul a b = a * b\n"
-            + "infix left 6 (^^) = add\n"
-            + "infix left 7 (~~) = mul\n";
+        """
+        module Ops exposing (..)
+        add a b = a + b
+        mul a b = a * b
+        infix left 6 (^^) = add
+        infix left 7 (~~) = mul
+        """;
     String main =
-        "module Main exposing (..)\n"
-            + "import Ops exposing (..)\n"
-            + "main = 1 ^^ 2 ~~ 3\n";
+        """
+        module Main exposing (..)
+        import Ops exposing (..)
+        main = 1 ^^ 2 ~~ 3
+        """;
     assertEquals("7", Show.plain(Project.load(ops, main).value("Main", "main")));
   }
 

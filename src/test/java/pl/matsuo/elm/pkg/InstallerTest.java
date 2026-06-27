@@ -27,10 +27,15 @@ class InstallerTest {
   }
 
   private static final String APP_ELM_JSON =
-      "{\n  \"type\": \"application\",\n  \"source-directories\": [ \"src\" ],\n"
-          + "  \"elm-version\": \"0.19.1\",\n"
-          + "  \"dependencies\": { \"direct\": {}, \"indirect\": {} },\n"
-          + "  \"test-dependencies\": { \"direct\": {}, \"indirect\": {} }\n}\n";
+      """
+      {
+        "type": "application",
+        "source-directories": [ "src" ],
+        "elm-version": "0.19.1",
+        "dependencies": { "direct": {}, "indirect": {} },
+        "test-dependencies": { "direct": {}, "indirect": {} }
+      }
+      """;
 
   @Test
   void directoryRegistryListsVersionsAndDependencies(@TempDir Path registry) throws IOException {

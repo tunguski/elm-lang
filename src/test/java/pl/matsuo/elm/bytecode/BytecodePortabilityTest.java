@@ -41,16 +41,20 @@ class BytecodePortabilityTest {
   void patternsCustomTypesRecordsLists() {
     // Custom type + case (Ctor patterns), records, cons/list patterns, tuples and an as-pattern.
     roundTrips(
-        "type Tree = Leaf Int | Node Tree Tree\n"
-            + "sum t = case t of\n"
-            + "  Leaf n -> n\n"
-            + "  Node l r -> sum l + sum r\n"
-            + "main = sum (Node (Node (Leaf 1) (Leaf 2)) (Leaf 3))\n");
+        """
+        type Tree = Leaf Int | Node Tree Tree
+        sum t = case t of
+          Leaf n -> n
+          Node l r -> sum l + sum r
+        main = sum (Node (Node (Leaf 1) (Leaf 2)) (Leaf 3))
+        """);
     roundTrips(
-        "first xs = case xs of\n"
-            + "  ((a, _) :: _) as whole -> ( a, List.length whole )\n"
-            + "  _ -> ( 0, 0 )\n"
-            + "main = first [ ( 7, \"a\" ), ( 8, \"b\" ) ]\n");
+        """
+        first xs = case xs of
+          ((a, _) :: _) as whole -> ( a, List.length whole )
+          _ -> ( 0, 0 )
+        main = first [ ( 7, "a" ), ( 8, "b" ) ]
+        """);
     roundTrips("main = (\\r -> { r | x = r.x + 1 }) { x = 41, y = 0 }\n");
     roundTrips("main = String.toUpper (String.reverse \"hello\")\n");
   }

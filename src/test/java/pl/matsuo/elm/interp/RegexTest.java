@@ -13,11 +13,12 @@ class RegexTest {
   /** Evaluates `e` with a `digits` regex in scope (Regex.fromString unwrapped). */
   private String eval(String e) {
     String src =
-        "digits = Maybe.withDefault Regex.never (Regex.fromString \"[0-9]+\")\n"
-            + "comma = Maybe.withDefault Regex.never (Regex.fromString \",\")\n"
-            + "result = "
-            + e
-            + "\n";
+        """
+        digits = Maybe.withDefault Regex.never (Regex.fromString "[0-9]+")
+        comma = Maybe.withDefault Regex.never (Regex.fromString ",")
+        result = __EXPR__
+        """
+            .replace("__EXPR__", e);
     return Show.plain(Interpreter.load(src).value("result"));
   }
 
@@ -51,9 +52,11 @@ class RegexTest {
   void typeChecks() {
     Map<String, String> t =
         TypeChecker.checkModule(
-            "re = Regex.fromString \"x\"\n"
-                + "n = List.length (Regex.find Regex.never \"\")\n"
-                + "main = Regex.replace Regex.never (\\m -> m.match) \"hi\"\n");
+            """
+            re = Regex.fromString "x"
+            n = List.length (Regex.find Regex.never "")
+            main = Regex.replace Regex.never (\\m -> m.match) "hi"
+            """);
     assertEquals("String", t.get("main"));
     assertTrue(t.containsKey("n"), t.toString());
   }

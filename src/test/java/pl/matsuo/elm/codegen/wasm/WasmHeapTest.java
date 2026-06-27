@@ -142,10 +142,12 @@ class WasmHeapTest extends WasmHeapTestSupport {
     // Mirrors the JS-vs-WASM gallery page: one module exporting f0..fN of mixed result types, each
     // decoded from the i64 return per its kind (number, Float bit-pattern, heap string, cons-list).
     String source =
-        "f0 = 1 + 2 * 3\n"
-            + "f1 = 7.0 / 2.0\n"
-            + "f2 = \"elm\" ++ \"-lang\"\n"
-            + "f3 = List.map (\\x -> x * x) (List.range 1 4)\n";
+        """
+        f0 = 1 + 2 * 3
+        f1 = 7.0 / 2.0
+        f2 = "elm" ++ "-lang"
+        f3 = List.map (\\x -> x * x) (List.range 1 4)
+        """;
     String[] kinds = {"int", "float", "string", "list"};
     String[] expected = {
       Show.plain(Interpreter.eval("1 + 2 * 3")),
@@ -457,8 +459,10 @@ class WasmHeapTest extends WasmHeapTestSupport {
     assertEquals(
         "yn",
         runMainString(
-            "yn b = if b then \"y\" else \"n\"\n"
-                + "main = yn (String.any Char.isDigit \"a1b\") ++ yn (String.all Char.isDigit \"a1b\")\n"));
+            """
+            yn b = if b then "y" else "n"
+            main = yn (String.any Char.isDigit "a1b") ++ yn (String.all Char.isDigit "a1b")
+            """));
   }
 
   @Test

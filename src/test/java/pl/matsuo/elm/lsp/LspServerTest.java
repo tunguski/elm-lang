@@ -66,7 +66,13 @@ class LspServerTest {
     // The parser recovers between top-level declarations, so two independent syntax errors yield
     // two diagnostics (not just the first), on different lines.
     String src =
-        "module M exposing (..)\n" + "good1 = 1\n" + "bad1 = if\n" + "good2 = 2\n" + "bad2 = case\n";
+        """
+        module M exposing (..)
+        good1 = 1
+        bad1 = if
+        good2 = 2
+        bad2 = case
+        """;
     var diags = server.diagnose(src);
     assertTrue(diags.size() >= 2, diags.toString());
     assertTrue(diags.get(0).line() != diags.get(diags.size() - 1).line(), diags.toString());
@@ -162,10 +168,12 @@ class LspServerTest {
   @Test
   void codeActionFillsMissingCaseBranches() {
     String src =
-        "type Color = Red | Green | Blue\n"
-            + "name c =\n"
-            + "    case c of\n"
-            + "        Red -> \"r\"\n";
+        """
+        type Color = Red | Green | Blue
+        name c =
+            case c of
+                Red -> "r"
+        """;
     var actions = server.codeActions(src, 2); // cursor on the `case` line
     var fill =
         actions.stream().filter(a -> a.title().equals("Add missing case branches")).findFirst();
@@ -216,10 +224,12 @@ class LspServerTest {
     // `helper` is private (M exposes only main) and referenced nowhere; offer to delete it, including
     // its type annotation line.
     String src =
-        "module M exposing (main)\n"
-            + "helper : Int\n"
-            + "helper = 42\n"
-            + "main = 1\n";
+        """
+        module M exposing (main)
+        helper : Int
+        helper = 42
+        main = 1
+        """;
     var actions = server.codeActions(src, 2); // cursor on the `helper = 42` line
     var remove =
         actions.stream().filter(a -> a.title().equals("Remove unused definition")).findFirst();
@@ -487,8 +497,13 @@ class LspServerTest {
   void surfacesANonExhaustiveCaseAsAnError() {
     // The type checker reports non-exhaustiveness (matching Elm), surfaced by the LSP as an error.
     String src =
-        "type Color = Red | Green | Blue\n"
-            + "name c =\n    case c of\n        Red -> \"r\"\n        Green -> \"g\"\n";
+        """
+        type Color = Red | Green | Blue
+        name c =
+            case c of
+                Red -> "r"
+                Green -> "g"
+        """;
     var ds = server.diagnose(src);
     assertTrue(
         ds.stream().anyMatch(d -> d.severity() == 1 && d.message().contains("does not handle")

@@ -16,40 +16,42 @@ class ParserLibTest {
   }
 
   private static final String PROGRAM =
-      "module Main exposing (..)\n"
-          + "import Parser exposing (..)\n"
-          + "point =\n"
-          + "    succeed (\\x y -> ( x, y ))\n"
-          + "        |. symbol \"(\"\n"
-          + "        |. spaces\n"
-          + "        |= int\n"
-          + "        |. spaces\n"
-          + "        |. symbol \",\"\n"
-          + "        |. spaces\n"
-          + "        |= int\n"
-          + "        |. spaces\n"
-          + "        |. symbol \")\"\n"
-          + "pointOk = run point \"( 3 , 4 )\"\n"
-          + "intOk = run int \"42\"\n"
-          + "intBad = run int \"xyz\"\n"
-          + "word = run (getChompedString (chompWhile (\\c -> c /= ' '))) \"hello world\"\n"
-          + "floatOk = run float \"3.14\"\n"
-          + "chompIfOk = run (getChompedString (chompIf Char.isDigit)) \"7x\"\n"
-          + "chompIfBad = run (chompIf Char.isDigit) \"x\"\n"
-          + "tokenOk = run (token \"let\") \"let\"\n"
-          + "digits =\n"
-          + "    loop [] (\\acc -> oneOf\n"
-          + "        [ succeed (\\d -> Loop (d :: acc)) |= (getChompedString (chompIf Char.isDigit) |> andThen (\\s -> succeed s))\n"
-          + "        , succeed (Done (List.reverse acc)) ])\n"
-          + "loopOk = run digits \"123\"\n"
-          + "commentBody = run (getChompedString (chompUntil \"-}\")) \"abc-}rest\"\n"
-          + "chompUntilBad = run (chompUntil \"xx\") \"abc\"\n"
-          + "countAs = run as_ \"aaa\"\n"
-          + "as_ =\n"
-          + "    oneOf\n"
-          + "        [ succeed (\\n -> n + 1) |. symbol \"a\" |= lazy (\\_ -> as_)\n"
-          + "        , succeed 0\n"
-          + "        ]\n";
+      """
+      module Main exposing (..)
+      import Parser exposing (..)
+      point =
+          succeed (\\x y -> ( x, y ))
+              |. symbol "("
+              |. spaces
+              |= int
+              |. spaces
+              |. symbol ","
+              |. spaces
+              |= int
+              |. spaces
+              |. symbol ")"
+      pointOk = run point "( 3 , 4 )"
+      intOk = run int "42"
+      intBad = run int "xyz"
+      word = run (getChompedString (chompWhile (\\c -> c /= ' '))) "hello world"
+      floatOk = run float "3.14"
+      chompIfOk = run (getChompedString (chompIf Char.isDigit)) "7x"
+      chompIfBad = run (chompIf Char.isDigit) "x"
+      tokenOk = run (token "let") "let"
+      digits =
+          loop [] (\\acc -> oneOf
+              [ succeed (\\d -> Loop (d :: acc)) |= (getChompedString (chompIf Char.isDigit) |> andThen (\\s -> succeed s))
+              , succeed (Done (List.reverse acc)) ])
+      loopOk = run digits "123"
+      commentBody = run (getChompedString (chompUntil "-}")) "abc-}rest"
+      chompUntilBad = run (chompUntil "xx") "abc"
+      countAs = run as_ "aaa"
+      as_ =
+          oneOf
+              [ succeed (\\n -> n + 1) |. symbol "a" |= lazy (\\_ -> as_)
+              , succeed 0
+              ]
+      """;
 
   @Test
   void parsesAnIntegerAndReportsFailure() {

@@ -370,8 +370,12 @@ class BuildRunnerTest {
     // The "core" module is Core.elm (with a main so it compiles to a page on its own).
     Files.writeString(
         dir.resolve("Core.elm"),
-        "module Core exposing (greeting, main)\nimport Html exposing (text)\n"
-            + "greeting = \"from-core\"\nmain = text greeting\n");
+        """
+        module Core exposing (greeting, main)
+        import Html exposing (text)
+        greeting = "from-core"
+        main = text greeting
+        """);
     // "web" imports Core but lists no withSources — it just declares the dependency.
     Files.writeString(
         dir.resolve("Web.elm"),
@@ -679,8 +683,11 @@ class BuildRunnerTest {
     Path dir = Files.createTempDirectory("elm-build-bad-");
     Files.writeString(
         dir.resolve("build.elm"),
-        "module Main exposing (project)\nimport Build exposing (..)\n"
-            + "project = Build.project \"d\" \"1.0.0\" [ module_ \"a\" \".\" ]\n");
+        """
+        module Main exposing (project)
+        import Build exposing (..)
+        project = Build.project "d" "1.0.0" [ module_ "a" "." ]
+        """);
     Result r = build(dir, "bogus");
     assertEquals(1, r.code(), r.out());
   }

@@ -39,10 +39,15 @@ class ProjectLoaderTest {
     Files.createDirectories(project.resolve("src"));
     Files.writeString(
         project.resolve("elm.json"),
-        "{\n  \"type\": \"application\",\n  \"source-directories\": [ \"src\" ],\n"
-            + "  \"elm-version\": \"0.19.1\",\n"
-            + "  \"dependencies\": { \"direct\": { \"acme/strings\": \"1.0.0\" }, \"indirect\": {} },\n"
-            + "  \"test-dependencies\": { \"direct\": {}, \"indirect\": {} }\n}\n",
+        """
+        {
+          "type": "application",
+          "source-directories": [ "src" ],
+          "elm-version": "0.19.1",
+          "dependencies": { "direct": { "acme/strings": "1.0.0" }, "indirect": {} },
+          "test-dependencies": { "direct": {}, "indirect": {} }
+        }
+        """,
         StandardCharsets.UTF_8);
     Files.writeString(project.resolve("src").resolve("Main.elm"), mainBody, StandardCharsets.UTF_8);
     return project;
@@ -85,8 +90,15 @@ class ProjectLoaderTest {
     Path app =
         writeApp(
             root,
-            "module Main exposing (main)\n\nimport Acme.Strings exposing (shout)\n\n"
-                + "import Html exposing (text)\n\nmain = text (shout \"hi\")\n");
+            """
+            module Main exposing (main)
+
+            import Acme.Strings exposing (shout)
+
+            import Html exposing (text)
+
+            main = text (shout "hi")
+            """);
 
     String[] sources = ProjectLoader.loadSources(app, root.resolve("registry")).toArray(new String[0]);
     // The JS backend compiles the project plus the installed package's module into one bundle.

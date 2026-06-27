@@ -41,16 +41,21 @@ class TeaLiveHttpTest {
   }
 
   private static String app(String url) {
-    return "module Main exposing (main)\n"
-        + "import Browser\nimport Html exposing (text)\nimport Http\n"
-        + "main = Browser.element { init = init, update = update, view = view, subscriptions = subs }\n"
-        + "init _ = ( \"loading\", Http.get { url = \"" + url + "\", expect = Http.expectString Got } )\n"
-        + "type Msg = Got (Result Http.Error String)\n"
-        + "update msg model = case msg of\n"
-        + "    Got (Ok s) -> ( s, Cmd.none )\n"
-        + "    Got (Err e) -> ( \"error\", Cmd.none )\n"
-        + "subs model = Sub.none\n"
-        + "view model = text model\n";
+    return """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (text)
+        import Http
+        main = Browser.element { init = init, update = update, view = view, subscriptions = subs }
+        init _ = ( "loading", Http.get { url = "__URL__", expect = Http.expectString Got } )
+        type Msg = Got (Result Http.Error String)
+        update msg model = case msg of
+            Got (Ok s) -> ( s, Cmd.none )
+            Got (Err e) -> ( "error", Cmd.none )
+        subs model = Sub.none
+        view model = text model
+        """
+        .replace("__URL__", url);
   }
 
   @Test

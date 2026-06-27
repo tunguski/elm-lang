@@ -63,28 +63,30 @@ class ScriptRunnerTest {
     Path dir = Files.createTempDirectory("gen-");
     Files.writeString(dir.resolve("intro.md"), "# Intro\n\nHello world.");
     String script =
-        "module Main exposing (main)\n"
-            + "import Posix exposing (..)\n"
-            + "import Site\n"
-            + "main : Io\n"
-            + "main =\n"
-            + "    getArgs (\\args ->\n"
-            + "        case args of\n"
-            + "            dir :: _ -> listDir dir (\\res -> case res of\n"
-            + "                Ok names -> gen dir names\n"
-            + "                Err e -> print e (exit 1))\n"
-            + "            [] -> exit 1)\n"
-            + "gen : String -> List String -> Io\n"
-            + "gen dir names =\n"
-            + "    case names of\n"
-            + "        [] -> done\n"
-            + "        name :: rest ->\n"
-            + "            readFile (dir ++ \"/\" ++ name) (\\res -> case res of\n"
-            + "                Ok content ->\n"
-            + "                    writeFile (dir ++ \"/\" ++ name ++ \".html\")\n"
-            + "                        (Site.render (Site.page (name ++ \".html\") name (Site.markdown content)))\n"
-            + "                        (gen dir rest)\n"
-            + "                Err _ -> gen dir rest)\n";
+        """
+        module Main exposing (main)
+        import Posix exposing (..)
+        import Site
+        main : Io
+        main =
+            getArgs (\\args ->
+                case args of
+                    dir :: _ -> listDir dir (\\res -> case res of
+                        Ok names -> gen dir names
+                        Err e -> print e (exit 1))
+                    [] -> exit 1)
+        gen : String -> List String -> Io
+        gen dir names =
+            case names of
+                [] -> done
+                name :: rest ->
+                    readFile (dir ++ "/" ++ name) (\\res -> case res of
+                        Ok content ->
+                            writeFile (dir ++ "/" ++ name ++ ".html")
+                                (Site.render (Site.page (name ++ ".html") name (Site.markdown content)))
+                                (gen dir rest)
+                        Err _ -> gen dir rest)
+        """;
     Run r = runScriptWithSite(script, List.of(dir.toString()));
     assertEquals(0, r.code(), r.out());
     Path html = dir.resolve("intro.md.html");
@@ -103,20 +105,22 @@ class ScriptRunnerTest {
         dir.resolve("parser.json"),
         "{ \"title\": \"Parser\", \"files\": [ \"a.elm\", \"b.elm\" ] }");
     String script =
-        "module Main exposing (main)\n"
-            + "import Posix exposing (..)\n"
-            + "import Json.Decode as D\n"
-            + "type alias Topic = { title : String, files : List String }\n"
-            + "decoder = D.map2 Topic (D.field \"title\" D.string) (D.field \"files\" (D.list D.string))\n"
-            + "main : Io\n"
-            + "main =\n"
-            + "    getArgs (\\args -> case args of\n"
-            + "        m :: _ -> readFile m (\\res -> case res of\n"
-            + "            Ok json -> (case D.decodeString decoder json of\n"
-            + "                Ok t -> print (t.title ++ \" has \" ++ String.fromInt (List.length t.files) ++ \" files\") done\n"
-            + "                Err e -> print e (exit 1))\n"
-            + "            Err e -> print e (exit 1))\n"
-            + "        [] -> exit 1)\n";
+        """
+        module Main exposing (main)
+        import Posix exposing (..)
+        import Json.Decode as D
+        type alias Topic = { title : String, files : List String }
+        decoder = D.map2 Topic (D.field "title" D.string) (D.field "files" (D.list D.string))
+        main : Io
+        main =
+            getArgs (\\args -> case args of
+                m :: _ -> readFile m (\\res -> case res of
+                    Ok json -> (case D.decodeString decoder json of
+                        Ok t -> print (t.title ++ " has " ++ String.fromInt (List.length t.files) ++ " files") done
+                        Err e -> print e (exit 1))
+                    Err e -> print e (exit 1))
+                [] -> exit 1)
+        """;
     Run r = runScriptWithSite(script, List.of(dir.resolve("parser.json").toString()));
     assertEquals(0, r.code(), r.out());
     assertTrue(r.out().contains("Parser has 2 files"), r.out());
@@ -142,8 +146,10 @@ class ScriptRunnerTest {
     // now: the current time is a positive number of millis.
     Run clock =
         runScript(
-            "module Main exposing (main)\nimport Posix exposing (..)\n"
-                + "main = now (\\ms -> print (if ms > 0 then \"clock-ok\" else \"bad\") done)",
+            """
+            module Main exposing (main)
+            import Posix exposing (..)
+            main = now (\\ms -> print (if ms > 0 then "clock-ok" else "bad") done)""",
             List.of(),
             "");
     assertTrue(clock.out().contains("clock-ok"), clock.out());
@@ -151,8 +157,10 @@ class ScriptRunnerTest {
     // randomInt with lo == hi is deterministic.
     Run fixed =
         runScript(
-            "module Main exposing (main)\nimport Posix exposing (..)\n"
-                + "main = randomInt 7 7 (\\n -> print (String.fromInt n) done)",
+            """
+            module Main exposing (main)
+            import Posix exposing (..)
+            main = randomInt 7 7 (\\n -> print (String.fromInt n) done)""",
             List.of(),
             "");
     assertEquals("7", fixed.out().trim());
@@ -160,8 +168,10 @@ class ScriptRunnerTest {
     // randomInt stays within the inclusive range.
     Run ranged =
         runScript(
-            "module Main exposing (main)\nimport Posix exposing (..)\n"
-                + "main = randomInt 1 6 (\\n -> print (String.fromInt n) done)",
+            """
+            module Main exposing (main)
+            import Posix exposing (..)
+            main = randomInt 1 6 (\\n -> print (String.fromInt n) done)""",
             List.of(),
             "");
     int v = Integer.parseInt(ranged.out().trim());

@@ -243,11 +243,13 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     // A playground `game`: stepping with ArrowUp held must change the memory (proving the keyboard
     // -> computer.keyboard -> toY path works end to end in the editor's game loop).
     String src =
-        "module Main exposing (main)\n"
-            + "import Playground exposing (..)\n"
-            + "main = game view update { y = 0 }\n"
-            + "view computer mem = [ rectangle red 10 10 |> moveUp mem.y ]\n"
-            + "update computer mem = { y = mem.y + toY computer.keyboard }\n";
+        """
+        module Main exposing (main)
+        import Playground exposing (..)
+        main = game view update { y = 0 }
+        view computer mem = [ rectangle red 10 10 |> moveUp mem.y ]
+        update computer mem = { y = mem.y + toY computer.keyboard }
+        """;
     ElmList fs = files("Main.elm", src);
     Object mem0 = unwrapJust(Apply.apply(EDITOR.value("Eval", "gameInitMem"), fs));
     // Step once with ArrowUp held.
@@ -297,11 +299,13 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     // The editor's builtin `animation` must render an initial frame AND be drivable by the frame
     // loop (gameInitMem returns a memory so the editor keeps advancing time) — not a static one-shot.
     String src =
-        "module Main exposing (main)\n"
-            + "import Playground exposing (..)\n"
-            + "main = animation view\n"
-            + "view time =\n"
-            + "    [ rectangle red 100 100 |> moveUp (wave 0 50 2 time) ]\n";
+        """
+        module Main exposing (main)
+        import Playground exposing (..)
+        main = animation view
+        view time =
+            [ rectangle red 100 100 |> moveUp (wave 0 50 2 time) ]
+        """;
     String rendered = Show.plain(Apply.apply(EDITOR.value("Eval", "renderProgram"), src));
     assertTrue(rendered.contains("<svg"), rendered); // an SVG frame, not "animation error"
     String mem = Show.plain(Apply.apply(EDITOR.value("Eval", "gameInitMem"), files("Main.elm", src)));
@@ -382,11 +386,13 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     // never fired and the view stuck on "Loading textures...". The Task.attempt must now resolve to
     // the url-carrying texture value the GL bridge loads (here surfaced via `identity` as toMsg).
     String probe =
-        "main = Task.attempt identity (Texture.loadWith options \"wood.jpg\")\n"
-            + "options =\n"
-            + "    { magnify = Texture.nearest, minify = Texture.nearest\n"
-            + "    , horizontalWrap = Texture.repeat, verticalWrap = Texture.repeat, flipY = True\n"
-            + "    }\n";
+        """
+        main = Task.attempt identity (Texture.loadWith options "wood.jpg")
+        options =
+            { magnify = Texture.nearest, minify = Texture.nearest
+            , horizontalWrap = Texture.repeat, verticalWrap = Texture.repeat, flipY = True
+            }
+        """;
     ElmList fs = files("Main.elm", probe);
     Object cmd = okValue(Apply.apply(EDITOR.value("Eval", "mainValue"), fs));
     String resolved = Show.plain(Apply.applyAll(EDITOR.value("Eval", "taskResult"), fs, cmd));
@@ -813,9 +819,10 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     ElmList counter =
         files(
             "Counter.elm",
-            "init = 0\n"
-                + "update msg model = case msg of Inc -> model + 1 ; Dec -> model - 1 ; _ -> model\n"
-                + "view model = \"count = \" ++ toString model");
+            """
+            init = 0
+            update msg model = case msg of Inc -> model + 1 ; Dec -> model - 1 ; _ -> model
+            view model = "count = " ++ toString model""");
     List<Object> steps = debugSteps(counter, "Inc", "Inc", "Dec");
     assertEquals(4, steps.size()); // initial + one per message
     assertTrue(String.valueOf(steps.get(0)).contains("model: 0"), steps.toString());
@@ -849,11 +856,10 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     ElmList app =
         files(
             "App.elm",
-            "init = { count = 0, log = [] }\n"
-                + "update msg model = case msg of"
-                + " Inc -> { model | count = model.count + 1 } ;"
-                + " _ -> model\n"
-                + "view model = \"count = \" ++ toString model.count");
+            """
+            init = { count = 0, log = [] }
+            update msg model = case msg of Inc -> { model | count = model.count + 1 } ; _ -> model
+            view model = "count = " ++ toString model.count""");
     List<Object> steps = debugSteps(app, "Inc", "Inc", "Inc");
     assertEquals(4, steps.size());
     assertTrue(String.valueOf(steps.get(3)).contains("count = 3"), steps.toString());
@@ -906,15 +912,16 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     ElmList project =
         files(
             "Scene.elm",
-            "vert =\n"
-                + "    [glsl|\n"
-                + "        attribute vec3 position;\n"
-                + "        void main () { gl_Position = vec4(position, 1.0); }\n"
-                + "    |]\n"
-                + "frag =\n"
-                + "    [glsl| void main () { gl_FragColor = vec4(1.0); } |]\n"
-                + "mesh = WebGL.triangles []\n"
-                + "scene = WebGL.toHtml [] [ WebGL.entity vert frag mesh {}, WebGL.entity vert frag mesh {} ]");
+            """
+            vert =
+                [glsl|
+                    attribute vec3 position;
+                    void main () { gl_Position = vec4(position, 1.0); }
+                |]
+            frag =
+                [glsl| void main () { gl_FragColor = vec4(1.0); } |]
+            mesh = WebGL.triangles []
+            scene = WebGL.toHtml [] [ WebGL.entity vert frag mesh {}, WebGL.entity vert frag mesh {} ]""");
     String scene = evalProject(project, "scene");
     assertTrue(scene.contains("WebGL.scene"), scene); // a structured scene, not a text preview
     // Both entities are present in the scene's entity list.
@@ -937,18 +944,21 @@ class EditorInterpreterTest extends EditorInterpreterTestSupport {
     ElmList project =
         files(
             "M.elm",
-            "f = File \"notes.txt\" \"hello world\"\n"
-                + "fileName = File.name f\n"
-                + "fileSize = File.size f\n");
+            """
+            f = File "notes.txt" "hello world"
+            fileName = File.name f
+            fileSize = File.size f
+            """);
     assertEquals("\"notes.txt\"", evalProject(project, "fileName"));
     assertEquals("11", evalProject(project, "fileSize"));
     // A File program (select -> read -> store) loads and its initial model is interpretable.
     ElmList app =
         files(
             "Upload.elm",
-            "init = { text = \"\" }\n"
-                + "loadCmd = File.Select.file [ \"text/*\" ] Got\n"
-                + "view model = text model.text");
+            """
+            init = { text = "" }
+            loadCmd = File.Select.file [ "text/*" ] Got
+            view model = text model.text""");
     assertEquals("\"\"", evalProject(app, "init.text"));
     assertTrue(evalProject(app, "loadCmd").contains("Cmd.fileSelect"), "the load command evaluates");
   }

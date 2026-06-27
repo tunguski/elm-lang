@@ -162,19 +162,30 @@ class JsonRoundTripTest {
     assertEquals(
         "Ok 42",
         decode(
-            "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n"
-                + "result = D.decodeString D.int (E.encode 0 (E.int 42))\n"));
+            """
+            module M exposing (result)
+            import Json.Decode as D
+            import Json.Encode as E
+            result = D.decodeString D.int (E.encode 0 (E.int 42))
+            """));
     assertEquals(
         "Ok \"hello\"",
         decode(
-            "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n"
-                + "result = D.decodeString D.string (E.encode 0 (E.string \"hello\"))\n"));
+            """
+            module M exposing (result)
+            import Json.Decode as D
+            import Json.Encode as E
+            result = D.decodeString D.string (E.encode 0 (E.string "hello"))
+            """));
     assertEquals(
         "Ok [1,2,3]",
         decode(
-            "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n"
-                + "result = D.decodeString (D.list D.int) "
-                + "(E.encode 0 (E.list E.int [ 1, 2, 3 ]))\n"));
+            """
+            module M exposing (result)
+            import Json.Decode as D
+            import Json.Encode as E
+            result = D.decodeString (D.list D.int) (E.encode 0 (E.list E.int [ 1, 2, 3 ]))
+            """));
   }
 
   @Test
@@ -183,9 +194,13 @@ class JsonRoundTripTest {
     assertEquals(
         "Ok 7",
         decode(
-            "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n"
-                + "json = E.encode 0 (E.object [ ( \"n\", E.int 7 ) ])\n"
-                + "result = D.decodeString (D.field \"n\" D.int) json\n"));
+            """
+            module M exposing (result)
+            import Json.Decode as D
+            import Json.Encode as E
+            json = E.encode 0 (E.object [ ( "n", E.int 7 ) ])
+            result = D.decodeString (D.field "n" D.int) json
+            """));
   }
 
   @Test
@@ -281,8 +296,10 @@ class JsonRoundTripTest {
         "Ok 7",
         decode(
             head
-                + "json = E.encode 0 (E.object [ ( \"a\", E.object [ ( \"b\", E.int 7 ) ] ) ])\n"
-                + "result = D.decodeString (D.at [ \"a\", \"b\" ] D.int) json\n"));
+                + """
+                json = E.encode 0 (E.object [ ( "a", E.object [ ( "b", E.int 7 ) ] ) ])
+                result = D.decodeString (D.at [ "a", "b" ] D.int) json
+                """));
   }
 
   @Test

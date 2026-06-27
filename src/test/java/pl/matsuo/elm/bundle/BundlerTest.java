@@ -17,10 +17,12 @@ import org.junit.jupiter.api.io.TempDir;
 class BundlerTest {
 
   private static final String SCRIPT =
-      "module Main exposing (main)\n"
-          + "import Bash exposing (..)\n"
-          + "main : Io\n"
-          + "main = print \"bundled!\" done\n";
+      """
+      module Main exposing (main)
+      import Bash exposing (..)
+      main : Io
+      main = print "bundled!" done
+      """;
 
   @Test
   void buildsAnExecutableJarWithLauncherAndEmbeddedApp(@TempDir Path dir) throws Exception {

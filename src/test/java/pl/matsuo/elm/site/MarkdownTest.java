@@ -70,11 +70,14 @@ class MarkdownTest {
     // A multi-line item with a blank line and an indented fenced code block: the code must render
     // inside the <li> (not leak as literal ``` text), and the continuation stays in the same item.
     String md =
-        "- `index` — a page linking every page by\n"
-            + "  title. Add it to your `site`:\n\n"
-            + "  ```elm\n"
-            + "  site = Site.index articles\n"
-            + "  ```\n";
+        """
+        - `index` — a page linking every page by
+          title. Add it to your `site`:
+
+          ```elm
+          site = Site.index articles
+          ```
+        """;
     String html = Markdown.toHtml(md);
     assertTrue(html.contains("<li>"), html);
     assertTrue(html.contains("<pre><code class=\"language-elm\">site = Site.index articles\n"), html);

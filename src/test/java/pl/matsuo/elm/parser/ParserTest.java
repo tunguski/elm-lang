@@ -67,12 +67,14 @@ class ParserTest {
   void reportsEveryTopLevelSyntaxErrorInOnePass() {
     // Two malformed declarations between two good ones: the parser recovers and reports both.
     String src =
-        "module M exposing (..)\n"
-            + "good1 = 1\n"
-            + "bad1 = if\n"
-            + "good2 = 2\n"
-            + "bad2 = case\n"
-            + "good3 = 3\n";
+        """
+        module M exposing (..)
+        good1 = 1
+        bad1 = if
+        good2 = 2
+        bad2 = case
+        good3 = 3
+        """;
     var errs =
         assertThrows(pl.matsuo.elm.error.ElmSyntaxErrors.class, () -> Parser.parseModule(src));
     assertEquals(2, errs.errors.size(), errs.getMessage());

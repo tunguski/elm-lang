@@ -92,8 +92,17 @@ class FormatterTest {
   void preservesCommentsInsideADeclarationBody() {
     // Comments inside a function body used to be dropped/misplaced; now the body is kept verbatim.
     String src =
-        "module M exposing (f)\n\n\nf x =\n    let\n        -- double it\n        y = x * 2\n"
-            + "    in\n    y + 1\n";
+        """
+        module M exposing (f)
+
+
+        f x =
+            let
+                -- double it
+                y = x * 2
+            in
+            y + 1
+        """;
     String out = Formatter.format(src);
     assertTrue(out.contains("-- double it"), out);
     assertEquals(out, Formatter.format(out), "still idempotent"); // format is stable
@@ -119,8 +128,10 @@ class FormatterTest {
   @Test
   void wrapsLongTypeAnnotationsOneArrowPerLine() {
     String src =
-        "process : List String -> Maybe Int -> Result String (List Int) -> Float -> String -> List String\n"
-            + "process a b c d e = []\n";
+        """
+        process : List String -> Maybe Int -> Result String (List Int) -> Float -> String -> List String
+        process a b c d e = []
+        """;
     String out = Formatter.format(src);
     // The name and colon stand alone; each segment is indented with a leading -> after the first.
     assertTrue(out.contains("process :\n    List String\n    -> Maybe Int"), out);
@@ -154,9 +165,11 @@ class FormatterTest {
   @Test
   void wrapsLongImportExposingLists() {
     String src =
-        "module M exposing (..)\n"
-            + "import Some.Long.Module exposing (alpha, beta, gamma, delta, epsilon, zeta, eta, theta, iota, kappa, lambda, mu, nu)\n"
-            + "x = 1\n";
+        """
+        module M exposing (..)
+        import Some.Long.Module exposing (alpha, beta, gamma, delta, epsilon, zeta, eta, theta, iota, kappa, lambda, mu, nu)
+        x = 1
+        """;
     String out = Formatter.format(src);
     assertTrue(out.contains("import Some.Long.Module exposing\n    ( alpha\n    , beta"), out);
     assertTrue(out.contains("\n    )\n"), out);

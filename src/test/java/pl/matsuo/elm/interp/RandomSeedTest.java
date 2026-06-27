@@ -28,8 +28,12 @@ class RandomSeedTest {
     assertEquals(
         "True",
         eval(
-            "let\n  ( a, s ) = Random.step (Random.int 1 1000000) (Random.initialSeed 5)\n"
-                + "  ( b, _ ) = Random.step (Random.int 1 1000000) s\nin\na /= b"));
+            """
+            let
+              ( a, s ) = Random.step (Random.int 1 1000000) (Random.initialSeed 5)
+              ( b, _ ) = Random.step (Random.int 1 1000000) s
+            in
+            a /= b"""));
   }
 
   @Test

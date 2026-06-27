@@ -280,23 +280,44 @@ class DifferentialPropertyTest {
                 List.of(
                     "module Game exposing (Msg(..))\ntype Msg = Move Int | Wait\n",
                     "module Render exposing (Move)\ntype alias Move = { from : Int, to : Int }\n",
-                    "module Main exposing (run)\nimport Game exposing (Msg(..))\nimport Render\n"
-                        + "expand m =\n    case m of\n        Move n -> n\n        Wait -> 0\n"
-                        + "run = expand (Game.Move 7) + (Render.Move 3 4).from\n"),
+                    """
+                    module Main exposing (run)
+                    import Game exposing (Msg(..))
+                    import Render
+                    expand m =
+                        case m of
+                            Move n -> n
+                            Wait -> 0
+                    run = expand (Game.Move 7) + (Render.Move 3 4).from
+                    """),
                 "run",
                 "10"),
             new Scenario(
                 "same union ctor name in two modules",
                 List.of(
-                    "module A exposing (TA(..), unA)\ntype TA = Tag Int\n"
-                        + "unA t =\n    case t of\n        Tag n -> n\n",
-                    "module B exposing (TB(..), unB)\ntype TB = Tag Int\n"
-                        + "unB t =\n    case t of\n        Tag n -> n + 100\n",
+                    """
+                    module A exposing (TA(..), unA)
+                    type TA = Tag Int
+                    unA t =
+                        case t of
+                            Tag n -> n
+                    """,
+                    """
+                    module B exposing (TB(..), unB)
+                    type TB = Tag Int
+                    unB t =
+                        case t of
+                            Tag n -> n + 100
+                    """,
                     // unA/unB imported unqualified (the bytecode VM's flat merge doesn't resolve
                     // qualified cross-module *values*); the qualified A.Tag / B.Tag *constructors*
                     // are the collision under test.
-                    "module Main exposing (run)\nimport A exposing (unA)\nimport B exposing (unB)\n"
-                        + "run = unA (A.Tag 5) + unB (B.Tag 9)\n"),
+                    """
+                    module Main exposing (run)
+                    import A exposing (unA)
+                    import B exposing (unB)
+                    run = unA (A.Tag 5) + unB (B.Tag 9)
+                    """),
                 "run",
                 "114"),
             new Scenario(
@@ -304,8 +325,12 @@ class DifferentialPropertyTest {
                 List.of(
                     "module A exposing (R)\ntype alias R = { a : Int, b : Int }\n",
                     "module B exposing (R)\ntype alias R = { a : Int, c : Int }\n",
-                    "module Main exposing (run)\nimport A\nimport B\n"
-                        + "run = (A.R 1 2).b + (B.R 3 4).c\n"),
+                    """
+                    module Main exposing (run)
+                    import A
+                    import B
+                    run = (A.R 1 2).b + (B.R 3 4).c
+                    """),
                 "run",
                 "6"));
 
