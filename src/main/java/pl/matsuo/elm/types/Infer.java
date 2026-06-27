@@ -32,8 +32,10 @@ public final class Infer {
   private final Map<String, Scheme> declaredCtors = new HashMap<>();
   /** Type aliases the last module declared (so a project checker can re-expose them). */
   private final Map<String, AliasDef> declaredAliases = new HashMap<>();
-  /** Aliases from already-checked modules, seeded into each module's scope by a project check. */
-  private final Map<String, AliasDef> importedAliases = new HashMap<>();
+  /** Each already-checked module's own declared aliases, keyed by module name. A module is seeded
+   *  with only the aliases of the modules it actually imports, so two modules may each define a
+   *  `type alias Model = …` without one shadowing the other (last-checked-wins) project-wide. */
+  private final Map<String, Map<String, AliasDef>> moduleAliasesByModule = new HashMap<>();
 
   // Union registry for exhaustiveness checking: which constructors each union has, which union a
   // constructor belongs to, and each constructor's arity. Seeded with the builtin unions and
@@ -163,7 +165,31 @@ public final class Infer {
                     new Type.Record.Field("path", stringT),
                     new Type.Record.Field("query", maybeStrT),
                     new Type.Record.Field("fragment", maybeStrT)))));
-    aliases.putAll(importedAliases); // record aliases from other modules in a project check
+    // Browser.Document is a record alias `{ title : String, body : List (Html msg) }`, so a view
+    // returning a `{ title = …, body = [ … ] }` literal unifies with a `: Document msg` annotation.
+    aliases.put(
+        "Document",
+        new AliasDef(
+            List.of("msg"),
+            new Type.Record(
+                java.util.Optional.empty(),
+                List.of(
+                    new Type.Record.Field("title", stringT),
+                    new Type.Record.Field(
+                        "body",
+                        new Type.Con(
+                            null,
+                            "List",
+                            List.of(new Type.Con(null, "Html", List.of(new Type.Var("msg"))))))))));
+    // Seed only the aliases of the modules THIS module imports (scoped per import, not a flat
+    // project-wide map): two pages may each define `type alias Model = …`, and a module must see the
+    // `Model` of the module it imports — not whichever module happened to be checked last.
+    for (Module.Import imp : module.imports()) {
+      Map<String, AliasDef> fromImport = moduleAliasesByModule.get(imp.module());
+      if (fromImport != null) {
+        aliases.putAll(fromImport);
+      }
+    }
     declaredCtors.clear();
     declaredAliases.clear();
     for (Decl d : module.decls()) {
@@ -407,7 +433,7 @@ public final class Infer {
   public Map<String, Scheme> inferProject(List<Module> modules, Map<String, Scheme> base) {
     List<Module> ordered = orderByImports(modules);
     Map<String, Scheme> globals = new HashMap<>(base);
-    importedAliases.clear();
+    moduleAliasesByModule.clear();
     Map<String, Scheme> entryTypes = Map.of();
     String entryName = null;
     for (Module m : ordered) {
@@ -424,7 +450,7 @@ public final class Infer {
       // "Unknown name" even though the program runs. A module's own constructors still win inside it
       // (re-registered during its inference), so this only supplies otherwise-unresolved names.
       declaredCtors.forEach(globals::putIfAbsent);
-      importedAliases.putAll(declaredAliases);
+      moduleAliasesByModule.put(m.name(), new HashMap<>(declaredAliases));
       if (hasMain || entryName == null) {
         entryTypes = values;
         entryName = m.name();

@@ -73,6 +73,32 @@ class ProjectCheckTest {
   }
 
   @Test
+  void sameNamedAliasesInDifferentModulesDoNotCollide() {
+    // Two modules each define `type alias Model`. A module that imports one Model must see THAT
+    // Model, not whichever was checked last project-wide. Regression: with a flat alias table,
+    // `UserA`'s `: Model` annotation expanded to ModelB's record, so `m.a` reported a field mismatch.
+    String modelA =
+        """
+        module ModelA exposing (Model)
+        type alias Model = { a : Int }
+        """;
+    String modelB =
+        """
+        module ModelB exposing (Model)
+        type alias Model = { b : String }
+        """;
+    String userA =
+        """
+        module UserA exposing (f)
+        import ModelA exposing (Model)
+        f : Model -> Int
+        f m = m.a
+        """;
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> TypeChecker.checkProject(modelA, modelB, userA));
+  }
+
+  @Test
   void everyElmPlaygroundGameTypeChecks() throws Exception {
     // The full ~1700-line evancz/elm-playground plus each game type-checks end to end — this needs
     // module-level let-generalization (SCC ordering) so shared helpers like `render` stay

@@ -424,6 +424,10 @@ public final class Signatures {
             + ", onUrlRequest : UrlRequest -> msg"
             + ", onUrlChange : " + urlRec + " -> msg"
             + " } -> Program flags model msg");
+    // Browser.UrlRequest = Internal Url | External String — its constructors (used in the
+    // onUrlRequest handler's `case`) must be known, and the Url they carry is the elm/url record.
+    g("Browser.Internal", urlRec + " -> UrlRequest");
+    g("Browser.External", "String -> UrlRequest");
     g("Cmd.none", "Cmd msg");
     g("Cmd.batch", "List (Cmd msg) -> Cmd msg");
     g("Cmd.map", "(a -> b) -> Cmd a -> Cmd b");

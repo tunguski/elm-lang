@@ -110,6 +110,39 @@ class ModuleCheckTest {
   }
 
   @Test
+  void browserApplicationProgramTypeChecks() {
+    // Regression: `Browser.Document` is a record alias (a `{ title, body }` view literal unifies),
+    // and `Browser.Internal`/`Browser.External` are the constructors of `Browser.UrlRequest` (used
+    // in the onUrlRequest `case`). All three were missing, so a standard `Browser.application` was
+    // rejected and the app could only build with --no-check.
+    Map<String, String> types =
+        TypeChecker.checkModule(
+            """
+            module App exposing (main)
+            import Browser
+            import Browser.Navigation as Nav
+            import Url exposing (Url)
+            type Msg = Link Browser.UrlRequest | Changed Url
+            type alias Model = { n : Int }
+            init : () -> Url -> Nav.Key -> ( Model, Cmd Msg )
+            init _ url key = ( { n = 0 }, Cmd.none )
+            update msg model =
+                case msg of
+                    Link (Browser.Internal u) -> ( model, Cmd.none )
+                    Link (Browser.External s) -> ( model, Cmd.none )
+                    Changed u -> ( model, Cmd.none )
+            view : Model -> Browser.Document Msg
+            view model = { title = "x", body = [] }
+            main : Program () Model Msg
+            main =
+                Browser.application
+                    { init = init, onUrlRequest = Link, onUrlChange = Changed
+                    , update = update, view = view, subscriptions = \\_ -> Sub.none }
+            """);
+    assertTrue(types.containsKey("main"), types.toString());
+  }
+
+  @Test
   void mutualRecursion() {
     Map<String, String> types =
         TypeChecker.checkModule(
