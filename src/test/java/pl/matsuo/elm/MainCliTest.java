@@ -380,8 +380,13 @@ class MainCliTest {
   void checkReportsNonExhaustiveCaseListingAllMissingConstructors() throws Exception {
     Path f =
         tempElm(
-            "module M exposing (..)\ntype Color = Red | Green | Blue\n"
-                + "name c =\n    case c of\n        Red -> \"r\"\n"); // missing Green and Blue
+            """
+            module M exposing (..)
+            type Color = Red | Green | Blue
+            name c =
+                case c of
+                    Red -> "r"
+            """); // missing Green and Blue
     Result r = invoke("check", f.toString());
     assertTrue(r.code() == 1, r.out());
     assertTrue(r.out().contains("does not handle all possible inputs"), r.out());

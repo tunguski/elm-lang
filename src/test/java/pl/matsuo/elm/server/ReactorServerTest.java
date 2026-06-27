@@ -44,8 +44,12 @@ class ReactorServerTest {
   void servesIndexCompilesAModuleAndHotReloads(@TempDir Path dir) throws Exception {
     Files.writeString(
         dir.resolve("Main.elm"),
-        "module Main exposing (main)\nimport Html exposing (text)\nmain = text (greet \"world\")\n"
-            + "greet name = \"Hello, \" ++ name ++ \"!\"\n",
+        """
+        module Main exposing (main)
+        import Html exposing (text)
+        main = text (greet "world")
+        greet name = "Hello, " ++ name ++ "!"
+        """,
         StandardCharsets.UTF_8);
     server = ReactorServer.start(dir, 0);
 
