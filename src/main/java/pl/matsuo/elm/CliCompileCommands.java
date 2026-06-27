@@ -207,8 +207,18 @@ final class Make implements Callable<Integer> {
         String artifact =
             output.endsWith(".js")
                 ? js
-                : "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Elm</title></head>\n"
-                    + "<body>\n<div id=\"app\"></div>\n<script>\n" + js + "\n</script>\n</body>\n</html>\n";
+                : """
+                  <!doctype html>
+                  <html>
+                  <head><meta charset="utf-8"><title>Elm</title></head>
+                  <body>
+                  <div id="app"></div>
+                  <script>
+                  __JS__
+                  </script>
+                  </body>
+                  </html>
+                  """.replace("__JS__", js);
         Files.writeString(Path.of(output), artifact);
         System.out.println("Wrote " + output + " (" + artifact.length() + " bytes)");
         if (optimize) {

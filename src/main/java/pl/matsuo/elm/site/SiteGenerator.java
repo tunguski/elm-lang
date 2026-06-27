@@ -255,10 +255,12 @@ public final class SiteGenerator {
         .replace("</head>", "<link rel=\"stylesheet\" href=\"nav.css\"></head>")
         .replace(
             "<body><div id=\"app\"></div>\n",
-            "<body><div class=\"layout\">"
-                + nav
-                + "<div id=\"app\" class=\"content\"></div></div>\n"
-                + "<script src=\"nav.js\"></script>\n<script src=\"theme.js\"></script>\n");
+            """
+            <body><div class="layout">__NAV__<div id="app" class="content"></div></div>
+            <script src="nav.js"></script>
+            <script src="theme.js"></script>
+            """
+                .replace("__NAV__", nav));
   }
 
   private void run() throws IOException {

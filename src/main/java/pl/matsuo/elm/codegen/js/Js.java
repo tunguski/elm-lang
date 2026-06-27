@@ -306,10 +306,13 @@ public final class Js {
 
   /** A minimal HTML page that hosts {@code script} in an {@code <div id="app">} mount point. */
   public static String htmlAppPage(String script) {
-    return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><div id=\"app\"></div>\n"
-        + "<script>\n"
-        + script
-        + "\n</script></body></html>\n";
+    return """
+        <!doctype html><html><head><meta charset="utf-8"></head><body><div id="app"></div>
+        <script>
+        __SCRIPT__
+        </script></body></html>
+        """
+        .replace("__SCRIPT__", script);
   }
 
   private static String commas(List<String> xs) {

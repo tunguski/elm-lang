@@ -47,17 +47,22 @@ public final class Publisher {
 
   /** A minimal package {@code elm.json} manifest for a single exposed module with no dependencies. */
   public static String manifest(String name, Version version, String exposedModule) {
-    return "{\n"
-        + "  \"type\": \"package\",\n"
-        + "  \"name\": \"" + name + "\",\n"
-        + "  \"summary\": \"\",\n"
-        + "  \"license\": \"BSD-3-Clause\",\n"
-        + "  \"version\": \"" + version + "\",\n"
-        + "  \"exposed-modules\": [ \"" + exposedModule + "\" ],\n"
-        + "  \"elm-version\": \"0.19.1 <= v < 0.20.0\",\n"
-        + "  \"dependencies\": {},\n"
-        + "  \"test-dependencies\": {}\n"
-        + "}\n";
+    return """
+        {
+          "type": "package",
+          "name": "__NAME__",
+          "summary": "",
+          "license": "BSD-3-Clause",
+          "version": "__VERSION__",
+          "exposed-modules": [ "__EXPOSED__" ],
+          "elm-version": "0.19.1 <= v < 0.20.0",
+          "dependencies": {},
+          "test-dependencies": {}
+        }
+        """
+        .replace("__NAME__", name)
+        .replace("__VERSION__", String.valueOf(version))
+        .replace("__EXPOSED__", exposedModule);
   }
 
   private static Path versionDir(Path root, String name, Version version) {
