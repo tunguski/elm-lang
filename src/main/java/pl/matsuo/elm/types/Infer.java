@@ -145,6 +145,24 @@ public final class Infer {
                     new Type.Record.Field("scene", scene),
                     new Type.Record.Field("viewport", vp),
                     new Type.Record.Field("element", vp)))));
+    // elm/url's `Url` is a record alias, so a value annotated `: Url` supports field access
+    // (`url.fragment`, `url.path`, …) and unifies with `Url.fromString`/`onUrlChange`'s record. The
+    // matching shape is used inline by Url.fromString/toString and Browser.application's url fields.
+    Type stringT = con("String");
+    Type maybeStrT = new Type.Con(null, "Maybe", List.of(stringT));
+    aliases.put(
+        "Url",
+        new AliasDef(
+            List.of(),
+            new Type.Record(
+                java.util.Optional.empty(),
+                List.of(
+                    new Type.Record.Field("protocol", con("Protocol")),
+                    new Type.Record.Field("host", stringT),
+                    new Type.Record.Field("port_", new Type.Con(null, "Maybe", List.of(con("Int")))),
+                    new Type.Record.Field("path", stringT),
+                    new Type.Record.Field("query", maybeStrT),
+                    new Type.Record.Field("fragment", maybeStrT)))));
     aliases.putAll(importedAliases); // record aliases from other modules in a project check
     declaredCtors.clear();
     declaredAliases.clear();
@@ -399,6 +417,13 @@ public final class Infer {
       String prefix = m.name() + ".";
       values.forEach((n, s) -> globals.put(prefix + n, s));
       declaredCtors.forEach((n, s) -> globals.put(prefix + n, s));
+      // Constructors are resolvable by their simple name across the whole project, mirroring the
+      // runtime (which resolves a bare `Expr.Ctor` against every module's constructors regardless of
+      // imports). Without this, a constructor brought in only via `import M exposing (Type(..))` —
+      // whose `(..)` the parser discards, leaving just the type name — would be reported as an
+      // "Unknown name" even though the program runs. A module's own constructors still win inside it
+      // (re-registered during its inference), so this only supplies otherwise-unresolved names.
+      declaredCtors.forEach(globals::putIfAbsent);
       importedAliases.putAll(declaredAliases);
       if (hasMain || entryName == null) {
         entryTypes = values;

@@ -80,6 +80,36 @@ class ModuleCheckTest {
   }
 
   @Test
+  void urlIsARecordAliasSoFieldAccessTypeChecks() {
+    // elm/url's `Url` is a record alias, so `url.fragment` must type-check against an `: Url`
+    // annotation. Regression: `Url` was modelled as opaque, so field access reported a mismatch.
+    Map<String, String> types =
+        TypeChecker.checkModule(
+            """
+            frag : Url -> Maybe String
+            frag url = url.fragment
+            path url = url.path
+            """);
+    assertTrue(types.get("frag").endsWith("-> Maybe String"), types.get("frag"));
+  }
+
+  @Test
+  void rowsColsTabindexAreIntAttributes() {
+    // elm/html types rows/cols/tabindex as Int (the DOM stringifies them). Regression: they were
+    // String, so `rows 5` on a textarea was rejected as "expects String, got number".
+    Map<String, String> types =
+        TypeChecker.checkModule(
+            """
+            r = Html.Attributes.rows 5
+            c = Html.Attributes.cols 3
+            t = Html.Attributes.tabindex 0
+            """);
+    assertTrue(types.get("r").startsWith("Attribute"), types.get("r"));
+    assertTrue(types.get("c").startsWith("Attribute"), types.get("c"));
+    assertTrue(types.get("t").startsWith("Attribute"), types.get("t"));
+  }
+
+  @Test
   void mutualRecursion() {
     Map<String, String> types =
         TypeChecker.checkModule(

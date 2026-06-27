@@ -25,8 +25,7 @@ public final class Signatures {
 
   private static final String[] HTML_STRING_ATTRS = {
     "class", "id", "href", "src", "alt", "title", "placeholder", "value", "name", "type_", "for_",
-    "rel", "target", "action", "method", "accept", "autocomplete", "min", "max", "step", "cols",
-    "rows", "tabindex"
+    "rel", "target", "action", "method", "accept", "autocomplete", "min", "max", "step"
   };
 
   private static final String[] HTML_BOOL_ATTRS = {
@@ -347,6 +346,11 @@ public final class Signatures {
     g("Html.Attributes.height", "Int -> Attribute msg");
     g("Html.Attributes.colspan", "Int -> Attribute msg");
     g("Html.Attributes.rowspan", "Int -> Attribute msg");
+    // rows/cols/tabindex are Int attributes in elm/html (the DOM renders them as strings, but the
+    // typed API takes Int, e.g. `rows 5` on a textarea).
+    g("Html.Attributes.cols", "Int -> Attribute msg");
+    g("Html.Attributes.rows", "Int -> Attribute msg");
+    g("Html.Attributes.tabindex", "Int -> Attribute msg");
     for (String attr : HTML_BOOL_ATTRS) {
       g("Html.Attributes." + attr, "Bool -> Attribute msg");
     }

@@ -49,6 +49,30 @@ class ProjectCheckTest {
   }
 
   @Test
+  void openVariantImportBringsConstructorsIntoScope() {
+    // `import M exposing (Type(..))` must expose the union's constructors unqualified. The parser
+    // discards the `(..)`, leaving just the type name, so the checker resolves a bare constructor
+    // against every module's constructors (as the runtime does). Regression: this previously failed
+    // with "Unknown name: SetSection" even though the program compiles and runs.
+    String model =
+        """
+        module DocsModel exposing (Msg(..))
+        type Msg = SetSection String | NoOp
+        """;
+    String update =
+        """
+        module DocsUpdate exposing (describe)
+        import DocsModel exposing (Msg(..))
+        describe msg =
+            case msg of
+                SetSection s -> s
+                NoOp -> ""
+        """;
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> TypeChecker.checkProject(model, update));
+  }
+
+  @Test
   void everyElmPlaygroundGameTypeChecks() throws Exception {
     // The full ~1700-line evancz/elm-playground plus each game type-checks end to end — this needs
     // module-level let-generalization (SCC ordering) so shared helpers like `render` stay
