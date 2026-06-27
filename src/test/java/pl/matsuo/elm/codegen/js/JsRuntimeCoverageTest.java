@@ -62,72 +62,69 @@ class JsRuntimeCoverageTest {
   /** A self-contained program: DOM shim + runtime bundle + a broad exercise of kernel and dom. */
   private static String exercise() {
     String module =
-        "module M exposing (main, probe)\n"
-            + "import Browser\n"
-            + "import Html exposing (..)\n"
-            + "import Html.Attributes exposing (class, id, href, value)\n"
-            + "import Html.Events exposing (onClick)\n"
-            + "import Svg\n"
-            + "import Svg.Attributes as SA\n"
-            + "import Dict\n"
-            + "import Set\n"
-            + "import Array\n"
-            + "import Bitwise\n"
-            + "import Char\n"
-            + "import Json.Encode as E\n"
-            + "import Json.Decode as D\n"
-            + "probe =\n"
-            + "    String.join \",\"\n"
-            + "        [ String.fromInt (List.sum (List.map (\\n -> n * 2) (List.range 1 5)))\n"
-            + "        , String.fromInt (List.length (List.filter (\\n -> n > 2) [ 1, 2, 3, 4 ]))\n"
-            + "        , String.fromInt (List.foldl (+) 0 (List.reverse (List.sort [ 3, 1, 2 ])))\n"
-            + "        , String.fromInt (List.foldr (-) 0 (List.indexedMap (+) [ 1, 2 ]))\n"
-            + "        , String.join \"-\" (List.concatMap (\\n -> [ String.fromInt n ]) (List.take 2 (List.drop 1 (List.range 1 9))))\n"
-            + "        , String.fromInt (Dict.size (Dict.remove 1 (Dict.insert 3 \"c\" (Dict.fromList [ ( 1, \"a\" ), ( 2, \"b\" ) ]))))\n"
-            + "        , String.join \"\" (Dict.values (Dict.map (\\_ v -> v) (Dict.fromList [ ( 1, \"a\" ) ])))\n"
-            + "        , String.fromInt (Set.size (Set.union (Set.fromList [ 1, 2 ]) (Set.diff (Set.fromList [ 2, 3, 4 ]) (Set.fromList [ 4 ]))))\n"
-            + "        , String.fromInt (Maybe.withDefault 0 (Array.get 1 (Array.push 9 (Array.fromList [ 1, 2, 3 ]))))\n"
-            + "        , E.encode 0 (E.object [ ( \"x\", E.int 1 ), ( \"y\", E.list E.int [ 1, 2 ] ), ( \"b\", E.bool True ) ])\n"
-            + "        , Result.withDefault \"?\" (D.decodeString (D.field \"a\" D.string) \"{\\\"a\\\":\\\"ok\\\"}\")\n"
-            + "        , String.toUpper (String.reverse (String.append (String.left 2 \"abcd\") (String.right 1 \"xyz\")))\n"
-            + "        , String.fromInt (String.length (String.trim (String.replace \"x\" \"y\" \"  xx  \")))\n"
-            + "        , String.fromInt (Maybe.withDefault 0 (List.maximum [ 9, 8 ]))\n"
-            + "        , String.fromInt (Result.withDefault 0 (String.toInt \"42\"))\n"
-            + "        , String.fromInt (Bitwise.or (Bitwise.and 6 3) (Bitwise.shiftLeftBy 1 1))\n"
-            + "        , String.fromChar (Char.toUpper (Char.fromCode 98))\n"
-            + "        , String.fromInt (Tuple.first (Tuple.mapSecond (\\x -> x + 1) ( 5, 6 )))\n"
-            + "        , String.fromInt (abs (negate (clamp 0 10 20)) + modBy 3 7 + (2 ^ 3))\n"
-            + "        ]\n"
-            + "type Msg = Bump\n"
-            + "view n =\n"
-            + "    div [ class \"c\", id \"i\" ]\n"
-            + "        [ button [ onClick Bump ] [ text (String.fromInt n) ]\n"
-            + "        , a [ href \"/x\" ] [ text \"link\" ]\n"
-            + "        , Svg.svg [ SA.width \"40\" ] [ Svg.circle [ SA.cx \"5\", SA.r \"3\" ] [], Svg.rect [ SA.x \"1\" ] [] ]\n"
-            + "        , ul [] (List.map (\\i -> li [ value (String.fromInt i) ] [ text (String.fromInt i) ]) (List.range 0 n))\n"
-            + "        ]\n"
-            + "main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }\n";
+        """
+        module M exposing (main, probe)
+        import Browser
+        import Html exposing (..)
+        import Html.Attributes exposing (class, id, href, value)
+        import Html.Events exposing (onClick)
+        import Svg
+        import Svg.Attributes as SA
+        import Dict
+        import Set
+        import Array
+        import Bitwise
+        import Char
+        import Json.Encode as E
+        import Json.Decode as D
+        probe =
+            String.join ","
+                [ String.fromInt (List.sum (List.map (\\n -> n * 2) (List.range 1 5)))
+                , String.fromInt (List.length (List.filter (\\n -> n > 2) [ 1, 2, 3, 4 ]))
+                , String.fromInt (List.foldl (+) 0 (List.reverse (List.sort [ 3, 1, 2 ])))
+                , String.fromInt (List.foldr (-) 0 (List.indexedMap (+) [ 1, 2 ]))
+                , String.join "-" (List.concatMap (\\n -> [ String.fromInt n ]) (List.take 2 (List.drop 1 (List.range 1 9))))
+                , String.fromInt (Dict.size (Dict.remove 1 (Dict.insert 3 "c" (Dict.fromList [ ( 1, "a" ), ( 2, "b" ) ]))))
+                , String.join "" (Dict.values (Dict.map (\\_ v -> v) (Dict.fromList [ ( 1, "a" ) ])))
+                , String.fromInt (Set.size (Set.union (Set.fromList [ 1, 2 ]) (Set.diff (Set.fromList [ 2, 3, 4 ]) (Set.fromList [ 4 ]))))
+                , String.fromInt (Maybe.withDefault 0 (Array.get 1 (Array.push 9 (Array.fromList [ 1, 2, 3 ]))))
+                , E.encode 0 (E.object [ ( "x", E.int 1 ), ( "y", E.list E.int [ 1, 2 ] ), ( "b", E.bool True ) ])
+                , Result.withDefault "?" (D.decodeString (D.field "a" D.string) "{\\"a\\":\\"ok\\"}")
+                , String.toUpper (String.reverse (String.append (String.left 2 "abcd") (String.right 1 "xyz")))
+                , String.fromInt (String.length (String.trim (String.replace "x" "y" "  xx  ")))
+                , String.fromInt (Maybe.withDefault 0 (List.maximum [ 9, 8 ]))
+                , String.fromInt (Result.withDefault 0 (String.toInt "42"))
+                , String.fromInt (Bitwise.or (Bitwise.and 6 3) (Bitwise.shiftLeftBy 1 1))
+                , String.fromChar (Char.toUpper (Char.fromCode 98))
+                , String.fromInt (Tuple.first (Tuple.mapSecond (\\x -> x + 1) ( 5, 6 )))
+                , String.fromInt (abs (negate (clamp 0 10 20)) + modBy 3 7 + (2 ^ 3))
+                ]
+        type Msg = Bump
+        view n =
+            div [ class "c", id "i" ]
+                [ button [ onClick Bump ] [ text (String.fromInt n) ]
+                , a [ href "/x" ] [ text "link" ]
+                , Svg.svg [ SA.width "40" ] [ Svg.circle [ SA.cx "5", SA.r "3" ] [], Svg.rect [ SA.x "1" ] [] ]
+                , ul [] (List.map (\\i -> li [ value (String.fromInt i) ] [ text (String.fromInt i) ]) (List.range 0 n))
+                ]
+        main = Browser.sandbox { init = 0, update = \\_ n -> n + 1, view = view }
+        """;
     String shim =
-        "globalThis.requestAnimationFrame=function(){};\n"
-            + "function $cEl(tag,ns){return{tag:tag,nodeType:1,namespaceURI:ns||'h',_attrs:{},_style:{},"
-            + "style:{setProperty:function(){},removeProperty:function(){}},childNodes:[],"
-            + "setAttribute:function(k,v){this._attrs[k]=v;},removeAttribute:function(k){delete this._attrs[k];},"
-            + "setAttributeNS:function(n,k,v){this._attrs[k]=v;},appendChild:function(c){this.childNodes.push(c);return c;},"
-            + "insertBefore:function(c,r){var i=r?this.childNodes.indexOf(r):this.childNodes.length;if(i<0)i=this.childNodes.length;this.childNodes.splice(i,0,c);return c;},"
-            + "removeChild:function(c){var i=this.childNodes.indexOf(c);if(i>=0)this.childNodes.splice(i,1);return c;},"
-            + "replaceChild:function(n,o){var i=this.childNodes.indexOf(o);if(i>=0)this.childNodes[i]=n;return o;},"
-            + "addEventListener:function(){},removeEventListener:function(){},"
-            + "get lastChild(){return this.childNodes[this.childNodes.length-1];}};}\n"
-            + "globalThis.document={createElement:function(t){return $cEl(t);},createElementNS:function(ns,t){return $cEl(t,ns);},"
-            + "createTextNode:function(s){return{nodeType:3,nodeValue:String(s)};}};\n"
-            + "globalThis.window=globalThis;\n";
+        """
+        globalThis.requestAnimationFrame=function(){};
+        function $cEl(tag,ns){return{tag:tag,nodeType:1,namespaceURI:ns||'h',_attrs:{},_style:{},style:{setProperty:function(){},removeProperty:function(){}},childNodes:[],setAttribute:function(k,v){this._attrs[k]=v;},removeAttribute:function(k){delete this._attrs[k];},setAttributeNS:function(n,k,v){this._attrs[k]=v;},appendChild:function(c){this.childNodes.push(c);return c;},insertBefore:function(c,r){var i=r?this.childNodes.indexOf(r):this.childNodes.length;if(i<0)i=this.childNodes.length;this.childNodes.splice(i,0,c);return c;},removeChild:function(c){var i=this.childNodes.indexOf(c);if(i>=0)this.childNodes.splice(i,1);return c;},replaceChild:function(n,o){var i=this.childNodes.indexOf(o);if(i>=0)this.childNodes[i]=n;return o;},addEventListener:function(){},removeEventListener:function(){},get lastChild(){return this.childNodes[this.childNodes.length-1];}};}
+        globalThis.document={createElement:function(t){return $cEl(t);},createElementNS:function(ns,t){return $cEl(t,ns);},createTextNode:function(s){return{nodeType:3,nodeValue:String(s)};}};
+        globalThis.window=globalThis;
+        """;
     String body =
-        "var root=$cEl('root');\n"
-            + "window.$mount($data('$Sandbox',[{init:0,update:function(m){return function(n){return n+1;};},"
-            + "view:_$M$view}]),root);\n"
-            + "window.$dispatch(0);window.$dispatch(0);\n" // re-render -> $patch, keyed/list diff
-            + "if(typeof _$M$probe!=='string') throw new Error('probe did not evaluate');\n"
-            + "process.stdout.write(_$M$probe);\n";
+        // window.$dispatch(0);window.$dispatch(0); -> re-render -> $patch, keyed/list diff
+        """
+        var root=$cEl('root');
+        window.$mount($data('$Sandbox',[{init:0,update:function(m){return function(n){return n+1;};},view:_$M$view}]),root);
+        window.$dispatch(0);window.$dispatch(0);
+        if(typeof _$M$probe!=='string') throw new Error('probe did not evaluate');
+        process.stdout.write(_$M$probe);
+        """;
     return shim + JsCompiler.declarationsScriptWithDomProject(module) + "\n" + body;
   }
 
@@ -163,14 +160,16 @@ class JsRuntimeCoverageTest {
     Path reducer = dir.resolve("reduce.js");
     Files.writeString(
         reducer,
-        "const fs=require('fs'),path=require('path');\n"
-            + "const dir=process.argv[2], name=path.basename(process.argv[3]);\n"
-            + "let total=0, covered=0;\n"
-            + "for(const f of fs.readdirSync(dir).filter(x=>x.endsWith('.json'))){\n"
-            + "  const c=JSON.parse(fs.readFileSync(path.join(dir,f),'utf8'));\n"
-            + "  for(const r of c.result){ if(!r.url.endsWith(name)) continue;\n"
-            + "    for(const fn of r.functions){ total++; if(fn.ranges[0].count>0) covered++; } } }\n"
-            + "process.stdout.write(covered+'/'+total);\n",
+        """
+        const fs=require('fs'),path=require('path');
+        const dir=process.argv[2], name=path.basename(process.argv[3]);
+        let total=0, covered=0;
+        for(const f of fs.readdirSync(dir).filter(x=>x.endsWith('.json'))){
+          const c=JSON.parse(fs.readFileSync(path.join(dir,f),'utf8'));
+          for(const r of c.result){ if(!r.url.endsWith(name)) continue;
+            for(const fn of r.functions){ total++; if(fn.ranges[0].count>0) covered++; } } }
+        process.stdout.write(covered+'/'+total);
+        """,
         StandardCharsets.UTF_8);
     Process p =
         new ProcessBuilder("node", reducer.toString(), covDir.toString(), bundle.toString()).start();

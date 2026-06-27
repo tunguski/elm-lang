@@ -106,11 +106,15 @@ class JsBackendTest {
     String game = "module Game exposing (Msg(..))\ntype Msg = Move Int | Wait\n";
     String render = "module Render exposing (Move)\ntype alias Move = { from : Int, to : Int }\n";
     String main =
-        "module Main exposing (run)\n"
-            + "import Game exposing (Msg(..))\n"
-            + "import Render\n"
-            + "describe m = case m of\n    Move n -> n\n    Wait -> -1\n"
-            + "run = describe (Game.Move 7)\n";
+        """
+        module Main exposing (run)
+        import Game exposing (Msg(..))
+        import Render
+        describe m = case m of
+            Move n -> n
+            Wait -> -1
+        run = describe (Game.Move 7)
+        """;
     String program =
         "globalThis.window = globalThis;\n"
             + JsCompiler.declarationsScriptWithDomProject(game, render, main)
@@ -240,8 +244,11 @@ class JsBackendTest {
   void optimizePrunesUnusedKernelEntries() {
     // A program that uses List.map but not Dict: after optimize, Dict's kernel entries are gone,
     // List.map's are kept, and the optimized bundle is smaller than the unoptimized one.
-    String src = "module Main exposing (main)\nimport Html exposing (text)\n"
-        + "main = text (String.fromInt (List.sum (List.map (\\x -> x * x) [ 1, 2, 3 ])))\n";
+    String src = """
+        module Main exposing (main)
+        import Html exposing (text)
+        main = text (String.fromInt (List.sum (List.map (\\x -> x * x) [ 1, 2, 3 ])))
+        """;
     String bundle = JsCompiler.appBundle(src);
     String optimized = JsOptimizer.optimize(bundle);
     assertTrue(bundle.contains("Dict.insert"), "kernel defines Dict.insert");
@@ -512,9 +519,13 @@ class JsBackendTest {
     // An `infix` declaration binds an operator to a function with a declared precedence; the JS
     // backend must agree with the interpreter (1 ^^ 2 ~~ 3 = 1 + 2*3 = 7 with (~~) tighter).
     sameModule(
-        "add a b = a + b\nmul a b = a * b\n"
-            + "infix left 6 (^^) = add\ninfix left 7 (~~) = mul\n"
-            + "main = 1 ^^ 2 ~~ 3\n");
+        """
+        add a b = a + b
+        mul a b = a * b
+        infix left 6 (^^) = add
+        infix left 7 (~~) = mul
+        main = 1 ^^ 2 ~~ 3
+        """);
     // An operator passed as a value (a section/reference) also resolves.
     sameModule("(+++) a b = a + b\nmain = List.foldl (+++) 0 [1, 2, 3, 4]\n");
   }
@@ -523,14 +534,20 @@ class JsBackendTest {
   void regexAgreesWithInterpreter() {
     // The Regex module must give the same results compiled to JS as on the interpreter.
     sameModule(
-        "re = Maybe.withDefault Regex.never (Regex.fromString \"[0-9]+\")\n"
-            + "main = Regex.replace re (\\m -> \"[\" ++ m.match ++ \"]\") \"a1b22c333\"\n");
+        """
+        re = Maybe.withDefault Regex.never (Regex.fromString "[0-9]+")
+        main = Regex.replace re (\\m -> "[" ++ m.match ++ "]") "a1b22c333"
+        """);
     sameModule(
-        "re = Maybe.withDefault Regex.never (Regex.fromString \",\")\n"
-            + "main = String.join \"|\" (Regex.split re \"a,b,c\")\n");
+        """
+        re = Maybe.withDefault Regex.never (Regex.fromString ",")
+        main = String.join "|" (Regex.split re "a,b,c")
+        """);
     sameModule(
-        "re = Maybe.withDefault Regex.never (Regex.fromString \"[0-9]+\")\n"
-            + "main = List.map .match (Regex.find re \"x12y345\")\n");
+        """
+        re = Maybe.withDefault Regex.never (Regex.fromString "[0-9]+")
+        main = List.map .match (Regex.find re "x12y345")
+        """);
   }
 
   @Test
@@ -654,21 +671,29 @@ class JsBackendTest {
     // onInput: a text field whose view echoes the model (empty initially).
     String field =
         editorRender(
-            "main = Browser.sandbox { init = init, update = update, view = view }\n"
-                + "init = \"\"\n"
-                + "update msg model = case msg of\n    SetText s ->\n        s\n"
-                + "view model = div [] [ input [ onInput SetText ] [], div [] [ text (\"You typed: \" ++ model) ] ]\n");
+            """
+            main = Browser.sandbox { init = init, update = update, view = view }
+            init = ""
+            update msg model = case msg of
+                SetText s ->
+                    s
+            view model = div [] [ input [ onInput SetText ] [], div [] [ text ("You typed: " ++ model) ] ]
+            """);
     assertTrue(field.contains("<input"), field);
     assertTrue(field.contains("You typed:"), field);
 
     // Browser.element: init/update return (model, Cmd) tuples; the editor unwraps the model.
     String el =
         editorRender(
-            "main = Browser.element { init = init, update = update, view = view, subscriptions = subs }\n"
-                + "init flags = ( 0, Cmd.none )\n"
-                + "update msg model = case msg of\n    Bump ->\n        ( model + 1, Cmd.none )\n"
-                + "subs model = Sub.none\n"
-                + "view model = div [] [ button [ onClick Bump ] [ text \"bump\" ], div [] [ text (String.fromInt model) ] ]\n");
+            """
+            main = Browser.element { init = init, update = update, view = view, subscriptions = subs }
+            init flags = ( 0, Cmd.none )
+            update msg model = case msg of
+                Bump ->
+                    ( model + 1, Cmd.none )
+            subs model = Sub.none
+            view model = div [] [ button [ onClick Bump ] [ text "bump" ], div [] [ text (String.fromInt model) ] ]
+            """);
     assertTrue(el.contains(">bump<"), el);
     assertTrue(el.contains("<div>0</div>"), el); // initial model unwrapped from (0, Cmd.none)
   }
@@ -1033,22 +1058,27 @@ class JsBackendTest {
   /** A minimal editor TEA program whose Http request decodes JSON with {@code decoderBody}; the
    * {@code okBranch} renders the decoded value into the view. */
   private static String editorDecoderProgram(String decoderBody, String msgType, String okBranch) {
-    return "import Browser\n"
-        + "import Html exposing (text)\n"
-        + "import Http\n"
-        + "import Json.Decode exposing (..)\n"
-        + "main = Browser.element { init = init, update = update, view = view, subscriptions = subs }\n"
-        + "subs model = Sub.none\n"
-        + "init flags = ( \"loading\", Http.get { url = \"u\", expect = Http.expectJson Got decoder } )\n"
-        + "decoder = " + decoderBody + "\n"
-        + "type Msg = Got (" + msgType + ")\n"
-        + "update msg model =\n"
-        + "    case msg of\n"
-        + "        Got result ->\n"
-        + "            case result of\n"
-        + "                " + okBranch + "\n"
-        + "                Err e -> ( \"err\", Cmd.none )\n"
-        + "view model = text model\n";
+    return """
+        import Browser
+        import Html exposing (text)
+        import Http
+        import Json.Decode exposing (..)
+        main = Browser.element { init = init, update = update, view = view, subscriptions = subs }
+        subs model = Sub.none
+        init flags = ( "loading", Http.get { url = "u", expect = Http.expectJson Got decoder } )
+        decoder = __DECODER_BODY__
+        type Msg = Got (__MSG_TYPE__)
+        update msg model =
+            case msg of
+                Got result ->
+                    case result of
+                        __OK_BRANCH__
+                        Err e -> ( "err", Cmd.none )
+        view model = text model
+        """
+        .replace("__DECODER_BODY__", decoderBody)
+        .replace("__MSG_TYPE__", msgType)
+        .replace("__OK_BRANCH__", okBranch);
   }
 
   /** Drives an editor program's Http path: extracts the request's expect, feeds it {@code body} as

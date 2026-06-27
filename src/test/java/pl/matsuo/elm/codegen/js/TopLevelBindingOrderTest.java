@@ -28,39 +28,41 @@ class TopLevelBindingOrderTest {
   // (the originally reported trigger): `allSections` eagerly lists the sibling section values, while
   // each section, via `sectionShell`, captures `allSections` inside an `on "click"` decoder lambda.
   private static final String SOURCE =
-      "module Main exposing (main)\n"
-          + "import Browser\n"
-          + "import Html exposing (Html, div, text, ul, li, button)\n"
-          + "import Html.Events\n"
-          + "import Json.Decode as D\n"
-          + "type alias Model = { login : String, visibleCols : List String, selected : List Int }\n"
-          + "type Msg = JumpTo (List (Html Msg))\n"
-          + "main : Program () Model Msg\n"
-          + "main =\n"
-          + "    Browser.element\n"
-          + "        { init = \\_ -> ( { login = \"u\", visibleCols = cols, selected = sel }, Cmd.none )\n"
-          + "        , update = \\_ m -> ( m, Cmd.none )\n"
-          + "        , view = \\_ -> page\n"
-          + "        , subscriptions = \\_ -> Sub.none\n"
-          + "        }\n"
-          + "page : Html Msg\n"
-          + "page = div [] [ intro, usage ]\n"
-          + "intro : Html Msg\n"
-          + "intro = sectionShell (ul [] (List.map (\\c -> li [] [ text c ]) cols))\n"
-          + "usage : Html Msg\n"
-          + "usage = sectionShell (ul [] (List.map (\\i -> li [] [ text (String.fromInt i) ]) sel))\n"
-          + "sectionShell : Html Msg -> Html Msg\n"
-          + "sectionShell body =\n"
-          + "    div []\n"
-          + "        [ button [ Html.Events.on \"click\" (D.map (\\_ -> JumpTo allSections) (D.succeed ())) ] [ text \"^\" ]\n"
-          + "        , body\n"
-          + "        ]\n"
-          + "allSections : List (Html Msg)\n"
-          + "allSections = [ intro, usage ]\n"
-          + "cols : List String\n"
-          + "cols = [ \"id\", \"title\" ]\n"
-          + "sel : List Int\n"
-          + "sel = [ 1, 2 ]\n";
+      """
+      module Main exposing (main)
+      import Browser
+      import Html exposing (Html, div, text, ul, li, button)
+      import Html.Events
+      import Json.Decode as D
+      type alias Model = { login : String, visibleCols : List String, selected : List Int }
+      type Msg = JumpTo (List (Html Msg))
+      main : Program () Model Msg
+      main =
+          Browser.element
+              { init = \\_ -> ( { login = "u", visibleCols = cols, selected = sel }, Cmd.none )
+              , update = \\_ m -> ( m, Cmd.none )
+              , view = \\_ -> page
+              , subscriptions = \\_ -> Sub.none
+              }
+      page : Html Msg
+      page = div [] [ intro, usage ]
+      intro : Html Msg
+      intro = sectionShell (ul [] (List.map (\\c -> li [] [ text c ]) cols))
+      usage : Html Msg
+      usage = sectionShell (ul [] (List.map (\\i -> li [] [ text (String.fromInt i) ]) sel))
+      sectionShell : Html Msg -> Html Msg
+      sectionShell body =
+          div []
+              [ button [ Html.Events.on "click" (D.map (\\_ -> JumpTo allSections) (D.succeed ())) ] [ text "^" ]
+              , body
+              ]
+      allSections : List (Html Msg)
+      allSections = [ intro, usage ]
+      cols : List String
+      cols = [ "id", "title" ]
+      sel : List Int
+      sel = [ 1, 2 ]
+      """;
 
   @Test
   void eagerListIsEmittedAfterTheSiblingsItReferences() {
@@ -89,28 +91,30 @@ class TopLevelBindingOrderTest {
 
   // A minimal DOM the runtime can mount into; getElementById('app') is the mount root.
   private static final String SHIM =
-      "globalThis.requestAnimationFrame=function(f){};\n"
-          + "function $e(tag,ns){var s={};return{tag:tag,nodeType:1,"
-          + "namespaceURI:ns||'http://www.w3.org/1999/xhtml',_attrs:{},_style:s,"
-          + "style:{setProperty:function(k,v){s[k]=String(v);},removeProperty:function(k){delete s[k];}},"
-          + "childNodes:[],setAttribute:function(k,v){this._attrs[k]=String(v);},"
-          + "removeAttribute:function(k){delete this._attrs[k];},"
-          + "setAttributeNS:function(n,k,v){this._attrs[k]=String(v);},"
-          + "appendChild:function(c){this.childNodes.push(c);return c;},"
-          + "insertBefore:function(c,r){var i=r?this.childNodes.indexOf(r):this.childNodes.length;"
-          + "if(i<0)i=this.childNodes.length;this.childNodes.splice(i,0,c);return c;},"
-          + "removeChild:function(c){var i=this.childNodes.indexOf(c);if(i>=0)this.childNodes.splice(i,1);return c;},"
-          + "replaceChild:function(n,o){var i=this.childNodes.indexOf(o);if(i>=0)this.childNodes[i]=n;else this.childNodes.push(n);return o;},"
-          + "addEventListener:function(){},removeEventListener:function(){},"
-          + "get lastChild(){return this.childNodes[this.childNodes.length-1];}};}\n"
-          + "var $root=$e('root');\n"
-          + "globalThis.document={createElement:function(t){return $e(t);},"
-          + "createElementNS:function(ns,t){return $e(t,ns);},"
-          + "createTextNode:function(s){return{nodeType:3,nodeValue:String(s)};},"
-          + "getElementById:function(){return $root;},title:''};\n"
-          + "globalThis.window=globalThis;\n"
-          + "function $ser(n){if(n.nodeType===3)return n.nodeValue;"
-          + "return '<'+n.tag+'>'+n.childNodes.map($ser).join('')+'</'+n.tag+'>';}\n";
+      """
+      globalThis.requestAnimationFrame=function(f){};
+      function $e(tag,ns){var s={};return{tag:tag,nodeType:1,
+      namespaceURI:ns||'http://www.w3.org/1999/xhtml',_attrs:{},_style:s,
+      style:{setProperty:function(k,v){s[k]=String(v);},removeProperty:function(k){delete s[k];}},
+      childNodes:[],setAttribute:function(k,v){this._attrs[k]=String(v);},
+      removeAttribute:function(k){delete this._attrs[k];},
+      setAttributeNS:function(n,k,v){this._attrs[k]=String(v);},
+      appendChild:function(c){this.childNodes.push(c);return c;},
+      insertBefore:function(c,r){var i=r?this.childNodes.indexOf(r):this.childNodes.length;
+      if(i<0)i=this.childNodes.length;this.childNodes.splice(i,0,c);return c;},
+      removeChild:function(c){var i=this.childNodes.indexOf(c);if(i>=0)this.childNodes.splice(i,1);return c;},
+      replaceChild:function(n,o){var i=this.childNodes.indexOf(o);if(i>=0)this.childNodes[i]=n;else this.childNodes.push(n);return o;},
+      addEventListener:function(){},removeEventListener:function(){},
+      get lastChild(){return this.childNodes[this.childNodes.length-1];}};}
+      var $root=$e('root');
+      globalThis.document={createElement:function(t){return $e(t);},
+      createElementNS:function(ns,t){return $e(t,ns);},
+      createTextNode:function(s){return{nodeType:3,nodeValue:String(s)};},
+      getElementById:function(){return $root;},title:''};
+      globalThis.window=globalThis;
+      function $ser(n){if(n.nodeType===3)return n.nodeValue;
+      return '<'+n.tag+'>'+n.childNodes.map($ser).join('')+'</'+n.tag+'>';}
+      """;
 
   private static final String SERIALIZE = "process.stdout.write($ser($root));\n";
 

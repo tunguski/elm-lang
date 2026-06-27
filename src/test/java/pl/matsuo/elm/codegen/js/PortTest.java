@@ -10,19 +10,21 @@ import pl.matsuo.elm.types.TypeChecker;
 class PortTest {
 
   private static final String PORTS =
-      "port module Main exposing (main)\n"
-          + "import Browser\n"
-          + "import Html exposing (text)\n"
-          + "port save : String -> Cmd msg\n"
-          + "port load : (String -> msg) -> Sub msg\n"
-          + "type Msg = Loaded String\n"
-          + "main = Browser.element\n"
-          + "    { init = \\_ -> ( \"\", save \"hello\" )\n"
-          + "    , update = \\msg model -> case msg of\n"
-          + "        Loaded s -> ( s, Cmd.none )\n"
-          + "    , view = \\model -> text model\n"
-          + "    , subscriptions = \\_ -> load Loaded\n"
-          + "    }\n";
+      """
+      port module Main exposing (main)
+      import Browser
+      import Html exposing (text)
+      port save : String -> Cmd msg
+      port load : (String -> msg) -> Sub msg
+      type Msg = Loaded String
+      main = Browser.element
+          { init = \\_ -> ( "", save "hello" )
+          , update = \\msg model -> case msg of
+              Loaded s -> ( s, Cmd.none )
+          , view = \\model -> text model
+          , subscriptions = \\_ -> load Loaded
+          }
+      """;
 
   @Test
   void portModuleTypeChecks() {

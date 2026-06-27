@@ -16,8 +16,12 @@ class BuildCacheTest {
 
   private static final String UTIL = "module Util exposing (square)\nsquare n = n * n\n";
   private static final String MAIN =
-      "module Main exposing (main)\nimport Util\nimport Html exposing (text)\n"
-          + "main = text (String.fromInt (Util.square 7))\n";
+      """
+      module Main exposing (main)
+      import Util
+      import Html exposing (text)
+      main = text (String.fromInt (Util.square 7))
+      """;
 
   private static long fragmentCount(Path dir) throws IOException {
     try (Stream<Path> s = Files.list(dir)) {
