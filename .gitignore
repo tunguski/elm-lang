@@ -33,5 +33,7 @@ dependency-reduced-pom.xml
 # Stray build outputs
 out/
 
-# Claude Code transient scheduled-task lock (keep settings*.json tracked)
+# Claude Code local config (personal, not tracked)
 .claude/scheduled_tasks.lock
+.claude/settings.json
+.claude/settings.local.json
