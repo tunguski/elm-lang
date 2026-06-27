@@ -32,10 +32,21 @@ public final class Infer {
   private final Map<String, Scheme> declaredCtors = new HashMap<>();
   /** Type aliases the last module declared (so a project checker can re-expose them). */
   private final Map<String, AliasDef> declaredAliases = new HashMap<>();
-  /** Each already-checked module's own declared aliases, keyed by module name. A module is seeded
-   *  with only the aliases of the modules it actually imports, so two modules may each define a
-   *  `type alias Model = …` without one shadowing the other (last-checked-wins) project-wide. */
+  /** Each already-checked module's OWN aliases, with their bodies fully expanded (every nested alias
+   *  inlined in the defining module's scope), keyed by module name. A module is seeded with the
+   *  aliases of the modules it imports. Exposing only a module's own alias names (not the nested
+   *  aliases their bodies use) keeps two modules' same-named `type alias Model = …` from shadowing
+   *  each other project-wide; pre-expanding the bodies means a nested alias (e.g. a record alias used
+   *  inside this module's `Model`, defined in a third module the importer doesn't import) is already
+   *  inlined, so the alias expands identically everywhere instead of staying opaque downstream — the
+   *  two-different-expansions case that broke record unification. */
   private final Map<String, Map<String, AliasDef>> moduleAliasesByModule = new HashMap<>();
+  /** Each already-checked module's own constructors (union variants + record-alias constructors),
+   *  keyed by module name. An importer is seeded with the constructors of the modules it imports, so
+   *  a constructor exposed via {@code import M exposing (Type(..))} — whose {@code (..)} the parser
+   *  drops — resolves to M's, not to a same-named constructor from an unrelated module (e.g. two
+   *  pages whose {@code Msg} both have a {@code GotFields} variant of a different payload type). */
+  private final Map<String, Map<String, Scheme>> moduleCtorsByModule = new HashMap<>();
 
   // Union registry for exhaustiveness checking: which constructors each union has, which union a
   // constructor belongs to, and each constructor's arity. Seeded with the builtin unions and
@@ -202,6 +213,13 @@ public final class Infer {
     // Mirror the runtime's import resolution so exposed names resolve during inference.
     for (Module.Import imp : module.imports()) {
       imp.alias().ifPresent(a -> moduleAliases.put(a, imp.module()));
+      // Bring in the imported module's constructors (scoped to this import), so a constructor
+      // exposed via `import M exposing (Type(..))` resolves to M's — not to a same-named constructor
+      // from an unrelated module. The module's own constructors (registered below) still win.
+      Map<String, Scheme> importedCtors = moduleCtorsByModule.get(imp.module());
+      if (importedCtors != null) {
+        importedCtors.forEach(globals::putIfAbsent);
+      }
       if (imp.exposing().open()) {
         String prefix = imp.module() + ".";
         for (String key : new java.util.ArrayList<>(globals.keySet())) {
@@ -434,6 +452,7 @@ public final class Infer {
     List<Module> ordered = orderByImports(modules);
     Map<String, Scheme> globals = new HashMap<>(base);
     moduleAliasesByModule.clear();
+    moduleCtorsByModule.clear();
     Map<String, Scheme> entryTypes = Map.of();
     String entryName = null;
     for (Module m : ordered) {
@@ -443,14 +462,21 @@ public final class Infer {
       String prefix = m.name() + ".";
       values.forEach((n, s) -> globals.put(prefix + n, s));
       declaredCtors.forEach((n, s) -> globals.put(prefix + n, s));
-      // Constructors are resolvable by their simple name across the whole project, mirroring the
-      // runtime (which resolves a bare `Expr.Ctor` against every module's constructors regardless of
-      // imports). Without this, a constructor brought in only via `import M exposing (Type(..))` —
-      // whose `(..)` the parser discards, leaving just the type name — would be reported as an
-      // "Unknown name" even though the program runs. A module's own constructors still win inside it
-      // (re-registered during its inference), so this only supplies otherwise-unresolved names.
-      declaredCtors.forEach(globals::putIfAbsent);
-      moduleAliasesByModule.put(m.name(), new HashMap<>(declaredAliases));
+      // Record this module's own constructors so the modules that import it (and only those) can
+      // resolve them unqualified — `import M exposing (Type(..))` brings M's constructors into scope.
+      // Scoping per import (rather than a flat project-wide table) keeps two modules' same-named
+      // constructors (e.g. a `GotFields` variant in each page's `Msg`) from colliding.
+      moduleCtorsByModule.put(m.name(), new HashMap<>(declaredCtors));
+      // Store this module's OWN aliases with bodies fully expanded (nested aliases inlined in this
+      // module's scope), so importers get self-contained definitions: no opacity (the alias expands
+      // the same downstream as here) and no name bleed (only this module's alias names are exposed,
+      // not the third-module aliases their bodies happen to use).
+      Map<String, AliasDef> exported = new HashMap<>();
+      declaredAliases.forEach(
+          (name, def) ->
+              exported.put(
+                  name, new AliasDef(def.params(), expandAliasesInType(def.body(), new java.util.HashSet<>()))));
+      moduleAliasesByModule.put(m.name(), exported);
       if (hasMain || entryName == null) {
         entryTypes = values;
         entryName = m.name();
@@ -545,6 +571,77 @@ public final class Infer {
     return new Type.Con(null, name, List.of());
   }
 
+  /**
+   * Inlines every alias reference in {@code t} using the current {@link #aliases} scope — so the
+   * result is self-contained (no {@code Con} that names an alias). Used to pre-expand a module's
+   * exported alias bodies before handing them to importers, so the alias expands identically there.
+   * {@code expanding} guards against (illegal) self-referential aliases by leaving them opaque.
+   */
+  private Type expandAliasesInType(Type t, java.util.Set<String> expanding) {
+    return switch (t) {
+      case Type.Var v -> v;
+      case Type.Unit u -> u;
+      case Type.Arrow a ->
+          new Type.Arrow(expandAliasesInType(a.from(), expanding), expandAliasesInType(a.to(), expanding));
+      case Type.Tuple tu ->
+          new Type.Tuple(tu.items().stream().map(x -> expandAliasesInType(x, expanding)).toList());
+      case Type.Record r ->
+          new Type.Record(
+              r.base(),
+              r.fields().stream()
+                  .map(f -> new Type.Record.Field(f.name(), expandAliasesInType(f.type(), expanding)))
+                  .toList());
+      case Type.Con c -> {
+        AliasDef a = aliases.get(c.name());
+        if (a != null && !expanding.contains(c.name())) {
+          Map<String, Type> sub = new HashMap<>();
+          for (int i = 0; i < a.params().size() && i < c.args().size(); i++) {
+            sub.put(a.params().get(i), expandAliasesInType(c.args().get(i), expanding));
+          }
+          expanding.add(c.name());
+          Type expanded = expandAliasesInType(substTypeVars(a.body(), sub), expanding);
+          expanding.remove(c.name());
+          yield expanded;
+        }
+        yield new Type.Con(
+            c.module(), c.name(), c.args().stream().map(x -> expandAliasesInType(x, expanding)).toList());
+      }
+    };
+  }
+
+  /** Substitutes alias type parameters (e.g. the {@code a} of {@code type alias Box a = …}) by name. */
+  private Type substTypeVars(Type t, Map<String, Type> sub) {
+    return switch (t) {
+      case Type.Var v -> sub.getOrDefault(v.name(), v);
+      case Type.Unit u -> u;
+      case Type.Arrow a -> new Type.Arrow(substTypeVars(a.from(), sub), substTypeVars(a.to(), sub));
+      case Type.Tuple tu -> new Type.Tuple(tu.items().stream().map(x -> substTypeVars(x, sub)).toList());
+      case Type.Record r ->
+          new Type.Record(
+              r.base(),
+              r.fields().stream()
+                  .map(f -> new Type.Record.Field(f.name(), substTypeVars(f.type(), sub)))
+                  .toList());
+      case Type.Con c ->
+          new Type.Con(c.module(), c.name(), c.args().stream().map(x -> substTypeVars(x, sub)).toList());
+    };
+  }
+
+  /** Resolves a type-alias reference. A QUALIFIED reference ({@code Tickets.Model}) resolves against
+   * its module's exposed aliases, so two pages' {@code Model} don't collapse to one (the flat
+   * by-simple-name table can't tell {@code Login.Model} from {@code Tickets.Model}). Falls back to
+   * the simple-name table for unqualified references and modules not in the project map. */
+  private AliasDef resolveAlias(String module, String name) {
+    if (module != null) {
+      String real = moduleAliases.getOrDefault(module, module);
+      Map<String, AliasDef> ofModule = moduleAliasesByModule.get(real);
+      if (ofModule != null && ofModule.containsKey(name)) {
+        return ofModule.get(name);
+      }
+    }
+    return aliases.get(name);
+  }
+
   /** Converts a surface {@link Type} to an inference {@link Ty}, expanding type aliases. */
   private Ty astToTy(Type type, Map<String, Ty> vars) {
     return switch (type) {
@@ -561,7 +658,7 @@ public final class Infer {
         yield new Ty.Record(fields, tail);
       }
       case Type.Con c -> {
-        AliasDef alias = aliases.get(c.name());
+        AliasDef alias = resolveAlias(c.module(), c.name());
         // Guard against alias cycles (e.g. `type alias Io = Posix.Io`, where the dropped module
         // qualifier makes the body refer to the same name): expand each alias at most once on a
         // path, otherwise treat it as an opaque constructor instead of recursing forever.

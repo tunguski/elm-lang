@@ -99,6 +99,74 @@ class ProjectCheckTest {
   }
 
   @Test
+  void crossModuleModelsConstructorsAndNestedAliasesResolvePerModule() {
+    // The multi-page-app shape that exposed three compounding cross-module resolution bugs, all of
+    // which must now type-check together:
+    //  (1) a record alias (`Row`) from a third module, used inside a page's `Model`, stayed opaque
+    //      in an importer that didn't import it — so `Model` expanded two different ways and broke
+    //      record-update accumulation in `update`;
+    //  (2) a constructor name (`Got`) shared by two pages' `Msg` collided via a global table, so the
+    //      wrong payload type was picked;
+    //  (3) `A.Model` and `B.Model` (qualified) collapsed to one record because aliases resolved by
+    //      simple name, confusing the `Page` union's branches.
+    String shared =
+        """
+        module Shared exposing (Remote(..), Row)
+        type Remote a = Loading | Loaded a
+        type alias Row = { id : Int, label : String }
+        """;
+    String pageA =
+        """
+        module PageA exposing (Model, Msg(..))
+        import Shared exposing (Remote, Row)
+        type alias Model = { tab : String, rows : Remote (List Row), note : String }
+        type Msg = SetTab String | Got (Result String (List Row))
+        """;
+    String pageB =
+        """
+        module PageB exposing (Model, Msg(..))
+        import Shared exposing (Remote, Row)
+        type alias Model = { name : String, items : Remote (List Row) }
+        type Msg = SetName String | Got (Result String Int)
+        """;
+    // Imports PageA's Msg(..) (so `Got` must be PageA's, payload `List Row`) and Shared's Remote, but
+    // NOT Row — so `Model.rows`'s `Row` must already be inlined for `update` to accumulate fields.
+    String pageAUpdate =
+        """
+        module PageAUpdate exposing (update)
+        import PageA exposing (Model, Msg(..))
+        import Shared exposing (Remote(..))
+        store : Result e a -> Remote a
+        store r =
+            case r of
+                Ok a -> Loaded a
+                Err _ -> Loading
+        setNote : String -> Model -> Model
+        setNote s m = { m | note = s }
+        update : Msg -> Model -> Model
+        update msg model =
+            case msg of
+                SetTab t -> { model | tab = t }
+                Got r -> setNote "ok" { model | rows = store r }
+                _ -> model
+        """;
+    String main =
+        """
+        module Main exposing (label)
+        import PageA as A
+        import PageB as B
+        type Page = APage A.Model | BPage B.Model
+        label : Page -> String
+        label page =
+            case page of
+                APage m -> m.tab
+                BPage m -> m.name
+        """;
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> TypeChecker.checkProject(shared, pageA, pageB, pageAUpdate, main));
+  }
+
+  @Test
   void everyElmPlaygroundGameTypeChecks() throws Exception {
     // The full ~1700-line evancz/elm-playground plus each game type-checks end to end — this needs
     // module-level let-generalization (SCC ordering) so shared helpers like `render` stay
