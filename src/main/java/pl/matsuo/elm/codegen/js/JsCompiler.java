@@ -748,11 +748,10 @@ public final class JsCompiler {
         return direct;
       }
     }
-    String out = compile(cur);
-    for (Expr arg : args) {
-      out = Js.apply(out, compile(arg));
-    }
-    return out;
+    // n>=2 saturated/over-applied calls go through An(f, …): a single call that jumps to the callee's
+    // uncurried body when it is a matching Fn (no per-argument closures), falling back to currying
+    // otherwise — so it is safe for every callee (kernel builtins, params, partial applications).
+    return Js.applyN(compile(cur), compileEach(args));
   }
 
   /** The directly-built value for a constructor applied to exactly its arity, or null otherwise. */
@@ -977,7 +976,14 @@ public final class JsCompiler {
     localFrames.push(names);
     String b = compile(body);
     localFrames.pop();
-    return Js.curried(List.of(arg), Js.block(String.join("", binds) + Js.ret(b)));
+    String block = Js.block(String.join("", binds) + Js.ret(b));
+    // Arity 2..6: emit an arity-tagged uncurried function (Fn) so a saturated An call site can skip
+    // the per-argument closures. Still curried-callable, so partial application / higher-order use is
+    // unchanged. Arity 1 needs no closures; 7+ stays a plain curried chain.
+    if (arg.length >= 2 && arg.length <= Js.MAX_UNCURRIED) {
+      return Js.funcN(List.of(arg), block);
+    }
+    return Js.curried(List.of(arg), block);
   }
 
   /**

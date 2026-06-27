@@ -267,6 +267,45 @@ public final class Js {
     return paren(acc);
   }
 
+  /** The maximum arity that gets an {@code Fn}/{@code An} fast path (runtime defines F2..F6/A2..A6);
+   * arity 1 needs none and 7+ stays curried. */
+  public static final int MAX_UNCURRIED = 6;
+
+  /**
+   * An arity-tagged uncurried function {@code Fn((p0,…,pn-1)=>body)} for {@code params.size()} in
+   * 2..{@link #MAX_UNCURRIED}. It is still curried-callable, but a matching {@link #applyN} call jumps
+   * straight to the uncurried body. Callers must check the arity is in range before using this.
+   */
+  public static String funcN(List<String> params, String body) {
+    return "F" + params.size() + "((" + commas(params) + ")=>" + body + ")";
+  }
+
+  /**
+   * An application of {@code fnExpr} to {@code args}. One argument stays a direct call; 2..{@link
+   * #MAX_UNCURRIED} use {@code An(f, …)} (the fast path that avoids per-argument closures when the
+   * callee is a matching {@link #funcN}); more arguments are applied in chunks of {@code
+   * MAX_UNCURRIED}. Safe for any callee — {@code An} falls back to currying when the arity differs.
+   */
+  public static String applyN(String fnExpr, List<String> args) {
+    String out = fnExpr;
+    int i = 0;
+    while (i < args.size()) {
+      int remaining = args.size() - i;
+      if (remaining == 1) {
+        out = apply(out, args.get(i));
+        i += 1;
+      } else {
+        int k = Math.min(remaining, MAX_UNCURRIED);
+        List<String> chunk = new java.util.ArrayList<>();
+        chunk.add(paren(out));
+        chunk.addAll(args.subList(i, i + k));
+        out = call("A" + k, chunk);
+        i += k;
+      }
+    }
+    return out;
+  }
+
   /** A generated temporary or parameter name, e.g. {@code $s7} or {@code a0}. */
   public static String tmp(String prefix, int n) {
     return prefix + n;

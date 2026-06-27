@@ -122,6 +122,38 @@ class JsBackendTest {
     assertEquals("7", runNode(program));
   }
 
+  /** A multi-argument function is emitted as an arity-tagged uncurried Fn and a saturated call uses
+   * the An fast path (one call, no per-argument closures) — while partial application and
+   * higher-order use still go through the curried wrapper. */
+  @Test
+  void saturatedMultiArgCallUsesUncurriedFastPath() {
+    String src =
+        """
+        module M exposing (run)
+        add3 : Int -> Int -> Int -> Int
+        add3 a b c = a + b + c
+        run : Int
+        run = add3 1 2 3
+        """;
+    String js = JsCompiler.declarationsScript(src);
+    assertTrue(js.contains("F3((") , "arity-3 function emitted uncurried (F3): " + js);
+    assertTrue(js.contains("A3("), "saturated call uses the A3 fast path: " + js);
+    String program = js + "\nprocess.stdout.write(String(_$run));\n";
+    assertEquals("6", runNode(program));
+  }
+
+  /** The Fn wrapper stays fully curried: partial application, currying one arg at a time, and passing
+   * the function to a higher-order builtin all still produce the interpreter's result. */
+  @Test
+  void multiArgFunctionsStillCurryAndPartiallyApply() {
+    sameModule("add a b = a + b\nmain = (add 10) 5\n"); // partial then apply -> 15
+    sameModule("add a b = a + b\ninc = add 1\nmain = inc 41\n"); // partial application bound -> 42
+    sameModule("add a b = a + b\nmain = List.foldl add 0 [ 1, 2, 3, 4 ]\n"); // passed as HOF -> 10
+    sameModule("add3 a b c = a + b + c\napp = add3 1\nmain = (app 2) 3\n"); // staged currying -> 6
+    sameModule("f a b c d e = a + b + c + d + e\nmain = f 1 2 3 4 5\n"); // arity 5 saturated -> 15
+    sameModule("f a b c d e g h = a+b+c+d+e+g+h\nmain = f 1 2 3 4 5 6 7\n"); // arity 7 (> max) -> 28
+  }
+
   /** Tail recursion through a `case` (the common list-walk shape) is also looped, not stacked. */
   @Test
   void caseTailRecursionRunsAsALoop() {

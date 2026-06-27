@@ -8,6 +8,22 @@ function $tuple(vs){ return {$:'#', vs:vs}; }
 function $char(c){ return {$:'Char', c:c}; }
 function $data(name, args){ return {$:name, _:args}; }
 function $update(rec, upd){ return Object.assign({}, rec, upd); }
+// ---- arity-aware functions (avoid intermediate closures on saturated calls) ----
+// A multi-arg function is emitted as Fn(uncurried) — still callable curried (f(a)(b), so partial
+// application and higher-order use are unchanged) but tagged with its arity and raw uncurried body.
+// A call site of n args emits An(f, …): if f is an Fn of matching arity it jumps straight to the
+// uncurried body (one call, no per-argument closures); otherwise it falls back to currying, so An is
+// always safe on any callee (kernel builtins, parameters, partial applications, tail-call loops).
+function F2(f){ var w=function(a){return function(b){return f(a,b);};}; w.f=f; w.n=2; return w; }
+function F3(f){ var w=function(a){return function(b){return function(c){return f(a,b,c);};};}; w.f=f; w.n=3; return w; }
+function F4(f){ var w=function(a){return function(b){return function(c){return function(d){return f(a,b,c,d);};};};}; w.f=f; w.n=4; return w; }
+function F5(f){ var w=function(a){return function(b){return function(c){return function(d){return function(e){return f(a,b,c,d,e);};};};};}; w.f=f; w.n=5; return w; }
+function F6(f){ var w=function(a){return function(b){return function(c){return function(d){return function(e){return function(g){return f(a,b,c,d,e,g);};};};};};}; w.f=f; w.n=6; return w; }
+function A2(f,a,b){ return f.n===2?f.f(a,b):f(a)(b); }
+function A3(f,a,b,c){ return f.n===3?f.f(a,b,c):f(a)(b)(c); }
+function A4(f,a,b,c,d){ return f.n===4?f.f(a,b,c,d):f(a)(b)(c)(d); }
+function A5(f,a,b,c,d,e){ return f.n===5?f.f(a,b,c,d,e):f(a)(b)(c)(d)(e); }
+function A6(f,a,b,c,d,e,g){ return f.n===6?f.f(a,b,c,d,e,g):f(a)(b)(c)(d)(e)(g); }
 function $listToArray(v){ if(v==null){throw new Error('$listToArray: got '+v+' — a non-List (likely an uninitialised top-level binding) reached a List operation');} var a=[]; while(v.$==='::'){a.push(v.a); v=v.b;} return a; }
 
 // ---- equality & comparison ----
