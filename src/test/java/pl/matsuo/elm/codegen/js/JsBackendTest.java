@@ -258,6 +258,32 @@ class JsBackendTest {
     assertTrue(optimized.length() < bundle.length(), "optimized is smaller");
   }
 
+  /** The cons-list-walking List primitives (rewritten to traverse the list directly instead of
+   * materialising a JS array) must still agree with the interpreter — including the empty-list edge
+   * cases and the short-circuiting search ops. */
+  @Test
+  void listWalkPrimitivesAgreeAcrossBackends() {
+    same("List.length [ 10, 20, 30 ]");
+    same("List.length []");
+    same("List.sum [ 1, 2, 3, 4 ]");
+    same("List.sum []");
+    same("List.product [ 2, 3, 4 ]");
+    same("List.product []");
+    same("List.member 3 [ 1, 2, 3 ]");
+    same("List.member 9 [ 1, 2, 3 ]");
+    same("List.member 1 []");
+    same("List.any (\\x -> x > 2) [ 1, 2, 3 ]");
+    same("List.any (\\x -> x > 9) [ 1, 2, 3 ]");
+    same("List.all (\\x -> x > 0) [ 1, 2, 3 ]");
+    same("List.all (\\x -> x > 1) [ 1, 2, 3 ]");
+    same("List.indexedMap (\\i x -> ( i, x )) [ \"a\", \"b\", \"c\" ]");
+    same("List.indexedMap (\\i x -> i + x) []");
+    same("List.map (\\x -> x * x) []");
+    same("List.filter (\\x -> modBy 2 x == 0) []");
+    same("List.reverse []");
+    same("List.foldl (\\x acc -> x :: acc) [] [ 1, 2, 3 ]");
+  }
+
   @Test
   void listPartitionUnzipIntersperseAgreeAcrossBackends() {
     same("List.partition (\\n -> n > 2) [ 1, 2, 3, 4 ]");
