@@ -30,6 +30,38 @@ class TestRunnerTest {
   }
 
   @Test
+  void resolvesValueImportsFromProjectSourceModules() {
+    // A test that imports an application module must resolve that module's VALUES, not just types.
+    // Regression: the runner linked only the files passed, so an imported `Q.init` was "Unbound"
+    // unless every source file was passed too. Project sources are now loaded (but not scanned for
+    // Test values).
+    String appModule =
+        """
+        module Queue exposing (init, double)
+        init = 7
+        double n = n * 2
+        """;
+    String testFile =
+        """
+        module QueueTest exposing (suite)
+        import Queue as Q
+        import Test exposing (Test, test, describe)
+        import Expect
+        suite =
+            describe "queue"
+                [ test "init" (\\_ -> Expect.equal 7 Q.init)
+                , test "double" (\\_ -> Expect.equal 14 (Q.double 7))
+                ]
+        """;
+    TestRunner.Result r =
+        TestRunner.run(List.of(testFile), List.of(appModule), TestRunner.Options.DEFAULTS);
+    assertEquals(2, r.passed(), r.report());
+    assertEquals(0, r.failed(), r.report());
+    // Without the project source, the same test cannot resolve Q's values (the original bug).
+    assertTrue(TestRunner.run(List.of(testFile)).passed() < 2);
+  }
+
+  @Test
   void onlyFocusesTheRunOnMarkedTests() {
     String src =
         """

@@ -80,7 +80,17 @@ public final class TestRunner {
 
   /** Runs every top-level {@code Test} value found in {@code userSources}. */
   public static Result run(List<String> userSources, Options opts) {
+    return run(userSources, List.of(), opts);
+  }
+
+  /**
+   * Runs every top-level {@code Test} value found in {@code userSources}. {@code projectSources} are
+   * the application's own modules (its {@code source-directories}), loaded so the tests' imports
+   * resolve but NOT themselves scanned for {@code Test} values.
+   */
+  public static Result run(List<String> userSources, List<String> projectSources, Options opts) {
     List<String> all = new ArrayList<>(userSources);
+    all.addAll(projectSources);
     all.add(TEST_LIB);
     all.add(EXPECT_LIB);
     all.add(FUZZ_LIB);

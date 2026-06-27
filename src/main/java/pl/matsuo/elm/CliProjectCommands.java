@@ -172,6 +172,14 @@ final class TestCmd implements Callable<Integer> {
     boolean watch;
 
     @Option(
+        names = "--project",
+        description =
+            "elm.json (or its directory) whose source-directories' modules the tests import. "
+                + "Auto-detected by searching upward from the test files if omitted; pass --project= "
+                + "(empty) to disable and load only the listed files.")
+    Path project;
+
+    @Option(
         names = "--timeout",
         description = "Per-test wall-clock limit in milliseconds; a test exceeding it fails (0 = no limit).")
     long timeout;
@@ -195,6 +203,7 @@ final class TestCmd implements Callable<Integer> {
         var result =
             pl.matsuo.elm.test.TestRunner.run(
                 sources,
+                projectSources(sources),
                 new pl.matsuo.elm.test.TestRunner.Options(
                     fuzz, seed, filter, trackCoverage, report, timeout));
         System.out.print(result.report());
@@ -207,6 +216,49 @@ final class TestCmd implements Callable<Integer> {
         System.out.println("Error: " + e.getMessage());
         return 1;
       }
+    }
+
+    /**
+     * The application's own modules (its {@code source-directories}), so a test's
+     * {@code import Queue as Q} resolves Q's <em>values</em>, not just its types. Without this the
+     * runner only links the files passed on the command line and an imported value is "Unbound".
+     * The project is given by {@code --project} or auto-detected by searching upward from the test
+     * files for an {@code elm.json}; modules a test file itself defines are excluded (no duplicates).
+     */
+    private List<String> projectSources(List<String> testSources) {
+      Path elmJson = (project != null) ? project : findElmJson();
+      if (elmJson == null || elmJson.toString().isEmpty()) {
+        return List.of();
+      }
+      try {
+        java.util.Set<String> testModules = new java.util.HashSet<>();
+        for (String src : testSources) {
+          testModules.add(pl.matsuo.elm.parser.Parser.parseModule(src).name());
+        }
+        List<String> srcs =
+            new ArrayList<>(pl.matsuo.elm.project.ProjectLoader.loadSources(elmJson));
+        srcs.removeIf(s -> testModules.contains(pl.matsuo.elm.parser.Parser.parseModule(s).name()));
+        return srcs;
+      } catch (RuntimeException e) {
+        System.err.println("Warning: could not load project sources (" + e.getMessage() + ")");
+        return List.of();
+      }
+    }
+
+    /** Searches upward from the first test file's directory for an {@code elm.json}. */
+    private Path findElmJson() {
+      if (files == null || files.isEmpty()) {
+        return null;
+      }
+      Path dir = files.get(0).toAbsolutePath().getParent();
+      while (dir != null) {
+        Path candidate = dir.resolve("elm.json");
+        if (Files.exists(candidate)) {
+          return candidate;
+        }
+        dir = dir.getParent();
+      }
+      return null;
     }
   }
 
