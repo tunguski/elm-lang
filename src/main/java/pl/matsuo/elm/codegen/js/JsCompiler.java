@@ -703,7 +703,9 @@ public final class JsCompiler {
       case Expr.Ctor c -> compileCtor(c.module(), c.name());
       case Expr.OpFunc o ->
           pl.matsuo.elm.interp.Operators.isBuiltin(o.op())
-              ? Js.paren(Js.arrow("a", Js.arrow("b", Js.binOp(o.op(), "a", "b"))))
+              // An arity-tagged F2 so passing a builtin operator (e.g. `List.foldl (+) 0 xs`) hits the
+              // An fast path per element instead of allocating a closure for the first argument.
+              ? Js.funcN(List.of("a", "b"), Js.block(Js.ret(Js.binOp(o.op(), "a", "b"))))
               : compile(new Expr.Var(null, o.op(), o.pos())); // (op) as a value -> its function
       case Expr.ListLit l -> Js.list(compileEach(l.items()));
       case Expr.Tuple t -> Js.tuple(compileEach(t.items()));
@@ -715,10 +717,11 @@ public final class JsCompiler {
       case Expr.BinOp b ->
           pl.matsuo.elm.interp.Operators.isBuiltin(b.op())
               ? Js.binOp(b.op(), compile(b.left()), compile(b.right()))
-              // A user/package-defined operator: `a op b` is the function `(op)` applied to a and b.
-              : Js.apply(
-                  Js.apply(compile(new Expr.Var(null, b.op(), b.pos())), compile(b.left())),
-                  compile(b.right()));
+              // A user/package-defined operator: `a op b` is the function `(op)` applied to a and b
+              // (via A2 so a saturated call to an F2 operator function skips the intermediate closure).
+              : Js.applyN(
+                  compile(new Expr.Var(null, b.op(), b.pos())),
+                  List.of(compile(b.left()), compile(b.right())));
       case Expr.Negate n -> Js.negate(compile(n.operand()));
       case Expr.If iff -> Js.ternary(compile(iff.cond()), compile(iff.thenBranch()), compile(iff.elseBranch()));
       case Expr.Lambda l -> compileLambda(l.params(), l.body());

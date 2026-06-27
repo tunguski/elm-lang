@@ -154,6 +154,29 @@ class JsBackendTest {
     sameModule("f a b c d e g h = a+b+c+d+e+g+h\nmain = f 1 2 3 4 5 6 7\n"); // arity 7 (> max) -> 28
   }
 
+  /** Higher-order kernel builtins apply their callback via the An fast path, and operators-as-values
+   * are F2 — so a fold/map driven by an operator or a multi-arg lambda still matches the interpreter
+   * (the fast path must be behaviourally identical to currying for every callee). */
+  @Test
+  void higherOrderBuiltinsWithOperatorsAndLambdasAgreeAcrossBackends() {
+    same("List.foldl (+) 0 [ 1, 2, 3, 4, 5 ]"); // operator as the 2-arg callback
+    same("List.foldl (-) 0 [ 1, 2, 3 ]"); // order-sensitive: 3-(2-(1-0)) = 2
+    same("List.foldr (::) [] [ 1, 2, 3 ]"); // (::) operator fold rebuilds the list
+    same("List.foldl (\\x acc -> x :: acc) [] [ 1, 2, 3 ]"); // 2-arg lambda callback (F2)
+    same("List.map2 (+) [ 1, 2, 3 ] [ 10, 20, 30 ]");
+    same("List.map2 (\\a b -> a * b) [ 1, 2, 3 ] [ 4, 5, 6 ]");
+    same("List.map3 (\\a b c -> a + b + c) [ 1, 2 ] [ 10, 20 ] [ 100, 200 ]");
+    same("List.indexedMap (\\i x -> i * x) [ 5, 6, 7 ]");
+    same("List.sortWith (\\a b -> compare b a) [ 3, 1, 2 ]"); // descending
+    same("Dict.foldl (\\k v acc -> acc + v) 0 (Dict.fromList [ ( \"a\", 1 ), ( \"b\", 2 ) ])");
+    same("Dict.toList (Dict.map (\\k v -> v * 10) (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ]))");
+    same("Set.foldl (+) 0 (Set.fromList [ 1, 2, 3, 4 ])");
+    same("Maybe.map2 (+) (Just 3) (Just 4)");
+    same("Result.map2 (*) (Ok 3) (Ok 4)");
+    same("String.foldl (\\c acc -> acc + 1) 0 \"hello\""); // length via fold
+    same("List.foldl (+) 0 (List.map (\\x -> x * x) (List.range 1 5))"); // 1+4+9+16+25 = 55
+  }
+
   /** Tail recursion through a `case` (the common list-walk shape) is also looped, not stacked. */
   @Test
   void caseTailRecursionRunsAsALoop() {
