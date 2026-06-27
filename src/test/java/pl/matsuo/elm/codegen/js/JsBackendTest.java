@@ -216,6 +216,21 @@ class JsBackendTest {
     same("Dict.fromList [ ( 2, \"b\" ), ( 1, \"a\" ) ]"); // shows sorted via $show
   }
 
+  /** Dict.fromList / Set.fromList are built in bulk (sort once) rather than by repeated insert; the
+   * result must still match the interpreter — sorted, deduplicated, and (for Dict) last-write-wins on
+   * a repeated key, which the stable sort + drop-earlier-duplicate must preserve. */
+  @Test
+  void dictSetFromListBulkBuildAgreesWithInterpreter() {
+    same("Dict.toList (Dict.fromList [ ( 1, \"a\" ), ( 1, \"b\" ) ])"); // last wins -> (1,"b")
+    same("Dict.get 1 (Dict.fromList [ ( 1, \"a\" ), ( 1, \"b\" ), ( 1, \"c\" ) ])"); // -> Just "c"
+    same("Dict.toList (Dict.fromList [ ( 3, \"c\" ), ( 1, \"a\" ), ( 2, \"b\" ), ( 1, \"z\" ) ])");
+    same("Dict.size (Dict.fromList [ ( 2, 0 ), ( 1, 0 ), ( 2, 0 ), ( 1, 0 ), ( 3, 0 ) ])"); // -> 3
+    same("Dict.toList (Dict.fromList [])");
+    same("Set.toList (Set.fromList [ 5, 3, 5, 1, 3, 1, 9 ])");
+    same("Set.size (Set.fromList [ 1, 1, 1, 1 ])"); // -> 1
+    same("Set.toList (Set.fromList [])");
+  }
+
   @Test
   void arrayOnTheJsBackend() {
     same("Array.toList (Array.fromList [ 1, 2, 3 ])");

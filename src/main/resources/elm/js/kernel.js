@@ -86,6 +86,11 @@ function $dictFind(a, k){ var lo=0, hi=a.length-1; while(lo<=hi){ var m=(lo+hi)>
 function $dictInsert(d, k, v){ var a=d.a.slice(), i=$dictFind(a,k); if(i>=0)a[i]=[k,v]; else a.splice(-i-1,0,[k,v]); return {$:'Dict',a:a}; }
 function $setFind(a, x){ var lo=0, hi=a.length-1; while(lo<=hi){ var m=(lo+hi)>>1, c=$cmp(a[m],x); if(c<0)lo=m+1; else if(c>0)hi=m-1; else return m; } return -(lo+1); }
 function $setInsert(s, x){ var a=s.a.slice(), i=$setFind(a,x); if(i<0)a.splice(-i-1,0,x); return {$:'Set',a:a}; }
+// Bulk builders: sort once (O(n log n)) instead of n inserts that each copy+splice the array
+// (O(n^2)). Array.sort is stable (V8/Node), so among equal keys the original order is kept — and
+// Dict.fromList is last-wins (foldl insert), so we drop an entry when a later one shares its key.
+function $dictFromArray(pairs){ pairs.sort(function(p,q){ return $cmp(p[0],q[0]); }); var a=[]; for(var i=0;i<pairs.length;i++){ if(i+1<pairs.length && $cmp(pairs[i][0],pairs[i+1][0])===0) continue; a.push(pairs[i]); } return {$:'Dict',a:a}; }
+function $setFromArray(items){ items.sort($cmp); var a=[]; for(var i=0;i<items.length;i++){ if(i>0 && $cmp(items[i-1],items[i])===0) continue; a.push(items[i]); } return {$:'Set',a:a}; }
 
 // ---- prelude (canonical Module.name -> curried function) ----
 function $maybe(v){ return v===undefined?$data('Nothing',[]):$data('Just',[v]); }
@@ -104,7 +109,7 @@ var $rt = {
   'Dict.keys': function(d){ return $list(d.a.map(function(e){return e[0];})); },
   'Dict.values': function(d){ return $list(d.a.map(function(e){return e[1];})); },
   'Dict.toList': function(d){ return $list(d.a.map(function(e){return $tuple([e[0],e[1]]);})); },
-  'Dict.fromList': function(xs){ var d={$:'Dict',a:[]}; $listToArray(xs).forEach(function(t){ d=$dictInsert(d,t.vs[0],t.vs[1]); }); return d; },
+  'Dict.fromList': function(xs){ var pairs=[]; while(xs.$==='::'){ pairs.push([xs.a.vs[0], xs.a.vs[1]]); xs=xs.b; } return $dictFromArray(pairs); },
   'Dict.foldl': function(f){ return function(acc){ return function(d){ d.a.forEach(function(e){ acc=f(e[0])(e[1])(acc); }); return acc; }; }; },
   'Dict.foldr': function(f){ return function(acc){ return function(d){ for(var i=d.a.length-1;i>=0;i--){ acc=f(d.a[i][0])(d.a[i][1])(acc); } return acc; }; }; },
   'Dict.foldr': function(f){ return function(acc){ return function(d){ for(var i=d.a.length-1;i>=0;i--) acc=f(d.a[i][0])(d.a[i][1])(acc); return acc; }; }; },
@@ -126,7 +131,7 @@ var $rt = {
   'Set.size': function(s){ return s.a.length; },
   'Set.isEmpty': function(s){ return s.a.length===0; },
   'Set.toList': function(s){ return $list(s.a.slice()); },
-  'Set.fromList': function(xs){ var s={$:'Set',a:[]}; $listToArray(xs).forEach(function(x){ s=$setInsert(s,x); }); return s; },
+  'Set.fromList': function(xs){ var items=[]; while(xs.$==='::'){ items.push(xs.a); xs=xs.b; } return $setFromArray(items); },
   'Set.foldl': function(f){ return function(acc){ return function(s){ s.a.forEach(function(x){ acc=f(x)(acc); }); return acc; }; }; },
   'Set.foldr': function(f){ return function(acc){ return function(s){ for(var i=s.a.length-1;i>=0;i--){ acc=f(s.a[i])(acc); } return acc; }; }; },
   'Set.foldr': function(f){ return function(acc){ return function(s){ for(var i=s.a.length-1;i>=0;i--) acc=f(s.a[i])(acc); return acc; }; }; },
