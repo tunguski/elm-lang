@@ -1198,14 +1198,23 @@ public final class JsCompiler {
     }
     localFrames.push(names);
     JsBlock stmts = new JsBlock();
+    // Function bindings first. A `let`-bound function compiles to `var f = F…(…)` whose body runs only
+    // when it is later CALLED — by which point every binding in the `let` is assigned — so it carries
+    // no initialisation-time dependency and can safely precede the value bindings. Elm's `let` is
+    // recursive (order-independent), so a value binding may use a helper defined lower in the same
+    // `let`; emitting it in source order left that helper's still-unassigned `var` read as undefined
+    // (e.g. `tips = List.indexedMap point xs` above `point a b = …`, which then hit `A2(undefined)`).
+    // (Self-tail-call optimisation still applies, as for top-level functions.)
     for (Decl d : let.defs()) {
-      if (d instanceof Decl.Value v) {
-        // A let-bound function gets self-tail-call optimisation too (like top-level functions).
-        String rhs =
-            v.params().isEmpty()
-                ? compile(v.body())
-                : compileNamedFunction(v.name(), v.params(), v.body());
-        stmts.varDecl(Js.local(v.name()), rhs);
+      if (d instanceof Decl.Value v && !v.params().isEmpty()) {
+        stmts.varDecl(Js.local(v.name()), compileNamedFunction(v.name(), v.params(), v.body()));
+      }
+    }
+    // Then the value and destructuring bindings, in source order (their mutual eager dependencies, if
+    // any, still follow source order — the far rarer value-before-value case).
+    for (Decl d : let.defs()) {
+      if (d instanceof Decl.Value v && v.params().isEmpty()) {
+        stmts.varDecl(Js.local(v.name()), compile(v.body()));
       } else if (d instanceof Decl.Destructure de) {
         String tmp = Js.tmp("$d", counter++);
         stmts.varDecl(tmp, compile(de.body()));

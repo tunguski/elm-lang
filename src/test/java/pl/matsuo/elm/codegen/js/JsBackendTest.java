@@ -519,6 +519,47 @@ class JsBackendTest {
     assertEquals("6", runNode(program));
   }
 
+  /** A {@code let} is recursive (order-independent), so a value binding may use a helper FUNCTION
+   * defined lower in the same {@code let}. Emitting bindings in source order left the helper's
+   * still-unassigned {@code var} read as undefined — surfacing as {@code A2(undefined)} ("reading
+   * 'n'") once the helper was applied at full arity. Function bindings are now emitted first (their
+   * bodies run only when later called), matching the interpreter. */
+  @Test
+  void letBoundFunctionUsedByAnEarlierValueBindingIsInitialisedFirst() {
+    // value binding eagerly applies a 2-arg helper defined BELOW it (List.indexedMap -> A2(point,…))
+    sameModule(
+        """
+        build xs =
+            let
+                tips = List.indexedMap point xs
+                point a b = a + b
+            in
+            tips
+        main = build [ 10, 20, 30 ]
+        """);
+    // mutual recursion between two let-bound functions
+    sameModule(
+        """
+        main =
+            let
+                isEven n = if n == 0 then True else isOdd (n - 1)
+                isOdd n = if n == 0 then False else isEven (n - 1)
+            in
+            isEven 10
+        """);
+    // a value uses a function that, at call time, reads an earlier value binding
+    sameModule(
+        """
+        main =
+            let
+                base = 100
+                scaled = List.map f [ 1, 2 ]
+                f x = x + base
+            in
+            scaled
+        """);
+  }
+
   /** The dependency order must be followed THROUGH helper functions: a value whose initialiser calls
    * a helper that references a data list declared later must still see the list initialised. This is
    * the shape behind a reported page-blank ($listToArray(undefined)) in a module of mutually-

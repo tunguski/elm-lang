@@ -386,6 +386,47 @@ class DifferentialPropertyTest {
     }
   }
 
+  @Test
+  void letBindingsAreOrderIndependentAcrossBackends() throws Exception {
+    // Elm's `let` is recursive/order-independent: a value binding may use a helper FUNCTION defined
+    // lower in the same `let`. All three backends used to emit/evaluate let bindings in source order,
+    // leaving the helper unbound when the value's rhs ran (in the JS backend, surfacing as
+    // `A2(undefined)`). Each must now bind the function first and agree.
+    record Scenario(String name, String module, String value, String expected) {}
+    List<Scenario> scenarios =
+        List.of(
+            new Scenario(
+                "value binding applies a helper function defined below it",
+                "module Main exposing (main)\n"
+                    + "build xs =\n    let\n        tips = List.indexedMap point xs\n"
+                    + "        point a b = a + b\n    in\n    tips\n"
+                    + "main = build [ 10, 20, 30 ]\n",
+                "main",
+                "[10,21,32]"),
+            new Scenario(
+                "mutual recursion between two let-bound functions",
+                "module Main exposing (main)\n"
+                    + "main =\n    let\n        isEven n = if n == 0 then True else isOdd (n - 1)\n"
+                    + "        isOdd n = if n == 0 then False else isEven (n - 1)\n    in\n    isEven 10\n",
+                "main",
+                "True"));
+    for (Scenario s : scenarios) {
+      List<String> mods = List.of(s.module());
+      assertEquals(
+          s.expected(),
+          Show.plain(pl.matsuo.elm.interp.Project.load(s.module()).value("Main", s.value())),
+          "interpreter: " + s.name());
+      assertEquals(
+          s.expected(),
+          Show.plain(BytecodeInterpreter.loadAll(mods).value(s.value())),
+          "bytecode: " + s.name());
+      String js = runNodeMultiModule(mods, s.value());
+      if (js != null) {
+        assertEquals(s.expected(), js, "JS: " + s.name());
+      }
+    }
+  }
+
   /** Bundles several modules with the DOM runtime and prints {@code $show(Main.<value>)}. */
   private static String runNodeMultiModule(List<String> modules, String value) {
     String program =

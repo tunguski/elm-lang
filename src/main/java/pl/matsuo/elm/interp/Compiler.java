@@ -217,14 +217,25 @@ public final class Compiler {
   private ElmNode buildLet(Expr.Let let, ElmNode bodyNode) {
     List<Pattern> targets = new ArrayList<>();
     List<ElmNode> rhs = new ArrayList<>();
+    // Function bindings first. A let-bound function's closure captures the (mutable) local scope and
+    // its body runs only when the function is later CALLED — by which point every binding is in
+    // scope. Binding functions before the value bindings lets a value binding use a helper function
+    // defined lower in the same `let` (Elm's `let` is recursive / order-independent); otherwise the
+    // value's eagerly-evaluated rhs referenced a not-yet-bound name. Mirrors the JS backend.
+    for (Decl d : let.defs()) {
+      if (d instanceof Decl.Value v && !v.params().isEmpty()) {
+        targets.add(new Pattern.Var(v.name()));
+        rhs.add(compileLambda(v.params(), v.body(), v.name()));
+      }
+    }
+    // Then the value and destructuring bindings, in source order.
     for (Decl d : let.defs()) {
       switch (d) {
         case Decl.Value v -> {
-          targets.add(new Pattern.Var(v.name()));
-          rhs.add(
-              v.params().isEmpty()
-                  ? compile(v.body())
-                  : compileLambda(v.params(), v.body(), v.name()));
+          if (v.params().isEmpty()) {
+            targets.add(new Pattern.Var(v.name()));
+            rhs.add(compile(v.body()));
+          }
         }
         case Decl.Destructure de -> {
           targets.add(de.pattern());

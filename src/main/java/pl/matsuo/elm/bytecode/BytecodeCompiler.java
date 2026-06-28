@@ -50,28 +50,7 @@ public final class BytecodeCompiler {
       }
       case Expr.Let let -> {
         c.add(Instr.of(Op.PUSH_SCOPE));
-        boolean shadows = false;
-        for (Decl d : let.defs()) {
-          switch (d) {
-            case Decl.Value v -> {
-              if (v.params().isEmpty()) {
-                compile(c, v.body());
-              } else {
-                c.add(Instr.of(Op.MAKE_CLOSURE, compileChunk(v.params(), v.body(), v.name())));
-              }
-              c.add(Instr.of(Op.BIND_PAT, new Pattern.Var(v.name())));
-              shadows |= v.name().equals(name);
-            }
-            case Decl.Destructure de -> {
-              compile(c, de.body());
-              c.add(Instr.of(Op.BIND_PAT, de.pattern()));
-              shadows |= binds(de.pattern(), name);
-            }
-            case Decl.Union ignored -> {} // type-level only; constructors are resolved by name
-            case Decl.TypeAlias ignored -> {} // type-level only (record-alias ctors resolved by name)
-            default -> throw new ElmRuntimeError("Unsupported declaration in let: " + d);
-          }
-        }
+        boolean shadows = emitLetBindings(c, let, name);
         // The let bindings stay live while a tail call's arguments are evaluated; TAIL_CALL resets the
         // scope, and a RETURN abandons it, so no POP_SCOPE is needed on these self-terminating paths.
         compileTail(c, let.body(), shadows ? null : name, arity);
@@ -279,27 +258,49 @@ public final class BytecodeCompiler {
 
   private void compileLet(List<Instr> c, Expr.Let let) {
     c.add(Instr.of(Op.PUSH_SCOPE));
+    emitLetBindings(c, let, null);
+    compile(c, let.body());
+    c.add(Instr.of(Op.POP_SCOPE));
+  }
+
+  /**
+   * Emits a let's bindings into {@code c}, FUNCTION bindings first. A let-bound function's closure
+   * captures the (mutable) scope and its body runs only when the function is later called — by which
+   * point every binding is bound — so emitting functions before the value bindings lets a value
+   * binding use a helper function defined lower in the same `let` (Elm's `let` is recursive /
+   * order-independent); otherwise the value's eagerly-evaluated rhs read a not-yet-bound name.
+   * Mirrors the interpreter and the JS backend. Returns whether any binding shadows {@code tcoName}
+   * (the enclosing function's self-name, or null when self-tail-call tracking does not apply).
+   */
+  private boolean emitLetBindings(List<Instr> c, Expr.Let let, String tcoName) {
+    boolean shadows = false;
+    for (Decl d : let.defs()) {
+      if (d instanceof Decl.Value v && !v.params().isEmpty()) {
+        c.add(Instr.of(Op.MAKE_CLOSURE, compileChunk(v.params(), v.body(), v.name())));
+        c.add(Instr.of(Op.BIND_PAT, new Pattern.Var(v.name())));
+        shadows |= tcoName != null && v.name().equals(tcoName);
+      }
+    }
     for (Decl d : let.defs()) {
       switch (d) {
         case Decl.Value v -> {
           if (v.params().isEmpty()) {
             compile(c, v.body());
-          } else {
-            c.add(Instr.of(Op.MAKE_CLOSURE, compileChunk(v.params(), v.body(), v.name())));
+            c.add(Instr.of(Op.BIND_PAT, new Pattern.Var(v.name())));
+            shadows |= tcoName != null && v.name().equals(tcoName);
           }
-          c.add(Instr.of(Op.BIND_PAT, new Pattern.Var(v.name())));
         }
         case Decl.Destructure de -> {
           compile(c, de.body());
           c.add(Instr.of(Op.BIND_PAT, de.pattern()));
+          shadows |= tcoName != null && binds(de.pattern(), tcoName);
         }
         case Decl.Union ignored -> {} // type-level only; constructors are resolved by name
         case Decl.TypeAlias ignored -> {} // type-level only (record-alias ctors resolved by name)
         default -> throw new ElmRuntimeError("Unsupported declaration in let: " + d);
       }
     }
-    compile(c, let.body());
-    c.add(Instr.of(Op.POP_SCOPE));
+    return shadows;
   }
 
   private void compileCase(List<Instr> c, Expr.Case ca) {
