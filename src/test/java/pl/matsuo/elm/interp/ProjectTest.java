@@ -71,6 +71,38 @@ class ProjectTest {
   }
 
   @Test
+  void unqualifiedImportedConstructorResolvesByArityNotCollidingBareName() {
+    // Regression: a NULLARY constructor `Duplicate` (Style) used UNQUALIFIED via `exposing (..)`,
+    // while another co-compiled module (Workspace) defines `Duplicate Int` (arity 1). The unqualified
+    // reference isn't in the using module's OWN constructor table, so resolution must fall back to a
+    // table scoped to that module's imports — not a shared project-wide table where the arity-1
+    // `Duplicate` won. Previously the nullary value was built as an unsaturated function and matching
+    // it threw "Non-exhaustive pattern match on: <builtin Duplicate>". (Mirrors elm-spreadsheet's
+    // Spreadsheet.Style.Duplicate vs the vendored Workspace.Msg.Duplicate.)
+    String style = "module Style exposing (Rank(..))\ntype Rank = TopN Int | Duplicate\n";
+    String workspace = "module Workspace exposing (Msg(..))\ntype Msg = New | Duplicate Int\n";
+    String use =
+        """
+        module Use exposing (label)
+        import Style exposing (..)
+        label : Rank -> String
+        label r =
+            case r of
+                TopN n -> "top"
+                Duplicate -> "dup"
+        """;
+    String main =
+        """
+        module Main exposing (run)
+        import Use
+        import Workspace
+        run = Use.label Style.Duplicate
+        """;
+    Project p = Project.load(style, workspace, use, main);
+    assertEquals("dup", p.value("Main", "run"));
+  }
+
+  @Test
   void aliasedImportWithExposingResolvesBothForms() {
     // `import Lib as L exposing (foo)`: the exposed `foo` resolves unqualified, and other members
     // resolve through the alias `L.bar`. (Both were reported as Unbound in the interpreter.)

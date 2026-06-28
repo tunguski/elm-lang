@@ -137,6 +137,41 @@ class JsBackendTest {
     assertEquals("7", runNode(program));
   }
 
+  /**
+   * A NULLARY constructor used UNQUALIFIED via {@code exposing (..)} must resolve to the module it's
+   * imported from, even when another co-compiled module defines a same-named constructor with a
+   * different arity. (Regression: the bundle merged EVERY module's constructor arities into each
+   * module's flat table by HashMap order, so a nullary {@code Style.Duplicate} could pick up the
+   * arity of an unrelated {@code Workspace.Duplicate Int} and be emitted as an unsaturated function,
+   * matching no branch. Mirrors elm-spreadsheet's Style.Duplicate vs the vendored Workspace.Duplicate.)
+   */
+  @Test
+  void unqualifiedImportedConstructorResolvesByArityNotCollidingBareName() {
+    String style = "module Style exposing (Rank(..))\ntype Rank = TopN Int | Duplicate\n";
+    String workspace = "module Workspace exposing (Msg(..))\ntype Msg = New | Duplicate Int\n";
+    String use =
+        """
+        module Use exposing (label)
+        import Style exposing (..)
+        label r = case r of
+            TopN n -> "top"
+            Duplicate -> "dup"
+        """;
+    String main =
+        """
+        module Main exposing (run)
+        import Use
+        import Style
+        import Workspace
+        run = Use.label Style.Duplicate
+        """;
+    String program =
+        "globalThis.window = globalThis;\n"
+            + JsCompiler.declarationsScriptWithDomProject(style, workspace, use, main)
+            + "\nprocess.stdout.write(_$Main$run);\n";
+    assertEquals("dup", runNode(program));
+  }
+
   /** A multi-argument function is emitted as an arity-tagged uncurried Fn and a saturated call uses
    * the An fast path (one call, no per-argument closures) — while partial application and
    * higher-order use still go through the curried wrapper. */

@@ -94,13 +94,20 @@ public final class JsCompiler {
         ownRecordAliases.put(ta.name(), fields);
       }
     }
-    // In a bundle, other modules' constructors are referenced by name, so merge their record-alias
-    // field lists and union-constructor arities into this module's tables.
+    // In a bundle, an unqualified constructor reference resolves to the module it's IMPORTED from, so
+    // merge only this module's imports' record-alias field lists and union-constructor arities (own
+    // constructors, registered above, still win). Merging EVERY other module instead would let a
+    // constructor name reused across two modules — e.g. a nullary `Duplicate` in one and a
+    // `Duplicate Int` in another — resolve to whichever the HashMap happened to iterate first, so a
+    // nullary value could be emitted as an unsaturated function (a latent, nondeterministic miscompile).
+    // Mirrors the interpreter's per-module constructor scoping (see interp.Project) and the type
+    // checker's per-import scoping (see Infer).
     if (project != null) {
-      for (var e : project.entrySet()) {
-        if (!e.getKey().equals(currentModule)) {
-          e.getValue().recordAliases().forEach(recordAliases::putIfAbsent);
-          e.getValue().ctorArity().forEach(ctorArity::putIfAbsent);
+      for (Module.Import imp : module.imports()) {
+        ModuleInfo mi = project.get(imp.module());
+        if (mi != null) {
+          mi.recordAliases().forEach(recordAliases::putIfAbsent);
+          mi.ctorArity().forEach(ctorArity::putIfAbsent);
         }
       }
     }

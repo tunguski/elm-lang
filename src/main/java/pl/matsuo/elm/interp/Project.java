@@ -48,24 +48,46 @@ public final class Project {
       modules.put(module.name(), module);
     }
 
-    Map<String, Integer> ctorArity = Prelude.defaultCtorArity();
-    Map<String, List<String>> recordCtors = new HashMap<>();
+    Map<String, Integer> preludeCtorArity = Prelude.defaultCtorArity();
     // Per-module constructor tables (each module's OWN types), so a qualified `Game.Move` resolves to
-    // Game's union constructor rather than another module's record-alias `Move` — the simple-name
-    // flat tables above can't tell them apart. Resolution falls back to the flat tables for
-    // unqualified / Prelude constructors.
+    // Game's union constructor rather than another module's record-alias `Move`, and so each module's
+    // flat fallback table (built below) can be scoped to what's actually in that module's scope.
     Map<String, RuntimeEnv.ModuleCtors> moduleCtors = new HashMap<>();
+    Map<String, Map<String, Integer>> ownUnions = new HashMap<>();
+    Map<String, Map<String, List<String>>> ownRecords = new HashMap<>();
     for (Module m : modules.values()) {
-      TypeDecls.scanModule(m, ctorArity, recordCtors);
       Map<String, Integer> unions = new HashMap<>();
       Map<String, List<String>> records = new HashMap<>();
       TypeDecls.scanModule(m, unions, records);
       moduleCtors.put(m.name(), new RuntimeEnv.ModuleCtors(records, unions));
+      ownUnions.put(m.name(), unions);
+      ownRecords.put(m.name(), records);
     }
 
     globals = new HashMap<>(Prelude.builtins());
 
     for (Module m : modules.values()) {
+      // The flat fallback constructor tables are MODULE-LOCAL: this module's own constructors win,
+      // then those brought into scope by its imports, then the Prelude defaults. Scoping the fallback
+      // per module (rather than one shared project-wide table) stops a constructor name reused across
+      // modules — e.g. a nullary `Duplicate` in one and a `Duplicate Int` in another — from resolving
+      // to the wrong arity when referenced UNQUALIFIED through an import (the name isn't in the
+      // importing module's OWN table, so resolution previously fell through to a colliding global
+      // table and built a nullary value as an unsaturated function → "Non-exhaustive pattern match on
+      // <builtin …>"). Mirrors the type checker's per-import constructor scoping (see Infer).
+      Map<String, Integer> ctorArity = new HashMap<>(ownUnions.get(m.name()));
+      Map<String, List<String>> recordCtors = new HashMap<>(ownRecords.get(m.name()));
+      for (Module.Import imp : m.imports()) {
+        Map<String, Integer> importedUnions = ownUnions.get(imp.module());
+        if (importedUnions != null) {
+          importedUnions.forEach(ctorArity::putIfAbsent);
+        }
+        Map<String, List<String>> importedRecords = ownRecords.get(imp.module());
+        if (importedRecords != null) {
+          importedRecords.forEach(recordCtors::putIfAbsent);
+        }
+      }
+      preludeCtorArity.forEach(ctorArity::putIfAbsent);
       RuntimeEnv env = buildEnv(m, ctorArity, recordCtors);
       env.setModuleCtors(moduleCtors);
       envs.put(m.name(), env);
