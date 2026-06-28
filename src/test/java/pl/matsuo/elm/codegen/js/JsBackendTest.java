@@ -81,6 +81,21 @@ class JsBackendTest {
     assertEquals("500000500000", runNode(program));
   }
 
+  /**
+   * A point-free fold (e.g. {@code sum = List.foldl (+) 0}) compiles to ONE shared closure that
+   * captures its initial accumulator, so it must not let one call's accumulator leak into the next.
+   * (Regression: the kernel folds mutated the captured {@code acc} parameter in place, so a second
+   * application resumed from the first call's result — {@code distinct} returned the union of every
+   * list it had ever seen.)
+   */
+  @Test
+  void sharedPartialFoldDoesNotLeakAccumulatorBetweenCalls() {
+    same("let sum = List.foldl (+) 0 in ( sum [1, 2, 3], sum [10, 20] )");
+    same(
+        "let distinct = List.foldl (\\x acc -> if List.member x acc then acc else acc ++ [ x ]) []"
+            + " in ( distinct [ 1, 2 ], distinct [ 3, 4 ] )");
+  }
+
   /** A constructor applied to its full arity is built directly, not via a curried closure chain. */
   @Test
   void saturatedConstructorCompilesToDirectData() {
