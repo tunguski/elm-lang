@@ -332,7 +332,42 @@ class DifferentialPropertyTest {
                     run = (A.R 1 2).b + (B.R 3 4).c
                     """),
                 "run",
-                "6"));
+                "6"),
+            new Scenario(
+                // The same bare constructor name with a DIFFERENT ARITY in two co-compiled modules,
+                // each constructed AND matched UNQUALIFIED inside its own module — the shape from the
+                // BBX report (a nullary `Duplicate` in the spreadsheet's RankKind vs a `Duplicate Id`
+                // in the workspace's Msg). Resolving the bare name through the flat project-wide tables
+                // gave the wrong arity, so the nullary one became an unsaturated function and the
+                // arity-1 one a nullary value — a runtime non-exhaustive match on every backend.
+                "nullary vs arity-1 ctor, same name, built unqualified",
+                List.of(
+                    """
+                    module S exposing (rank, dup)
+                    type Kind = Keep | Duplicate
+                    dup = Duplicate
+                    rank k =
+                        case k of
+                            Keep -> 0
+                            Duplicate -> 1
+                    """,
+                    """
+                    module W exposing (label, mk)
+                    type Msg = Copy | Duplicate Int
+                    mk n = Duplicate n
+                    label m =
+                        case m of
+                            Copy -> 0
+                            Duplicate n -> n
+                    """,
+                    """
+                    module Main exposing (run)
+                    import S exposing (rank, dup)
+                    import W exposing (label, mk)
+                    run = rank dup * 10 + label (mk 7)
+                    """),
+                "run",
+                "17"));
 
     for (Scenario s : scenarios) {
       String interpVal =

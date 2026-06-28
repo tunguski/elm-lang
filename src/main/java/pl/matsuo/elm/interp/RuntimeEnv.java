@@ -100,12 +100,20 @@ public final class RuntimeEnv {
     this.moduleCtors = moduleCtors;
   }
 
-  /** The defining module's own constructors for a reference qualified by {@code module} (an import
-   * alias or module name), or null when unqualified / not a bundled module. */
+  /** The constructors to resolve a reference against: the module named by a qualified reference (an
+   * import alias or module name), or — for an UNQUALIFIED reference ({@code module} null or "") —
+   * THIS module's own constructors. Resolving an unqualified name against its own module first stops a
+   * bare constructor name reused in another co-compiled module (e.g. a nullary {@code Duplicate} in
+   * one module and a {@code Duplicate Int} in another) from colliding through the flat project-wide
+   * tables; imported and prelude names aren't in this module's own table, so the callers still fall
+   * back to those flat tables for them. Null when there are no per-module tables (single-module). */
   private ModuleCtors ctorsOf(String module) {
-    return module == null || moduleCtors == null
-        ? null
-        : moduleCtors.get(aliases.getOrDefault(module, module));
+    if (moduleCtors == null) {
+      return null;
+    }
+    String real =
+        module == null || module.isEmpty() ? currentModule : aliases.getOrDefault(module, module);
+    return moduleCtors.get(real);
   }
 
   /** The field names of a record-type-alias constructor, or null if {@code name} isn't one. */
@@ -163,10 +171,11 @@ public final class RuntimeEnv {
     if (fields != null) {
       return recordCtor(name, fields);
     }
+    // unionConstructorArity already falls back to the flat table when the name isn't in the resolved
+    // module's own table, so a resolved nullary (0) must be kept as-is — NOT max'd against the flat
+    // table, which (under a cross-module name collision) could wrongly bump it to another module's
+    // arity and turn a nullary value into an unsaturated function. -1 means truly unknown -> nullary.
     int arity = unionConstructorArity(module, name);
-    if (arity <= 0) {
-      arity = Math.max(arity, ctorArity.getOrDefault(name, 0)); // unknown -> flat default (0)
-    }
     if (arity <= 0) {
       return new ElmData(name, new Object[0]);
     }

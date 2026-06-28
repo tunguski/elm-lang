@@ -12,6 +12,17 @@ import pl.matsuo.elm.runtime.ElmUnit;
 /** Compiles the {@link Expr} AST into {@link Chunk}s of stack {@link Op} bytecode. */
 public final class BytecodeCompiler {
 
+  /** The module whose declarations are currently being compiled, baked into unqualified
+   * {@code PUSH_CTOR} operands so a bare constructor name resolves against its defining module at run
+   * time (not the flat project-wide tables, where a name reused in another module would collide).
+   * Null for a standalone expression compile, where "" (no qualifier) is emitted. */
+  private String currentModule;
+
+  /** Sets the module context for subsequent {@link #compileChunk} calls (see {@link #currentModule}). */
+  public void enterModule(String module) {
+    this.currentModule = module;
+  }
+
   /** Compiles a function/lambda body (with parameter patterns) into a chunk. Self-tail-calls in the
    * body become a {@code TAIL_CALL} (rebind params + jump to 0) instead of a fresh VM frame, so deep
    * tail recursion runs in constant Java stack — matching the interpreter's tail-loop. */
@@ -156,7 +167,16 @@ public final class BytecodeCompiler {
           // "" stands in for "no module qualifier" (the operand serializer can't write a null
           // String[] element); the VM maps it back to null.
       case Expr.Ctor ct ->
-          c.add(Instr.of(Op.PUSH_CTOR, new String[] {ct.module() == null ? "" : ct.module(), ct.name()}));
+          // Unqualified ctor -> its defining (currently-compiling) module, so a bare name reused with
+          // a different arity in another co-compiled module resolves correctly instead of colliding
+          // via the flat tables. A qualified reference keeps its explicit module.
+          c.add(
+              Instr.of(
+                  Op.PUSH_CTOR,
+                  new String[] {
+                    ct.module() != null ? ct.module() : (currentModule == null ? "" : currentModule),
+                    ct.name()
+                  }));
       case Expr.OpFunc o -> {
         if (pl.matsuo.elm.interp.Operators.isBuiltin(o.op())) {
           c.add(Instr.of(Op.PUSH_OPFUNC, o.op()));

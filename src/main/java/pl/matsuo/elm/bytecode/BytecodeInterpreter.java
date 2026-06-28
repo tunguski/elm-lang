@@ -130,6 +130,7 @@ public final class BytecodeInterpreter {
 
   /** Compiles and binds a module's functions (value decls with parameters) as closures. */
   private void loadFunctions(Module module) {
+    compiler.enterModule(module.name());
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && !v.params().isEmpty()) {
         Chunk chunk = compiler.compileChunk(v.params(), v.body(), v.name());
@@ -141,6 +142,7 @@ public final class BytecodeInterpreter {
 
   /** Compiles and binds a module's parameterless values as lazily-evaluated thunks. */
   private void loadValues(Module module) {
+    compiler.enterModule(module.name());
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v && v.params().isEmpty()) {
         Chunk chunk = compiler.compileChunk(List.of(), v.body(), v.name());
