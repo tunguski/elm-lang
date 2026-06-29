@@ -640,7 +640,13 @@ public final class Infer {
     if (module != null) {
       String real = moduleAliases.getOrDefault(module, module);
       Map<String, AliasDef> ofModule = moduleAliasesByModule.get(real);
-      if (ofModule != null && ofModule.containsKey(name)) {
+      if (ofModule != null) {
+        // A known project module: a QUALIFIED reference resolves ONLY against that module's aliases.
+        // If the module defines no alias of this name it's a union/opaque type (e.g. `Validation.Rule`
+        // is `type Rule`, not `type alias Rule`) — return null so it stays an opaque `Con`. Falling
+        // back to the flat by-simple-name table here would wrongly resolve it to an unrelated module's
+        // same-named alias that the importer brought into scope unqualified (e.g. `Style.Rule`'s
+        // record), the type-namespace analogue of the constructor-collision bug.
         return ofModule.get(name);
       }
     }

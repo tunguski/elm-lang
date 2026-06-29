@@ -206,6 +206,45 @@ class ProjectCheckTest {
   }
 
   @Test
+  void qualifiedTypeDoesNotResolveToUnrelatedSameNamedAliasInScope() {
+    // Two modules define a type named `Rule`: one a record ALIAS (Style), one a UNION (Validation).
+    // A third module imports Style's `Rule` UNQUALIFIED and refers to Validation's by QUALIFIED name
+    // `Validation.Rule`. Regression: a qualified reference whose module defines no alias of that name
+    // (it's a union) fell through to the flat by-simple-name alias table, where the importer's
+    // unqualified `Style.Rule` shadowed it — so `Validation.Rule` wrongly expanded to Style's record
+    // and `Validation.check` reported the value as `{ range, condition, style }` instead of `Rule`.
+    String style =
+        """
+        module Style exposing (Rule)
+        type alias Rule = { range : Int, condition : Int, style : Int }
+        """;
+    String validation =
+        """
+        module Validation exposing (Rule, check)
+        type Rule = Rule Int
+        check : Rule -> Int -> Int
+        check (Rule n) v = n + v
+        """;
+    String sheet =
+        """
+        module Sheet exposing (validate)
+        import Style exposing (Rule)
+        import Validation
+        validationAt : Int -> Maybe Validation.Rule
+        validationAt i = Nothing
+        emptyRule : Rule
+        emptyRule = { range = 0, condition = 0, style = 0 }
+        validate : Int -> Int -> Int
+        validate ref input =
+            case validationAt ref of
+                Just rule -> Validation.check rule input
+                Nothing -> input
+        """;
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> TypeChecker.checkProject(style, validation, sheet));
+  }
+
+  @Test
   void everyElmPlaygroundGameTypeChecks() throws Exception {
     // The full ~1700-line evancz/elm-playground plus each game type-checks end to end — this needs
     // module-level let-generalization (SCC ordering) so shared helpers like `render` stay
