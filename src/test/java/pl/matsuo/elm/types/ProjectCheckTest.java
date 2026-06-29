@@ -284,6 +284,31 @@ class ProjectCheckTest {
   }
 
   @Test
+  void projectErrorIsLocatedAndNamedInItsOwnModuleNotTheEntryFile() {
+    // The error is in a NON-entry module. Regression: project errors were rendered against the entry
+    // (last) source with no module name, so the excerpt showed the wrong line and was unlocatable
+    // across many modules. The report must now name the originating module and show ITS source line.
+    String helper =
+        """
+        module Helper exposing (bad)
+        bad : Int
+        bad = "not an int"
+        """;
+    String main =
+        """
+        module Main exposing (main)
+        import Helper exposing (bad)
+        main = bad
+        """;
+    ElmTypeError err = assertThrows(ElmTypeError.class, () -> TypeChecker.checkProject(helper, main));
+    String msg = err.getMessage();
+    assertTrue(msg.contains("module Helper"), "should name the originating module, got: " + msg);
+    assertTrue(
+        msg.contains("\"not an int\""),
+        "should show Helper's own source line, not the entry file's, got: " + msg);
+  }
+
+  @Test
   void crossModuleTypeMismatchIsCaught() {
     String main =
         """

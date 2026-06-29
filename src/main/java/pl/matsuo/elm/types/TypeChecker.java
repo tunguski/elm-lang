@@ -58,26 +58,40 @@ public final class TypeChecker {
   public static Map<String, String> checkProject(String... sources) {
     List<String> resolved = pl.matsuo.elm.interp.BundledLibs.resolve(List.of(sources));
     List<Module> modules = new ArrayList<>();
+    Map<String, String> sourceByModule = new LinkedHashMap<>();
     for (String s : resolved) {
-      modules.add(Parser.parseModule(s));
+      Module m = Parser.parseModule(s);
+      modules.add(m);
+      sourceByModule.put(m.name(), s); // so an error from module M is rendered against M's source
     }
+    String entry = sources[sources.length - 1];
     try {
       Map<String, Scheme> schemes = new Infer().inferProject(modules, Signatures.globals());
       Map<String, String> result = new LinkedHashMap<>();
       schemes.forEach((name, scheme) -> result.put(name, Types.show(scheme.body())));
       return result;
     } catch (ElmTypeErrors errs) {
-      // Line numbers are per-module; attach against the entry (last) source as a best effort.
-      throw combine(sources[sources.length - 1], errs);
+      throw combine(sourceByModule, entry, errs);
     } catch (ElmTypeError err) {
-      throw locate(sources[sources.length - 1], err);
+      throw locate(sourceFor(sourceByModule, entry, err), err);
     }
+  }
+
+  /** The source the error should be rendered against: its tagged module's, or the entry as fallback. */
+  private static String sourceFor(Map<String, String> sourceByModule, String entry, ElmTypeError err) {
+    return err.module != null ? sourceByModule.getOrDefault(err.module, entry) : entry;
   }
 
   /** Locates every error in a multi-error result and joins them into one Elm-style report. The
    * returned exception keeps the individual (bare, located) errors in {@link ElmTypeErrors#errors}
    * so callers like the LSP can place one diagnostic per error. */
   static ElmTypeErrors combine(String source, ElmTypeErrors errs) {
+    return combine(Map.of(), source, errs);
+  }
+
+  /** As {@link #combine(String, ElmTypeErrors)} but picks each error's source by its tagged module
+   * (falling back to {@code entry}), so a multi-module report locates every excerpt in the right file. */
+  static ElmTypeErrors combine(Map<String, String> sourceByModule, String entry, ElmTypeErrors errs) {
     StringBuilder b = new StringBuilder();
     b.append("Found ").append(errs.errors.size()).append(" type errors:\n");
     for (int i = 0; i < errs.errors.size(); i++) {
@@ -85,7 +99,8 @@ public final class TypeChecker {
       if (i > 0) {
         b.append("─".repeat(50)).append("\n\n");
       }
-      b.append(locate(source, errs.errors.get(i)).getMessage()).append("\n");
+      ElmTypeError e = errs.errors.get(i);
+      b.append(locate(sourceFor(sourceByModule, entry, e), e).getMessage()).append("\n");
     }
     return new ElmTypeErrors(b.toString(), errs.errors);
   }
@@ -105,8 +120,9 @@ public final class TypeChecker {
           .append(" ".repeat(gutter.length() + Math.max(0, err.position.col() - 1)))
           .append("^");
     }
-    b.append("\n\n  at line ").append(err.position.line()).append(", column ")
-        .append(err.position.col());
+    b.append("\n\n  at ")
+        .append(err.module != null ? "module " + err.module + ", " : "")
+        .append("line ").append(err.position.line()).append(", column ").append(err.position.col());
     if (err.hint != null) {
       b.append("\n\nHint: ").append(err.hint);
     }

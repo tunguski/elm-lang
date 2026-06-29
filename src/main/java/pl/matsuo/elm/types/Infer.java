@@ -458,7 +458,14 @@ public final class Infer {
     for (Module m : ordered) {
       boolean hasMain =
           m.decls().stream().anyMatch(d -> d instanceof Decl.Value v && v.name().equals("main"));
-      Map<String, Scheme> values = inferModule(m, globals);
+      Map<String, Scheme> values;
+      try {
+        values = inferModule(m, globals);
+      } catch (ElmTypeError e) {
+        // Tag the error with the module it came from, so the report locates the excerpt against THIS
+        // module's source and names it — not the entry file's line at the same number.
+        throw e.inModule(m.name());
+      }
       String prefix = m.name() + ".";
       values.forEach((n, s) -> globals.put(prefix + n, s));
       declaredCtors.forEach((n, s) -> globals.put(prefix + n, s));
