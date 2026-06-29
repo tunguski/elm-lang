@@ -204,14 +204,19 @@ final class PreludeJson {
     return new ElmRecord(r);
   }
 
-  /** Percent-encodes a string for use in a URL: unreserved characters (A-Za-z0-9-_.~) pass through,
-   *  everything else becomes %XX over its UTF-8 bytes (RFC 3986, like elm/url's percentEncode). */
+  /** Percent-encodes a string for use in a URL: the characters JavaScript's {@code encodeURIComponent}
+   *  leaves alone — {@code A-Za-z0-9} and {@code - _ . ! ~ * ' ( )} — pass through, everything else
+   *  becomes %XX over its UTF-8 bytes. elm/url's {@code Url.percentEncode} IS {@code encodeURIComponent},
+   *  so this must match it exactly: the JS backend uses the real {@code encodeURIComponent}, and a
+   *  stricter RFC-3986 set here (encoding {@code ! * ' ( )}) made `Url.percentEncode` disagree between
+   *  the JVM test runtime and the browser. */
   private static String percentEncode(String s) {
     StringBuilder b = new StringBuilder();
     for (byte by : s.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
       int c = by & 0xFF;
       if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-          || c == '-' || c == '_' || c == '.' || c == '~') {
+          || c == '-' || c == '_' || c == '.' || c == '!' || c == '~'
+          || c == '*' || c == '\'' || c == '(' || c == ')') {
         b.append((char) c);
       } else {
         b.append('%').append(Character.toUpperCase(Character.forDigit(c >> 4, 16)))

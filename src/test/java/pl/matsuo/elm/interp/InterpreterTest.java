@@ -33,6 +33,10 @@ class InterpreterTest {
   void urlPercentEncodeDecode() {
     assertEquals("a%20b%26c", show("Url.percentEncode \"a b&c\""));
     assertEquals("hello-world.txt~", show("Url.percentEncode \"hello-world.txt~\"")); // unreserved kept
+    // Must match JS `encodeURIComponent` (which elm/url's percentEncode IS) so the JVM test runtime
+    // and the browser agree: `- _ . ! ~ * ' ( )` pass through, unlike strict RFC 3986.
+    assertEquals("a!b'(c)*-_.~", show("Url.percentEncode \"a!b'(c)*-_.~\""));
+    assertEquals("%24%2B%2C%2F", show("Url.percentEncode \"$+,/\"")); // reserved still encoded
     assertEquals("Just \"a b&c\"", show("Url.percentDecode \"a%20b%26c\""));
     assertEquals("Nothing", show("Url.percentDecode \"%zz\"")); // malformed -> Nothing
   }
