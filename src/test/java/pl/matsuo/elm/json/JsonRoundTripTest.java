@@ -276,6 +276,26 @@ class JsonRoundTripTest {
   }
 
   @Test
+  void decodeStringOnInvalidJsonGivesAStructuredFailureNotARawString() {
+    // Regression: a JSON *parse* failure must yield `Err (Failure msg value)` — a real
+    // Json.Decode.Error — not an `Err` wrapping a raw String. Otherwise the `Result Error a` is
+    // mistyped and `Result.mapError errorToString` (or any consumer of the error value) throws a
+    // ClassCastException ("String cannot be cast to ElmData"). Empty input is the simplest trigger.
+    String head = "module M exposing (result)\nimport Json.Decode as D\n";
+
+    // Mapping the error must run cleanly and produce a readable message, not crash.
+    String mapped =
+        decode(head + "result = Result.mapError D.errorToString (D.decodeString D.int \"\")\n");
+    assertTrue(mapped.startsWith("Err"), mapped);
+    assertTrue(mapped.contains("not valid JSON"), mapped);
+
+    // And `Result.toMaybe` of a failed parse is `Nothing` (the path the share-link decoder takes).
+    assertEquals(
+        "Nothing",
+        decode(head + "result = Result.toMaybe (Result.mapError D.errorToString (D.decodeString D.int \"oops\"))\n"));
+  }
+
+  @Test
   void indexOneOfAndAtDecoders() {
     String head = "module M exposing (result)\nimport Json.Decode as D\nimport Json.Encode as E\n";
     // index reads a positional element of a JSON array.

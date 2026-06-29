@@ -64,9 +64,14 @@ final class PreludeJson {
     fn("Json.Decode.decodeString", 2, a -> {
       Object json;
       try {
-        json = pl.matsuo.elm.json.JsonParse.parse((String) a[1]);
+        json = pl.matsuo.elm.json.JsonParse.parse((String) Thunk.resolve(a[1]));
       } catch (RuntimeException ex) {
-        return new ElmData("Err", new Object[] {ex.getMessage()});
+        // The Elm result is `Result Json.Decode.Error a`, so a parse failure must carry a structured
+        // `Failure message value` (like DecoderRunner does) — NOT a raw String, or `errorToString`
+        // (which casts its argument to the Error data) throws ClassCastException.
+        return new ElmData("Err",
+            new Object[] {new ElmData("Failure",
+                new Object[] {"This is not valid JSON! " + ex.getMessage(), pl.matsuo.elm.json.JsonParse.NULL})});
       }
       return pl.matsuo.elm.json.DecoderRunner.run(a[0], json);
     });
