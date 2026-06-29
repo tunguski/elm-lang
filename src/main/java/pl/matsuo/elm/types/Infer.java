@@ -592,15 +592,20 @@ public final class Infer {
                   .map(f -> new Type.Record.Field(f.name(), expandAliasesInType(f.type(), expanding)))
                   .toList());
       case Type.Con c -> {
-        AliasDef a = aliases.get(c.name());
-        if (a != null && !expanding.contains(c.name())) {
+        // Resolve by the reference's defining module (not the flat simple-name table), and key the
+        // cycle guard by defining-module + name, so a qualified cross-module alias nested in another
+        // alias's body (`B.Model`'s `ws : A.Model doc`) expands instead of being dropped opaque as a
+        // false self-cycle when it shares a simple name with the enclosing alias.
+        AliasDef a = resolveAlias(c.module(), c.name());
+        String key = aliasKey(c.module(), c.name());
+        if (a != null && !expanding.contains(key)) {
           Map<String, Type> sub = new HashMap<>();
           for (int i = 0; i < a.params().size() && i < c.args().size(); i++) {
             sub.put(a.params().get(i), expandAliasesInType(c.args().get(i), expanding));
           }
-          expanding.add(c.name());
+          expanding.add(key);
           Type expanded = expandAliasesInType(substTypeVars(a.body(), sub), expanding);
-          expanding.remove(c.name());
+          expanding.remove(key);
           yield expanded;
         }
         yield new Type.Con(
@@ -642,6 +647,14 @@ public final class Infer {
     return aliases.get(name);
   }
 
+  /** A cycle-guard key for an alias reference: the alias's DEFINING module (resolving an import alias)
+   * and name. Keying by the defining module — not just the simple name — lets two genuinely different
+   * aliases that share a simple name (e.g. {@code A.Model} nested inside {@code B.Model}) each expand,
+   * while a self-referential alias (e.g. {@code type alias Io = Posix.Io}) still terminates. */
+  private String aliasKey(String module, String name) {
+    return (module == null ? "" : moduleAliases.getOrDefault(module, module)) + ":" + name;
+  }
+
   /** Converts a surface {@link Type} to an inference {@link Ty}, expanding type aliases. */
   private Ty astToTy(Type type, Map<String, Ty> vars) {
     return switch (type) {
@@ -660,15 +673,18 @@ public final class Infer {
       case Type.Con c -> {
         AliasDef alias = resolveAlias(c.module(), c.name());
         // Guard against alias cycles (e.g. `type alias Io = Posix.Io`, where the dropped module
-        // qualifier makes the body refer to the same name): expand each alias at most once on a
-        // path, otherwise treat it as an opaque constructor instead of recursing forever.
-        if (alias != null && expandingAliases.add(c.name())) {
+        // qualifier makes the body refer to the same name): expand each alias at most once on a path,
+        // otherwise treat it as an opaque constructor instead of recursing forever. The key is the
+        // DEFINING module + name, so a nested cross-module alias sharing a simple name (a `B.Model`
+        // field of type `A.Model doc`) is not mistaken for a self-cycle and dropped opaque.
+        String key = aliasKey(c.module(), c.name());
+        if (alias != null && expandingAliases.add(key)) {
           Map<String, Ty> sub = new HashMap<>();
           for (int i = 0; i < alias.params().size() && i < c.args().size(); i++) {
             sub.put(alias.params().get(i), astToTy(c.args().get(i), vars));
           }
           Ty expanded = astToTy(alias.body(), sub);
-          expandingAliases.remove(c.name());
+          expandingAliases.remove(key);
           yield expanded;
         }
         yield new Ty.Con(c.name(), c.args().stream().map(x -> astToTy(x, vars)).toList());

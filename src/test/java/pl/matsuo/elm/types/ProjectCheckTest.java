@@ -167,6 +167,45 @@ class ProjectCheckTest {
   }
 
   @Test
+  void parameterisedAliasEmbeddedCrossModuleExpands() {
+    // The vendored Workspace engine's shape: a parameterised record alias whose field is ANOTHER
+    // module's parameterised record alias, the outer alias's own type variable passed as the
+    // argument (`Site.Model`'s `ws : Workspace.Model doc`). Expanding the outer alias must expand the
+    // nested cross-module one — but the alias-cycle guard was keyed by SIMPLE name, so a nested
+    // `A.Model` sharing the name `Model` with the enclosing `B.Model` was mistaken for a self-cycle
+    // and left opaque, so `m.ws.n` reported "expected `Model a` but got `{ … }`". (This is the
+    // checker false positive that forced the workspace bundle onto --no-check.)
+    String workspace =
+        """
+        module Workspace exposing (Model)
+        type alias Model doc =
+            { open : Maybe doc, count : Int }
+        """;
+    String site =
+        """
+        module Site exposing (Model, openCount)
+        import Workspace
+        type alias Model doc lmodel =
+            { ws : Workspace.Model doc, landing : lmodel, hash : String }
+        openCount : Model doc lmodel -> Int
+        openCount m = m.ws.count + String.length m.hash
+        """;
+    // Constructing the outer alias from an inner-alias value, and updating it, must also check.
+    String use =
+        """
+        module Use exposing (mk, rehash)
+        import Workspace
+        import Site
+        mk : Workspace.Model doc -> lmodel -> Site.Model doc lmodel
+        mk w l = { ws = w, landing = l, hash = "" }
+        rehash : String -> Site.Model doc lmodel -> Site.Model doc lmodel
+        rehash h m = { m | hash = h }
+        """;
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> TypeChecker.checkProject(workspace, site, use));
+  }
+
+  @Test
   void everyElmPlaygroundGameTypeChecks() throws Exception {
     // The full ~1700-line evancz/elm-playground plus each game type-checks end to end — this needs
     // module-level let-generalization (SCC ordering) so shared helpers like `render` stay
