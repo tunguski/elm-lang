@@ -297,6 +297,48 @@ public final class JsOptimizer {
     return new Partition(baseDecls, chunkDecls, stuck);
   }
 
+  /** The rendered output of a split: the base bundle (kernel + base decls + entry mount) and one
+   * self-contained script per chunk (its decls + a {@code $elm$chunkLoaded} ready signal). */
+  public record SplitFiles(String base, java.util.LinkedHashMap<String, String> chunks) {}
+
+  /**
+   * Routes a (split-compiled) bundle's lines into a base file and one file per chunk, per a {@link
+   * #partition} result. Every non-declaration line (kernel, DOM/TEA runtime, the entry mount) and
+   * every base decl stay in the base, in their original order (so eager {@code var} initialisers keep
+   * running in dependency order); each chunk's decls move to its file, followed by a {@code
+   * $elm$chunkLoaded("name")} call so the runtime knows the chunk's globals are now populated.
+   */
+  public static SplitFiles renderSplit(String bundle, Partition p) {
+    Map<String, String> owner = new HashMap<>();
+    for (var e : p.chunkDecls().entrySet()) {
+      for (String id : e.getValue()) {
+        owner.put(id, e.getKey());
+      }
+    }
+    java.util.regex.Pattern declPat = java.util.regex.Pattern.compile("^var (_\\$[A-Za-z0-9_$]+) = ");
+    StringBuilder base = new StringBuilder(bundle.length());
+    java.util.LinkedHashMap<String, StringBuilder> chunks = new java.util.LinkedHashMap<>();
+    for (String c : p.chunkDecls().keySet()) {
+      chunks.put(c, new StringBuilder());
+    }
+    String[] lines = bundle.split("\n", -1);
+    for (int i = 0; i < lines.length; i++) {
+      String line = lines[i];
+      var m = declPat.matcher(line);
+      String chunk = m.find() ? owner.get(m.group(1)) : null;
+      StringBuilder dest = chunk != null ? chunks.get(chunk) : base;
+      dest.append(line);
+      if (i != lines.length - 1) {
+        dest.append("\n");
+      }
+    }
+    java.util.LinkedHashMap<String, String> out = new java.util.LinkedHashMap<>();
+    for (var e : chunks.entrySet()) {
+      out.put(e.getKey(), e.getValue().append("$elm$chunkLoaded(\"").append(e.getKey()).append("\");\n").toString());
+    }
+    return new SplitFiles(base.toString(), out);
+  }
+
   /** One base-reachability fixpoint for {@link #partition}: the ids reachable from the bundle's
    * non-declaration lines (entry mount + kernel), following decls' RHS but never traversing into a
    * {@code barriers} id (a chunk root whose subtree is a split candidate). A barrier id that is

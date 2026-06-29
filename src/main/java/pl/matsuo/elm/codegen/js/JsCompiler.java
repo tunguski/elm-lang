@@ -289,6 +289,28 @@ public final class JsCompiler {
   }
 
   /**
+   * Compiles a project and splits it into a base bundle plus one lazily-loaded chunk per entry, in one
+   * step: {@code chunkModules} maps a chunk name to the set of module names that belong to it.
+   * Reachability pulls each chunk's private transitive code along; a module reached from two chunks
+   * (or from the base) is hoisted to the base. The base reaches each chunk only through dynamic {@code
+   * $a} lookups, so the chunk's code is genuinely deferred.
+   */
+  public static JsOptimizer.SplitFiles appBundleSplitFiles(
+      Map<String, Set<String>> chunkModules, String... sources) {
+    Set<String> lazyModules = new HashSet<>();
+    chunkModules.values().forEach(lazyModules::addAll);
+    String bundle = appBundleSplit(lazyModules, sources);
+    // partition keys chunks by module TAG (the form baked into generated ids); map names -> tags.
+    Map<String, Set<String>> chunkRoots = new java.util.LinkedHashMap<>();
+    for (var e : chunkModules.entrySet()) {
+      Set<String> tags = new HashSet<>();
+      e.getValue().forEach(name -> tags.add(sanitizeTag(name)));
+      chunkRoots.put(e.getKey(), tags);
+    }
+    return JsOptimizer.renderSplit(bundle, JsOptimizer.partition(bundle, chunkRoots));
+  }
+
+  /**
    * Like {@link #appBundleProject} but with an <b>incremental, content-hashed build cache</b>: each
    * module's compiled declarations are stored under {@code cacheDir} keyed by a hash of its source
    * plus a project "interface salt" (every module's declared/exposed names). Editing one module's

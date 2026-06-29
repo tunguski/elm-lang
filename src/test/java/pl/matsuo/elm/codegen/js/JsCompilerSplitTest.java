@@ -46,6 +46,34 @@ class JsCompilerSplitTest {
   }
 
   @Test
+  void appBundleSplitFilesProducesABaseAndAChunk() {
+    JsOptimizer.SplitFiles files =
+        JsCompiler.appBundleSplitFiles(Map.of("heavy", Set.of("Heavy")), MAIN, HEAVY);
+    String base = files.base();
+    String chunk = files.chunks().get("heavy");
+    // The chunk holds Heavy's decl and a ready signal; the base no longer defines it.
+    assertTrue(chunk.contains("var _$Heavy$run = "), "chunk defines Heavy.run");
+    assertTrue(chunk.contains("$elm$chunkLoaded(\"heavy\")"), "chunk signals ready on load");
+    assertFalse(base.contains("var _$Heavy$run = "), "base no longer defines Heavy.run");
+    // The base keeps the kernel + entry mount and reaches Heavy only through the dynamic seam.
+    assertTrue(base.contains("window.$start("), "base has the entry mount");
+    assertTrue(base.contains("$a(\"Heavy\", \"run\")"), "base calls Heavy via the dynamic seam");
+    // Every decl is defined exactly once across base + chunk.
+    assertEquals(
+        count(base, "var _$Main$main = ") + count(chunk, "var _$Main$main = "),
+        1,
+        "main defined once");
+  }
+
+  private static int count(String s, String needle) {
+    int n = 0;
+    for (int i = s.indexOf(needle); i >= 0; i = s.indexOf(needle, i + 1)) {
+      n++;
+    }
+    return n;
+  }
+
+  @Test
   void partitionCarvesTheLazyModuleOutOfTheBase() {
     // The whole point: with the dynamic seam in place, partition moves Heavy to its own chunk and
     // nothing is stuck in base.
