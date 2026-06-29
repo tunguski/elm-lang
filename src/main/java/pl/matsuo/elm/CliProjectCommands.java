@@ -305,16 +305,38 @@ final class Lint implements Callable<Integer> {
 
   @Command(name = "check", description = "Type-check a module, or a multi-module project.")
 final class Check implements Callable<Integer> {
-    @Parameters(arity = "1..*", description = "One .elm file, or several for a project.")
+    @Parameters(arity = "0..*", description = "One .elm file, or several for a project (omit with --project).")
     List<Path> files;
+
+    @Option(
+        names = "--project",
+        description =
+            "An elm.json (or its dir): load the project's modules + dependencies into scope, so"
+                + " cross-module references resolve (like `make`). Without it, only the given file(s)"
+                + " are in scope and a sibling's name reads as unknown.")
+    Path project;
+
+    @Option(names = "--registry", description = "Package cache for dependency sources (default: $ELM_REGISTRY or ~/.elm/registry).")
+    Path registry;
 
     @Override
     public Integer call() throws IOException {
       List<String> sources = new ArrayList<>();
-      for (Path p : files) {
-        if (p.toString().endsWith(".elm")) {
-          sources.add(Files.readString(p));
+      if (project != null) {
+        Path reg = registry != null ? registry : pl.matsuo.elm.pkg.Installer.defaultRegistryRoot();
+        sources.addAll(pl.matsuo.elm.project.ProjectLoader.loadSources(project, reg));
+      }
+      if (files != null) {
+        for (Path p : files) {
+          if (p.toString().endsWith(".elm")) {
+            sources.add(Files.readString(p));
+          }
         }
+      }
+      if (sources.isEmpty()) {
+        System.out.println(
+            pl.matsuo.elm.util.Ansi.error("check:", "no .elm sources — pass a file or --project."));
+        return 1;
       }
       try {
         var types =
