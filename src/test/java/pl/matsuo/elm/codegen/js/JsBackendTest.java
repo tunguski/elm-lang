@@ -57,6 +57,18 @@ class JsBackendTest {
     assertEquals(expected, actual, "expression: " + elmExpression);
   }
 
+  /** Structural `==` must coerce numbers nested in tuples/ctors/lists/records: a Float can be a Long
+   * on one side (an un-coerced Int literal) and a Double on the other (computed), so `( 0, 1 ) == (
+   * 0.0, 1.0 )` is True. The interpreter and JS must agree (JS numbers are already all doubles). */
+  @Test
+  void structuralEqualityCoercesNestedNumbers() {
+    same("( 0, 1 ) == ( 0.0, 1.0 )");
+    same("Just 0 == Just 0.0");
+    same("[ 0, 1 ] == [ 0.0, 1.0 ]");
+    same("{ x = 0 } == { x = 0.0 }");
+    same("( 1, 2 ) == ( 1, 3 )"); // a genuine inequality stays False
+  }
+
   /** A self-tail-recursive function must run in constant JS stack space (loop, not deep recursion):
    * a million-deep recursion would blow Node's call stack without the optimisation. */
   @Test

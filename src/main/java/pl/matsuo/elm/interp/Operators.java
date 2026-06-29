@@ -116,6 +116,72 @@ public final class Operators {
       }
       return toDouble(l) == toDouble(r);
     }
+    // Structural equality must coerce numbers nested ANYWHERE: the same Float value can be a Long on
+    // one side (an Int literal the checker resolved to Float but didn't coerce) and a Double on the
+    // other (computed), and Long(0).equals(Double(0.0)) is false. Recurse element-wise rather than
+    // fall to Java .equals — mirroring compareValues, which already coerces. Without this, e.g.
+    // `( 0, 1 ) == ( 0.0, 1.0 )` and `Just 0 == Just 0.0` wrongly returned False.
+    if (l instanceof pl.matsuo.elm.runtime.ElmTuple a
+        && r instanceof pl.matsuo.elm.runtime.ElmTuple b) {
+      if (a.size() != b.size()) {
+        return false;
+      }
+      for (int i = 0; i < a.size(); i++) {
+        if (!equals(a.get(i), b.get(i))) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (l instanceof ElmList la && r instanceof ElmList lb) {
+      ElmList a = la;
+      ElmList b = lb;
+      while (a instanceof ElmList.Cons ca && b instanceof ElmList.Cons cb) {
+        if (!equals(ca.head(), cb.head())) {
+          return false;
+        }
+        a = ca.tail();
+        b = cb.tail();
+      }
+      return a instanceof ElmList.Nil && b instanceof ElmList.Nil;
+    }
+    if (l instanceof pl.matsuo.elm.runtime.ElmData a
+        && r instanceof pl.matsuo.elm.runtime.ElmData b) {
+      if (!a.ctor().equals(b.ctor()) || a.args().length != b.args().length) {
+        return false;
+      }
+      for (int i = 0; i < a.args().length; i++) {
+        if (!equals(a.arg(i), b.arg(i))) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (l instanceof pl.matsuo.elm.runtime.ElmRecord a
+        && r instanceof pl.matsuo.elm.runtime.ElmRecord b) {
+      java.util.Map<String, Object> bf = b.fields();
+      if (a.fields().size() != bf.size()) {
+        return false;
+      }
+      for (var e : a.fields().entrySet()) {
+        if (!bf.containsKey(e.getKey()) || !equals(e.getValue(), bf.get(e.getKey()))) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (l instanceof pl.matsuo.elm.runtime.ElmArray a
+        && r instanceof pl.matsuo.elm.runtime.ElmArray b) {
+      if (a.items().length != b.items().length) {
+        return false;
+      }
+      for (int i = 0; i < a.items().length; i++) {
+        if (!equals(a.get(i), b.get(i))) {
+          return false;
+        }
+      }
+      return true;
+    }
     return l.equals(r);
   }
 
