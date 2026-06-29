@@ -305,7 +305,16 @@ public final class Infer {
     Map<String, Decl.Value> values = new LinkedHashMap<>();
     for (Decl d : module.decls()) {
       if (d instanceof Decl.Value v) {
-        values.put(v.name(), v);
+        // A top-level name must be unique. Without this, a second definition silently overwrote the
+        // first (last-wins), so a duplicate fixture could quietly hijack existing references — a real
+        // checker gap. (A type annotation `f : T` is already merged into its `f = …` value by the
+        // parser, so it is not a false duplicate.)
+        if (values.put(v.name(), v) != null) {
+          throw new ElmTypeError(
+              "The name `" + v.name() + "` is defined more than once at the top level of this"
+                  + " module. Remove or rename one of the definitions.",
+              v.pos());
+        }
       }
     }
     TypeEnv env = TypeEnv.root(globals);
