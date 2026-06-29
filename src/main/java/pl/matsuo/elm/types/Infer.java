@@ -59,7 +59,28 @@ public final class Infer {
   private final Map<String, String> ctorUnion = new HashMap<>();
   private final Map<String, Integer> ctorArity = new HashMap<>();
 
+  /** The unions a single module declares (variant lists / variant→union / variant→arity), captured
+   * per module so the union/exhaustiveness tables can be scoped to a module's own + imported unions
+   * rather than accumulated flat across the whole project. Without this, two modules' same-named
+   * constructors (e.g. a {@code Lit} variant in both {@code Ast.Expr} and {@code Regex.Atom}) collide
+   * — the type-namespace analogue of the alias/constructor collision handled elsewhere. */
+  private final Map<String, List<String>> declaredUnions = new HashMap<>();
+
+  private final Map<String, String> declaredCtorUnion = new HashMap<>();
+  private final Map<String, Integer> declaredCtorArity = new HashMap<>();
+  private record ModuleUnions(
+      Map<String, List<String>> unions, Map<String, String> ctorUnion, Map<String, Integer> ctorArity) {}
+
+  /** Each already-checked module's OWN unions, so importers can see exactly the unions they import. */
+  private final Map<String, ModuleUnions> moduleUnionsByModule = new HashMap<>();
+
   {
+    seedBuiltinUnions();
+  }
+
+  /** (Re)seed the four built-in unions into the union tables. Called once at construction (for the
+   * single-expression path) and again at the start of every module (whose tables are cleared first). */
+  private void seedBuiltinUnions() {
     registerBuiltinUnion("Bool", List.of("True", "False"), List.of(0, 0));
     registerBuiltinUnion("Maybe", List.of("Just", "Nothing"), List.of(1, 0));
     registerBuiltinUnion("Result", List.of("Err", "Ok"), List.of(1, 1));
@@ -106,6 +127,24 @@ public final class Infer {
     currentModule = module.name();
     aliases.clear();
     moduleAliases.clear();
+    // Scope the union/exhaustiveness tables to this module: builtins + the unions it imports + its
+    // own (registered below). Accumulating these flat across the whole project lets a constructor
+    // name shared by two modules (e.g. `Lit` in both `Ast.Expr` and `Regex.Atom`) collide.
+    unionCtors.clear();
+    ctorUnion.clear();
+    ctorArity.clear();
+    seedBuiltinUnions();
+    declaredUnions.clear();
+    declaredCtorUnion.clear();
+    declaredCtorArity.clear();
+    for (Module.Import imp : module.imports()) {
+      ModuleUnions u = moduleUnionsByModule.get(imp.module());
+      if (u != null) {
+        unionCtors.putAll(u.unions());
+        ctorUnion.putAll(u.ctorUnion());
+        ctorArity.putAll(u.ctorArity());
+      }
+    }
     // Builtin type aliases. `type alias Svg msg = Html msg`, so an annotation mentioning `Svg msg`
     // must expand to `Html msg` and unify with Html nodes. (A module-defined alias of the same
     // name, added below, takes precedence.)
@@ -458,6 +497,7 @@ public final class Infer {
     Map<String, Scheme> globals = new HashMap<>(base);
     moduleAliasesByModule.clear();
     moduleCtorsByModule.clear();
+    moduleUnionsByModule.clear();
     Map<String, Scheme> entryTypes = Map.of();
     String entryName = null;
     for (Module m : ordered) {
@@ -479,6 +519,12 @@ public final class Infer {
       // Scoping per import (rather than a flat project-wide table) keeps two modules' same-named
       // constructors (e.g. a `GotFields` variant in each page's `Msg`) from colliding.
       moduleCtorsByModule.put(m.name(), new HashMap<>(declaredCtors));
+      moduleUnionsByModule.put(
+          m.name(),
+          new ModuleUnions(
+              new HashMap<>(declaredUnions),
+              new HashMap<>(declaredCtorUnion),
+              new HashMap<>(declaredCtorArity)));
       // Store this module's OWN aliases with bodies fully expanded (nested aliases inlined in this
       // module's scope), so importers get self-contained definitions: no opacity (the alias expands
       // the same downstream as here) and no name bleed (only this module's alias names are exposed,
@@ -542,8 +588,11 @@ public final class Infer {
       variantNames.add(variant.name());
       ctorUnion.put(variant.name(), u.name());
       ctorArity.put(variant.name(), variant.args().size());
+      declaredCtorUnion.put(variant.name(), u.name());
+      declaredCtorArity.put(variant.name(), variant.args().size());
     }
     unionCtors.put(u.name(), variantNames);
+    declaredUnions.put(u.name(), variantNames);
     for (Decl.Union.Variant variant : u.variants()) {
       Ty ctor = result;
       List<Type> args = variant.args();
