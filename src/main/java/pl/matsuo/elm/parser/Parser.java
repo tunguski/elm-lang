@@ -671,13 +671,31 @@ public final class Parser {
     return withIndent(
         0,
         () -> {
-          // Record update: { base | field = value, ... }
+          // Record update with a simple local base: { x | field = value, ... }
           if (check(TokenType.LOWER) && peek(1).type() == TokenType.PIPE) {
             String base = advance().text();
             advance(); // |
             List<Expr.Record.Field> fields = parseRecordFields();
             expect(TokenType.RBRACE, "'}'");
             return new Expr.RecordUpdate(base, fields, pos);
+          }
+          // Record update with a NON-local base — a qualified value (`{ Chart.defaults | … }`), a
+          // field access (`{ model.cfg | … }`), etc. Standard Elm allows only a bare variable here,
+          // but the base is conceptually any record expression; desugar `{ e | fs }` to
+          // `let $b = e in { $b | fs }` so every backend reuses the simple-base path. Anything that
+          // is not the start of a record-literal field (a LOWER followed by `=`) is treated as a base
+          // expression terminated by `|`.
+          if (!(check(TokenType.LOWER) && peek(1).type() == TokenType.EQUALS)) {
+            Expr base = parseExpr();
+            expect(TokenType.PIPE, "'|'");
+            List<Expr.Record.Field> fields = parseRecordFields();
+            expect(TokenType.RBRACE, "'}'");
+            // A fresh name keyed by source offset — unique per `{`, and unwritable by users (the lexer
+            // never produces a `$` in an identifier), so it cannot shadow a real binding.
+            String fresh = "$ru$" + pos.offset();
+            Decl binding = new Decl.Value(fresh, List.of(), base, Optional.empty(), pos);
+            return new Expr.Let(
+                List.of(binding), new Expr.RecordUpdate(fresh, fields, pos), pos);
           }
           List<Expr.Record.Field> fields = parseRecordFields();
           expect(TokenType.RBRACE, "'}'");
