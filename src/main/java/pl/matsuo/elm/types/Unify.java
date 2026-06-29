@@ -198,9 +198,23 @@ public final class Unify {
     // bind its row variable straight to the shared one rather than to an empty record `{ | rest }`:
     // wrapping a bare row variable in an empty open record produces records that re-unify and
     // re-route without end (an infinite loop), since `{ | r }` is a record, not a plain variable.
-    Ty rest = new Ty.Var(0, Constraint.NONE);
+    //
+    // The fresh row variable must live at the level of the row variables it mediates — the *minimum*
+    // of the two tails' levels — NOT level 0. A level-0 row variable is later unified with a closed
+    // record's remainder (see the `aClosed`/`bClosed` branches above), and `adjustLevels(record, 0)`
+    // would then drag every field variable in that remainder (e.g. a record's `msg`) down to level 0,
+    // below the generalization cutoff — so a perfectly polymorphic top-level value (`view : Config
+    // msg -> Html msg`) is generalized as monomorphic and its type leaks across call sites.
+    int restLevel = Math.min(levelOf(a.tail()), levelOf(b.tail()));
+    Ty rest = new Ty.Var(restLevel, Constraint.NONE);
     unify(a.tail(), onlyB.isEmpty() ? rest : new Ty.Record(onlyB, rest));
     unify(b.tail(), onlyA.isEmpty() ? rest : new Ty.Record(onlyA, rest));
+  }
+
+  /** The level of a row tail (a variable after pruning); a non-variable tail can't constrain the
+   * fresh row variable's level, so it contributes no upper bound. */
+  private static int levelOf(Ty tail) {
+    return prune(tail) instanceof Ty.Var v ? v.level : Integer.MAX_VALUE;
   }
 
   // --- helpers -----------------------------------------------------------
