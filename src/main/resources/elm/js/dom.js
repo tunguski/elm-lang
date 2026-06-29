@@ -192,6 +192,23 @@
   $rt['Task.sequence']=function(l){ var ts=$listToArray(l); return $task(function(ok,err){ var res=[]; (function go(i){ if(i>=ts.length){ ok($list(res)); return; } ts[i]._[0](function(v){ res.push(v); go(i+1); }, err); })(0); }); };
   $rt['Task.perform']=function(toMsg){ return function(t){ return $cmd(function(d){ t._[0](function(v){ d(toMsg(v)); }, function(e){}); }); }; };
   $rt['Task.attempt']=function(toMsg){ return function(t){ return $cmd(function(d){ t._[0](function(v){ d(toMsg($data('Ok',[v]))); }, function(e){ d(toMsg($data('Err',[e]))); }); }); }; };
+  // Chunk.load: lazily fetch a code-split chunk, then dispatch a message. The base reaches a chunk's
+  // symbols only through dynamic $a("tag","name") lookups, so the chunk's <script> must be injected
+  // (populating those globals) before the app calls in. Idempotent + deduped: a ready chunk resolves
+  // synchronously, concurrent loads share one request. Headlessly (no document) there are no separate
+  // files — everything is already in the one bundle — so it succeeds immediately. The chunk script
+  // calls the global $elm$chunkLoaded once its globals are defined.
+  var $chunks = {};                                    // id -> 'ready' | in-flight Promise
+  var $chunkUrl = ($self && $self.$chunkUrl) || {};    // id -> url, optionally set by the host page
+  function $loadScript(url){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=url; s.async=true; s.onload=function(){ res(); }; s.onerror=function(){ rej(new Error('failed to load '+url)); }; document.head.appendChild(s); }); }
+  $self.$elm$chunkLoaded=function(id){ $chunks[id]='ready'; };
+  $rt['Chunk.load']=function(id){ return function(toMsg){ return $cmd(function(d){
+    if (typeof document==='undefined' || $chunks[id]==='ready'){ d(toMsg($data('Ok',[$unit]))); return; }
+    var st=$chunks[id];
+    var pr=(st && st.then) ? st : ($chunks[id]=$loadScript($chunkUrl[id] || ('chunk.'+id+'.js')));
+    pr.then(function(){ $chunks[id]='ready'; d(toMsg($data('Ok',[$unit]))); })
+      .catch(function(e){ $chunks[id]=undefined; d(toMsg($data('Err',[$data('LoadError',[String((e && e.message) || e)])]))); });
+  }); }; };
   // Random: generators produce a value on demand (real client-side randomness).
   function $gen(g){ return $data('$Gen',[g]); }
   // Generators draw from $rand (default Math.random); Random.step swaps in a seeded PRNG for purity.
