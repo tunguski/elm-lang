@@ -56,11 +56,21 @@ public final class JsCompiler {
   private final Map<String, ModuleInfo> project;
   private final String moduleTag;
 
+  /** Module names that live in a lazily-loaded chunk (empty for a normal, single-file build). A
+   * reference from outside the chunk to one of these modules' top-levels is emitted as a dynamic
+   * global lookup ({@code $a("tag","name")}) rather than a bare id, so {@link JsOptimizer#partition}
+   * does not pull the chunk back into the base. Intra-chunk references stay bare (fast). */
+  private final Set<String> lazyModules;
+
   private JsCompiler(Module module) {
-    this(module, null);
+    this(module, null, Set.of());
   }
 
   private JsCompiler(Module module, Map<String, ModuleInfo> project) {
+    this(module, project, Set.of());
+  }
+
+  private JsCompiler(Module module, Map<String, ModuleInfo> project, Set<String> lazyModules) {
     // Constant-fold every declaration body before codegen (smaller, faster output).
     module =
         new Module(
@@ -71,6 +81,7 @@ public final class JsCompiler {
             module.pos());
     this.module = module;
     this.project = project;
+    this.lazyModules = lazyModules;
     this.currentModule = module.name();
     this.moduleTag = sanitizeTag(module.name());
     this.ctorArity = Prelude.defaultCtorArity();
@@ -219,8 +230,15 @@ public final class JsCompiler {
 
   /** Every module's compiled declarations, in import order, concatenated. */
   private static String compileModules(List<Module> modules, Map<String, ModuleInfo> scope) {
+    return compileModules(modules, scope, Set.of());
+  }
+
+  /** As {@link #compileModules(List, Map)} but with a set of lazily-chunked module names, so a
+   * reference into one of them is emitted as a dynamic global lookup (see {@link #externalId}). */
+  private static String compileModules(
+      List<Module> modules, Map<String, ModuleInfo> scope, Set<String> lazyModules) {
     return orderModules(modules).stream()
-        .map(m -> new JsCompiler(m, scope).declarations())
+        .map(m -> new JsCompiler(m, scope, lazyModules).declarations())
         .collect(Collectors.joining());
   }
 
@@ -248,6 +266,25 @@ public final class JsCompiler {
     Map<String, ModuleInfo> scope = buildScope(modules);
     String mainId = Js.qualifiedId(sanitizeTag(entryModule(modules).name()), "main");
     return Js.lines(JsRuntime.SOURCE, JsRuntime.DOM, compileModules(modules, scope), Js.mount(mainId))
+        + "\n";
+  }
+
+  /**
+   * Like {@link #appBundleProject} but compiled for <b>code-splitting</b>: references from the base
+   * into a module named in {@code lazyModules} become dynamic global lookups, so {@link
+   * JsOptimizer#partition} can carve those modules out into a separately-loaded chunk. With an empty
+   * {@code lazyModules} the output is byte-identical to {@link #appBundleProject}. The returned bundle
+   * is still one self-contained program; splitting it into files is {@code partition}'s job.
+   */
+  public static String appBundleSplit(Set<String> lazyModules, String... sources) {
+    List<Module> modules = new ArrayList<>();
+    for (String s : pl.matsuo.elm.interp.BundledLibs.resolve(List.of(sources))) {
+      modules.add(Parser.parseModule(s));
+    }
+    Map<String, ModuleInfo> scope = buildScope(modules);
+    String mainId = Js.qualifiedId(sanitizeTag(entryModule(modules).name()), "main");
+    return Js.lines(
+            JsRuntime.SOURCE, JsRuntime.DOM, compileModules(modules, scope, lazyModules), Js.mount(mainId))
         + "\n";
   }
 
@@ -902,7 +939,15 @@ public final class JsCompiler {
   }
 
   private String externalId(String moduleName, String name) {
-    return "_$" + project.get(moduleName).tag() + "$" + name;
+    String tag = project.get(moduleName).tag();
+    // Cross-seam reference: a reference FROM outside a lazy chunk INTO it resolves the target at call
+    // time via a dynamic global lookup, so the chunk's code isn't statically reachable from the base
+    // (partition keeps it out of the base bundle). Intra-chunk references — and all references in a
+    // non-split build (lazyModules empty) — stay bare and fast.
+    if (lazyModules.contains(moduleName) && !lazyModules.contains(currentModule)) {
+      return Js.call("$a", List.of(Js.str(tag), Js.str(name)));
+    }
+    return "_$" + tag + "$" + name;
   }
 
   private String compileCtor(String module, String name) {

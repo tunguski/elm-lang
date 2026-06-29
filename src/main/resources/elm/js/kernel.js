@@ -353,6 +353,12 @@ var $rt = {
   'Debug.log': function(m){ return function(v){ console.log(m + ': ' + $show(v,true)); return v; }; }
 };
 function $g(name){ var v=$rt[name]; if (v===undefined) throw new Error('Unbound: '+name); return v; }
+// $a resolves a lazily-chunked app symbol `_$tag$name` at call time. In a classic browser <script>
+// the bundle's top-level `var`s are global properties, so a chunk script loaded later populates the
+// same namespace the base reads. A clear error fires if the chunk isn't loaded yet (the loader is
+// meant to fetch it first). Code-split builds only — a normal build never emits an $a reference.
+var $self = (typeof globalThis!=='undefined') ? globalThis : (typeof window!=='undefined' ? window : this);
+function $a(tag,name){ var v=$self['_$'+tag+'$'+name]; if (v===undefined) throw new Error('Chunk not loaded: '+tag+'.'+name); return v; }
 // Json.Encode (pure, lives in the kernel so it works under Node too): a Value is a native JS
 // value and encode is JSON.stringify.
 $rt['Json.Encode.int']=function(n){ return n; };
