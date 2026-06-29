@@ -78,7 +78,10 @@ public final class Prelude {
     "opacity", "fillOpacity:fill-opacity", "strokeLinecap:stroke-linecap",
     "strokeLinejoin:stroke-linejoin", "strokeOpacity:stroke-opacity",
     "strokeDasharray:stroke-dasharray", "fontSize:font-size", "textAnchor:text-anchor",
-    "fontFamily:font-family", "xlinkHref:xlink:href", "dominantBaseline:dominant-baseline"
+    "fontFamily:font-family", "xlinkHref:xlink:href", "dominantBaseline:dominant-baseline",
+    // id/class and the gradient family — kept in sync with Signatures and dom.js (SvgAttributeParityTest).
+    "id", "class", "offset", "stopColor:stop-color", "stopOpacity:stop-opacity", "gradientUnits",
+    "gradientTransform", "spreadMethod", "fx", "fy", "fr"
   };
 
   public static Map<String, Object> builtins() {
@@ -104,6 +107,18 @@ public final class Prelude {
   public static java.util.List<String> svgElementNames() {
     java.util.List<String> names = new java.util.ArrayList<>();
     for (String spec : SVG_TAGS) {
+      int colon = spec.indexOf(':');
+      names.add(colon < 0 ? spec : spec.substring(0, colon));
+    }
+    return names;
+  }
+
+  /** The Elm names of the bound {@code Svg.Attributes} functions (the {@code elmName} of each
+   * {@link #SVG_ATTRS} entry). Kept in lock-step with the JS runtime and the type-checker by
+   * {@code SvgAttributeParityTest}. */
+  public static java.util.List<String> svgAttributeNames() {
+    java.util.List<String> names = new java.util.ArrayList<>();
+    for (String spec : SVG_ATTRS) {
       int colon = spec.indexOf(':');
       names.add(colon < 0 ? spec : spec.substring(0, colon));
     }

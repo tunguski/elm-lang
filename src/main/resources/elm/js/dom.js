@@ -111,7 +111,9 @@
     'textAnchor:text-anchor','fontSize:font-size','xlinkHref:xlink:href',
     'strokeLinecap:stroke-linecap','strokeLinejoin:stroke-linejoin','fillOpacity:fill-opacity',
     'strokeOpacity:stroke-opacity','fontFamily:font-family','dominantBaseline:dominant-baseline',
-    'strokeDasharray:stroke-dasharray','offset','stopColor:stop-color','gradientUnits:gradientUnits'];
+    'strokeDasharray:stroke-dasharray','offset','stopColor:stop-color','gradientUnits:gradientUnits',
+    // id/class and the gradient family — kept in sync with Signatures + Prelude.SVG_ATTRS (SvgAttributeParityTest).
+    'id','class','stopOpacity:stop-opacity','gradientTransform','spreadMethod','fx','fy','fr'];
   svgAttrs.forEach(function(spec){ var p=spec.split(':'); var nm=spec.indexOf(':')<0?p[0]:spec.substring(spec.indexOf(':')+1);
     $rt['Svg.Attributes.'+p[0]]=function(v){ return $data('$Att',[nm,v]); }; });
   $rt['Browser.sandbox']=function(r){ return $data('$Sandbox',[r]); };

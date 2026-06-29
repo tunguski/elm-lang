@@ -403,7 +403,12 @@ public final class Signatures {
           "width", "height", "viewBox", "preserveAspectRatio", "cx", "cy", "r", "x", "y", "x1", "y1",
           "x2", "y2", "rx", "ry", "fill", "stroke", "strokeWidth", "points", "d", "transform",
           "opacity", "fillOpacity", "strokeLinecap", "strokeLinejoin", "strokeOpacity",
-          "strokeDasharray", "fontSize", "textAnchor", "fontFamily", "xlinkHref", "dominantBaseline"
+          "strokeDasharray", "fontSize", "textAnchor", "fontFamily", "xlinkHref", "dominantBaseline",
+          // id/class (commonly needed; SVG `class` must go through setAttribute, not className) and the
+          // gradient family (a <linearGradient>/<radialGradient> + <stop>s). Kept in sync with the
+          // interpreter (Prelude.SVG_ATTRS) and the JS runtime (dom.js svgAttrs) — see SvgAttributeParityTest.
+          "id", "class", "offset", "stopColor", "stopOpacity", "gradientUnits", "gradientTransform",
+          "spreadMethod", "fx", "fy", "fr"
         }) {
       g("Svg.Attributes." + attr, "String -> Attribute msg");
     }
