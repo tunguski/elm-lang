@@ -192,6 +192,10 @@ public final class Prelude {
     BUILTINS.put("Cmd.none", d("$CmdNone"));
     fn("Cmd.batch", 1, a -> d("$CmdBatch", a[0]));
     fn("Cmd.map", 2, a -> a[1]); // tagging is not tracked headlessly
+    // Chunk.load id toMsg: headless backends are eager (the code is already in this process), so
+    // loading a chunk is a no-op Cmd — matching the Browser.Navigation.* convention. Only the JS
+    // browser runtime actually fetches a separate file.
+    fn("Chunk.load", 2, a -> d("$CmdNone"));
     BUILTINS.put("Sub.none", d("$SubNone"));
     fn("Sub.batch", 1, a -> d("$SubBatch", a[0]));
     fn("Sub.map", 2, a -> a[1]);

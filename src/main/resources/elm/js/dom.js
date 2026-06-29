@@ -207,7 +207,7 @@
     var st=$chunks[id];
     var pr=(st && st.then) ? st : ($chunks[id]=$loadScript($chunkUrl[id] || ('chunk.'+id+'.js')));
     pr.then(function(){ $chunks[id]='ready'; d(toMsg($data('Ok',[$unit]))); })
-      .catch(function(e){ $chunks[id]=undefined; d(toMsg($data('Err',[$data('LoadError',[String((e && e.message) || e)])]))); });
+      .catch(function(e){ $chunks[id]=undefined; d(toMsg($data('Err',[String((e && e.message) || e)]))); });
   }); }; };
   // Random: generators produce a value on demand (real client-side randomness).
   function $gen(g){ return $data('$Gen',[g]); }

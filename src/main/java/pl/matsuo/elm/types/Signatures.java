@@ -436,6 +436,10 @@ public final class Signatures {
     g("Cmd.none", "Cmd msg");
     g("Cmd.batch", "List (Cmd msg) -> Cmd msg");
     g("Cmd.map", "(a -> b) -> Cmd a -> Cmd b");
+    // Code-splitting: lazily load a chunk by name, then dispatch a message with the result. Browser
+    // builds fetch the chunk's <script>; headless backends (interpreter, bytecode) are eager — the
+    // code is already in-process — so it is a no-op Cmd there (like Browser.Navigation.*).
+    g("Chunk.load", "String -> (Result String () -> msg) -> Cmd msg");
     g("Sub.none", "Sub msg");
     g("Sub.batch", "List (Sub msg) -> Sub msg");
     g("Sub.map", "(a -> b) -> Sub a -> Sub b");
