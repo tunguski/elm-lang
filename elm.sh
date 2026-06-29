@@ -26,9 +26,19 @@ MVNW="./mvnw"
 MAIN_CLASS="target/classes/pl/matsuo/elm/Main.class"
 CP_FILE="target/elm-classpath.txt"
 
-# Recompile if the entry point hasn't been built yet.
+# Recompile if the entry point is missing OR any source is newer than it. Gating on Main.class alone
+# meant an edit to the Java sources ran against stale classes, and a partial/interrupted build (Main
+# compiled but a later class — e.g. an inner class like Solver$Unsolvable — missing) surfaced as a
+# baffling NoClassDefFoundError at startup. The `find … -newer … -quit` stops at the first newer file,
+# so this stays a fast millisecond check, not a Maven launch, when everything is up to date.
+NEEDS_BUILD=
 if [ ! -f "$MAIN_CLASS" ]; then
-  echo "elm.sh: Main.class missing — compiling…" >&2
+  NEEDS_BUILD="Main.class missing"
+elif [ -n "$(find src/main/java -name '*.java' -newer "$MAIN_CLASS" -print -quit 2>/dev/null)" ]; then
+  NEEDS_BUILD="sources changed"
+fi
+if [ -n "$NEEDS_BUILD" ]; then
+  echo "elm.sh: $NEEDS_BUILD — compiling…" >&2
   $MVNW -q -o compile 2>/dev/null || $MVNW -q compile
 fi
 
