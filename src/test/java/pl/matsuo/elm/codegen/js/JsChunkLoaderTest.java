@@ -41,6 +41,31 @@ class JsChunkLoaderTest {
     assertEquals("before:true|after:42|cmd:Ok", runNode(program));
   }
 
+  @Test
+  void chunkLoadInjectsTheScriptThenDispatchesAndAResolves() {
+    assumeTrue(nodeAvailable());
+    // The real browser path: with a document present, Chunk.load injects the chunk <script>; once it
+    // runs (defining the global and calling $elm$chunkLoaded), the Cmd dispatches Ok and $a resolves
+    // the now-loaded symbol. A shim document evals a stand-in chunk on appendChild and fires onload.
+    String shim =
+        String.join(
+            "\n",
+            "globalThis.window=globalThis;",
+            // a stand-in chunk: defines the global symbol and signals ready (as a real chunk file does)
+            "var CHUNK=\"globalThis['_$Heavy$run']=function(x){return x+1;}; $elm$chunkLoaded('heavy');\";",
+            "globalThis.document={ createElement:function(){return {};},",
+            "  head:{ appendChild:function(s){ if(s.src){ (0,eval)(CHUNK); setTimeout(function(){ if(s.onload) s.onload(); },0); } } } };");
+    String driver =
+        String.join(
+            "\n",
+            "var cmd=$rt['Chunk.load']('heavy')(function(r){return r;});",
+            "cmd._[0](function(msg){",
+            "  process.stdout.write('loaded:'+msg.$+'|run:'+$a('Heavy','run')(41));",
+            "});");
+    String program = shim + "\n" + JsRuntime.SOURCE + "\n" + JsRuntime.DOM + "\n" + driver;
+    assertEquals("loaded:Ok|run:42", runNode(program));
+  }
+
   private static String runNode(String program) {
     try {
       Path file = Files.createTempFile("elm-chunk-", ".js");

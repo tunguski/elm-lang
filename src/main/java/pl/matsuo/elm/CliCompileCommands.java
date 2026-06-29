@@ -172,6 +172,15 @@ final class Make implements Callable<Integer> {
         description = "Fail (instead of warning) if elm.lock is missing or disagrees with elm.json.")
     boolean frozen;
 
+    @Option(
+        names = "--split",
+        description =
+            "Code-split a chunk: --split NAME=Module1,Module2 (repeatable). Those modules and their "
+                + "private deps move to a `chunk.NAME.js` written beside the output; the app loads it "
+                + "on demand with `Chunk.load \"NAME\"`. The base only references the chunk through the "
+                + "dynamic loader, so its code is deferred until first use.")
+    Map<String, String> split;
+
     @Override
     public Integer call() throws IOException, InterruptedException {
       if (watch) {
@@ -198,6 +207,9 @@ final class Make implements Callable<Integer> {
         if (!noCheck && Main.typeError(arr) instanceof String msg) {
           System.out.println(pl.matsuo.elm.util.Ansi.error("Type error:", msg));
           return 1;
+        }
+        if (split != null && !split.isEmpty()) {
+          return makeSplit(arr);
         }
         String bundle =
             cache != null
@@ -230,6 +242,57 @@ final class Make implements Callable<Integer> {
       } catch (IOException e) {
         throw new java.io.UncheckedIOException(e);
       }
+    }
+
+    /** A code-split build: write the base artifact plus one {@code chunk.NAME.js} beside it. */
+    private int makeSplit(String[] arr) throws IOException {
+      java.util.Map<String, java.util.Set<String>> chunkModules = new java.util.LinkedHashMap<>();
+      split.forEach(
+          (name, mods) ->
+              chunkModules.put(
+                  name, new java.util.LinkedHashSet<>(java.util.Arrays.asList(mods.split(",")))));
+      var files = JsCompiler.appBundleSplitFiles(chunkModules, arr);
+      // treeShake can't see the dynamic $a("tag","name") references, so for split builds the trimming
+      // is pruneKernel (base only) + minify, never treeShake.
+      java.util.function.UnaryOperator<String> trim =
+          optimize
+              ? pl.matsuo.elm.codegen.js.JsOptimizer::minify
+              : java.util.function.UnaryOperator.identity();
+      String baseJs =
+          optimize ? pl.matsuo.elm.codegen.js.JsOptimizer.pruneKernel(files.base()) : files.base();
+      baseJs = trim.apply(baseJs);
+      Path outPath = Path.of(output).toAbsolutePath();
+      Path dir = outPath.getParent();
+      for (var e : files.chunks().entrySet()) {
+        String chunkJs = trim.apply(e.getValue());
+        Path cp = dir.resolve("chunk." + e.getKey() + ".js");
+        Files.writeString(cp, chunkJs);
+        boolean empty = !e.getValue().contains("var _$");
+        System.out.println(
+            "Wrote " + cp + " (" + chunkJs.length() + " bytes)"
+                + (empty
+                    ? "  [empty — the base references this chunk directly; route the call through"
+                        + " Chunk.load \"" + e.getKey() + "\" so it can be deferred]"
+                    : ""));
+      }
+      String artifact =
+          output.endsWith(".js")
+              ? baseJs
+              : """
+                <!doctype html>
+                <html>
+                <head><meta charset="utf-8"><title>Elm</title></head>
+                <body>
+                <div id="app"></div>
+                <script>
+                __JS__
+                </script>
+                </body>
+                </html>
+                """.replace("__JS__", baseJs);
+      Files.writeString(Path.of(output), artifact);
+      System.out.println("Wrote " + output + " (base, " + artifact.length() + " bytes)");
+      return 0;
     }
   }
 
