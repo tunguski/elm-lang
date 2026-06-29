@@ -26,6 +26,10 @@ public final class Infer {
   /** Alias names currently being expanded by {@link #astToTy}, to break self-referential cycles. */
   private final java.util.Set<String> expandingAliases = new java.util.HashSet<>();
   private final Map<String, String> moduleAliases = new HashMap<>();
+  /** The module currently being inferred. A SELF-qualified reference ({@code MyModule.foo} inside
+   * {@code MyModule}) can't find its prefixed global (those are registered only after the module
+   * finishes), so it alone may fall back to the unqualified local binding. */
+  private String currentModule;
   private final Map<Expr, Ty> numericLiterals = new IdentityHashMap<>();
   private final Map<Expr, Ty> nodeTypes = new IdentityHashMap<>();
   /** Constructors (union variants and record-alias constructors) the last module declared. */
@@ -99,6 +103,7 @@ public final class Infer {
    * aliases and constructors; throws {@link ElmTypeError} on a type error. */
   public Map<String, Scheme> inferModule(Module module, Map<String, Scheme> base) {
     Map<String, Scheme> globals = new HashMap<>(base);
+    currentModule = module.name();
     aliases.clear();
     moduleAliases.clear();
     // Builtin type aliases. `type alias Svg msg = Html msg`, so an annotation mentioning `Svg msg`
@@ -1117,16 +1122,21 @@ public final class Infer {
   private Scheme resolve(TypeEnv env, String module, String name) {
     // A qualified reference (e.g. `D.map`) must resolve through its module first: otherwise an
     // unqualified name brought in by `import X exposing (..)` (say `map` from Html) would shadow
-    // the qualified `Json.Decode.map`. Only when the module-qualified form is unknown do we fall
-    // back to the local/global unqualified binding.
+    // the qualified `Json.Decode.map`.
     if (module != null) {
       String real = moduleAliases.getOrDefault(module, module);
       Scheme s = env.globals().get(real + "." + name);
-      if (s == null) {
+      // Fall back to the unqualified binding ONLY for a SELF-qualified reference (`MyModule.foo`
+      // inside `MyModule`), whose prefixed global isn't registered until the module finishes. For a
+      // reference to ANOTHER module, never fall back: a same-named local/global (e.g. a `let`-bound
+      // `backend` while resolving a missing `Workspace.Browser.backend`) would be grabbed silently,
+      // turning a missing import into a baffling "Infinite type" via self-application. Let it fall
+      // through to the clear "Cannot find module" diagnostic below instead.
+      if (s == null && real.equals(currentModule)) {
         s = env.lookup(name);
-      }
-      if (s == null) {
-        s = env.globals().get(name);
+        if (s == null) {
+          s = env.globals().get(name);
+        }
       }
       if (s == null) {
         // Distinguish "the module isn't in scope" from "the module is loaded but has no such member".

@@ -309,6 +309,44 @@ class ProjectCheckTest {
   }
 
   @Test
+  void qualifiedRefToMissingModuleDoesNotGrabSameNamedLocal() {
+    // `Workspace.Browser.backend config.namespace` referencing an unloaded module, with a let-bound
+    // local `backend` in scope: the qualified ref must NOT silently fall back to the local (whose
+    // placeholder, applied to an argument, self-unifies into "Infinite type: a occurs in a -> b").
+    // It must report the genuinely-missing module instead. Only a SELF-qualified ref may fall back.
+    String src =
+        """
+        module Site exposing (program)
+        program config =
+            let
+                backend =
+                    config.namespace
+            in
+            Workspace.Browser.backend backend
+        """;
+    ElmTypeError err = assertThrows(ElmTypeError.class, () -> TypeChecker.checkModule(src));
+    assertTrue(
+        err.getMessage().contains("Cannot find module"),
+        "should blame the missing module, not produce an Infinite type, got: " + err.getMessage());
+  }
+
+  @Test
+  void selfQualifiedReferenceStillResolves() {
+    // A module referring to its OWN top-level by qualified name (`M.a` inside `M`) must still resolve
+    // — its prefixed global isn't registered until the module finishes, so the unqualified fallback
+    // legitimately applies for the current module (and only it).
+    String src =
+        """
+        module M exposing (a, b)
+        a : Int
+        a = 1
+        b : Int
+        b = M.a + 1
+        """;
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> TypeChecker.checkModule(src));
+  }
+
+  @Test
   void crossModuleTypeMismatchIsCaught() {
     String main =
         """
