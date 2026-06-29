@@ -268,6 +268,22 @@ class ProjectCheckTest {
   }
 
   @Test
+  void unresolvedImportReportsMissingModuleNotUnknownName() {
+    // Referencing a sibling module's value when that module isn't loaded (e.g. `make` on one file
+    // without `--project`) must blame the unresolved import, not read like a typo in a loaded module.
+    String main =
+        """
+        module Main exposing (x)
+        import Sheet
+        x = Sheet.rawAt 0
+        """;
+    ElmTypeError err = assertThrows(ElmTypeError.class, () -> TypeChecker.checkProject(main));
+    assertTrue(
+        err.getMessage().contains("Cannot find module `Sheet`"),
+        "expected a missing-module message, got: " + err.getMessage());
+  }
+
+  @Test
   void crossModuleTypeMismatchIsCaught() {
     String main =
         """

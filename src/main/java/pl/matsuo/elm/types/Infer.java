@@ -1122,6 +1122,22 @@ public final class Infer {
         s = env.globals().get(name);
       }
       if (s == null) {
+        // Distinguish "the module isn't in scope" from "the module is loaded but has no such member".
+        // When NOTHING is known under the module's prefix, the real problem is an unresolved import
+        // (e.g. `make` on a single file without its siblings, or no `--project`), not a typo in the
+        // member name — say so instead of the misleading "Unknown name: Sheet.rawAt".
+        String prefix = real + ".";
+        boolean moduleKnown =
+            moduleCtorsByModule.containsKey(real)
+                || moduleAliasesByModule.containsKey(real)
+                || env.globals().keySet().stream().anyMatch(k -> k.startsWith(prefix));
+        if (!moduleKnown) {
+          throw new ElmTypeError(
+              "Cannot find module `"
+                  + real
+                  + "` — its import is unresolved. Check the import, or load the full module set"
+                  + " (pass --project, or list the sibling .elm files).");
+        }
         throw new ElmTypeError(
             "Unknown name: " + module + "." + name + suggest(name, env));
       }
