@@ -9,6 +9,7 @@ import pl.matsuo.elm.ast.Decl;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Type;
 import pl.matsuo.elm.error.ElmRuntimeError;
+import pl.matsuo.elm.error.ElmTypeError;
 import pl.matsuo.elm.parser.Parser;
 
 /**
@@ -45,6 +46,7 @@ public final class Project {
     }
     for (String source : sources) {
       Module module = Parser.parseModule(source, projectFixities);
+      checkUniqueTopLevel(module);
       modules.put(module.name(), module);
     }
 
@@ -205,6 +207,30 @@ public final class Project {
       }
     }
     return new RuntimeEnv(globals, unqualified, aliases, ctorArity, recordCtors, m.name());
+  }
+
+  /**
+   * Reject a module that defines the same top-level value name twice. The interpreter does no type
+   * checking, so without this a duplicate definition would silently last-win — every reference to
+   * the name picks up whichever definition was parsed last (a duplicate test fixture, say, can
+   * quietly hijack an existing one). The type checker ({@code make}/{@code check}) catches this in
+   * {@code Infer}; this is the same guard for the interpreter-backed commands ({@code test}/{@code
+   * run}/{@code script}). A type annotation {@code f : T} is merged into its {@code f = …} value by
+   * the parser, so it is not counted as a separate definition.
+   */
+  private static void checkUniqueTopLevel(Module m) {
+    java.util.Set<String> seen = new java.util.HashSet<>();
+    for (Decl d : m.decls()) {
+      if (d instanceof Decl.Value v && !seen.add(v.name())) {
+        throw new ElmTypeError(
+            "The name `"
+                + v.name()
+                + "` is defined more than once at the top level of module `"
+                + m.name()
+                + "`. Remove or rename one of the definitions.",
+            v.pos());
+      }
+    }
   }
 
   private void loadModule(Module m) {
