@@ -347,6 +347,53 @@ class ProjectCheckTest {
   }
 
   @Test
+  void recordAliasFieldUnionTypeBindsInItsDefiningModuleNotTheUseSite() {
+    // A record alias whose field is the DEFINING module's own union, used (and elaborated) by an
+    // importer that defines a same-named type. Regression: the stored alias body kept the union as a
+    // bare unqualified `Con`, so when the importer elaborated `WS.Access` the name `P` re-resolved in
+    // the importer's scope and bound to ITS `P` — `WS.empty` (List WS.P) then mismatched the annotation
+    // (List importer-P). The defining module is now baked into the stored body so it can't re-resolve.
+    String ws =
+        """
+        module WS exposing (Access, empty)
+        type P = U String
+        type alias Access = { owners : List P }
+        empty : Access
+        empty = { owners = [] }
+        """;
+    String main =
+        """
+        module Main exposing (out)
+        import WS
+        type alias P = { x : Int }
+        out : WS.Access
+        out = WS.empty
+        """;
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> TypeChecker.checkProject(ws, main));
+  }
+
+  @Test
+  void recordAliasFieldUnionStillRejectsAGenuinelyWrongValue() {
+    // The companion to the above: pinning the field to WS.P must not collapse the type — a local
+    // record value of a same-named importer type is still a real mismatch and must be rejected.
+    String ws =
+        """
+        module WS exposing (Access)
+        type P = U String
+        type alias Access = { owners : List P }
+        """;
+    String main =
+        """
+        module Main exposing (bad)
+        import WS
+        type alias P = { x : Int }
+        bad : WS.Access
+        bad = { owners = [ { x = 1 } ] }
+        """;
+    assertThrows(ElmTypeError.class, () -> TypeChecker.checkProject(ws, main));
+  }
+
+  @Test
   void crossModuleTypeMismatchIsCaught() {
     String main =
         """

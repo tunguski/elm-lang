@@ -669,8 +669,20 @@ public final class Infer {
           expanding.remove(key);
           yield expanded;
         }
+        // Not an alias here: a union (or a builtin/global type). This body is being stored for
+        // importers to elaborate in THEIR scope, so pin a module-defined type to its defining module
+        // — otherwise a bare name (`Access`'s `owners : List Principal`) re-resolves at the use site
+        // and binds to a same-named local type there. Canonicalise an import-aliased qualifier to the
+        // real module, and stamp an unqualified reference to one of THIS module's own unions with the
+        // current module. Builtins/imported names are left as-is (resolved in the importer, as before).
+        String module = c.module();
+        if (module != null) {
+          module = moduleAliases.getOrDefault(module, module);
+        } else if (declaredUnions.containsKey(c.name())) {
+          module = currentModule;
+        }
         yield new Type.Con(
-            c.module(), c.name(), c.args().stream().map(x -> expandAliasesInType(x, expanding)).toList());
+            module, c.name(), c.args().stream().map(x -> expandAliasesInType(x, expanding)).toList());
       }
     };
   }
