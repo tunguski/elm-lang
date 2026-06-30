@@ -543,6 +543,21 @@ public final class Infer {
           (name, def) ->
               exported.put(
                   name, new AliasDef(def.params(), expandAliasesInType(def.body(), new java.util.HashSet<>()))));
+      // Re-exported aliases: a type alias the module lists in its explicit `exposing (...)` but
+      // imported from another module rather than declaring itself. Those live (already expanded) in
+      // the `aliases` scope built from this module's imports. Without re-exposing them, an importer of
+      // a facade module sees the name as opaque — e.g. `Rogue.Game` re-exposes `Rogue.Game.Types.Game`,
+      // so `g.field` on a `Game` from `Rogue.Game` failed with "expected Game but got { ... }".
+      if (!m.exposing().open()) {
+        for (String name : m.exposing().names()) {
+          if (!name.isEmpty()
+              && Character.isUpperCase(name.charAt(0))
+              && !exported.containsKey(name)
+              && aliases.containsKey(name)) {
+            exported.put(name, aliases.get(name));
+          }
+        }
+      }
       moduleAliasesByModule.put(m.name(), exported);
       if (hasMain || entryName == null) {
         entryTypes = values;

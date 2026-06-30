@@ -394,6 +394,50 @@ class ProjectCheckTest {
   }
 
   @Test
+  void aReexportedAliasResolvesThroughTheFacadeModule() {
+    // A record alias defined in one module and RE-EXPOSED by a facade module (which imports it and
+    // lists it in its own `exposing (...)`) must expand for an importer of the facade — otherwise the
+    // name stays opaque and a field access reports "expected Game but got { ... }". This is the shape
+    // of elm-rogue's `Rogue.Game` re-exposing `Rogue.Game.Types.Game`.
+    String types =
+        """
+        module Types exposing (Game)
+        type alias Game = { hero : { level : Int }, turn : Int }
+        """;
+    String facade =
+        """
+        module Facade exposing (Game)
+        import Types exposing (Game)
+        """;
+    String main =
+        """
+        module Main exposing (turnOf)
+        import Facade exposing (Game)
+        turnOf : Game -> Int
+        turnOf g = g.turn
+        """;
+    // Before the fix, `turnOf` failed to check (Game opaque); it must now type-check cleanly.
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> TypeChecker.checkProject(types, facade, main));
+  }
+
+  @Test
+  void pageCaretEditorExtensionTypeChecks() {
+    // Browser.Dom.pageCaret is an elm-lang runtime extension (dom.js) for code editors; its signature
+    // must be in scope so editor-vendoring apps type-check without --no-check.
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () ->
+            TypeChecker.checkModule(
+                """
+                module M exposing (move)
+                import Browser.Dom
+                import Task
+                move : (Result Browser.Dom.Error Int -> msg) -> Cmd msg
+                move toMsg = Task.attempt toMsg (Browser.Dom.pageCaret "ed" "pagedown")
+                """));
+  }
+
+  @Test
   void crossModuleTypeMismatchIsCaught() {
     String main =
         """

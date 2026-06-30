@@ -87,6 +87,7 @@ class BuiltinSignatureCoverageTest {
       Set.of(
           "Browser.Dom.blur",
           "Browser.Dom.focus",
+          "Browser.Dom.pageCaret",
           "Browser.Dom.setViewport",
           "Browser.Events.onKeyPress",
           "File.openPicker",

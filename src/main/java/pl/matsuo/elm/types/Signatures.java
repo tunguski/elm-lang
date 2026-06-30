@@ -516,6 +516,10 @@ public final class Signatures {
     g("Browser.Dom.setViewport", "Float -> Float -> Task x ()");
     g("Browser.Dom.focus", "String -> Task Error ()");
     g("Browser.Dom.blur", "String -> Task Error ()");
+    // pageCaret: an elm-lang extension (see dom.js) for code editors — moves a textarea's caret a page
+    // up/down or to top/bottom, scrolls it into view, and returns the new caret offset. `dir` is one
+    // of "pageup"|"pagedown"|"top"|"bottom".
+    g("Browser.Dom.pageCaret", "String -> String -> Task Error Int");
 
     g("Task.perform", "(a -> msg) -> Task x a -> Cmd msg");
     g("Task.attempt", "(Result x a -> msg) -> Task x a -> Cmd msg");
