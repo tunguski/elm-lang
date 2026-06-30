@@ -67,10 +67,22 @@
   // Html.map / Svg.map: rebuild a virtual node, routing every event's message through f.
   function $mapAttr(f, a){
     if (a.$!=='$On') return a;
-    var ev=a._[0], h=a._[1];
-    if (ev==='input'||ev==='check') return $data('$On',[ev, function(x){ return f(h(x)); }]);
-    if (h && h.$==='$Dec') return $data('$On',[ev, $data('$Dec',[function(e){ var r=h._[0](e); return r.ok?{ok:1,v:f(r.v)}:r; }])]);
-    return $data('$On',[ev, f(h)]);
+    var ev=a._[0], h=a._[1], flag=a._[2];
+    // A custom decoder ($Dec) must be mapped AS a decoder, whatever the event is named. Matching
+    // ev==='input'/'check' first would wrongly treat an `on "input"` / `on "change"` decoder as an
+    // onInput/onCheck tagger and invoke the decoder object as a function — which silently breaks any
+    // such handler once it sits behind Html.map (e.g. a code editor's controlled <textarea>: typed
+    // text never produces a message, so it appears frozen). The pd/sp flag (a._[2]) must also be
+    // carried through, and a preventDefaultOn/stopPropagationOn decoder yields a (msg, Bool) tuple,
+    // so map only its first component.
+    if (h && h.$==='$Dec'){
+      var dec = (flag==='pd'||flag==='sp')
+        ? $data('$Dec',[function(e){ var r=h._[0](e); return r.ok?{ok:1,v:{$:'#',vs:[f(r.v.vs[0]), r.v.vs[1]]}}:r; }])
+        : $data('$Dec',[function(e){ var r=h._[0](e); return r.ok?{ok:1,v:f(r.v)}:r; }]);
+      return $data('$On',[ev, dec, flag]);
+    }
+    if (ev==='input'||ev==='check') return $data('$On',[ev, function(x){ return f(h(x)); }, flag]);
+    return $data('$On',[ev, f(h), flag]);
   }
   function $mapHtml(f, v){
     if (v.$==='$Node') return $data('$Node',[v._[0], $list($listToArray(v._[1]).map(function(a){return $mapAttr(f,a);})), $list($listToArray(v._[2]).map(function(k){return $mapHtml(f,k);}))]);

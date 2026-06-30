@@ -75,6 +75,39 @@ class VdomDiffTest {
     return runNode(program);
   }
 
+  @Test
+  void htmlMapKeepsCustomInputDecoder() {
+    // Regression: Html.map over `on "input" <decoder>` must keep it a $Dec decoder, not treat the
+    // decoder object as an onInput tagger (String -> msg). Matching the event name before the $Dec
+    // check meant a mapped `on "input"`/`on "change"` decoder was invoked as a function, so an
+    // embedded controlled <textarea> (a syntax-highlighting code editor) went dead the moment it sat
+    // behind Html.map — typed text produced no message, the view never updated. Here: build that
+    // attribute, map it through `f = \v -> Wrap v`, and confirm it is still a decoder that routes the
+    // decoded value through f.
+    String shim =
+        """
+        globalThis.window=globalThis;
+        globalThis.requestAnimationFrame=function(){};
+        globalThis.document={createElement:function(){return{};},createElementNS:function(){return{};},createTextNode:function(){return{};}};
+        """;
+    String body =
+        """
+        var dec=$rt['Json.Decode.at']($list(['target','value']))($rt['Json.Decode.string']);
+        var node=$rt['Html.node']('textarea')($list([$rt['Html.Events.on']('input')(dec)]))($list([]));
+        var mapped=$rt['Html.map'](function(v){return $data('Wrap',[v]);})(node);
+        var lst=mapped._[1], onAttr=null;
+        while(lst&&lst.$==='::'){ if(lst.a.$==='$On') onAttr=lst.a; lst=lst.b; }
+        var h=onAttr._[1];
+        var kind=(h&&h.$==='$Dec')?'dec':'tagger';
+        var r=(h&&h.$==='$Dec')?h._[0]({target:{value:'hi'}}):{ok:0};
+        var shown=(r&&r.ok&&r.v&&r.v.$==='Wrap')?('Wrap:'+r.v._[0]):'broken';
+        process.stdout.write(kind+'|'+shown);
+        """;
+    String program =
+        shim + JsCompiler.declarationsScriptWithDomProject("module M exposing (x)\nx = 0\n") + "\n" + body;
+    assertEquals("dec|Wrap:hi", runNode(program));
+  }
+
   private static String runNode(String program) {
     try {
       Path file = Files.createTempFile("elm-vdom-", ".js");
