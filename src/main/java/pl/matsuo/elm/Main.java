@@ -68,6 +68,7 @@ import pl.matsuo.elm.runtime.ElmData;
       Docs.class,
       CoverageCmd.class,
       Check.class,
+      Vendor.class,
       Repl.class,
       Lsp.class,
       Format.class,

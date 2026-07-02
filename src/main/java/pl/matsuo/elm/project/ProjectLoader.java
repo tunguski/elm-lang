@@ -99,6 +99,12 @@ public final class ProjectLoader {
       gatherElm(root.resolve(dir), sources);
     }
 
+    // 1b) Vendored source dependencies declared in elm.vendored.json: clone/update each to its pinned
+    // revision under git-deps/ (or use a local-override path), and add its selected modules.
+    for (VendoredDeps.Resolved dep : VendoredDeps.resolve(root, frozen)) {
+      gatherElm(dep.sourceRoot(), sources, dep.include(), dep.exclude());
+    }
+
     // 2) Resolved dependencies' sources from the package cache (skipping the built-in packages).
     for (Map.Entry<String, Version> dep : resolvedDependencies(text).entrySet()) {
       if (BUNDLED.contains(dep.getKey())) {
@@ -169,14 +175,33 @@ public final class ProjectLoader {
 
   /** Appends the contents of every {@code .elm} file beneath {@code base} (sorted) to {@code out}. */
   private static void gatherElm(Path base, List<String> out) {
+    gatherElm(base, out, List.of(), List.of());
+  }
+
+  /**
+   * Gathers {@code .elm} modules under {@code base}, filtered by {@code include}/{@code exclude} globs
+   * (matched against each module's path relative to {@code base}, with {@code /} separators). An empty
+   * {@code include} means "all"; {@code exclude} is applied afterwards — so {@code exclude:["Main.elm"]}
+   * drops a vendored library's own entry point that would otherwise clash with the consumer's.
+   */
+  private static void gatherElm(Path base, List<String> out, List<String> include, List<String> exclude) {
     if (!Files.isDirectory(base)) {
       return;
     }
+    List<java.nio.file.PathMatcher> inc = include.stream().map(ProjectLoader::glob).toList();
+    List<java.nio.file.PathMatcher> exc = exclude.stream().map(ProjectLoader::glob).toList();
     try (Stream<Path> walk = Files.walk(base)) {
       walk.filter(p -> p.toString().endsWith(".elm"))
           .sorted()
           .forEach(
               p -> {
+                Path rel = Path.of(base.relativize(p).toString().replace('\\', '/'));
+                if (!inc.isEmpty() && inc.stream().noneMatch(m -> m.matches(rel))) {
+                  return;
+                }
+                if (exc.stream().anyMatch(m -> m.matches(rel))) {
+                  return;
+                }
                 try {
                   out.add(Files.readString(p, StandardCharsets.UTF_8));
                 } catch (IOException e) {
@@ -186,5 +211,9 @@ public final class ProjectLoader {
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  private static java.nio.file.PathMatcher glob(String pattern) {
+    return java.nio.file.FileSystems.getDefault().getPathMatcher("glob:" + pattern);
   }
 }

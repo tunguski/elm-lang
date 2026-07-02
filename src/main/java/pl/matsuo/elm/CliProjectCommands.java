@@ -352,6 +352,44 @@ final class Check implements Callable<Integer> {
     }
   }
 
+  @Command(
+      name = "vendor",
+      description =
+          "Resolve source dependencies from elm.vendored.json: clone/update each repo under git-deps/"
+              + " at its pinned revision. `make`/`test`/`check --project` do this automatically; run"
+              + " it explicitly to pre-fetch (e.g. to cache git-deps/ in CI).",
+      footerHeading = "%nExamples:%n",
+      footer = {
+        "  elm vendor                 # resolve for the project in the current directory",
+        "  elm vendor --project path  # resolve for a specific elm.json / project dir",
+        "  elm vendor --frozen        # fail if any dep isn't already present at its ref (no fetch)",
+      })
+final class Vendor implements Callable<Integer> {
+    @Option(names = "--project", description = "The elm.json (or its dir); defaults to the current directory.")
+    java.nio.file.Path project;
+
+    @Option(names = "--frozen", description = "Require every dep to already be checked out at its ref; do not fetch.")
+    boolean frozen;
+
+    @Override
+    public Integer call() {
+      java.nio.file.Path p = project != null ? project : java.nio.file.Path.of(".");
+      java.nio.file.Path root =
+          java.nio.file.Files.isDirectory(p) ? p : p.toAbsolutePath().getParent();
+      var deps = pl.matsuo.elm.project.VendoredDeps.read(root);
+      if (deps.isEmpty()) {
+        System.out.println("No " + pl.matsuo.elm.project.VendoredDeps.MANIFEST + " — nothing to vendor.");
+        return 0;
+      }
+      pl.matsuo.elm.project.VendoredDeps.resolve(root, frozen);
+      for (var d : deps) {
+        System.out.println("Vendored " + d.name() + " @ " + d.ref() + " (" + d.repo() + ")");
+      }
+      System.out.println("Resolved " + deps.size() + " dependency(ies) into " + root.resolve("git-deps"));
+      return 0;
+    }
+  }
+
   @Command(name = "repl", description = "Read-eval-print loop.")
 final class Repl implements Callable<Integer> {
     @Option(
