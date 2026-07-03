@@ -100,7 +100,7 @@ to any command for its full options.**
 |---|---|
 | `run <file.elm>` | Evaluate a definition (default `main`) and print it; programs/Html render to HTML. Options: `--value NAME`, `--backend interp\|bytecode`, `--watch`, `--no-check`. |
 | `eval "<expr>"` | Evaluate a single expression (`--backend interp\|bytecode`). |
-| `make <file.elm…>` | Compile to a deployable HTML page or JS bundle (`-o`). `--project` pulls in an `elm.json`'s sources; `--cache` recompiles only changed modules; `--optimize` tree-shakes + minifies and reports the saving. |
+| `make <file.elm…>` | Compile to a deployable HTML page or JS bundle (`-o`). `--project` pulls in an `elm.json`'s sources; `--cache` recompiles only changed modules; `--optimize` tree-shakes + minifies and reports the saving; `--split NAME=Modules` emits a base bundle + lazily-loaded `chunk.NAME.js` (fetched at runtime via `Chunk.load`). |
 | `js <file.elm>` | Emit JavaScript; `--min` minifies, `--map` adds an inline source map. |
 | `wasm <file.elm…>` | Compile a project's numeric/list/record/string functions to a WebAssembly binary (linear-memory backend; `-o`, `--project`). |
 
@@ -113,6 +113,7 @@ to any command for its full options.**
 | `format <file.elm>` | Format (elm-format style): `--write`, `--check` (gates CI), `--project`. |
 | `lint <file.elm…>` | Report leftover `Debug.*` and unused definitions (non-zero exit on findings). |
 | `coverage <file.elm>` | Run a definition and report which top-level definitions executed (`--value`). |
+| `doctest <file.elm…>` | Run the executable examples in doc comments (an expression followed by a `-->` line). |
 
 **Docs & packages**
 
@@ -122,6 +123,12 @@ to any command for its full options.**
 | `diff <old.elm> <new.elm>` | Compare a module's public API across versions → semver magnitude (MAJOR/MINOR/PATCH) and the changes. |
 | `bump <old.elm> <new.elm> [version]` | Propose the next version from the API change since a baseline. |
 | `install <author/name>` | Add a package to `elm.json`, re-solve dependencies and download its sources (`--elm` = public package.elm-lang.org; `--registry`, `--from`). |
+| `uninstall <author/name>` | Remove a direct dependency and re-solve the rest. |
+| `upgrade` | Re-solve direct dependencies to their latest available versions (`--dry-run`). |
+| `outdated` | Report direct dependencies with a newer version in the registry. |
+| `verify` | Check `elm.lock` against `elm.json` and the registry (reproducible, tamper-evident). |
+| `publish <file.elm>` | Publish preflight: type-check, write `docs.json`, and (with `--bump-from`) derive and validate the next version. |
+| `vendor` | Resolve git-native source dependencies from `elm.vendored.json` into `git-deps/` (`make`/`test`/`check --project` do this automatically; `--frozen` to require them pre-fetched). |
 | `project <elm.json\|dir> [check\|run]` | Load an `elm.json` project and check or run it. |
 | `init [dir]` | Scaffold `elm.json` + `src/`. |
 
@@ -224,7 +231,7 @@ detailed per-construct and per-module reference.
 | The Elm Architecture (`Browser.sandbox`/`element`/`document`), virtual-DOM | ✅ | with a time-travel debugger |
 | Effects: `Random`, `Time`, `Task`, `Http`, `File`, `Browser.Events`/`Dom` | ✅ | |
 | WebGL (`Math.Vector*`/`Matrix4`, shaders, textures) | ✅ | renders in a real `<canvas>` |
-| Third-party packages from the registry | ⚠️ | `elm install` solves, downloads (`--from`) and the interpreter/type-checker compile & run them; public registry + JS/WASM loading pending — see Known limitations |
+| Third-party packages from the registry | ⚠️ | `elm install` solves and downloads (`--from` or the public `--elm` registry); the interpreter, type-checker and JS backend compile & run them; only WASM loading of package sources is pending — see Known limitations |
 | GLSL custom binary operators from packages (`\|.`, `</>`) | ⚠️ | lex & parse; run only if you define them |
 
 **Prelude**: `Basics`, `List`, `String`, `Char`, `Maybe`, `Result`, `Tuple`, `Dict`, `Set`,
@@ -302,6 +309,11 @@ package manager** for everything outside the bundled set:
   transitive closure (highest allowed, backing off on conflict).
 - **Cache.** Packages live in an on-disk cache laid out as
   `<root>/<author>/<name>/<version>/{elm.json, src/…}` (default `$ELM_REGISTRY` or `~/.elm/registry`).
+- **Git-native source deps.** Alongside the registry, a project's `elm.vendored.json` can declare
+  **source dependencies on other repos** (repo + pinned revision + source subdir + optional
+  include/exclude globs). `elm vendor` — run automatically by `make`/`test`/`check --project` — clones
+  each into `git-deps/<name>` at its ref and adds its modules to the build path; an
+  `elm.vendored.local.json` can point a dep at a local checkout for side-by-side editing.
 - **Download.** Two remote protocols are supported. `--from <url>` uses a tiny static-file protocol
   (`versions.txt`, per-version `elm.json`, `files.txt`); `--elm [url]` (default the **public**
   `package.elm-lang.org`) speaks the real registry shape — `all-packages` for the version index,
