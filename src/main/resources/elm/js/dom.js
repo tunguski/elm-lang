@@ -697,8 +697,16 @@
     // first diff into a node lacking one of these attrs/styles can't remove it (it has no record of it).
     applyProps(el, $listToArray(v._[1]));
     $listToArray(v._[2]).forEach(function(k){ el.appendChild(window.$toDom(k, childNs)); });
+    $maybeAutofocus(el);
     return el;
   };
+  // Honour `autofocus` on a freshly-created element the way HTML does: focus it once it is in the
+  // live DOM. $toDom runs before the node is inserted (and before any re-entrant render), so defer to
+  // the next microtask, by which point $patch has attached it. Only fires on element *creation* (never
+  // on reuse), so a controlled input keeps focus/caret across re-renders without being re-focused.
+  function $maybeAutofocus(el){
+    if (el && el.autofocus){ $defer(function(){ try{ if (el.isConnected && document.activeElement!==el) el.focus(); }catch(e){} }); }
+  }
   // Same virtual node kind? Text vs element, and matching element tag (for $Node and $Keyed).
   function $sameType(a,b){ return a.$===b.$ && ((a.$!=='$Node' && a.$!=='$Keyed') || a._[0]===b._[0]); }
   // Diff old/new virtual nodes and patch the real DOM in place, preserving element identity
@@ -728,6 +736,7 @@
     applyProps(el, $listToArray(v._[1])); // record el.$at/$st at creation (see $toDom)
     el.$keyed=[];
     $listToArray(v._[2]).forEach(function(p){ var c=window.$toDom(p.vs[1], childNs); el.appendChild(c); el.$keyed.push([p.vs[0], p.vs[1], c]); });
+    $maybeAutofocus(el);
     return el;
   }
   // Patches a keyed element by matching children to the previous render by key, so reordered or

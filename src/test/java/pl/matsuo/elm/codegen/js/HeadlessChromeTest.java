@@ -259,6 +259,39 @@ class HeadlessChromeTest {
   }
 
   @Test
+  void autofocusFocusesADynamicallyInsertedInput() throws Exception {
+    assumeTrue(CHROME != null, "Chrome not installed");
+    // An `autofocus` input that appears as the result of an update (not present in the initial
+    // render) must take keyboard focus once it lands in the DOM — the way HTML's autofocus works.
+    // This is what lets a pure component (one whose update returns no Cmd, e.g. a document editor
+    // that can't issue Browser.Dom.focus) still get a working text field on demand.
+    String app =
+        """
+        module Main exposing (main)
+        import Browser
+        import Html exposing (div, button, input, text)
+        import Html.Attributes exposing (autofocus, id, value)
+        import Html.Events exposing (onClick)
+        type Msg = Show
+        main = Browser.sandbox { init = False, update = \\_ _ -> True, view = view }
+        view shown =
+            div []
+                [ button [ onClick Show ] [ text "show" ]
+                , if shown then input [ id "typed", autofocus True, value "x" ] [] else text "hidden"
+                ]
+        """;
+    // Click to insert the input, then (after the deferred autofocus microtask) record which element
+    // holds focus into the DOM so --dump-dom can see it.
+    String driver =
+        "document.querySelector('button').click();"
+            + "setTimeout(function(){var d=document.createElement('div');d.id='AF';"
+            + "d.setAttribute('data-active', document.activeElement ? document.activeElement.id : 'none');"
+            + "document.body.appendChild(d);}, 0);";
+    String dom = renderPage(JsCompiler.htmlPage(app, driver));
+    assertTrue(dom.contains("data-active=\"typed\""), "the autofocus input took focus: " + dom);
+  }
+
+  @Test
   void mathMatrix4MakeScaleIsBound() throws Exception {
     assumeTrue(CHROME != null, "Chrome not installed");
     // Regression: Math.Matrix4.makeScale (the Vec3 form, distinct from makeScale3) was unbound in the
