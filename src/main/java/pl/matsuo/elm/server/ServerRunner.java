@@ -25,8 +25,13 @@ public final class ServerRunner {
 
   private ServerRunner() {}
 
-  /** A decoded Elm {@code Response}. */
-  public record Resp(int status, String contentType, String body) {}
+  /** A decoded Elm {@code Response}: status, Content-Type, body, and any extra response headers. */
+  public record Resp(int status, String contentType, String body, java.util.List<String[]> headers) {
+    /** A response with no extra headers (used by the static file server and error responses). */
+    public Resp(int status, String contentType, String body) {
+      this(status, contentType, body, java.util.List.of());
+    }
+  }
 
   // --- stateless ---------------------------------------------------------
 
@@ -190,6 +195,9 @@ public final class ServerRunner {
           }
           byte[] out = resp.body().getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", resp.contentType());
+          for (String[] h : resp.headers()) {
+            exchange.getResponseHeaders().add(h[0], h[1]);
+          }
           exchange.sendResponseHeaders(resp.status(), out.length == 0 ? -1 : out.length);
           try (OutputStream os = exchange.getResponseBody()) {
             os.write(out);
@@ -253,12 +261,29 @@ public final class ServerRunner {
     return new ElmRecord(fields);
   }
 
-  /** Decodes an Elm {@code Response} record. */
+  /** Decodes an Elm {@code Response} record (its {@code headers} field is optional, for back-compat). */
   private static Resp decodeResponse(Object value) {
     if (!(Thunk.resolve(value) instanceof ElmRecord r)) {
       throw new IllegalStateException("expected a Server.Response record, got: " + value);
     }
-    return new Resp(intOf(r.get("status")), str(r.get("contentType")), str(r.get("body")));
+    return new Resp(
+        intOf(r.get("status")), str(r.get("contentType")), str(r.get("body")), decodeHeaders(r));
+  }
+
+  /** Reads the optional {@code headers : List (String, String)} field into (name, value) pairs. */
+  private static java.util.List<String[]> decodeHeaders(ElmRecord r) {
+    if (!r.has("headers")) {
+      return java.util.List.of();
+    }
+    java.util.List<String[]> out = new java.util.ArrayList<>();
+    Object cur = Thunk.resolve(r.get("headers"));
+    while (cur instanceof pl.matsuo.elm.runtime.ElmList.Cons c) {
+      if (Thunk.resolve(c.head()) instanceof ElmTuple t) {
+        out.add(new String[] {str(t.get(0)), str(t.get(1))});
+      }
+      cur = Thunk.resolve(c.tail());
+    }
+    return out;
   }
 
   /** Parses {@code a=1&b=2} into an Elm {@code List (String, String)} of decoded key/value tuples. */

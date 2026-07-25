@@ -10,6 +10,8 @@ module Server exposing
     , notFound
     , param
     , segments
+    , withHeaders
+    , cors
     , Program
     , program
     )
@@ -44,54 +46,87 @@ type alias Request =
     }
 
 
-{-| The response to send: an HTTP status, a Content-Type, and a body. -}
+{-| The response to send: an HTTP status, a Content-Type, a body, and any extra response headers
+(e.g. `Location` for a redirect, `Cache-Control`, or CORS headers). Build the common cases with the
+helpers below and add headers with [`withHeaders`](#withHeaders) / [`cors`](#cors).
+-}
 type alias Response =
     { status : Int
     , contentType : String
     , body : String
+    , headers : List ( String, String )
     }
 
 
 {-| A 200 text/plain response. -}
 text : String -> Response
 text body =
-    { status = 200, contentType = "text/plain", body = body }
+    { status = 200, contentType = "text/plain", body = body, headers = [] }
 
 
 {-| A 200 text/html response. -}
 html : String -> Response
 html body =
-    { status = 200, contentType = "text/html", body = body }
+    { status = 200, contentType = "text/html", body = body, headers = [] }
 
 
 {-| A 200 application/json response. -}
 json : String -> Response
 json body =
-    { status = 200, contentType = "application/json", body = body }
+    { status = 200, contentType = "application/json", body = body, headers = [] }
 
 
 {-| A 200 text/css response. -}
 css : String -> Response
 css body =
-    { status = 200, contentType = "text/css", body = body }
+    { status = 200, contentType = "text/css", body = body, headers = [] }
 
 
 {-| A 200 application/javascript response. -}
 javascript : String -> Response
 javascript body =
-    { status = 200, contentType = "application/javascript", body = body }
+    { status = 200, contentType = "application/javascript", body = body, headers = [] }
 
 
 {-| A response with an explicit status, Content-Type and body. -}
 response : Int -> String -> String -> Response
 response status contentType body =
-    { status = status, contentType = contentType, body = body }
+    { status = status, contentType = contentType, body = body, headers = [] }
 
 
 {-| A 404 text/plain "Not Found" response. -}
 notFound : Response
 notFound =
-    { status = 404, contentType = "text/plain", body = "Not Found" }
+    { status = 404, contentType = "text/plain", body = "Not Found", headers = [] }
+
+
+{-| Adds (appends) response headers, e.g. `text "hi" |> withHeaders [ ( "Cache-Control", "no-store" ) ]`. -}
+withHeaders : List ( String, String ) -> Response -> Response
+withHeaders extra resp =
+    { resp | headers = resp.headers ++ extra }
+
+
+{-| Adds permissive CORS headers so a browser page from any origin — including a `file://` page,
+whose origin is the opaque `"null"` — may call this server from JavaScript. Handy for APIs consumed
+by standalone/local HTML apps. Pair it with answering `OPTIONS` preflight requests:
+
+    handle req =
+        if req.method == "OPTIONS" then
+            cors (response 204 "text/plain" "")
+
+        else
+            cors (json "{}")
+
+-}
+cors : Response -> Response
+cors resp =
+    withHeaders
+        [ ( "Access-Control-Allow-Origin", "*" )
+        , ( "Access-Control-Allow-Methods", "GET, POST, OPTIONS" )
+        , ( "Access-Control-Allow-Headers", "Content-Type" )
+        , ( "Access-Control-Max-Age", "86400" )
+        ]
+        resp
 
 
 {-| Looks up a query parameter by name, e.g. `param "name" req` for `?name=…`. -}
