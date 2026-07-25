@@ -251,7 +251,7 @@
   function $dec(run){ return $data('$Dec',[run]); }
   function $arr(j){ return Array.isArray(j)?j:(j&&typeof j.length==='number'?[].slice.call(j):null); }
   $rt['Json.Decode.string']=$dec(function(j){ return typeof j==='string'?{ok:1,v:j}:{ok:0,v:'expected a string'}; });
-  $rt['Json.Decode.int']=$dec(function(j){ return typeof j==='number'?{ok:1,v:j|0}:{ok:0,v:'expected an int'}; });
+  $rt['Json.Decode.int']=$dec(function(j){ return typeof j==='number'?{ok:1,v:Math.trunc(j)}:{ok:0,v:'expected an int'}; });
   $rt['Json.Decode.float']=$dec(function(j){ return typeof j==='number'?{ok:1,v:j}:{ok:0,v:'expected a float'}; });
   $rt['Json.Decode.bool']=$dec(function(j){ return typeof j==='boolean'?{ok:1,v:j}:{ok:0,v:'expected a bool'}; });
   $rt['Json.Decode.value']=$dec(function(j){ return {ok:1,v:j}; });
