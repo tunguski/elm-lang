@@ -40,7 +40,11 @@ public final class Standalone {
     if (mode.trim().equals("server")) {
       String portText = readResource(PORT_RESOURCE);
       int port = portText == null ? 8080 : Integer.parseInt(portText.trim());
-      runServerBlocking(source, port, null);
+      // A bundled `handle : Request -> Db Response` server reaches its database through the DB_URL
+      // environment variable (any JDBC URL; H2 ships on the classpath) — the runtime equivalent of
+      // `elm server --db <url>`. Unset means a pure server that runs no queries.
+      String dbUrl = System.getenv("DB_URL");
+      runServerBlocking(source, port, null, dbUrl);
     } else {
       System.exit(runScript(source, List.of(args), System.in, System.out));
     }
@@ -55,10 +59,16 @@ public final class Standalone {
         main, args, new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)), out);
   }
 
-  /** Starts an HTTP server from a `handle`/`main` Elm app (the Server module is bundled). */
-  public static HttpServer startServer(String source, int port, Path staticDir) throws IOException {
+  /**
+   * Starts an HTTP server from a `handle`/`main` Elm app (the Server and Db modules are bundled). A
+   * non-null {@code jdbcUrl} makes a {@code handle : Request -> Db Response} app run its queries
+   * against that JDBC connection; a stateful {@code main : Server.Program} app ignores it.
+   */
+  public static HttpServer startServer(String source, int port, Path staticDir, String jdbcUrl)
+      throws IOException {
     String lib = Resources.read("/elm/lib/Server.elm");
-    Project project = Project.load(source, lib);
+    String dbLib = Resources.read("/elm/lib/Db.elm");
+    Project project = Project.load(source, lib, dbLib);
     Object main = null;
     try {
       main = project.entryValue("main");
@@ -68,13 +78,15 @@ public final class Standalone {
     if (main instanceof ElmRecord r && r.has("onRequest")) {
       return ServerRunner.startStateful(r, port, staticDir);
     }
-    return ServerRunner.start(project.entryValue("handle"), port, staticDir);
+    return ServerRunner.start(project.entryValue("handle"), port, staticDir, jdbcUrl);
   }
 
   /** Starts the server and blocks until the process is interrupted. */
-  public static void runServerBlocking(String source, int port, Path staticDir) throws Exception {
-    HttpServer server = startServer(source, port, staticDir);
-    System.out.println("Serving on http://localhost:" + port + " (Ctrl-C to stop)");
+  public static void runServerBlocking(String source, int port, Path staticDir, String jdbcUrl)
+      throws Exception {
+    HttpServer server = startServer(source, port, staticDir, jdbcUrl);
+    String dbNote = jdbcUrl == null ? "" : " (db: " + jdbcUrl + ")";
+    System.out.println("Serving on http://localhost:" + port + dbNote + " (Ctrl-C to stop)");
     Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(0)));
     Thread.currentThread().join();
   }
