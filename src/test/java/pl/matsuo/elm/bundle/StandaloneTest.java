@@ -67,7 +67,7 @@ class StandaloneTest {
         handle request =
             text "pong"
         """;
-    HttpServer server = Standalone.startServer(src, 0, null); // port 0 -> ephemeral
+    HttpServer server = Standalone.startServer(src, 0, null, null); // port 0 -> ephemeral, no db
     try {
       int port = server.getAddress().getPort();
       HttpResponse<String> resp =
