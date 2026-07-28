@@ -9,6 +9,7 @@ module Server exposing
     , response
     , notFound
     , param
+    , header
     , segments
     , withHeaders
     , cors
@@ -36,12 +37,14 @@ The runner builds a `Request` for each incoming HTTP request, applies `handle`, 
 
 
 {-| An incoming HTTP request: the method (e.g. "GET"), the path (e.g. "/users/7"), the parsed
-query parameters, and the body. Decode a JSON body with the `Json.Decode` module.
+query parameters, the request headers (name/value pairs, names lower-cased), and the body. Decode a
+JSON body with the `Json.Decode` module; read a header with [`header`](#header).
 -}
 type alias Request =
     { method : String
     , path : String
     , query : List ( String, String )
+    , headers : List ( String, String )
     , body : String
     }
 
@@ -134,6 +137,21 @@ param : String -> Request -> Maybe String
 param name req =
     req.query
         |> List.filter (\pair -> Tuple.first pair == name)
+        |> List.head
+        |> Maybe.map Tuple.second
+
+
+{-| Looks up a request header by name, case-insensitively, e.g. `header "authorization" req`. Header
+names in the `Request` are lower-cased, so pass a lower-case name.
+-}
+header : String -> Request -> Maybe String
+header name req =
+    let
+        wanted =
+            String.toLower name
+    in
+    req.headers
+        |> List.filter (\pair -> String.toLower (Tuple.first pair) == wanted)
         |> List.head
         |> Maybe.map Tuple.second
 

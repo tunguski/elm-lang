@@ -44,7 +44,12 @@ public final class Standalone {
       // environment variable (any JDBC URL; H2 ships on the classpath) — the runtime equivalent of
       // `elm server --db <url>`. Unset means a pure server that runs no queries.
       String dbUrl = System.getenv("DB_URL");
-      runServerBlocking(source, port, null, dbUrl);
+      // STATIC_DIR lets a bundled server also serve files (its own app's HTML/CSS/JS) from a
+      // directory, checked before the Elm handler — the runtime equivalent of `elm server --static`.
+      String staticEnv = System.getenv("STATIC_DIR");
+      Path staticDir =
+          (staticEnv == null || staticEnv.isBlank()) ? null : Path.of(staticEnv.trim());
+      runServerBlocking(source, port, staticDir, dbUrl);
     } else {
       System.exit(runScript(source, List.of(args), System.in, System.out));
     }
@@ -68,7 +73,8 @@ public final class Standalone {
       throws IOException {
     String lib = Resources.read("/elm/lib/Server.elm");
     String dbLib = Resources.read("/elm/lib/Db.elm");
-    Project project = Project.load(source, lib, dbLib);
+    String backendLib = Resources.read("/elm/lib/Backend.elm");
+    Project project = Project.load(source, lib, dbLib, backendLib);
     Object main = null;
     try {
       main = project.entryValue("main");

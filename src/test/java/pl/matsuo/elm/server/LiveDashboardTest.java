@@ -33,14 +33,14 @@ class LiveDashboardTest {
   @Test
   void servesItsOwnClientAssets() {
     ServerRunner.Stateful state = new ServerRunner.Stateful(program());
-    assertEquals("text/html", state.handle("GET", "/", "", "").contentType());
-    assertTrue(state.handle("GET", "/", "", "").body().contains("random walk"));
-    assertEquals("text/css", state.handle("GET", "/style.css", "", "").contentType());
-    assertEquals("application/javascript", state.handle("GET", "/app.js", "", "").contentType());
-    ServerRunner.Resp api = state.handle("GET", "/api/series", "", "");
+    assertEquals("text/html", state.handle("GET", "/", "", "", "").contentType());
+    assertTrue(state.handle("GET", "/", "", "", "").body().contains("random walk"));
+    assertEquals("text/css", state.handle("GET", "/style.css", "", "", "").contentType());
+    assertEquals("application/javascript", state.handle("GET", "/app.js", "", "", "").contentType());
+    ServerRunner.Resp api = state.handle("GET", "/api/series", "", "", "");
     assertEquals("application/json", api.contentType());
     assertEquals("[50]", api.body()); // the initial in-memory series
-    assertEquals(404, state.handle("GET", "/nope", "", "").status());
+    assertEquals(404, state.handle("GET", "/nope", "", "", "").status());
   }
 
   @Test

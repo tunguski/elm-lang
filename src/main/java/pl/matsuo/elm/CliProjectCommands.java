@@ -67,7 +67,8 @@ final class Serve implements Callable<Integer> {
       String userSource = Main.readElmSource(file);
       String lib = pl.matsuo.elm.util.Resources.read("/elm/lib/Server.elm");
       String dbLib = pl.matsuo.elm.util.Resources.read("/elm/lib/Db.elm");
-      var project = pl.matsuo.elm.interp.Project.load(userSource, lib, dbLib);
+      String backendLib = pl.matsuo.elm.util.Resources.read("/elm/lib/Backend.elm");
+      var project = pl.matsuo.elm.interp.Project.load(userSource, lib, dbLib, backendLib);
       // A stateful app exposes `main : Server.Program model`; a stateless one exposes `handle`.
       Object main = null;
       try {

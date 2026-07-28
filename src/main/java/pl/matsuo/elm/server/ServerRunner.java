@@ -38,7 +38,7 @@ public final class ServerRunner {
   /** Applies a stateless {@code handle} to a request and decodes the response (unit-testable). */
   public static Resp dispatch(
       Object handler, String method, String path, String rawQuery, String body) {
-    return dispatch(handler, null, method, path, rawQuery, body);
+    return dispatch(handler, null, method, path, rawQuery, "", body);
   }
 
   /**
@@ -49,7 +49,19 @@ public final class ServerRunner {
    */
   public static Resp dispatch(
       Object handler, String jdbcUrl, String method, String path, String rawQuery, String body) {
-    Object result = Apply.apply(handler, buildRequest(method, path, rawQuery, body));
+    return dispatch(handler, jdbcUrl, method, path, rawQuery, "", body);
+  }
+
+  /** As above, also carrying the request headers (serialized {@code name:value} lines). */
+  public static Resp dispatch(
+      Object handler,
+      String jdbcUrl,
+      String method,
+      String path,
+      String rawQuery,
+      String rawHeaders,
+      String body) {
+    Object result = Apply.apply(handler, buildRequest(method, path, rawQuery, rawHeaders, body));
     return decodeResponse(runDbEffects(result, jdbcUrl));
   }
 
@@ -100,7 +112,7 @@ public final class ServerRunner {
         staticDir,
         exchange -> {
           var r = request(exchange);
-          return dispatch(handler, jdbcUrl, r[0], r[1], r[2], r[3]);
+          return dispatch(handler, jdbcUrl, r[0], r[1], r[2], r[3], r[4]);
         });
   }
 
@@ -119,9 +131,11 @@ public final class ServerRunner {
     }
 
     /** Handles a request against the current model, updating it, and returns the response. */
-    public synchronized Resp handle(String method, String path, String rawQuery, String body) {
+    public synchronized Resp handle(
+        String method, String path, String rawQuery, String rawHeaders, String body) {
       Object result =
-          Thunk.resolve(Apply.applyAll(onRequest, buildRequest(method, path, rawQuery, body), model));
+          Thunk.resolve(
+              Apply.applyAll(onRequest, buildRequest(method, path, rawQuery, rawHeaders, body), model));
       if (!(result instanceof ElmTuple t)) {
         throw new IllegalStateException("onRequest must return ( model, Response ), got: " + result);
       }
@@ -158,7 +172,7 @@ public final class ServerRunner {
             staticDir,
             exchange -> {
               var r = request(exchange);
-              return state.handle(r[0], r[1], r[2], r[3]);
+              return state.handle(r[0], r[1], r[2], r[3], r[4]);
             });
     if (tickMillis > 0) {
       ScheduledExecutorService ticker =
@@ -241,24 +255,56 @@ public final class ServerRunner {
     };
   }
 
-  /** Extracts {method, path, rawQuery, body} from an exchange. */
+  /** Extracts {method, path, rawQuery, headers, body} from an exchange. */
   private static String[] request(HttpExchange exchange) throws IOException {
     return new String[] {
       exchange.getRequestMethod(),
       exchange.getRequestURI().getPath(),
       exchange.getRequestURI().getRawQuery(),
+      encodeHeaders(exchange),
       new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)
     };
   }
 
+  /** Serializes the request headers as {@code name:value} lines (names lower-cased) for transport. */
+  private static String encodeHeaders(HttpExchange exchange) {
+    StringBuilder sb = new StringBuilder();
+    for (var entry : exchange.getRequestHeaders().entrySet()) {
+      String name = entry.getKey() == null ? "" : entry.getKey().toLowerCase();
+      for (String value : entry.getValue()) {
+        if (sb.length() > 0) {
+          sb.append('\n');
+        }
+        sb.append(name).append(':').append(value == null ? "" : value);
+      }
+    }
+    return sb.toString();
+  }
+
   /** Builds the Elm {@code Request} record. */
-  private static ElmRecord buildRequest(String method, String path, String rawQuery, String body) {
+  private static ElmRecord buildRequest(
+      String method, String path, String rawQuery, String rawHeaders, String body) {
     java.util.Map<String, Object> fields = new java.util.LinkedHashMap<>();
     fields.put("method", method);
     fields.put("path", path);
     fields.put("query", parseQuery(rawQuery));
+    fields.put("headers", parseHeaders(rawHeaders));
     fields.put("body", body == null ? "" : body);
     return new ElmRecord(fields);
+  }
+
+  /** Parses the {@code name:value} header lines into an Elm {@code List (String, String)}. */
+  private static pl.matsuo.elm.runtime.ElmList parseHeaders(String rawHeaders) {
+    java.util.List<Object> pairs = new java.util.ArrayList<>();
+    if (rawHeaders != null && !rawHeaders.isEmpty()) {
+      for (String line : rawHeaders.split("\n")) {
+        int colon = line.indexOf(':');
+        String k = colon < 0 ? line : line.substring(0, colon);
+        String v = colon < 0 ? "" : line.substring(colon + 1);
+        pairs.add(new pl.matsuo.elm.runtime.ElmTuple(new Object[] {k, v}));
+      }
+    }
+    return pl.matsuo.elm.runtime.ElmList.fromJava(pairs);
   }
 
   /** Decodes an Elm {@code Response} record (its {@code headers} field is optional, for back-compat). */
