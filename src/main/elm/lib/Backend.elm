@@ -9,8 +9,10 @@ sessions, request/login auditing, and a generic per-user document store with vis
 public) and sharing. Built on [`Server`](Server) + [`Db`](Db); bundled by `elm server` so a server
 app can just `import Backend`.
 
-All crypto is done in H2 SQL — passwords are salted and stretched with `HASH('SHA-256', …, 100000)`,
-session tokens and salts come from `RANDOM_UUID()` — so no host crypto primitive is needed.
+Security: passwords are hashed with **PBKDF2-HMAC-SHA256** (per-user random salt, high iteration
+count) via the `SFA_KDF` H2 function (see `PasswordKdf.java`); session tokens are ~244-bit random and
+**stored only as a SHA-256 hash**, so a leaked database exposes neither passwords nor usable sessions;
+and repeated failed logins for a login are **rate-limited**. All of it runs in the DB layer.
 
 An app wires it in one line:
 
@@ -98,8 +100,11 @@ err status message =
 ensureSchema : Db ()
 ensureSchema =
     ddl
-        [ "CREATE TABLE IF NOT EXISTS users (uuid VARCHAR PRIMARY KEY, login VARCHAR, pw_hash VARBINARY, pw_salt VARCHAR, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-        , "CREATE TABLE IF NOT EXISTS sessions (token VARCHAR PRIMARY KEY, uuid VARCHAR NOT NULL, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP, expires TIMESTAMP NOT NULL)"
+        -- Register the PBKDF2 password KDF as an H2 function (see PasswordKdf.java on the classpath).
+        [ "CREATE ALIAS IF NOT EXISTS SFA_KDF FOR 'pl.matsuo.elm.server.PasswordKdf.hash'"
+        , "CREATE TABLE IF NOT EXISTS users (uuid VARCHAR PRIMARY KEY, login VARCHAR, pw_hash VARBINARY, pw_salt VARCHAR, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        -- Sessions store only a HASH of the token, so a DB leak can't reuse live sessions.
+        , "CREATE TABLE IF NOT EXISTS sessions (token_hash VARCHAR PRIMARY KEY, uuid VARCHAR NOT NULL, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP, expires TIMESTAMP NOT NULL)"
         , "CREATE TABLE IF NOT EXISTS audit_requests (ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP, app VARCHAR, uid VARCHAR, method VARCHAR, path VARCHAR, status INT)"
         , "CREATE TABLE IF NOT EXISTS audit_logins (ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP, login VARCHAR, uid VARCHAR, success BOOLEAN, note VARCHAR)"
         , "CREATE TABLE IF NOT EXISTS documents (id VARCHAR PRIMARY KEY, app VARCHAR NOT NULL, owner VARCHAR NOT NULL, visibility VARCHAR NOT NULL DEFAULT 'private', title VARCHAR, body CLOB, updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
@@ -145,7 +150,7 @@ resolveActor req =
     case bearer req of
         Just token ->
             queryWith
-                "SELECT uuid FROM sessions WHERE token = ? AND expires > CURRENT_TIMESTAMP"
+                "SELECT uuid FROM sessions WHERE token_hash = RAWTOHEX(HASH('SHA-256', STRINGTOUTF8(?))) AND expires > CURRENT_TIMESTAMP"
                 [ Db.text token ]
                 (row identity |> andMap textColumn)
                 |> map (\res -> Actor (firstOr "" res))
@@ -208,8 +213,8 @@ register actor req =
             if uid actor == "" then
                 succeed (err 401 "no identity — send X-User-Id first")
 
-            else if String.length (String.trim c.login) < 3 || String.length c.password < 6 then
-                succeed (err 400 "login must be ≥3 chars and password ≥6")
+            else if String.length (String.trim c.login) < 3 || String.length c.password < 8 then
+                succeed (err 400 "login must be ≥3 chars and password ≥8")
 
             else
                 queryWith "SELECT COUNT(*) FROM users WHERE login = ? AND uuid <> ?"
@@ -230,7 +235,7 @@ register actor req =
             succeed (err 400 "expected {login, password}")
 
 
-{-| Attach a login + salted, stretched password hash to a user row (creating it if needed). -}
+{-| Attach a login + PBKDF2 password hash to a user row (creating it if needed). -}
 setPassword : String -> Creds -> Db ()
 setPassword userId c =
     execute "MERGE INTO users (uuid) KEY (uuid) VALUES (?)" [ Db.text userId ]
@@ -238,7 +243,7 @@ setPassword userId c =
         |> andThen
             (\salt ->
                 execute
-                    "UPDATE users SET login = ?, pw_salt = ?, pw_hash = HASH('SHA-256', STRINGTOUTF8(CONCAT(?, ?)), 100000) WHERE uuid = ?"
+                    "UPDATE users SET login = ?, pw_salt = ?, pw_hash = SFA_KDF(?, ?) WHERE uuid = ?"
                     [ Db.text c.login, Db.text salt, Db.text c.password, Db.text salt, Db.text userId ]
                     |> map (\_ -> ())
             )
@@ -248,32 +253,56 @@ login : Request -> Db Response
 login req =
     case D.decodeString credsDecoder req.body of
         Ok c ->
-            queryWith
-                "SELECT uuid, (pw_hash = HASH('SHA-256', STRINGTOUTF8(CONCAT(?, pw_salt)), 100000)) FROM users WHERE login = ? AND pw_hash IS NOT NULL"
-                [ Db.text c.password, Db.text c.login ]
-                (row Tuple.pair |> andMap textColumn |> andMap boolColumn)
+            -- Rate-limit brute force: ≥8 failures for this login in the last 15 min → refuse.
+            recentFailures c.login
                 |> andThen
-                    (\res ->
-                        case res of
-                            Ok (( userId, True ) :: _) ->
-                                auditLogin c.login userId True "ok"
-                                    |> andThen (\_ -> issueSession userId)
-                                    |> map (\token -> ok (tokenJson token userId))
+                    (\fails ->
+                        if fails >= 8 then
+                            auditLogin c.login "" False "throttled"
+                                |> map (\_ -> err 429 "too many attempts — try again later")
 
-                            _ ->
-                                auditLogin c.login "" False "bad credentials"
-                                    |> map (\_ -> err 401 "invalid login or password")
+                        else
+                            verifyLogin c
                     )
 
         Err _ ->
             succeed (err 400 "expected {login, password}")
 
 
+verifyLogin : Creds -> Db Response
+verifyLogin c =
+    queryWith
+        "SELECT uuid, (pw_hash = SFA_KDF(?, pw_salt)) FROM users WHERE login = ? AND pw_hash IS NOT NULL"
+        [ Db.text c.password, Db.text c.login ]
+        (row Tuple.pair |> andMap textColumn |> andMap boolColumn)
+        |> andThen
+            (\res ->
+                case res of
+                    Ok (( userId, True ) :: _) ->
+                        auditLogin c.login userId True "ok"
+                            |> andThen (\_ -> issueSession userId)
+                            |> map (\token -> ok (tokenJson token userId))
+
+                    _ ->
+                        auditLogin c.login "" False "bad credentials"
+                            |> map (\_ -> err 401 "invalid login or password")
+            )
+
+
+recentFailures : String -> Db Int
+recentFailures lg =
+    queryWith
+        "SELECT COUNT(*) FROM audit_logins WHERE login = ? AND success = FALSE AND ts > DATEADD('MINUTE', -15, CURRENT_TIMESTAMP)"
+        [ Db.text lg ]
+        (row identity |> andMap Db.intColumn)
+        |> map (firstOr 0)
+
+
 logout : Request -> Db Response
 logout req =
     case bearer req of
         Just token ->
-            execute "DELETE FROM sessions WHERE token = ?" [ Db.text token ]
+            execute "DELETE FROM sessions WHERE token_hash = RAWTOHEX(HASH('SHA-256', STRINGTOUTF8(?)))" [ Db.text token ]
                 |> map (\_ -> ok "{}")
 
         Nothing ->
@@ -312,14 +341,22 @@ me actor =
 
 issueSession : String -> Db String
 issueSession userId =
-    newUuid
+    newToken
         |> andThen
             (\token ->
                 execute
-                    "INSERT INTO sessions (token, uuid, expires) VALUES (?, ?, DATEADD('DAY', 30, CURRENT_TIMESTAMP))"
+                    "INSERT INTO sessions (token_hash, uuid, expires) VALUES (RAWTOHEX(HASH('SHA-256', STRINGTOUTF8(?))), ?, DATEADD('DAY', 30, CURRENT_TIMESTAMP))"
                     [ Db.text token, Db.text userId ]
                     |> map (\_ -> token)
             )
+
+
+{-| A ~244-bit opaque session token (two RANDOM_UUIDs; H2's RANDOM_UUID is SecureRandom-backed). -}
+newToken : Db String
+newToken =
+    queryWith "SELECT CAST(RANDOM_UUID() AS VARCHAR) || CAST(RANDOM_UUID() AS VARCHAR)" []
+        (row identity |> andMap textColumn)
+        |> map (firstOr "")
 
 
 auditLogin : String -> String -> Bool -> String -> Db ()
