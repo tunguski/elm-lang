@@ -782,7 +782,7 @@
     function render(){
       if (kind==='$Worker') return; // a worker has no view
       var v = viewVNode();
-      if (dom==null){ dom = window.$toDom(v); root.appendChild(dom); }
+      if (dom==null){ dom = window.$toDom(v); while (root.firstChild) root.removeChild(root.firstChild); root.appendChild(dom); }
       else { dom = $patch(root, dom, current, v); }
       current = v;
       if (debug) updateDebug();
@@ -871,7 +871,7 @@
   };
   // Entry point: a static Html value is rendered directly; a Browser program is mounted.
   window.$start = function(main, root){
-    if (main.$==='$Node' || main.$==='$Text') { root.appendChild(window.$toDom(main)); }
+    if (main.$==='$Node' || main.$==='$Text') { while (root.firstChild) root.removeChild(root.firstChild); root.appendChild(window.$toDom(main)); }
     else { window.$mount(main, root); }
   };
 })();
