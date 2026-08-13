@@ -6,6 +6,7 @@ import java.util.Map;
 import pl.matsuo.elm.error.ElmRuntimeError;
 import pl.matsuo.elm.interp.Apply;
 import pl.matsuo.elm.json.DecoderRunner;
+import pl.matsuo.elm.json.JsonEncode;
 import pl.matsuo.elm.json.JsonParse;
 import pl.matsuo.elm.runtime.ElmData;
 import pl.matsuo.elm.runtime.ElmList;
@@ -26,6 +27,7 @@ public final class Tea {
   private Object model;
   private long seed = 0x2545F4914F6CDD1DL; // deterministic random state
   private Map<String, String> httpResponses = Map.of();
+  private HttpHandler httpHandler; // when set, every Http command is routed through this backend
   private List<Object> selectableFiles = new ArrayList<>();
   private boolean allowNetwork = false; // when true, an uncanned Http.get performs a real request
 
@@ -54,8 +56,23 @@ public final class Tea {
     return start(program, Map.of(), true);
   }
 
+  /**
+   * Starts a program, routing every HTTP command through {@code handler} — the seam a test uses to
+   * drive a real backend (the handler sees the method + body, and its response, including non-2xx
+   * statuses, is delivered to the program). Random is seeded non-deterministically like {@link
+   * #startLive} so effectful programs behave realistically.
+   */
+  public static Tea start(Object program, HttpHandler handler) {
+    return start(program, Map.of(), false, handler);
+  }
+
   /** Starts a program, supplying canned HTTP responses and choosing whether real network is allowed. */
   public static Tea start(Object program, Map<String, String> httpResponses, boolean allowNetwork) {
+    return start(program, httpResponses, allowNetwork, null);
+  }
+
+  private static Tea start(
+      Object program, Map<String, String> httpResponses, boolean allowNetwork, HttpHandler handler) {
     if (!(program instanceof ElmData d) || !(d.arg(0) instanceof ElmRecord def)) {
       throw new ElmRuntimeError("Not a Browser program: " + program);
     }
@@ -76,8 +93,9 @@ public final class Tea {
       pendingCmd = t.get(1);
     }
     tea.httpResponses = httpResponses;
+    tea.httpHandler = handler;
     tea.allowNetwork = allowNetwork;
-    if (allowNetwork) {
+    if (allowNetwork || handler != null) {
       tea.seed = System.nanoTime() * 2862933555777941757L + 3037000493L;
     }
     if (pendingCmd != null) {
@@ -176,7 +194,8 @@ public final class Tea {
           send(Apply.apply(d.arg(1), err(f.error)));
         }
       }
-      case "$Cmd_Http" -> runHttp((String) d.arg(0), (ElmData) d.arg(1));
+      case "$Cmd_Http" ->
+          runHttp((String) d.arg(0), (String) d.arg(1), d.arg(2), (ElmData) d.arg(3));
       case "$Cmd_SelectFile" -> {
         if (!selectableFiles.isEmpty()) {
           send(Apply.apply(d.arg(0), selectableFiles.get(0)));
@@ -192,8 +211,22 @@ public final class Tea {
     }
   }
 
-  private void runHttp(String url, ElmData expect) {
+  private void runHttp(String method, String url, Object bodyValue, ElmData expect) {
     Object toMsg = expect.arg(0);
+    if (httpHandler != null) {
+      HttpHandler.Response resp =
+          httpHandler.handle(
+              new HttpHandler.Request(method, url, bodyString(bodyValue), expect.ctor()));
+      if (resp == null || resp.status() <= 0) {
+        send(Apply.apply(toMsg, err(new ElmData("NetworkError", new Object[0]))));
+      } else if (!resp.isSuccess()) {
+        send(Apply.apply(toMsg, err(new ElmData("BadStatus", new Object[] {(long) resp.status()}))));
+      } else {
+        deliver(toMsg, expect, resp.body());
+      }
+      return;
+    }
+    // Legacy path: canned url→body map, optionally falling back to a real GET.
     String body = httpResponses.get(url);
     if (body == null) {
       if (allowNetwork) {
@@ -208,8 +241,13 @@ public final class Tea {
         return;
       }
     }
+    deliver(toMsg, expect, body);
+  }
+
+  /** Feeds a successful (2xx) response body back into the program, decoded per {@code expect}. */
+  private void deliver(Object toMsg, ElmData expect, String body) {
     switch (expect.ctor()) {
-      case "$Expect_String" -> send(Apply.apply(toMsg, ok(body)));
+      case "$Expect_String" -> send(Apply.apply(toMsg, ok(body == null ? "" : body)));
       case "$Expect_Whatever" -> send(Apply.apply(toMsg, ok(ElmUnit.INSTANCE)));
       case "$Expect_Json" -> {
         ElmData decoded;
@@ -227,6 +265,23 @@ public final class Tea {
       }
       default -> {}
     }
+  }
+
+  /** Renders an {@code Http.Body} value ({@code emptyBody}/{@code stringBody}/{@code jsonBody}) to a
+   *  request-body string; a GET's empty body arrives here as {@code ""}. */
+  private static String bodyString(Object body) {
+    if (!(body instanceof ElmData d)) {
+      return body == null ? "" : String.valueOf(body);
+    }
+    return switch (d.ctor()) {
+      case "$Http_Body_String" -> String.valueOf(d.arg(1));
+      case "$Http_Body_Json" -> {
+        Object v = d.arg(0);
+        Object tree = (v instanceof ElmData j && j.ctor().equals("$Json")) ? j.arg(0) : v;
+        yield JsonEncode.serialize(tree, 0);
+      }
+      default -> ""; // $Http_Body_Empty
+    };
   }
 
   /**

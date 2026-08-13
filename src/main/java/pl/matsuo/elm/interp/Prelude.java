@@ -188,17 +188,82 @@ public final class Prelude {
     return new ElmData(ctor, args);
   }
 
+  /** {@code f << g} as a callable value (applies {@code g}, then {@code f}). */
+  private static Builtin compose(Object f, Object g) {
+    return new Builtin("<<", 1, args -> Apply.apply(f, Apply.apply(g, args[0])));
+  }
+
+  /** {@code Cmd.map f cmd}: rebuilds the command with {@code f} composed onto its message tagger. */
+  private static Object mapCmd(Object f, Object cmd) {
+    if (!(cmd instanceof ElmData d)) {
+      return cmd;
+    }
+    switch (d.ctor()) {
+      case "$CmdBatch":
+        java.util.List<Object> mapped = new java.util.ArrayList<>();
+        for (Object c : ((ElmList) d.arg(0)).toJava()) {
+          mapped.add(mapCmd(f, c));
+        }
+        return d("$CmdBatch", ElmList.fromJava(mapped));
+      case "$Cmd_Random":
+        return d("$Cmd_Random", d.arg(0), compose(f, d.arg(1)));
+      case "$Cmd_Task":
+        return d("$Cmd_Task", d.arg(0), compose(f, d.arg(1)));
+      case "$Cmd_TaskAttempt":
+        return d("$Cmd_TaskAttempt", d.arg(0), compose(f, d.arg(1)));
+      case "$Cmd_SelectFile":
+        return d("$Cmd_SelectFile", compose(f, d.arg(0)));
+      case "$Cmd_SelectFiles":
+        Object toMsg2 = d.arg(0); // File -> List File -> msg
+        return d(
+            "$Cmd_SelectFiles",
+            new Builtin("<<2", 2, args -> Apply.apply(f, Apply.applyAll(toMsg2, args[0], args[1]))));
+      case "$Cmd_Http":
+        return d("$Cmd_Http", d.arg(0), d.arg(1), d.arg(2), mapExpect(f, (ElmData) d.arg(3)));
+      default:
+        return cmd; // $CmdNone, $Cmd_Port (no message to tag)
+    }
+  }
+
+  /** Composes {@code f} onto an {@code Http.Expect}'s message tagger (its first arg). */
+  private static ElmData mapExpect(Object f, ElmData expect) {
+    Object[] args = expect.args().clone();
+    args[0] = compose(f, args[0]);
+    return new ElmData(expect.ctor(), args);
+  }
+
+  /** {@code Sub.map f sub}: composes {@code f} onto a subscription's message tagger. */
+  private static Object mapSub(Object f, Object sub) {
+    if (!(sub instanceof ElmData d)) {
+      return sub;
+    }
+    switch (d.ctor()) {
+      case "$SubBatch":
+        java.util.List<Object> mapped = new java.util.ArrayList<>();
+        for (Object s : ((ElmList) d.arg(0)).toJava()) {
+          mapped.add(mapSub(f, s));
+        }
+        return d("$SubBatch", ElmList.fromJava(mapped));
+      case "$Sub_Every":
+        return d("$Sub_Every", d.arg(0), compose(f, d.arg(1)));
+      default:
+        return sub; // $SubNone
+    }
+  }
+
   private static void registerEffects() {
     BUILTINS.put("Cmd.none", d("$CmdNone"));
     fn("Cmd.batch", 1, a -> d("$CmdBatch", a[0]));
-    fn("Cmd.map", 2, a -> a[1]); // tagging is not tracked headlessly
+    // Cmd.map f cmd: compose f onto the message the command eventually produces, so a nested TEA
+    // program's commands (mapped up into the parent's Msg) deliver the right message headlessly.
+    fn("Cmd.map", 2, a -> mapCmd(a[0], a[1]));
     // Chunk.load id toMsg: headless backends are eager (the code is already in this process), so
     // loading a chunk is a no-op Cmd — matching the Browser.Navigation.* convention. Only the JS
     // browser runtime actually fetches a separate file.
     fn("Chunk.load", 2, a -> d("$CmdNone"));
     BUILTINS.put("Sub.none", d("$SubNone"));
     fn("Sub.batch", 1, a -> d("$SubBatch", a[0]));
-    fn("Sub.map", 2, a -> a[1]);
+    fn("Sub.map", 2, a -> mapSub(a[0], a[1]));
 
     fn("Random.generate", 2, a -> d("$Cmd_Random", a[1], a[0])); // (toMsg, gen) -> [gen, toMsg]
     fn("Random.int", 2, a -> d("$Gen_Int", a[0], a[1]));
@@ -503,17 +568,19 @@ public final class Prelude {
   }
 
   private static void registerHttp() {
+    // $Cmd_Http carries [method, url, body, expect]; the headless runner reads the method + body so
+    // a pluggable HttpHandler can forward the real request (with its body) to a backend.
     fn("Http.get", 1, a -> {
       ElmRecord r = (ElmRecord) a[0];
-      return d("$Cmd_Http", r.get("url"), r.get("expect"));
+      return d("$Cmd_Http", "GET", r.get("url"), "", r.get("expect"));
     });
     fn("Http.post", 1, a -> {
       ElmRecord r = (ElmRecord) a[0];
-      return d("$Cmd_Http", r.get("url"), r.get("expect"));
+      return d("$Cmd_Http", "POST", r.get("url"), r.get("body"), r.get("expect"));
     });
     fn("Http.request", 1, a -> {
       ElmRecord r = (ElmRecord) a[0];
-      return d("$Cmd_Http", r.get("url"), r.get("expect"));
+      return d("$Cmd_Http", r.get("method"), r.get("url"), r.get("body"), r.get("expect"));
     });
     fn("Http.expectString", 1, a -> d("$Expect_String", a[0]));
     fn("Http.expectJson", 2, a -> d("$Expect_Json", a[0], a[1]));

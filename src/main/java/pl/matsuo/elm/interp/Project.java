@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import pl.matsuo.elm.ast.Decl;
+import pl.matsuo.elm.ast.Expr;
 import pl.matsuo.elm.ast.Module;
 import pl.matsuo.elm.ast.Type;
 import pl.matsuo.elm.error.ElmRuntimeError;
@@ -292,6 +293,22 @@ public final class Project {
       }
     }
     throw new ElmRuntimeError("No '" + defName + "' definition found in project");
+  }
+
+  /**
+   * Compiles and evaluates an Elm expression in the scope of {@code moduleName} — its imports,
+   * aliases and own constructors all resolve, so an expression reads exactly as that module's code
+   * would (e.g. {@code evalExpr("Main", "LoginMsg (Login.SetLogin \"admin\")")}). Used by tests to
+   * build the {@code Msg} values a UI would dispatch.
+   */
+  public Object evalExpr(String moduleName, String expression) {
+    RuntimeEnv env = envs.get(moduleName);
+    if (env == null) {
+      throw new ElmRuntimeError("No module named '" + moduleName + "' in project");
+    }
+    Expr expr = Parser.parseExpression(expression);
+    env.registerLetTypes(expr);
+    return new Compiler(env, java.util.Set.of()).compile(expr).execute(Scope.root());
   }
 
   /** The {@code main} of the {@code Main} module (or the first module that defines {@code main}). */
