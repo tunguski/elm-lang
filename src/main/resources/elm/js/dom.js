@@ -35,6 +35,9 @@
   elements.forEach(function(spec){ var p=spec.split(':'); $rt['Html.'+p[0]]=node(p[1]||p[0]); });
   $rt['Html.text']=function(s){ return $data('$Text',[s]); };
   $rt['Html.node']=function(t){ return node(t); };
+  // Serializes a virtual-DOM value to markup — the browser side of Html.toString (the JVM side is
+  // HtmlRender). Event handlers are not serialized, so the result is inert HTML.
+  $rt['Html.toString']=function(v){ var d=document.createElement('div'); d.appendChild(window.$toDom(v)); return d.innerHTML; };
   var strAttrs=['class','id','href','src','alt','title','placeholder','value','name',
     'type_:type','for_:for','rel','target','min','max','step','cols','rows',
     'accept','action','autocomplete','method','colspan','rowspan','tabindex'];

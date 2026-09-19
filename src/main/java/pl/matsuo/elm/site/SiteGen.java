@@ -48,8 +48,21 @@ public final class SiteGen {
    * and a sitemap.xml of every page (URLs prefixed with {@code baseUrl}). */
   public static int generate(String userSource, Path outDir, List<Path> apiDirs, String baseUrl)
       throws IOException {
+    return generate(List.of(userSource), outDir, apiDirs, baseUrl);
+  }
+
+  /**
+   * The multi-module form: {@code userSources} is a whole project's modules (as loaded from an
+   * {@code elm.json}), one of which exposes {@code site : List Site.Page}. Lets a generator split
+   * its content, layout and drawing code across modules — and import libraries such as elm-svg to
+   * bake real, JavaScript-free SVG into the pages via {@code Html.toString}.
+   */
+  public static int generate(List<String> userSources, Path outDir, List<Path> apiDirs, String baseUrl)
+      throws IOException {
     String siteLib = Resources.read("/elm/lib/Site.elm");
-    Project project = Project.load(userSource, siteLib);
+    List<String> sources = new ArrayList<>(userSources);
+    sources.add(siteLib);
+    Project project = Project.load(sources.toArray(new String[0]));
     Object render = project.value("Site", "render");
 
     // The Site library links a static site.css (rather than inlining CSS); copy it in.

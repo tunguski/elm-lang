@@ -303,6 +303,7 @@ public final class Signatures {
       g("Html." + tag, elem);
     }
     g("Html.text", "String -> Html msg");
+    g("Html.toString", "Html msg -> String");
     g("Html.map", "(a -> msg) -> Html a -> Html msg");
     g("Svg.map", "(a -> msg) -> Svg a -> Svg msg");
     g("Html.Lazy.lazy", "(a -> Html msg) -> a -> Html msg");

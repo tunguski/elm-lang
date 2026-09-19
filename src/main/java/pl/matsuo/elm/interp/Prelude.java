@@ -865,6 +865,10 @@ public final class Prelude {
 
   private static void registerHtml() {
     fn("Html.text", 1, a -> new ElmData("$Text", new Object[] {a[0]}));
+    // Serializes a virtual-DOM value (Html or Svg) to static markup — the build-time side of the
+    // runtime: static-site generation bakes a rendered view straight into a page. Event handlers are
+    // dropped, so the result is inert markup that needs no JavaScript.
+    fn("Html.toString", 1, a -> pl.matsuo.elm.html.HtmlRender.render(a[0]));
     fn("Html.node", 3, a -> node((String) a[0], a[1], a[2]));
     fn("Html.map", 2, a -> mapHtml(a[0], a[1]));
     fn("Svg.map", 2, a -> mapHtml(a[0], a[1]));

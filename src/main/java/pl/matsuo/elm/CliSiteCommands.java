@@ -175,12 +175,21 @@ final class Site implements Callable<Integer> {
       footerHeading = "%nExample:%n",
       footer = {
         "  elm gen-site src/main/elm/examples/ElmLang.elm out --api src/main/elm/lib --api projects/elm-rts/src/RTS",
+        "  elm gen-site projects/elm-rakusu out    # a whole project (elm.json): every module is loaded",
         "",
         "The program exposes `site : List Page`; each page is rendered to HTML and written under the",
         "output dir. `--api DIR` adds api/<Module>.html for every .elm file plus a grouped api index.",
+        "",
+        "Passing an elm.json (or a directory holding one) instead of a single .elm loads the whole",
+        "project — so the generator can span modules and use libraries (e.g. elm-svg drawings baked",
+        "into pages with Html.toString) rather than being confined to one file.",
       })
 final class GenSite implements Callable<Integer> {
-    @Parameters(index = "0", description = "The .elm site definition (its `site : List Site.Page`).")
+    @Parameters(
+        index = "0",
+        description =
+            "The .elm site definition (its `site : List Site.Page`), or an elm.json / project "
+                + "directory whose modules are all loaded.")
     Path file;
 
     @Parameters(index = "1", description = "Output directory.")
@@ -198,7 +207,19 @@ final class GenSite implements Callable<Integer> {
 
     @Override
     public Integer call() throws IOException {
+      if (isProject(file)) {
+        return pl.matsuo.elm.site.SiteGen.generate(
+            pl.matsuo.elm.project.ProjectLoader.loadSources(file), outDir, apiDirs, baseUrl);
+      }
       return pl.matsuo.elm.site.SiteGen.generate(Main.readElmSource(file), outDir, apiDirs, baseUrl);
+    }
+
+    /** Whether the argument names a project (an elm.json, or a directory containing one) rather
+     * than a single site module. */
+    private static boolean isProject(Path path) {
+      return Files.isDirectory(path)
+          ? Files.isRegularFile(path.resolve("elm.json"))
+          : path.getFileName().toString().equals("elm.json");
     }
   }
 
